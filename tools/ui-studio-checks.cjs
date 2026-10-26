@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 
-module.exports = async function checkStudio({ evaluate, waitFor }) {
+module.exports = async function checkStudio({ evaluate, waitFor, webContents }) {
   const generate = `Array.from(document.querySelectorAll('button')).find(element => element.textContent.includes('开始生成')).click()`
   await waitFor(`Boolean(document.querySelector('#view-studio'))`)
   await evaluate(`document.querySelector('#view-studio').click()`)
@@ -33,6 +33,8 @@ module.exports = async function checkStudio({ evaluate, waitFor }) {
   await evaluate('document.querySelector("button[aria-label=收起左栏]").click()')
   await waitFor('Boolean(document.querySelector("button[aria-label=展开左栏]"))')
   await evaluate('document.querySelector("button[aria-label=展开左栏]").click()')
+  await require('./ui-studio-motion-checks.cjs')({ evaluate, waitFor, webContents })
+  assert.equal(await evaluate(`${agent}.value`), '保留工具草稿')
   await evaluate(`document.querySelector('#studio-job').textContent = ''; ${generate}`)
   await waitFor(`Boolean(document.querySelector('#studio-job').textContent)`)
   const payload = JSON.parse(await evaluate(`document.querySelector('#studio-job').textContent`))

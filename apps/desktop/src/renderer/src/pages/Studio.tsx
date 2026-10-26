@@ -4,9 +4,7 @@ import {
   GitBranch,
   Minus,
   PanelLeftClose,
-  PanelLeftOpen,
   PanelRightClose,
-  PanelRightOpen,
   Plus,
   RotateCcw,
   Copy,
@@ -45,7 +43,7 @@ import { PromptSegmentsModal } from '../components/PromptSegmentsModal'
 import { GbcImportModal } from '../components/GbcImportModal'
 import { AgentSidebar } from '../components/AgentSidebar'
 import { StudioSection } from '../components/studio/StudioSection'
-import { StudioDivider } from '../components/studio/StudioDivider'
+import { StudioSidebar } from '../components/studio/StudioSidebar'
 import type { GbcImageResult, GbcRunResult } from '@shared/gbc'
 
 const SIZE_PRESETS: Array<[string, number, number]> = [
@@ -928,23 +926,17 @@ export function StudioPage(): React.JSX.Element {
 
   return (
     <div className="studio-workbench flex h-full min-h-0 overflow-hidden">
-      {leftCollapsed ? (
-        <div className="shrink-0 border-r border-[var(--color-border-subtle)] pt-1">
-          <IconButton label="展开左栏" onClick={() => setLeftCollapsed(false)}><PanelLeftOpen className="size-4" /></IconButton>
-        </div>
-      ) : null}
-      <aside aria-label="生成设置" hidden={leftCollapsed} className={cn('flex h-full min-h-0 min-w-0 shrink-0 flex-col', leftCollapsed && 'hidden')} style={{ width: leftWidth, maxWidth: '32%' }}>
+      <StudioSidebar side="left" label="生成设置" width={leftWidth} collapsed={leftCollapsed} onExpand={() => setLeftCollapsed(false)} onWidthChange={setLeftWidth}>
         <header className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] pl-3 pr-1">
           <span className="text-ui text-[var(--color-text-secondary)]">生成设置</span>
-          <IconButton label="收起左栏" onClick={() => setLeftCollapsed(true)}><PanelLeftClose className="size-4" /></IconButton>
+          <IconButton label="收起左栏" data-sidebar-collapse aria-expanded={true} onClick={() => setLeftCollapsed(true)}><PanelLeftClose className="size-4" /></IconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <StudioSection title="提示词">{renderSection('prompt')}</StudioSection>
           <StudioSection title="生成参数">{renderSection('sampler')}</StudioSection>
           <StudioSection title="图库">{renderSection('gallery')}</StudioSection>
         </div>
-      </aside>
-      {!leftCollapsed ? <StudioDivider label="左侧设置宽度" value={leftWidth} direction={1} onChange={setLeftWidth} /> : null}
+      </StudioSidebar>
 
       <section aria-label="画布" className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--color-border-subtle)] px-3">
@@ -1139,12 +1131,7 @@ export function StudioPage(): React.JSX.Element {
         </div>
       </section>
 
-      {rightCollapsed ? (
-        <div className="shrink-0 border-l border-[var(--color-border-subtle)] pt-1">
-          <IconButton label="展开右栏" onClick={() => setRightCollapsed(false)}><PanelRightOpen className="size-4" /></IconButton>
-        </div>
-      ) : <StudioDivider label="右侧工具宽度" value={rightWidth} direction={-1} onChange={setRightWidth} />}
-      <aside aria-label="创作工具" hidden={rightCollapsed} className={cn('flex h-full min-h-0 min-w-0 shrink-0 flex-col', rightCollapsed && 'hidden')} style={{ width: rightWidth, maxWidth: '32%' }}>
+      <StudioSidebar side="right" label="创作工具" width={rightWidth} collapsed={rightCollapsed} onExpand={() => setRightCollapsed(false)} onWidthChange={setRightWidth}>
         <header className="flex h-11 shrink-0 items-center border-b border-[var(--color-border-subtle)] pr-1">
           <div role="tablist" aria-label="创作工具" className="flex min-w-0 flex-1 self-stretch overflow-x-auto">
             {TOOL_TABS.map((tab, index) => (
@@ -1168,7 +1155,7 @@ export function StudioPage(): React.JSX.Element {
               >{tab.label}</button>
             ))}
           </div>
-          <IconButton label="收起右栏" onClick={() => setRightCollapsed(true)}><PanelRightClose className="size-4" /></IconButton>
+          <IconButton label="收起右栏" data-sidebar-collapse aria-expanded={true} onClick={() => setRightCollapsed(true)}><PanelRightClose className="size-4" /></IconButton>
         </header>
         <div id="studio-tool-layout" role="tabpanel" aria-labelledby="studio-tab-layout" hidden={activeTool !== 'layout'} className="min-h-0 flex-1 overflow-y-auto">
           <StudioSection title="图层">{renderSection('layers')}</StudioSection>
@@ -1187,7 +1174,7 @@ export function StudioPage(): React.JSX.Element {
             </div>
           </StudioSection>
         </div>
-      </aside>
+      </StudioSidebar>
       <ConfirmDialog
         open={layoutReset !== null}
         onClose={() => setLayoutReset(null)}

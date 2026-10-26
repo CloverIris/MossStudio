@@ -1,7 +1,62 @@
 /* One workbench surface; functional sections share fine dividers. */
 .studio-workbench {
   background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+  container-type: inline-size;
 }
+
+@property --studio-sidebar-open {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+
+.studio-sidebar {
+  --studio-sidebar-open: 1;
+  --studio-expanded-width: min(var(--studio-sidebar-width), 32cqw);
+  position: relative;
+  flex: none;
+  min-width: 0;
+  height: 100%;
+  /* Animate only openness, so dragging the divider still updates instantly. */
+  width: calc(33px + (var(--studio-expanded-width) - 32px) * var(--studio-sidebar-open));
+  overflow: clip;
+  transition: --studio-sidebar-open var(--motion-normal) var(--motion-ease);
+}
+
+.studio-sidebar[data-side="left"] { border-right: 1px solid var(--color-border-subtle); }
+.studio-sidebar[data-side="right"] { border-left: 1px solid var(--color-border-subtle); }
+.studio-sidebar[data-collapsed="true"] { --studio-sidebar-open: 0; }
+
+.studio-sidebar-content {
+  position: absolute;
+  inset-block: 0;
+  display: flex;
+  flex-direction: column;
+  width: var(--studio-expanded-width);
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity var(--motion-normal) var(--motion-ease), transform var(--motion-normal) var(--motion-ease);
+}
+
+.studio-sidebar[data-side="left"] .studio-sidebar-content { left: 0; }
+.studio-sidebar[data-side="right"] .studio-sidebar-content { right: 0; }
+.studio-sidebar[data-collapsed="true"] .studio-sidebar-content { opacity: 0; pointer-events: none; }
+.studio-sidebar[data-side="left"][data-collapsed="true"] .studio-sidebar-content { transform: translateX(-12px); }
+.studio-sidebar[data-side="right"][data-collapsed="true"] .studio-sidebar-content { transform: translateX(12px); }
+
+.studio-sidebar-rail {
+  position: absolute;
+  inset: 0;
+  padding-top: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-normal) var(--motion-ease);
+}
+
+.studio-sidebar[data-collapsed="true"] .studio-sidebar-rail { opacity: 1; pointer-events: auto; }
+.studio-sidebar > .studio-divider { position: absolute; inset-block: 0; }
+.studio-sidebar[data-side="left"] > .studio-divider { right: 0; }
+.studio-sidebar[data-side="right"] > .studio-divider { left: 0; }
 
 .studio-section + .studio-section {
   border-top: 1px solid var(--color-border-subtle);

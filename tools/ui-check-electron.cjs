@@ -69,7 +69,7 @@ app.whenReady().then(async () => {
       return
     }
     if (process.env.CLOVER_UI_STUDIO_ONLY === '1') {
-      await require('./ui-studio-checks.cjs')({ evaluate, waitFor })
+      await require('./ui-studio-checks.cjs')({ evaluate, waitFor, webContents: win.webContents })
       app.exit(0)
       return
     }
@@ -155,7 +155,7 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate('JSON.parse(document.querySelector("#saved-settings").textContent).sidebarCollapsed'), true)
     await capture('home')
     await checkMotion({ evaluate, waitFor, webContents: win.webContents, capture })
-    await require('./ui-studio-checks.cjs')({ evaluate, waitFor })
+    await require('./ui-studio-checks.cjs')({ evaluate, waitFor, webContents: win.webContents })
     await require('./ui-ssh-checks.cjs')({ evaluate, waitFor, capture })
     await require('./ui-oobe-checks.cjs')({ evaluate, waitFor, capture, webContents: win.webContents, win, key })
     await require('./ui-ux-checks.cjs')({ evaluate, waitFor, capture })
