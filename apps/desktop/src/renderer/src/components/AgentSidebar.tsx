@@ -195,7 +195,7 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
   const presetKind = AI_PROVIDER_PRESETS.filter((item) => item.kind === draft.kind)
 
   return (
-    <aside className="glass-thin flex h-full w-full shrink-0 flex-col border-l border-[var(--color-border-subtle)]">
+    <aside className={`flex h-full w-full shrink-0 flex-col ${embedded ? '' : 'glass-thin border-l border-[var(--color-border-subtle)]'}`}>
       {!embedded ? <header className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] px-3">
         <div className="flex items-center gap-1.5 text-ui font-semibold"><Bot className="size-4 text-accent-300" /> Agent</div>
         <div className="flex items-center gap-1">

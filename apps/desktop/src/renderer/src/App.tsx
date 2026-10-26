@@ -88,7 +88,7 @@ function PageHost({ active }: { active: string }): React.JSX.Element {
         const studio = key === '/studio'
         return (
           <div key={key} className={cn('h-full min-h-0', key !== active && 'hidden')}>
-            <div className={studio ? 'h-full w-full px-3 py-2' : 'mx-auto h-full w-full max-w-[1200px] overflow-y-auto px-6 py-5'}>
+            <div className={studio ? 'h-full w-full' : 'mx-auto h-full w-full max-w-[1200px] overflow-y-auto px-6 py-5'}>
               <ErrorBoundary><Page /></ErrorBoundary>
             </div>
           </div>

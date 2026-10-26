@@ -1,11 +1,7 @@
 import {
   ArrowRight,
   Box,
-  GripVertical,
   GitBranch,
-  Hand,
-  Images,
-  Maximize2,
   Minus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -15,15 +11,12 @@ import {
   RotateCcw,
   Copy,
   Eraser,
-  ImagePlus,
-  Layers,
   Sparkles,
   ScanSearch,
   SquareDashedMousePointer,
   Type,
   UserRound,
   X,
-  Save,
   Eye,
   EyeOff,
   Lock,
@@ -47,10 +40,12 @@ import {
   type LayoutLabel,
 } from '../lib/layout'
 import { useApp } from '../store'
-import { Button, Card, ConfirmDialog, IconButton, Input, Modal, Pill, Segmented, Select, Spinner, Textarea, cn, useCopyText, useToast } from '../components/ui'
+import { Button, ConfirmDialog, IconButton, Input, Modal, Pill, Segmented, Select, Spinner, Textarea, cn, useCopyText, useToast } from '../components/ui'
 import { PromptSegmentsModal } from '../components/PromptSegmentsModal'
 import { GbcImportModal } from '../components/GbcImportModal'
 import { AgentSidebar } from '../components/AgentSidebar'
+import { StudioSection } from '../components/studio/StudioSection'
+import { StudioDivider } from '../components/studio/StudioDivider'
 import type { GbcImageResult, GbcRunResult } from '@shared/gbc'
 
 const SIZE_PRESETS: Array<[string, number, number]> = [
@@ -67,75 +62,13 @@ const LABEL_META: Record<LayoutLabel, { name: string; color: string; icon: React
   text: { name: '文字', color: 'amber', icon: <Type className="size-4" /> },
 }
 
-type PanelId = 'prompt' | 'sampler' | 'summary' | 'layers' | 'gallery' | 'agent'
-type DockId = 'left' | 'right' | 'float'
-const PANEL_TITLES: Record<PanelId, string> = {
-  prompt: '提示词',
-  sampler: '生成参数',
-  gallery: '图库',
-  summary: '布局总览',
-  layers: '图层',
-  agent: 'Agent',
-}
-
-const DEFAULT_DOCKS: Record<DockId, PanelId[]> = {
-  left: ['prompt', 'sampler', 'gallery'],
-  right: ['layers', 'summary', 'agent'],
-  float: [],
-}
-
-function DockPanel({
-  id,
-  title,
-  dock,
-  onDock,
-  children,
-  className,
-  style,
-  onResize,
-}: {
-  id: PanelId
-  title: string
-  dock: DockId
-  onDock: (id: PanelId, dock: DockId) => void
-  children: React.ReactNode
-  className?: string
-  style?: React.CSSProperties
-  onResize?: (event: React.PointerEvent<HTMLDivElement>) => void
-}): React.JSX.Element {
-  return (
-    <section
-      style={style}
-      className={cn('flex min-h-0 flex-col overflow-hidden rounded-[6px] border border-[var(--color-border-subtle)] bg-[var(--color-surface)]/85 shadow-sm backdrop-blur-sm', className)}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault()
-        const source = event.dataTransfer.getData('text/moss-panel') as PanelId
-        if (source) onDock(source, dock)
-      }}
-    >
-      <div
-        draggable
-        onDragStart={(event) => {
-          event.dataTransfer.setData('text/moss-panel', id)
-          event.dataTransfer.effectAllowed = 'move'
-        }}
-        className="flex h-8 shrink-0 cursor-grab items-center gap-1.5 border-b border-[var(--color-border-subtle)] px-3 text-ui font-medium text-[var(--color-text-secondary)] active:cursor-grabbing"
-      >
-        <GripVertical className="size-4 text-[var(--color-text-tertiary)]" />
-        {title}
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-      {onResize ? (
-        <div
-          onPointerDown={onResize}
-          className="h-1.5 shrink-0 cursor-row-resize border-t border-white/[0.04] bg-white/[0.03] transition hover:border-accent-500/40 hover:bg-accent-500/10"
-          title="拖动调整卡片高度"
-        />
-      ) : null}
-    </section>
-  )
-}
+type SectionId = 'prompt' | 'sampler' | 'summary' | 'layers' | 'gallery'
+const TOOL_TABS = [
+  { id: 'layout', label: '图层与布局' },
+  { id: 'agent', label: 'Agent' },
+  { id: 'analysis', label: '图像解析' },
+] as const
+type ToolId = typeof TOOL_TABS[number]['id']
 
 function MiniGallery(): React.JSX.Element {
   const setStudioBackground = useApp((state) => state.setStudioBackground)
@@ -286,12 +219,11 @@ export function StudioPage(): React.JSX.Element {
   const [layoutReset, setLayoutReset] = useState<'clear' | 'example' | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
-  const [docks, setDocks] = useState(DEFAULT_DOCKS)
+  const [activeTool, setActiveTool] = useState<ToolId>('layout')
   const [leftWidth, setLeftWidth] = useState(320)
   const [rightWidth, setRightWidth] = useState(340)
   const [leftCollapsed, setLeftCollapsed] = useState(false)
   const [rightCollapsed, setRightCollapsed] = useState(false)
-  const [panelHeights, setPanelHeights] = useState<Partial<Record<PanelId, number>>>({ agent: 360 })
   const [tabOrder, setTabOrder] = useState<string[]>([])
   const [draftTab, setDraftTab] = useState<DraftTabSnapshot | null>(null)
   const [dragTab, setDragTab] = useState<string | null>(null)
@@ -381,6 +313,7 @@ export function StudioPage(): React.JSX.Element {
   const focusLayerRef = useRef(false)
   useEffect(() => {
     if (!selectedId) return
+    setActiveTool('layout')
     const element = layerRefs.current[selectedId]
     if (!element) return
     element.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
@@ -831,46 +764,6 @@ export function StudioPage(): React.JSX.Element {
   useEffect(() => {
     setTabOrder((previous) => [...previous.filter((id) => projects.some((item) => item.id === id)), ...projects.map((item) => item.id).filter((id) => !previous.includes(id))])
   }, [projects])
-  function movePanel(id: PanelId, dock: DockId): void {
-    setDocks((previous) => {
-      const next: Record<DockId, PanelId[]> = { left: previous.left.filter((item) => item !== id), right: previous.right.filter((item) => item !== id), float: previous.float.filter((item) => item !== id) }
-      next[dock] = [...next[dock], id]
-      return next
-    })
-  }
-  function beginColumnResize(side: 'left' | 'right', event: React.PointerEvent<HTMLDivElement>): void {
-    event.preventDefault()
-    const startX = event.clientX
-    const startWidth = side === 'left' ? leftWidth : rightWidth
-    const move = (moveEvent: PointerEvent): void => {
-      const delta = moveEvent.clientX - startX
-      if (side === 'left') setLeftWidth(Math.min(520, Math.max(220, startWidth + delta)))
-      else setRightWidth(Math.min(520, Math.max(220, startWidth - delta)))
-    }
-    const up = (): void => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
-  function beginPanelResize(id: PanelId, event: React.PointerEvent<HTMLDivElement>): void {
-    event.preventDefault()
-    const element = (event.currentTarget.parentElement as HTMLElement | null)
-    const startY = event.clientY
-    const startHeight = element?.getBoundingClientRect().height ?? 240
-    const move = (moveEvent: PointerEvent): void => {
-      const height = Math.min(720, Math.max(100, startHeight + moveEvent.clientY - startY))
-      setPanelHeights((previous) => ({ ...previous, [id]: height }))
-    }
-    const up = (): void => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
-
   function zoomAt(clientX: number, clientY: number, factor: number): void {
     const rect = viewportRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -890,7 +783,6 @@ export function StudioPage(): React.JSX.Element {
   function pickUpPan(event: React.PointerEvent<HTMLDivElement>): void {
     if (event.button !== 1 && !(tool === 'pan' && event.button === 0)) return
     if (panRef.current || drawing || drag) return
-    if ((event.target as HTMLElement).closest('[data-studio-floating-panels]')) return
     // Capture before canvas layers and their text fields can handle this gesture.
     event.preventDefault()
     event.stopPropagation()
@@ -922,12 +814,7 @@ export function StudioPage(): React.JSX.Element {
     const viewport = viewportRef.current
     if (viewport?.hasPointerCapture(gesture.pointerId)) viewport.releasePointerCapture(gesture.pointerId)
   }
-  function panelStyle(id: PanelId): React.CSSProperties {
-    const height = panelHeights[id]
-    return height ? { flex: 'none', height } : { flex: '1 1 0%' }
-  }
-
-  function renderPanel(id: PanelId): React.JSX.Element {
+  function renderSection(id: SectionId): React.JSX.Element {
     if (id === 'prompt') return (
       <div className="space-y-2 p-3">
         <div className="flex items-center justify-between">
@@ -972,14 +859,13 @@ export function StudioPage(): React.JSX.Element {
       </div>
     )
     if (id === 'gallery') return <MiniGallery />
-    if (id === 'agent') return <AgentSidebar embedded />
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex flex-col">
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] px-2 py-1.5">
           <span className="text-caption text-[var(--color-text-tertiary)]">{draft.items.length} 个图层</span>
           <Button tone="ghost" onClick={() => { setTool('draw'); setSelectedId(null) }}><Plus className="size-4" /> 画新框</Button>
         </div>
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5">
+        <div className="divide-y divide-[var(--color-border-subtle)]">
           {draft.items.map((item, index) => {
             const isSelected = item.id === selectedId
             const meta = LABEL_META[item.label]
@@ -991,8 +877,8 @@ export function StudioPage(): React.JSX.Element {
                 tabIndex={-1}
                 onClick={() => { focusLayerRef.current = true; setSelectedId(item.id) }}
                 className={cn(
-                  'overflow-hidden rounded-[5px] border transition',
-                  isSelected ? 'border-accent-500/55 bg-accent-500/[0.07]' : 'border-[var(--color-border-subtle)] bg-white/[0.02] hover:border-accent-400/30',
+                  'overflow-hidden transition-colors',
+                  isSelected ? 'bg-accent-500/[0.07]' : 'hover:bg-white/[0.025]',
                 )}
               >
                 <div className="flex items-start gap-1.5 px-2 py-1.5">
@@ -1041,288 +927,267 @@ export function StudioPage(): React.JSX.Element {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden pb-1">
-
-      <div className="glass grid shrink-0 grid-cols-1 overflow-hidden rounded-[6px] border border-[var(--color-border-subtle)] sm:grid-cols-[1fr_auto_auto]">
-        <div className="flex min-w-0 items-center gap-3 px-4 py-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-[6px] bg-accent-500/12 text-accent-300"><ScanSearch className="size-4" /></div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-ui font-semibold">GBC 图像结构解析 <span className="rounded border border-accent-500/25 bg-accent-500/10 px-1 py-px text-micro font-medium text-accent-300">OPTIONAL</span></div>
-            <p className="mt-0.5 truncate text-caption text-[var(--color-text-tertiary)]">执行层负责 bbox、文字和层级描述；复杂工作流由画布/Togeari 编排。</p>
-          </div>
+    <div className="studio-workbench flex h-full min-h-0 overflow-hidden">
+      {leftCollapsed ? (
+        <div className="shrink-0 border-r border-[var(--color-border-subtle)] pt-1">
+          <IconButton label="展开左栏" onClick={() => setLeftCollapsed(false)}><PanelLeftOpen className="size-4" /></IconButton>
         </div>
-        <button type="button" onClick={() => { setGbcTab('run'); setGbcOpen(true) }} className="flex min-w-[150px] items-center justify-center gap-2 border-t border-[var(--color-border-subtle)] px-4 py-2 text-ui font-medium text-[var(--color-text)] transition hover:bg-white/[0.05] sm:border-l sm:border-t-0"><ScanSearch className="size-4 text-accent-300" />启动解析</button>
-        <button type="button" onClick={() => { setGbcTab('manage'); setGbcOpen(true) }} className="flex min-w-[150px] items-center justify-center gap-2 border-t border-[var(--color-border-subtle)] px-4 py-2 text-ui text-[var(--color-text-secondary)] transition hover:bg-white/[0.05] sm:border-l sm:border-t-0"><GitBranch className="size-4" />管理 GBC 版本</button>
-      </div>
+      ) : null}
+      <aside aria-label="生成设置" hidden={leftCollapsed} className={cn('flex h-full min-h-0 min-w-0 shrink-0 flex-col', leftCollapsed && 'hidden')} style={{ width: leftWidth, maxWidth: '32%' }}>
+        <header className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] pl-3 pr-1">
+          <span className="text-ui text-[var(--color-text-secondary)]">生成设置</span>
+          <IconButton label="收起左栏" onClick={() => setLeftCollapsed(true)}><PanelLeftClose className="size-4" /></IconButton>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <StudioSection title="提示词">{renderSection('prompt')}</StudioSection>
+          <StudioSection title="生成参数">{renderSection('sampler')}</StudioSection>
+          <StudioSection title="图库">{renderSection('gallery')}</StudioSection>
+        </div>
+      </aside>
+      {!leftCollapsed ? <StudioDivider label="左侧设置宽度" value={leftWidth} direction={1} onChange={setLeftWidth} /> : null}
 
-      <div className="flex min-h-0 flex-1 gap-0">
-        {leftCollapsed ? (
-          <button type="button" onClick={() => setLeftCollapsed(false)} className="flex w-6 shrink-0 items-start justify-center border-r border-[var(--color-border-subtle)] pt-2 text-[var(--color-text-tertiary)] hover:bg-white/[0.04] hover:text-[var(--color-text)]" title="展开左栏">
-            <PanelLeftOpen className="size-4" />
-          </button>
-        ) : (
-          <>
-            <aside
-              style={{ width: leftWidth }}
-              className="relative flex h-full min-h-0 shrink-0 flex-col gap-2 overflow-y-auto pr-0.5"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => { const id = event.dataTransfer.getData('text/moss-panel') as PanelId; if (id) movePanel(id, 'left') }}
-            >
-              <button type="button" onClick={() => setLeftCollapsed(true)} className="absolute right-1 top-1 z-10 rounded p-0.5 text-[var(--color-text-tertiary)] hover:bg-white/[0.06] hover:text-[var(--color-text)]" title="收起左栏">
-                <PanelLeftClose className="size-4" />
-              </button>
-          {docks.left.map((id) => (
-            <DockPanel key={id} id={id} dock="left" onDock={movePanel} className={id === 'gallery' && !panelHeights[id] ? 'h-[150px]' : ''} style={id === 'gallery' && !panelHeights[id] ? { flex: 'none', height: 150 } : panelStyle(id)} onResize={(event) => beginPanelResize(id, event)} title={PANEL_TITLES[id]}>
-              {renderPanel(id)}
-            </DockPanel>
-          ))}
-              {docks.left.length === 0 ? <div className="rounded border border-dashed p-4 text-center text-caption text-[var(--color-text-tertiary)]">把面板拖到这里</div> : null}
-            </aside>
-            <div
-              onPointerDown={(event) => beginColumnResize('left', event)}
-              className="w-1.5 shrink-0 cursor-col-resize bg-white/[0.06] transition hover:bg-accent-400/40"
-              title="拖动调整左栏宽度"
-            />
-          </>
-        )}
-
-        <section className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[6px] border border-[var(--color-border-subtle)] bg-[var(--color-surface)]/60">
-      <div className="flex shrink-0 items-center gap-2 rounded-[6px] border border-[var(--color-border-subtle)] bg-[var(--color-surface)]/80 px-2 py-1.5">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {draftTab ? (
-            <button
-              type="button"
-              onClick={restoreDraftTab}
-              className={cn(
-                'flex h-8 max-w-[210px] shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 px-2.5 text-ui transition',
-                !projectId ? 'border-accent-400 bg-white/[0.07] text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
-              )}
-            >
-              <span className="truncate">{draftTab.name}</span>
-              <span className="shrink-0 text-micro text-amber-300">未保存</span>
-            </button>
-          ) : null}
-          {orderedProjects.map((item) => {
-            const current = item.id === projectId
-            const status = current && projectSaving ? '保存中' : current ? '已保存' : '已保存'
-            return (
+      <section aria-label="画布" className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--color-border-subtle)] px-3">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+            {draftTab ? (
               <button
-                key={item.id}
                 type="button"
-                draggable
-                onDragStart={() => setDragTab(item.id)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => {
-                  if (!dragTab || dragTab === item.id) return
-                  setTabOrder((previous) => {
-                    const next = previous.filter((id) => id !== dragTab)
-                    const at = next.indexOf(item.id)
-                    next.splice(at < 0 ? next.length : at, 0, dragTab)
-                    return next
-                  })
-                  setDragTab(null)
-                }}
-                onClick={() => { if (!current) void openProject(item.id) }}
+                onClick={restoreDraftTab}
                 className={cn(
                   'flex h-8 max-w-[210px] shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 px-2.5 text-ui transition',
-                  current ? 'border-accent-400 bg-white/[0.07] text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
+                  !projectId ? 'border-accent-400 bg-white/[0.07] text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
                 )}
-                title={item.name}
               >
-                <span className="truncate">{item.name || '未命名画布'}</span>
-                <span className={cn('shrink-0 text-micro', status === '保存中' ? 'text-amber-300' : 'text-[var(--color-text-tertiary)]')}>{status}</span>
+                <span className="truncate">{draftTab.name}</span>
+                <span className="shrink-0 text-micro text-amber-300">未保存</span>
               </button>
-            )
-          })}
-          {!projectId && !draftTab ? (
-            <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 border-accent-400 bg-white/[0.07] px-2.5 text-ui">
-              <span className="max-w-[180px] truncate">{projectName.trim() || '未命名画布'}</span>
-              <span className="text-micro text-amber-300">未保存</span>
-            </div>
-          ) : null}
-          {orderedProjects.length === 0 && projectId ? <span className="px-2 text-caption text-[var(--color-text-tertiary)]">还没有画布</span> : null}
-        </div>
-        <Button tone="secondary" onClick={newProject}><Plus className="size-4" /> 新建画布</Button>
-        {env ? <Pill tone="blue">{env.recommendation.width}² · {env.recommendation.steps} 步</Pill> : null}
-      </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--color-border-subtle)] px-2 py-1.5">
-            <Segmented label="画布工具" value={tool} onChange={(value) => setTool(value as 'select' | 'draw' | 'pan')} options={[{ value: 'select', label: '选择' }, { value: 'draw', label: '画框' }, { value: 'pan', label: '手型' }]} />
-            <Segmented value={label} onChange={(value) => setLabel(value as LayoutLabel)} options={[{ value: 'object', label: '物体' }, { value: 'character', label: '人物' }, { value: 'text', label: '文字' }]} />
-            <IconButton label="GBC 图像解析" onClick={() => { setGbcTab('run'); setGbcOpen(true) }}><ScanSearch className="size-4" /></IconButton>
-            <IconButton label="示例布局" onClick={() => requestLayoutReset('example')}><Sparkles className="size-4" /></IconButton>
-            <IconButton label="清空画布" onClick={() => requestLayoutReset('clear')} disabled={!draft.items.length}><Eraser className="size-4" /></IconButton>
-            {background ? <IconButton label="清除底图" onClick={() => setStudioBackground(null)}><X className="size-4" /></IconButton> : null}
-            <div className="ml-1 flex items-center gap-0.5 border-l border-[var(--color-border-subtle)] pl-1">
-              <IconButton label="缩小画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 0.8) }}><Minus className="size-4" /></IconButton>
-              <button type="button" onClick={resetView} className="w-11 text-center font-mono text-caption text-[var(--color-text-secondary)] hover:text-[var(--color-text)]" title="重置为 100%">{Math.round(zoom * 100)}%</button>
-              <IconButton label="放大画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.25) }}><Plus className="size-4" /></IconButton>
-              <IconButton label="恢复画布视图" onClick={resetView}><RotateCcw className="size-4" /></IconButton>
-            </div>
-            <div className="ml-auto flex items-center gap-1.5">
-              <Pill tone={backend?.ready ? 'accent' : 'amber'}>{backend?.ready ? '后端就绪' : '后端启动中'}</Pill>
-              <Button tone="primary" data-studio-generate disabled={submitting} aria-busy={submitting} onClick={() => void generate()}><span className="inline-flex items-center gap-1.5">{submitting ? '正在提交…' : '开始生成'} {submitting ? <Spinner /> : <ArrowRight className="size-4" />}</span></Button>
-            </div>
+            ) : null}
+            {orderedProjects.map((item) => {
+              const current = item.id === projectId
+              const status = current && projectSaving ? '保存中' : current ? '已保存' : '已保存'
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  draggable
+                  onDragStart={() => setDragTab(item.id)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => {
+                    if (!dragTab || dragTab === item.id) return
+                    setTabOrder((previous) => {
+                      const next = previous.filter((id) => id !== dragTab)
+                      const at = next.indexOf(item.id)
+                      next.splice(at < 0 ? next.length : at, 0, dragTab)
+                      return next
+                    })
+                    setDragTab(null)
+                  }}
+                  onClick={() => { if (!current) void openProject(item.id) }}
+                  className={cn(
+                    'flex h-8 max-w-[210px] shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 px-2.5 text-ui transition',
+                    current ? 'border-accent-400 bg-white/[0.07] text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
+                  )}
+                  title={item.name}
+                >
+                  <span className="truncate">{item.name || '未命名画布'}</span>
+                  <span className={cn('shrink-0 text-micro', status === '保存中' ? 'text-amber-300' : 'text-[var(--color-text-tertiary)]')}>{status}</span>
+                </button>
+              )
+            })}
+            {!projectId && !draftTab ? (
+              <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 border-accent-400 bg-white/[0.07] px-2.5 text-ui">
+                <span className="max-w-[180px] truncate">{projectName.trim() || '未命名画布'}</span>
+                <span className="text-micro text-amber-300">未保存</span>
+              </div>
+            ) : null}
+            {orderedProjects.length === 0 && projectId ? <span className="px-2 text-caption text-[var(--color-text-tertiary)]">还没有画布</span> : null}
           </div>
+          <Button tone="secondary" onClick={newProject}><Plus className="size-4" /> 新建画布</Button>
+          {env ? <Pill tone="blue">{env.recommendation.width}² · {env.recommendation.steps} 步</Pill> : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--color-border-subtle)] px-2 py-1.5">
+          <Segmented label="画布工具" value={tool} onChange={(value) => setTool(value as 'select' | 'draw' | 'pan')} options={[{ value: 'select', label: '选择' }, { value: 'draw', label: '画框' }, { value: 'pan', label: '手型' }]} />
+          <Segmented value={label} onChange={(value) => setLabel(value as LayoutLabel)} options={[{ value: 'object', label: '物体' }, { value: 'character', label: '人物' }, { value: 'text', label: '文字' }]} />
+          <IconButton label="示例布局" onClick={() => requestLayoutReset('example')}><Sparkles className="size-4" /></IconButton>
+          <IconButton label="清空画布" onClick={() => requestLayoutReset('clear')} disabled={!draft.items.length}><Eraser className="size-4" /></IconButton>
+          {background ? <IconButton label="清除底图" onClick={() => setStudioBackground(null)}><X className="size-4" /></IconButton> : null}
+          <div className="ml-1 flex items-center gap-0.5 border-l border-[var(--color-border-subtle)] pl-1">
+            <IconButton label="缩小画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 0.8) }}><Minus className="size-4" /></IconButton>
+            <button type="button" onClick={resetView} className="w-11 text-center font-mono text-caption text-[var(--color-text-secondary)] hover:text-[var(--color-text)]" title="重置为 100%">{Math.round(zoom * 100)}%</button>
+            <IconButton label="放大画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.25) }}><Plus className="size-4" /></IconButton>
+            <IconButton label="恢复画布视图" onClick={resetView}><RotateCcw className="size-4" /></IconButton>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <Pill tone={backend?.ready ? 'accent' : 'amber'}>{backend?.ready ? '后端就绪' : '后端启动中'}</Pill>
+            <Button tone="primary" data-studio-generate disabled={submitting} aria-busy={submitting} onClick={() => void generate()}><span className="inline-flex items-center gap-1.5">{submitting ? '正在提交…' : '开始生成'} {submitting ? <Spinner /> : <ArrowRight className="size-4" />}</span></Button>
+          </div>
+        </div>
 
-          <div
-            ref={viewportRef}
-            data-pan-tool={tool === 'pan'}
-            data-panning={isPanning}
-            className="studio-viewport relative min-h-0 flex-1 overflow-hidden bg-[#121419]"
-            onPointerDownCapture={pickUpPan}
-            onPointerMoveCapture={movePan}
-            onPointerUpCapture={finishPan}
-            onPointerCancelCapture={finishPan}
-            onLostPointerCapture={finishPan}
-            onAuxClickCapture={(event) => { if (event.button === 1) event.preventDefault() }}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => { const id = event.dataTransfer.getData('text/moss-panel') as PanelId; if (id) movePanel(id, 'float') }}
-          >
-            <div className="studio-canvas-content absolute inset-0 flex items-center justify-center p-4">
-              <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} className="relative w-full max-w-[820px]">
-                              <div
-                ref={canvasRef}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                className={cn(
-                  'relative mx-auto select-none overflow-hidden rounded-[5px] border border-[var(--color-border)]',
-                  tool === 'draw' ? 'cursor-crosshair' : 'cursor-default',
-                )}
-                style={{
-                  aspectRatio: `${draft.width} / ${draft.height}`,
-                  width: `min(100%, calc((100vh - 260px) * ${draft.width / draft.height}))`,
-                }}
-              >
-                {background ? (
-                  <img
-                    src={cloverUrl(background.path)}
-                    alt={background.name}
-                    className="absolute inset-0 size-full object-contain"
-                    draggable={false}
-                  />
-                ) : (
-                  <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(148,163,184,0.10)_25%,transparent_25%,transparent_75%,rgba(148,163,184,0.10)_75%),linear-gradient(45deg,rgba(148,163,184,0.10)_25%,transparent_25%,transparent_75%,rgba(148,163,184,0.10)_75%)] bg-[length:24px_24px] bg-[position:0_0,12px_12px]" />
-                )}
-                <div className="absolute inset-0 bg-gradient-to-br from-accent-500/[0.03] to-transparent" />
+        <div
+          ref={viewportRef}
+          data-pan-tool={tool === 'pan'}
+          data-panning={isPanning}
+          className="studio-viewport relative min-h-0 flex-1 overflow-hidden bg-[#121419] [container-type:size]"
+          onPointerDownCapture={pickUpPan}
+          onPointerMoveCapture={movePan}
+          onPointerUpCapture={finishPan}
+          onPointerCancelCapture={finishPan}
+          onLostPointerCapture={finishPan}
+          onAuxClickCapture={(event) => { if (event.button === 1) event.preventDefault() }}
+        >
+          <div className="studio-canvas-content absolute inset-0 flex items-center justify-center p-4">
+            <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} className="relative w-full max-w-[820px]">
+                            <div
+              ref={canvasRef}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              className={cn(
+                'relative mx-auto select-none overflow-hidden rounded-[5px] border border-[var(--color-border)]',
+                tool === 'draw' ? 'cursor-crosshair' : 'cursor-default',
+              )}
+              style={{
+                aspectRatio: `${draft.width} / ${draft.height}`,
+                width: `min(100%, calc((100cqh - 32px) * ${draft.width / draft.height}))`,
+              }}
+            >
+              {background ? (
+                <img
+                  src={cloverUrl(background.path)}
+                  alt={background.name}
+                  className="absolute inset-0 size-full object-contain"
+                  draggable={false}
+                />
+              ) : (
+                <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(148,163,184,0.10)_25%,transparent_25%,transparent_75%,rgba(148,163,184,0.10)_75%),linear-gradient(45deg,rgba(148,163,184,0.10)_25%,transparent_25%,transparent_75%,rgba(148,163,184,0.10)_75%)] bg-[length:24px_24px] bg-[position:0_0,12px_12px]" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-br from-accent-500/[0.03] to-transparent" />
 
-                {draft.items.filter((item) => item.visible !== false).map((item, index) => {
-                  const [x1, y1, x2, y2] = item.bbox
-                  const isSelected = item.id === selectedId
-                  const meta = LABEL_META[item.label]
-                  return (
-                    <div
-                      key={item.id}
-                      data-box-id={item.id}
-                      className={cn(
-                        'absolute cursor-move rounded-[4px] border-2 transition-colors',
-                        isSelected
-                          ? 'border-accent-400 bg-accent-400/15'
-                          : 'border-sky-400/80 bg-sky-400/10 hover:border-accent-400',
-                      )}
-                      style={{
-                        left: `${(x1 / draft.width) * 100}%`,
-                        top: `${(y1 / draft.height) * 100}%`,
-                        width: `${((x2 - x1) / draft.width) * 100}%`,
-                        height: `${((y2 - y1) / draft.height) * 100}%`,
-                        opacity: item.opacity ?? 1,
-                      }}
-                    >
-                      <span data-box-id={item.id} className="absolute -top-5 left-0 inline-flex max-w-full cursor-move items-center gap-1 truncate rounded bg-accent-600 px-1.5 py-0.5 text-caption font-medium text-white">
-                        {index + 1} · {meta.name}
-                      </span>
-                      <div className="absolute inset-0 flex flex-col gap-1 p-1.5 pt-2">
-                        <textarea
-                          value={item.caption}
+              {draft.items.filter((item) => item.visible !== false).map((item, index) => {
+                const [x1, y1, x2, y2] = item.bbox
+                const isSelected = item.id === selectedId
+                const meta = LABEL_META[item.label]
+                return (
+                  <div
+                    key={item.id}
+                    data-box-id={item.id}
+                    className={cn(
+                      'absolute cursor-move rounded-[4px] border-2 transition-colors',
+                      isSelected
+                        ? 'border-accent-400 bg-accent-400/15'
+                        : 'border-sky-400/80 bg-sky-400/10 hover:border-accent-400',
+                    )}
+                    style={{
+                      left: `${(x1 / draft.width) * 100}%`,
+                      top: `${(y1 / draft.height) * 100}%`,
+                      width: `${((x2 - x1) / draft.width) * 100}%`,
+                      height: `${((y2 - y1) / draft.height) * 100}%`,
+                      opacity: item.opacity ?? 1,
+                    }}
+                  >
+                    <span data-box-id={item.id} className="absolute -top-5 left-0 inline-flex max-w-full cursor-move items-center gap-1 truncate rounded bg-accent-600 px-1.5 py-0.5 text-caption font-medium text-white">
+                      {index + 1} · {meta.name}
+                    </span>
+                    <div className="absolute inset-0 flex flex-col gap-1 p-1.5 pt-2">
+                      <textarea
+                        value={item.caption}
+                        onPointerDown={(event) => { event.stopPropagation(); setSelectedId(item.id) }}
+                        onChange={(event) => setItem(item.id, { caption: event.target.value })}
+                        placeholder="在框内写区域提示词…"
+                        className="min-h-0 flex-1 resize-none rounded border-0 bg-transparent p-0 text-caption leading-[15px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)]/60"
+                        style={{ cursor: 'text' }}
+                      />
+                      {item.label === 'text' ? (
+                        <input
+                          value={item.text ?? ''}
                           onPointerDown={(event) => { event.stopPropagation(); setSelectedId(item.id) }}
-                          onChange={(event) => setItem(item.id, { caption: event.target.value })}
-                          placeholder="在框内写区域提示词…"
-                          className="min-h-0 flex-1 resize-none rounded border-0 bg-transparent p-0 text-caption leading-[15px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)]/60"
-                          style={{ cursor: 'text' }}
-                        />
-                        {item.label === 'text' ? (
-                          <input
-                            value={item.text ?? ''}
-                            onPointerDown={(event) => { event.stopPropagation(); setSelectedId(item.id) }}
-                            onChange={(event) => setItem(item.id, { text: event.target.value })}
-                            placeholder="图中文字"
-                            className="shrink-0 rounded border-0 bg-amber-500/15 px-1 py-0.5 text-caption text-amber-200 outline-none placeholder:text-amber-200/50"
-                          />
-                        ) : null}
-                      </div>
-                      {isSelected ? (
-                        <span
-                          data-resize-id={item.id}
-                          className="absolute -bottom-1.5 -right-1.5 size-3 cursor-nwse-resize rounded-full border-2 border-white bg-accent-500 shadow"
+                          onChange={(event) => setItem(item.id, { text: event.target.value })}
+                          placeholder="图中文字"
+                          className="shrink-0 rounded border-0 bg-amber-500/15 px-1 py-0.5 text-caption text-amber-200 outline-none placeholder:text-amber-200/50"
                         />
                       ) : null}
                     </div>
-                  )
-                })}
-
-                {drawing ? (
-                  <div
-                    className="pointer-events-none absolute rounded-[4px] border-2 border-dashed border-accent-400 bg-accent-400/15"
-                    style={{
-                      left: `${(Math.min(drawing.start[0], drawing.current[0]) / draft.width) * 100}%`,
-                      top: `${(Math.min(drawing.start[1], drawing.current[1]) / draft.height) * 100}%`,
-                      width: `${(Math.abs(drawing.current[0] - drawing.start[0]) / draft.width) * 100}%`,
-                      height: `${(Math.abs(drawing.current[1] - drawing.start[1]) / draft.height) * 100}%`,
-                    }}
-                  />
-                ) : null}
-              </div>
-              </div>
-            </div>
-            <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-2.5 py-1 text-micro text-white/55">
-              {Math.round(zoom * 100)}% · 滚轮缩放 · 手型/中键拖动
-            </div>
-            {docks.float.length > 0 ? (
-              <div data-studio-floating-panels className="absolute right-2 top-2 z-20 flex max-h-[82%] w-[290px] flex-col gap-2 overflow-y-auto">
-                {docks.float.map((id) => (
-                  <div key={id} className="min-h-[160px] min-w-[220px] resize overflow-auto" style={{ width: 320, height: id === 'agent' ? 360 : 300 }}>
-                    <DockPanel id={id} dock="float" onDock={movePanel} style={{ height: '100%', minHeight: 160 }} title={PANEL_TITLES[id]}>
-                      {renderPanel(id)}
-                    </DockPanel>
+                    {isSelected ? (
+                      <span
+                        data-resize-id={item.id}
+                        className="absolute -bottom-1.5 -right-1.5 size-3 cursor-nwse-resize rounded-full border-2 border-white bg-accent-500 shadow"
+                      />
+                    ) : null}
                   </div>
-                ))}
-              </div>
-            ) : null}
+                )
+              })}
+
+              {drawing ? (
+                <div
+                  className="pointer-events-none absolute rounded-[4px] border-2 border-dashed border-accent-400 bg-accent-400/15"
+                  style={{
+                    left: `${(Math.min(drawing.start[0], drawing.current[0]) / draft.width) * 100}%`,
+                    top: `${(Math.min(drawing.start[1], drawing.current[1]) / draft.height) * 100}%`,
+                    width: `${(Math.abs(drawing.current[0] - drawing.start[0]) / draft.width) * 100}%`,
+                    height: `${(Math.abs(drawing.current[1] - drawing.start[1]) / draft.height) * 100}%`,
+                  }}
+                />
+              ) : null}
+            </div>
+            </div>
           </div>
-        </section>
+          <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-2.5 py-1 text-micro text-white/55">
+            {Math.round(zoom * 100)}% · 滚轮缩放 · 手型/中键拖动
+          </div>
 
-        {rightCollapsed ? (
-          <button type="button" onClick={() => setRightCollapsed(false)} className="flex w-6 shrink-0 items-start justify-center border-l border-[var(--color-border-subtle)] pt-2 text-[var(--color-text-tertiary)] hover:bg-white/[0.04] hover:text-[var(--color-text)]" title="展开右栏">
-            <PanelRightOpen className="size-4" />
-          </button>
-        ) : (
-          <>
-            <div
-              onPointerDown={(event) => beginColumnResize('right', event)}
-              className="w-1.5 shrink-0 cursor-col-resize bg-white/[0.06] transition hover:bg-accent-400/40"
-              title="拖动调整右栏宽度"
-            />
-            <aside
-              style={{ width: rightWidth }}
-              className="relative flex h-full min-h-0 shrink-0 flex-col gap-2 overflow-y-auto pl-0.5"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => { const id = event.dataTransfer.getData('text/moss-panel') as PanelId; if (id) movePanel(id, 'right') }}
-            >
-              <button type="button" onClick={() => setRightCollapsed(true)} className="absolute left-1 top-1 z-10 rounded p-0.5 text-[var(--color-text-tertiary)] hover:bg-white/[0.06] hover:text-[var(--color-text)]" title="收起右栏">
-                <PanelRightClose className="size-4" />
-              </button>
-          {docks.right.map((id) => (
-            <DockPanel key={id} id={id} dock="right" onDock={movePanel} style={panelStyle(id)} onResize={(event) => beginPanelResize(id, event)} title={PANEL_TITLES[id]}>
-              {renderPanel(id)}
-            </DockPanel>
-          ))}
-              {docks.right.length === 0 ? <div className="rounded border border-dashed p-4 text-center text-caption text-[var(--color-text-tertiary)]">把面板拖到这里</div> : null}
-            </aside>
-          </>
-        )}
-      </div>
+        </div>
+      </section>
 
+      {rightCollapsed ? (
+        <div className="shrink-0 border-l border-[var(--color-border-subtle)] pt-1">
+          <IconButton label="展开右栏" onClick={() => setRightCollapsed(false)}><PanelRightOpen className="size-4" /></IconButton>
+        </div>
+      ) : <StudioDivider label="右侧工具宽度" value={rightWidth} direction={-1} onChange={setRightWidth} />}
+      <aside aria-label="创作工具" hidden={rightCollapsed} className={cn('flex h-full min-h-0 min-w-0 shrink-0 flex-col', rightCollapsed && 'hidden')} style={{ width: rightWidth, maxWidth: '32%' }}>
+        <header className="flex h-11 shrink-0 items-center border-b border-[var(--color-border-subtle)] pr-1">
+          <div role="tablist" aria-label="创作工具" className="flex min-w-0 flex-1 self-stretch overflow-x-auto">
+            {TOOL_TABS.map((tab, index) => (
+              <button
+                key={tab.id}
+                id={`studio-tab-${tab.id}`}
+                type="button"
+                role="tab"
+                aria-selected={activeTool === tab.id}
+                aria-controls={`studio-tool-${tab.id}`}
+                tabIndex={activeTool === tab.id ? 0 : -1}
+                onClick={() => setActiveTool(tab.id)}
+                onKeyDown={(event) => {
+                  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                  event.preventDefault()
+                  const next = event.key === 'Home' ? 0 : event.key === 'End' ? TOOL_TABS.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + TOOL_TABS.length) % TOOL_TABS.length
+                  setActiveTool(TOOL_TABS[next].id)
+                  document.getElementById(`studio-tab-${TOOL_TABS[next].id}`)?.focus()
+                }}
+                className={cn('studio-tool-tab shrink-0 border-b-2 px-3 text-ui transition-colors', activeTool === tab.id ? 'border-accent-400 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]')}
+              >{tab.label}</button>
+            ))}
+          </div>
+          <IconButton label="收起右栏" onClick={() => setRightCollapsed(true)}><PanelRightClose className="size-4" /></IconButton>
+        </header>
+        <div id="studio-tool-layout" role="tabpanel" aria-labelledby="studio-tab-layout" hidden={activeTool !== 'layout'} className="min-h-0 flex-1 overflow-y-auto">
+          <StudioSection title="图层">{renderSection('layers')}</StudioSection>
+          <StudioSection title="布局描述">{renderSection('summary')}</StudioSection>
+        </div>
+        <div id="studio-tool-agent" role="tabpanel" aria-labelledby="studio-tab-agent" hidden={activeTool !== 'agent'} className="min-h-0 flex-1 overflow-hidden">
+          <AgentSidebar embedded />
+        </div>
+        <div id="studio-tool-analysis" role="tabpanel" aria-labelledby="studio-tab-analysis" hidden={activeTool !== 'analysis'} className="min-h-0 flex-1 overflow-y-auto">
+          <StudioSection title="图像结构解析">
+            <div className="space-y-3 p-3">
+              <p className="text-caption leading-5 text-[var(--color-text-secondary)]">从参考图提取区域、文字和层级描述，导入当前画布继续编辑。</p>
+              <Button tone="primary" className="w-full" onClick={() => { setGbcTab('run'); setGbcOpen(true) }}><ScanSearch className="size-4" />选择图片并解析</Button>
+              <Button tone="ghost" className="w-full" onClick={() => { setGbcTab('manage'); setGbcOpen(true) }}><GitBranch className="size-4" />管理解析工具</Button>
+              <p className="text-caption leading-5 text-[var(--color-text-tertiary)]">GBC 是可选工具，可随时在这里配置或打开。</p>
+            </div>
+          </StudioSection>
+        </div>
+      </aside>
       <ConfirmDialog
         open={layoutReset !== null}
         onClose={() => setLayoutReset(null)}
