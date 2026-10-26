@@ -1,0 +1,96 @@
+const assert = require('node:assert/strict')
+
+module.exports = async function checkUx({ evaluate, waitFor, capture }) {
+  const click = (selector) => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
+  const input = (selector, text) => evaluate(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)})
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(element, ${JSON.stringify(text)})
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+  })()`)
+  await evaluate('document.documentElement.dataset.uiAnimation = "off"')
+  await click('#view-controls')
+  await waitFor('Boolean(document.querySelector("#push-toast"))')
+  await click('#push-toast')
+  await waitFor('Boolean(document.querySelector("button[aria-label=关闭提示]"))')
+  await click('button[aria-label=关闭提示]')
+  await waitFor('!document.querySelector("[role=status]")')
+
+  await click('#toggle-notifications')
+  await waitFor('Boolean(document.querySelector("#notification-panel"))')
+  await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))')
+  await waitFor('!document.querySelector("#notification-panel")')
+  assert.equal(await evaluate('document.activeElement.id'), 'toggle-notifications')
+  await click('#toggle-notifications')
+  await waitFor('Boolean(document.querySelector("#notification-panel"))')
+  await evaluate('document.querySelector("#outside").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))')
+  await waitFor('!document.querySelector("#notification-panel")')
+
+  await click('#view-studio')
+  await waitFor('Boolean(document.querySelector("[data-box-id]"))')
+  const boxes = await evaluate('document.querySelectorAll(".studio-viewport [data-box-id]").length')
+  await click('button[aria-label=清空画布]')
+  await waitFor('Boolean(document.querySelector("dialog[open]"))')
+  assert.equal(await evaluate('document.activeElement.textContent.trim()'), '取消')
+  await capture('ux-confirm-clear')
+  await evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent.trim() === "取消").click()')
+  await waitFor('!document.querySelector("dialog[open]")')
+  assert.equal(await evaluate('document.querySelectorAll(".studio-viewport [data-box-id]").length'), boxes)
+  await click('button[aria-label=清空画布]')
+  await waitFor('Boolean(document.querySelector("dialog[open]"))')
+  await evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent.trim() === "清空区域").click()')
+  await waitFor('!document.querySelector(".studio-viewport [data-box-id]")')
+  assert.equal(await evaluate('document.querySelector("button[aria-label=清空画布]").disabled'), true)
+
+  await click('#hold-job')
+  const requests = Number(await evaluate('document.querySelector("#job-requests").textContent'))
+  await evaluate('(() => { const button = document.querySelector("[data-studio-generate]"); button.click(); button.click() })()')
+  await waitFor('document.querySelector("[data-studio-generate]").disabled')
+  assert.equal(Number(await evaluate('document.querySelector("#job-requests").textContent')), requests + 1)
+  assert.equal(await evaluate('document.querySelector("[data-studio-generate]").getAttribute("aria-busy")'), 'true')
+  await click('#release-job')
+  await waitFor('!document.querySelector("[data-studio-generate]").disabled')
+  await evaluate(`(() => {
+    const originalFetch = window.fetch
+    try {
+      window.fetch = async () => { throw new Error('Fixture submit failure') }
+      document.querySelector('[data-studio-generate]').click()
+    } finally { window.fetch = originalFetch }
+  })()`)
+  await waitFor('document.body.textContent.includes("Fixture submit failure")')
+  assert.equal(await evaluate('document.querySelector("[data-studio-generate]").disabled'), false)
+  await click('[data-studio-generate]')
+  await waitFor(`Number(document.querySelector('#job-requests').textContent) === ${requests + 2} && !document.querySelector('[data-studio-generate]').disabled`)
+
+  await click('#view-agent')
+  const composer = 'textarea[aria-label="Agent 消息"]'
+  const provider = 'select[aria-label="Agent 模型"]'
+  await waitFor(`document.querySelector(${JSON.stringify(provider)})?.value === 'fixture-ai'`)
+  await input(composer, '中文输入')
+  await evaluate(`document.querySelector(${JSON.stringify(composer)}).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }))`)
+  assert.equal(await evaluate('document.querySelector("#agent-requests").textContent'), '0')
+  await evaluate(`document.querySelector(${JSON.stringify(composer)}).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true }))`)
+  assert.equal(await evaluate('document.querySelector("#agent-requests").textContent'), '0')
+  await evaluate('(() => { const button = document.querySelector("button[aria-label=发送消息]"); button.click(); button.click() })()')
+  await waitFor('document.querySelector("#agent-requests").textContent === "1"')
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(provider)}).disabled`), true)
+  assert.equal(await evaluate('document.querySelector("button[title=新对话]").disabled'), true)
+  assert.equal(await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent === "历史对话").disabled'), true)
+  await input(composer, '等待期间写的新草稿')
+  await click('#agent-fail')
+  await waitFor('document.querySelector("button[aria-label=发送消息]")?.disabled === false')
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(composer)}).value`), '等待期间写的新草稿')
+
+  await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent === "润色").click()')
+  await waitFor('document.querySelector("#agent-requests").textContent === "2"')
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(composer)}).value`), '等待期间写的新草稿')
+  await click('#agent-reply')
+  await waitFor('document.body.textContent.includes("Fixture reply")')
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(composer)}).value`), '等待期间写的新草稿')
+
+  // Simulate clipboard denial: success feedback must follow a successful write.
+  await evaluate('Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("Fixture denial") } } })')
+  await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent.trim() === "复制").click()')
+  await waitFor('document.body.textContent.includes("复制失败，请选择文本后手动复制")')
+  await capture('ux-agent-recovery')
+  console.log('UX checks passed: dismiss/focus, cancel-first layout confirmation, duplicate submission protection, IME-safe send, busy conversation guards, draft preservation and clipboard failure feedback')
+}

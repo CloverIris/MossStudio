@@ -232,6 +232,7 @@ function Dialog({
     if (!open || !element || element.open) return
     trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     element.showModal()
+    element.querySelector<HTMLElement>('[data-dialog-initial-focus]')?.focus({ preventScroll: true })
   })
 
   useLayoutEffect(() => {
@@ -319,6 +320,26 @@ export function Sheet(props: DialogProps): React.JSX.Element {
   return <Dialog {...props} sheet />
 }
 
+export function ConfirmDialog({ open, title, description, confirmLabel, onClose, onConfirm }: {
+  open: boolean
+  title: string
+  description: string
+  confirmLabel: string
+  onClose: () => void
+  onConfirm: () => void
+}): React.JSX.Element {
+  return (
+    <Modal open={open} title={title} onClose={onClose} width="max-w-md" footer={
+      <>
+        <Button tone="ghost" data-dialog-initial-focus onClick={onClose}>取消</Button>
+        <Button tone="danger" onClick={onConfirm}>{confirmLabel}</Button>
+      </>
+    }>
+      <p className="text-ui leading-6 text-[var(--color-text-secondary)]">{description}</p>
+    </Modal>
+  )
+}
+
 type ToastTone = 'info' | 'success' | 'error'
 
 interface ToastItem {
@@ -334,6 +355,18 @@ const ToastContext = createContext<{ push: (message: string, tone?: ToastTone) =
 
 export function useToast(): { push: (message: string, tone?: ToastTone) => void } {
   return useContext(ToastContext)
+}
+
+export function useCopyText(): (text: string, message?: string) => Promise<void> {
+  const { push } = useToast()
+  return useCallback(async (text: string, message = '已复制') => {
+    try {
+      await navigator.clipboard.writeText(text)
+      push(message, 'success')
+    } catch {
+      push('复制失败，请选择文本后手动复制', 'error')
+    }
+  }, [push])
 }
 
 const toastIcon: Record<ToastTone, ReactNode> = {
@@ -372,7 +405,7 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[300px] flex-col gap-1.5">
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-1.5">
         {items.map((item) => (
           <Presence
             key={item.id}
@@ -383,7 +416,10 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
             className="glass-strong pointer-events-auto flex items-start gap-2 rounded-[6px] border border-[var(--color-border-subtle)] px-2.5 py-2 text-ui shadow-lg"
           >
             {toastIcon[item.tone]}
-            <span className="leading-5">{item.message}</span>
+            <span className="min-w-0 flex-1 leading-5 [overflow-wrap:anywhere]">{item.message}</span>
+            <IconButton label="关闭提示" className="size-6" onClick={() => {
+              setItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, open: false } : entry))
+            }}><X className="size-3.5" /></IconButton>
           </Presence>
         ))}
       </div>

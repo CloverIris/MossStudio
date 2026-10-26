@@ -147,6 +147,8 @@ function StudioShell(): React.JSX.Element {
           </IconButton>
           <IconButton
             label={notificationsOpen ? '隐藏通知' : '显示通知'}
+            aria-expanded={notificationsOpen}
+            aria-controls="notification-panel"
             className={cn('size-8', notificationsOpen && 'bg-white/[0.07]')}
             onClick={() => setNotificationsOpen(!notificationsOpen)}
           >

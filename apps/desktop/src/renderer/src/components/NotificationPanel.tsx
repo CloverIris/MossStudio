@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Info, Megaphone, X } from 'lucide-react'
+import { useEffect } from 'react'
 import { Ipc } from '@shared/channels'
 import { call } from '../lib/api'
 import { relative } from '../lib/format'
@@ -32,8 +33,35 @@ export function NotificationPanel(): React.JSX.Element | null {
 
   const announcements = (updates?.announcements ?? []).slice(0, 4)
 
+  const close = (): void => {
+    toggle(false)
+    document.querySelector<HTMLElement>('[aria-controls="notification-panel"]')?.focus({ preventScroll: true })
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const outside = (event: PointerEvent): void => {
+      if (!(event.target instanceof Element) || document.querySelector('dialog:modal')) return
+      if (event.target.closest('#notification-panel, [aria-controls="notification-panel"]')) return
+      toggle(false)
+    }
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented) return
+      if (document.querySelector('dialog:modal, select:open')) return
+      event.preventDefault()
+      toggle(false)
+      document.querySelector<HTMLElement>('[aria-controls="notification-panel"]')?.focus({ preventScroll: true })
+    }
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [open, toggle])
+
   return (
-    <Presence open={open} preset="flyout" className="app-popover glass-strong fixed right-3 top-[52px] z-40 flex max-h-[calc(100vh-64px)] w-[340px] flex-col overflow-hidden border border-[var(--color-border-subtle)] shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+    <Presence id="notification-panel" role="region" aria-label="通知" open={open} preset="flyout" className="app-popover glass-strong fixed right-3 top-[52px] z-40 flex max-h-[calc(100vh-64px)] w-[340px] max-w-[calc(100vw-24px)] flex-col overflow-hidden border border-[var(--color-border-subtle)] shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
       <header className="flex shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] px-4 py-2.5">
         <div className="flex items-baseline gap-2">
           <span className="text-section font-semibold">通知</span>
@@ -49,7 +77,7 @@ export function NotificationPanel(): React.JSX.Element | null {
               全部已读
             </button>
           ) : null}
-          <IconButton label="关闭通知" className="size-6" onClick={() => toggle(false)}>
+          <IconButton label="关闭通知" className="size-8" onClick={close}>
             <X className="size-4" />
           </IconButton>
         </div>

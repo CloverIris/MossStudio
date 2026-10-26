@@ -90,6 +90,8 @@ export function AppTitlebar({
             </IconButton>
             <IconButton
               label={notificationsOpen ? '隐藏通知' : '显示通知'}
+              aria-expanded={notificationsOpen}
+              aria-controls="notification-panel"
               className={cn('relative size-8', notificationsOpen && 'bg-white/[0.07] text-[var(--color-text)]')}
               onClick={onToggleNotifications}
             >

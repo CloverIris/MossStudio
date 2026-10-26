@@ -40,6 +40,7 @@ try {
         CLOVER_UI_SCALE: String(scale),
         ...(dpiAudit ? { CLOVER_UI_SCREENSHOTS: resolve(screenshots ?? 'docs/assets/ui-dpi-review') } : {}),
         CLOVER_UI_STUDIO_ONLY: process.argv.includes('--studio') ? '1' : '0',
+        CLOVER_UI_UX_ONLY: process.argv.includes('--ux') ? '1' : '0',
         CLOVER_UI_SSH_ONLY: process.argv.includes('--ssh') ? '1' : '0',
         CLOVER_UI_OOBE_ONLY: process.argv.includes('--oobe') ? '1' : '0',
         ...(screenshots ? { CLOVER_UI_SCREENSHOTS: resolve(screenshots) } : {}),

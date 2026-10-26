@@ -5,7 +5,8 @@ import type { AiConversationInfo, AiMessage, AiProviderInfo, AiProviderKind } fr
 import { AI_PROVIDER_PRESETS } from '@shared/ai'
 import { call } from '../lib/api'
 import { useApp } from '../store'
-import { Button, Input, Modal, Select, Spinner, useToast } from './ui'
+import { Button, Input, Modal, Select, Spinner, useCopyText, useToast } from './ui'
+import { useUiAnimationEnabled } from './motion'
 
 const KIND_LABELS: Record<AiProviderKind, string> = {
   openai: 'OpenAI 兼容',
@@ -34,6 +35,8 @@ function splitPrompt(value: string): string[] {
 
 export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}): React.JSX.Element {
   const toast = useToast()
+  const copyText = useCopyText()
+  const animate = useUiAnimationEnabled()
   const studioPrompt = useApp((state) => state.studioPrompt)
   const setStudioPrompt = useApp((state) => state.setStudioPrompt)
   const [providers, setProviders] = useState<AiProviderInfo[]>([])
@@ -43,6 +46,7 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
   const [messages, setMessages] = useState<AiMessage[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const sending = useRef(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
@@ -56,7 +60,7 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
         call<AiConversationInfo[]>(Ipc.aiConversations),
       ])
       setProviders(nextProviders)
-      setProviderId((current) => current || nextProviders[0]?.id || '')
+      setProviderId((current) => nextProviders.some((provider) => provider.id === current) ? current : nextProviders[0]?.id || '')
       setConversations(nextConversations)
     } catch {
       // keep
@@ -68,26 +72,28 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
   }, [])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, busy])
+    endRef.current?.scrollIntoView({ block: 'nearest', behavior: animate ? 'smooth' : 'instant' })
+  }, [messages, busy, animate])
 
   useEffect(() => {
     if (!pendingPrompt) return
     setAccepted(new Set(splitPrompt(pendingPrompt).map((_, index) => index)))
   }, [pendingPrompt])
 
-  async function sendText(raw: string): Promise<void> {
+  async function sendText(raw: string, fromComposer = false): Promise<void> {
+    if (sending.current) return
     if (!providerId) {
       setSettingsOpen(true)
       toast.push('先添加一个 AI Provider', 'info')
       return
     }
     const text = raw.trim()
-    if (!text || busy) return
+    if (!text) return
+    sending.current = true
     const user: AiMessage = { id: `local-${Date.now()}`, role: 'user', content: text, createdAt: new Date().toISOString() }
     const history = [...messages, user]
     setMessages(history)
-    setInput('')
+    if (fromComposer) setInput('')
     setBusy(true)
     try {
       const context = studioPrompt.trim()
@@ -105,23 +111,27 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
       setMessages(messages)
-      setInput(text)
+      // Keep a draft typed while waiting, and never replace it with a quick action.
+      if (fromComposer) setInput((current) => current || text)
     } finally {
+      sending.current = false
       setBusy(false)
     }
   }
 
   function send(): void {
-    void sendText(input)
+    void sendText(input, true)
   }
 
   function newChat(): void {
+    if (sending.current) return
     setConversation(null)
     setMessages([])
     setInput('')
   }
 
   async function openConversation(id: string): Promise<void> {
+    if (sending.current) return
     const next = conversations.find((item) => item.id === id)
     if (!next) return
     setConversation(next)
@@ -158,14 +168,24 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
   }
 
   async function removeProvider(id: string): Promise<void> {
-    await call(Ipc.aiProviderRemove, { id })
-    await refresh()
+    if (sending.current) return
+    try {
+      await call(Ipc.aiProviderRemove, { id })
+      await refresh()
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    }
   }
 
   async function removeConversation(id: string): Promise<void> {
-    await call(Ipc.aiConversationRemove, { id })
-    if (conversation?.id === id) newChat()
-    await refresh()
+    if (sending.current) return
+    try {
+      await call(Ipc.aiConversationRemove, { id })
+      if (conversation?.id === id) newChat()
+      await refresh()
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    }
   }
 
   function applyPrompt(content: string): void {
@@ -179,17 +199,17 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
       {!embedded ? <header className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] px-3">
         <div className="flex items-center gap-1.5 text-ui font-semibold"><Bot className="size-4 text-accent-300" /> Agent</div>
         <div className="flex items-center gap-1">
-          <button type="button" className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-white/[0.05]" title="新对话" onClick={newChat}><Plus className="size-4" /></button>
-          <button type="button" className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-white/[0.05]" title="Provider 设置" onClick={() => editProvider()}><Settings2 className="size-4" /></button>
+          <button type="button" disabled={busy} className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-white/[0.05] disabled:opacity-45" title="新对话" onClick={newChat}><Plus className="size-4" /></button>
+          <button type="button" disabled={busy} className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-white/[0.05] disabled:opacity-45" title="Provider 设置" onClick={() => editProvider()}><Settings2 className="size-4" /></button>
         </div>
       </header> : null}
 
       <div className="flex shrink-0 items-center gap-1.5 border-b border-[var(--color-border-subtle)] px-2.5 py-2">
-        <Select value={providerId} onChange={(event) => setProviderId(event.target.value)} className="min-w-0 flex-1 text-caption">
+        <Select aria-label="Agent 模型" disabled={busy} value={providerId} onChange={(event) => setProviderId(event.target.value)} className="min-w-0 flex-1 text-caption">
           {providers.length === 0 ? <option value="">未配置模型</option> : null}
           {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name} · {provider.model}</option>)}
         </Select>
-        <button type="button" className="rounded border border-[var(--color-border-subtle)] px-1.5 py-1 text-caption text-[var(--color-text-tertiary)]" onClick={() => setSettingsOpen(true)}>管理</button>
+        <button type="button" disabled={busy} className="rounded border border-[var(--color-border-subtle)] px-1.5 py-1 text-caption text-[var(--color-text-tertiary)] disabled:opacity-45" onClick={() => setSettingsOpen(true)}>管理</button>
       </div>
 
       {providers.length === 0 ? (
@@ -215,7 +235,7 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
                 {message.role === 'assistant' ? (
                   <div className="mt-1.5 flex items-center gap-2 border-t border-white/[0.06] pt-1.5 text-caption">
                     <button type="button" className="text-accent-300" onClick={() => applyPrompt(message.content)}>写入 Prompt</button>
-                    <button type="button" className="inline-flex items-center gap-1 text-[var(--color-text-tertiary)]" onClick={() => void navigator.clipboard.writeText(message.content)}><Copy className="size-2.5" /> 复制</button>
+                    <button type="button" className="inline-flex items-center gap-1 text-[var(--color-text-tertiary)]" onClick={() => void copyText(message.content)}><Copy className="size-2.5" /> 复制</button>
                   </div>
                 ) : null}
               </div>
@@ -228,26 +248,28 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
 
       <div className="shrink-0 border-t border-[var(--color-border-subtle)] p-2.5">
         <div className="mb-1.5 flex flex-wrap gap-1">
-          <button type="button" onClick={() => void sendText('请润色当前 Prompt，使画面更具体、更有电影感；直接给出最终英文 Prompt。')} className="rounded border border-[var(--color-border-subtle)] px-1.5 py-0.5 text-micro text-[var(--color-text-secondary)]">润色</button>
-          <button type="button" onClick={() => void sendText('请把当前 Prompt 翻成中文，保留画面术语；只给译文。')} className="rounded border border-[var(--color-border-subtle)] px-1.5 py-0.5 text-micro text-[var(--color-text-secondary)]">译中</button>
-          <button type="button" onClick={() => void sendText('请把当前想法拆成主体、光影、构图、风格四段英文 Prompt。')} className="rounded border border-[var(--color-border-subtle)] px-1.5 py-0.5 text-micro text-[var(--color-text-secondary)]">拆段</button>
+          <button type="button" disabled={busy} onClick={() => void sendText('请润色当前 Prompt，使画面更具体、更有电影感；直接给出最终英文 Prompt。')} className="rounded border border-[var(--color-border-subtle)] px-1.5 py-0.5 text-micro text-[var(--color-text-secondary)] disabled:opacity-45">润色</button>
+          <button type="button" disabled={busy} onClick={() => void sendText('请把当前 Prompt 翻成中文，保留画面术语；只给译文。')} className="rounded border border-[var(--color-border-subtle)] px-1.5 py-0.5 text-micro text-[var(--color-text-secondary)] disabled:opacity-45">译中</button>
+          <button type="button" disabled={busy} onClick={() => void sendText('请把当前想法拆成主体、光影、构图、风格四段英文 Prompt。')} className="rounded border border-[var(--color-border-subtle)] px-1.5 py-0.5 text-micro text-[var(--color-text-secondary)] disabled:opacity-45">拆段</button>
         </div>
         <div className="flex items-end gap-1.5">
           <textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
                 void send()
               }
             }}
             rows={2}
+            aria-label="Agent 消息"
             placeholder="问 Agent，Enter 发送 / Shift+Enter 换行"
             className="app-input min-h-[48px] flex-1 resize-none text-ui"
           />
-          <Button tone="primary" onClick={() => void send()} disabled={busy || !input.trim()} className="h-[48px] px-2.5">
-            <Send className="size-4" />
+          <Button tone="primary" aria-label={busy ? '等待 Agent 回复' : '发送消息'} aria-busy={busy} onClick={() => void send()} disabled={busy || !input.trim()} className="h-[48px] px-2.5">
+            {busy ? <Spinner /> : <Send className="size-4" />}
           </Button>
         </div>
         {studioPrompt ? <div className="mt-1 truncate text-micro text-[var(--color-text-tertiary)]">已带上当前 Prompt 作为上下文</div> : null}
@@ -278,7 +300,7 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
                 <span key={provider.id} className="inline-flex items-center gap-1 rounded border border-[var(--color-border-subtle)] px-2 py-1 text-caption">
                   {provider.name}
                   <button type="button" className="text-[var(--color-text-tertiary)]" onClick={() => editProvider(provider)}>编辑</button>
-                  <button type="button" className="text-red-300" onClick={() => void removeProvider(provider.id)}><Trash2 className="size-2.5" /></button>
+                  <button type="button" disabled={busy} aria-label={`删除 ${provider.name}`} className="text-red-300 disabled:opacity-45" onClick={() => void removeProvider(provider.id)}><Trash2 className="size-2.5" /></button>
                 </span>
               ))}
             </div>
@@ -293,8 +315,8 @@ export function AgentSidebar({ embedded = false }: { embedded?: boolean } = {}):
           <div className="mb-1 text-micro uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">历史</div>
           {conversations.slice(0, 5).map((item) => (
             <div key={item.id} className="flex items-center gap-1 py-0.5">
-              <button type="button" className="min-w-0 flex-1 truncate text-left text-caption text-[var(--color-text-secondary)]" onClick={() => void openConversation(item.id)}>{item.title}</button>
-              <button type="button" className="text-[var(--color-text-tertiary)]" onClick={() => void removeConversation(item.id)}><X className="size-2.5" /></button>
+              <button type="button" disabled={busy} title={item.title} aria-current={conversation?.id === item.id ? 'true' : undefined} className="min-w-0 flex-1 truncate text-left text-caption text-[var(--color-text-secondary)] disabled:opacity-45" onClick={() => void openConversation(item.id)}>{item.title}</button>
+              <button type="button" disabled={busy} aria-label={`删除对话 ${item.title}`} className="text-[var(--color-text-tertiary)] disabled:opacity-45" onClick={() => void removeConversation(item.id)}><X className="size-2.5" /></button>
             </div>
           ))}
         </div>

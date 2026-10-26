@@ -16,11 +16,18 @@ import { Oobe } from '../../apps/desktop/src/renderer/src/components/Oobe'
 import { ModelsPage } from '../../apps/desktop/src/renderer/src/pages/Models'
 import { EnginePage } from '../../apps/desktop/src/renderer/src/pages/Engine'
 import { App } from '../../apps/desktop/src/renderer/src/App'
+import { AgentSidebar } from '../../apps/desktop/src/renderer/src/components/AgentSidebar'
 
 let fixtureHosts: ManagedHost[] = []
 let failOobeSave = false
 let oobeComplete = false
 let oobeNeedsDevice = false
+let agentReady = false
+let replyToAgent: ((fail: boolean) => void) | undefined
+let holdJob = false
+let releaseJob: (() => void) | undefined
+let jobRequests = 0
+let agentRequests = 0
 const fixtureListeners = new Map<string, Set<(data: unknown) => void>>()
 const oobeSteps = ['device', 'engine', 'model'] as const
 function onboarding(hostId = 'local'): OnboardingStatus {
@@ -51,6 +58,18 @@ window.clover = {
     return () => { listeners.delete(callback) }
   },
   async invoke<T>(channel: string, payload?: unknown): Promise<T> {
+    if (channel === Ipc.aiProvidersList) return { ok: true, data: agentReady ? [{ id: 'fixture-ai', name: 'Fixture AI', kind: 'openai', baseUrl: 'https://example.test', model: 'fixture', temperature: 0.7, hasKey: true }] : [] } as T
+    if (channel === Ipc.aiConversations) return { ok: true, data: agentReady ? [{ id: 'fixture-history', title: '历史对话', providerId: 'fixture-ai', messages: [], createdAt: '', updatedAt: '' }] : [] } as T
+    if (channel === Ipc.aiChat) {
+      document.getElementById('agent-requests')!.textContent = String(++agentRequests)
+      return new Promise<T>((resolve) => {
+        replyToAgent = (fail) => {
+          replyToAgent = undefined
+          const input = payload as { messages: Array<{ role: string; content: string }> }
+          resolve((fail ? { ok: false, error: { code: 'E_FIXTURE', message: 'Agent fixture failure' } } : { ok: true, data: { reply: 'Fixture reply', conversation: { id: 'fixture-chat', title: 'Fixture chat', providerId: 'fixture-ai', messages: input.messages.map((message, index) => ({ ...message, id: String(index), createdAt: '' })).concat([{ id: 'reply', role: 'assistant', content: 'Fixture reply', createdAt: '' }]), createdAt: '', updatedAt: '' } } }) as T)
+        }
+      })
+    }
     if (channel === Ipc.onboardingStatus) return { ok: true, data: onboarding((payload as { hostId?: string })?.hostId) } as T
     if (channel === Ipc.mossInferDownloadState) return { ok: true, data: null } as T
     if (channel === Ipc.engineStatus) return { ok: true, data: { available: false, path: null } } as T
@@ -130,6 +149,8 @@ const fixtureOobeCatalog = { ...fixtureCatalog, models: ['dit', 'text', 'vae', '
 
 window.fetch = async (_url, init) => {
   document.getElementById('studio-job')!.textContent = String(init?.body)
+  document.getElementById('job-requests')!.textContent = String(++jobRequests)
+  if (holdJob) await new Promise<void>((resolve) => { releaseJob = resolve })
   return new Response(JSON.stringify({ id: 'fixture-job' }), { status: 200 })
 }
 
@@ -149,6 +170,13 @@ function Fixture(): React.JSX.Element {
   return (
     <>
       <nav className="flex gap-2">
+        <span hidden>
+        <button id="view-agent" onClick={() => { agentReady = true; setView('agent') }}>Agent</button>
+        <button id="agent-reply" onClick={() => replyToAgent?.(false)}>Agent reply</button>
+        <button id="agent-fail" onClick={() => replyToAgent?.(true)}>Agent failure</button>
+        <button id="hold-job" onClick={() => { holdJob = true }}>Hold request</button>
+        <button id="release-job" onClick={() => { holdJob = false; releaseJob?.(); releaseJob = undefined }}>Release request</button>
+        </span>
         <button id="view-controls" onClick={() => setView('controls')}>Controls</button>
         <button id="view-materials" onClick={() => setView('materials')}>Materials</button>
         <button id="view-settings" onClick={() => setView('settings')}>Settings</button>
@@ -188,6 +216,8 @@ function Fixture(): React.JSX.Element {
         <button id="toggle-sidebar" onClick={() => void useApp.getState().toggleSidebar()}>Sidebar</button>
       </nav>
       <output id="studio-job" hidden />
+      <output id="job-requests" hidden>0</output>
+      <output id="agent-requests" hidden>0</output>
       <output id="host-request" hidden />
       <output id="pick-request" hidden />
       <output id="window-request" hidden />
@@ -195,7 +225,7 @@ function Fixture(): React.JSX.Element {
       <output id="motion-enabled" hidden>{animate ? 'on' : 'off'}</output>
       {view === 'oobe' ? <ToastProvider><OobeProbe key={oobeKey} /></ToastProvider> : null}
       <MotionPanel transitionKey={view} data-testid="page-motion" className={view === 'oobe' ? 'hidden' : undefined}>
-        {view === 'materials' ? <MaterialMotionProbe /> : view === 'settings' ? <SettingsPage /> : view === 'devices' ? <ToastProvider><DevicesPage /></ToastProvider> : view === 'studio' ? <ToastProvider><StudioPage /></ToastProvider> : (
+        {view === 'materials' ? <MaterialMotionProbe /> : view === 'settings' ? <SettingsPage /> : view === 'devices' ? <ToastProvider><DevicesPage /></ToastProvider> : view === 'agent' ? <ToastProvider><AgentSidebar /></ToastProvider> : view === 'studio' ? <ToastProvider><StudioPage /></ToastProvider> : (
           <div style={{ transform: 'translateX(20px)', backdropFilter: 'blur(2px)', width: 400, overflow: 'hidden' }}>
             <input id="typography" className="text-caption font-mono leading-5" />
             <button id="button-typography" className="text-ui font-medium">Typography</button>
@@ -232,7 +262,7 @@ function Fixture(): React.JSX.Element {
         )}
       </MotionPanel>
       {view === 'controls' ? <ToastProvider><ToastProbe /></ToastProvider> : null}
-      <button id="toggle-notifications" onClick={() => useApp.getState().setNotificationsOpen(!useApp.getState().notificationsOpen)}>Notifications</button>
+      <button id="toggle-notifications" aria-controls="notification-panel" onClick={() => useApp.getState().setNotificationsOpen(!useApp.getState().notificationsOpen)}>Notifications</button>
       <NotificationPanel />
     </>
   )

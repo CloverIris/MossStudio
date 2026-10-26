@@ -47,7 +47,7 @@ import {
   type LayoutLabel,
 } from '../lib/layout'
 import { useApp } from '../store'
-import { Button, Card, IconButton, Input, Modal, Pill, Segmented, Select, Textarea, cn, useToast } from '../components/ui'
+import { Button, Card, ConfirmDialog, IconButton, Input, Modal, Pill, Segmented, Select, Spinner, Textarea, cn, useCopyText, useToast } from '../components/ui'
 import { PromptSegmentsModal } from '../components/PromptSegmentsModal'
 import { GbcImportModal } from '../components/GbcImportModal'
 import { AgentSidebar } from '../components/AgentSidebar'
@@ -225,6 +225,7 @@ function projectSnapshot(input: {
 }
 
 export function StudioPage(): React.JSX.Element {
+  const copyText = useCopyText()
   const toast = useToast()
   const storedPrompt = useApp((state) => state.studioPrompt)
   const storedDraft = useApp((state) => state.studioDraft)
@@ -282,6 +283,9 @@ export function StudioPage(): React.JSX.Element {
   const [gbcOpen, setGbcOpen] = useState(false)
   const [gbcTab, setGbcTab] = useState<'run' | 'manage'>('run')
   const [gbcPending, setGbcPending] = useState<{ result: GbcRunResult; image?: GbcImageResult } | null>(null)
+  const [layoutReset, setLayoutReset] = useState<'clear' | 'example' | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
   const [docks, setDocks] = useState(DEFAULT_DOCKS)
   const [leftWidth, setLeftWidth] = useState(320)
   const [rightWidth, setRightWidth] = useState(340)
@@ -531,6 +535,17 @@ export function StudioPage(): React.JSX.Element {
     toast.push('布局 Prompt 已插入', 'success')
   }
 
+  function resetLayout(action: 'clear' | 'example'): void {
+    setDraft(action === 'example' ? exampleDraft() : createDraft(draft.width, draft.height))
+    setSelectedId(null)
+    setLayoutReset(null)
+  }
+
+  function requestLayoutReset(action: 'clear' | 'example'): void {
+    if (draft.items.length) setLayoutReset(action)
+    else resetLayout(action)
+  }
+
   async function saveProjectNow(auto = false): Promise<void> {
     if (projectSaving) return
     setProjectSaving(true)
@@ -748,6 +763,7 @@ export function StudioPage(): React.JSX.Element {
   }
 
   async function generate(): Promise<void> {
+    if (submittingRef.current) return
     if (!modelBinding) {
       toast.push('先在模型库准备一个完整模型', 'error')
       return
@@ -760,16 +776,18 @@ export function StudioPage(): React.JSX.Element {
       toast.push('先写提示词或插入布局 Prompt', 'error')
       return
     }
-    let info = backend
-    if (!info?.ready) {
-      info = await electronStudioClient.backendInfo().catch(() => null)
-      setBackend(info)
-    }
-    if (!info?.ready || !info.url || !info.token) {
-      toast.push(info?.error ?? 'Clover 后端尚未就绪；请稍后重试', 'error')
-      return
-    }
+    submittingRef.current = true
+    setSubmitting(true)
     try {
+      let info = backend
+      if (!info?.ready) {
+        info = await electronStudioClient.backendInfo().catch(() => null)
+        setBackend(info)
+      }
+      if (!info?.ready || !info.url || !info.token) {
+        toast.push(info?.error ?? 'Clover 后端尚未就绪；请稍后重试', 'error')
+        return
+      }
       const response = await fetch(`${info.url}/api/engine-jobs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${info.token}` },
@@ -800,6 +818,9 @@ export function StudioPage(): React.JSX.Element {
       openWindow('terminal')
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
     }
   }
 
@@ -1128,8 +1149,8 @@ export function StudioPage(): React.JSX.Element {
             <Segmented label="画布工具" value={tool} onChange={(value) => setTool(value as 'select' | 'draw' | 'pan')} options={[{ value: 'select', label: '选择' }, { value: 'draw', label: '画框' }, { value: 'pan', label: '手型' }]} />
             <Segmented value={label} onChange={(value) => setLabel(value as LayoutLabel)} options={[{ value: 'object', label: '物体' }, { value: 'character', label: '人物' }, { value: 'text', label: '文字' }]} />
             <IconButton label="GBC 图像解析" onClick={() => { setGbcTab('run'); setGbcOpen(true) }}><ScanSearch className="size-4" /></IconButton>
-            <IconButton label="示例布局" onClick={() => { setDraft(exampleDraft()); setSelectedId(null) }}><Sparkles className="size-4" /></IconButton>
-            <IconButton label="清空画布" onClick={() => { setDraft(createDraft(draft.width, draft.height)); setSelectedId(null) }}><Eraser className="size-4" /></IconButton>
+            <IconButton label="示例布局" onClick={() => requestLayoutReset('example')}><Sparkles className="size-4" /></IconButton>
+            <IconButton label="清空画布" onClick={() => requestLayoutReset('clear')} disabled={!draft.items.length}><Eraser className="size-4" /></IconButton>
             {background ? <IconButton label="清除底图" onClick={() => setStudioBackground(null)}><X className="size-4" /></IconButton> : null}
             <div className="ml-1 flex items-center gap-0.5 border-l border-[var(--color-border-subtle)] pl-1">
               <IconButton label="缩小画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 0.8) }}><Minus className="size-4" /></IconButton>
@@ -1139,7 +1160,7 @@ export function StudioPage(): React.JSX.Element {
             </div>
             <div className="ml-auto flex items-center gap-1.5">
               <Pill tone={backend?.ready ? 'accent' : 'amber'}>{backend?.ready ? '后端就绪' : '后端启动中'}</Pill>
-              <Button tone="primary" onClick={() => void generate()}><span className="inline-flex items-center gap-1.5">开始生成 <ArrowRight className="size-4" /></span></Button>
+              <Button tone="primary" data-studio-generate disabled={submitting} aria-busy={submitting} onClick={() => void generate()}><span className="inline-flex items-center gap-1.5">{submitting ? '正在提交…' : '开始生成'} {submitting ? <Spinner /> : <ArrowRight className="size-4" />}</span></Button>
             </div>
           </div>
 
@@ -1302,6 +1323,15 @@ export function StudioPage(): React.JSX.Element {
         )}
       </div>
 
+      <ConfirmDialog
+        open={layoutReset !== null}
+        onClose={() => setLayoutReset(null)}
+        title={layoutReset === 'example' ? '替换为示例布局？' : '清空画布区域？'}
+        description={`当前 ${draft.items.length} 个区域及区域内文字将被${layoutReset === 'example' ? '示例布局替换' : '清除'}。提示词和底图会保留。`}
+        confirmLabel={layoutReset === 'example' ? '替换布局' : '清空区域'}
+        onConfirm={() => { if (layoutReset) resetLayout(layoutReset) }}
+      />
+
       <Modal
         open={jsonOpen}
         onClose={() => setJsonOpen(false)}
@@ -1317,8 +1347,7 @@ export function StudioPage(): React.JSX.Element {
               tone="secondary"
               onClick={() => {
                 if (!compiled) return
-                void navigator.clipboard.writeText(compiled.prompt)
-                toast.push('已复制 JSON', 'success')
+                void copyText(compiled.prompt, '布局 Prompt 已复制')
               }}
             >
               <span className="inline-flex items-center gap-1.5">
