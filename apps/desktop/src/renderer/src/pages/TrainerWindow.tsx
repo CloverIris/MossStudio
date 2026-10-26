@@ -164,12 +164,12 @@ export function TrainerWindow(): React.JSX.Element {
     <div className="mx-auto w-full max-w-[1080px] space-y-4 px-6 py-5">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
-            <GraduationCap className="size-3.5" />
+          <div className="flex items-center gap-2 text-caption font-semibold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
+            <GraduationCap className="size-4" />
             Kohaku Trainer · External
           </div>
           <h1 className="mt-1.5 text-[23px] font-semibold tracking-[-0.02em]">训练窗口</h1>
-          <p className="mt-1 text-[11px] text-[var(--color-text-secondary)]">
+          <p className="mt-1 text-ui text-[var(--color-text-secondary)]">
             表单生成 trainer 配置；高级项直接透传 <code className="rounded bg-white/[0.05] px-1">--set KEY=VALUE</code>。
           </p>
         </div>
@@ -178,7 +178,7 @@ export function TrainerWindow(): React.JSX.Element {
             训练页
           </Button>
           <Button tone="secondary" onClick={() => void check()} disabled={busy || !ready}>
-            {busy ? <Spinner className="size-3" /> : <Stethoscope className="size-3.5" />}
+            {busy ? <Spinner className="size-4" /> : <Stethoscope className="size-4" />}
             环境体检
           </Button>
         </div>
@@ -187,20 +187,20 @@ export function TrainerWindow(): React.JSX.Element {
       {!hasCuda && !remote ? (
         <div className="flex items-start gap-2 rounded-[6px] border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-300" />
-          <p className="text-[10px] leading-4 text-[var(--color-text-secondary)]">
+          <p className="text-caption leading-4 text-[var(--color-text-secondary)]">
             当前设备没有 CUDA，不能在本机启动训练。可以编辑配置、预览命令，或在训练页选择 SSH 训练版本。
           </p>
         </div>
       ) : remote ? (
-        <div className="flex items-center gap-2 rounded-[6px] border border-accent-500/25 bg-accent-500/[0.06] px-3 py-2 text-[10px] text-[var(--color-text-secondary)]">
-          <Server className="size-3.5 text-accent-300" />
+        <div className="flex items-center gap-2 rounded-[6px] border border-accent-500/25 bg-accent-500/[0.06] px-3 py-2 text-caption text-[var(--color-text-secondary)]">
+          <Server className="size-4 text-accent-300" />
           远端训练：{version?.hostName ?? version?.hostId} · 数据/权重使用远端路径
         </div>
       ) : null}
 
       {availableVersions.length === 0 ? (
         <EmptyState
-          icon={<GraduationCap className="size-7" />}
+          icon={<GraduationCap className="size-8" />}
           title="还没有训练版本"
           description={remote ? '这个 SSH host 还没有训练版本；先去训练页拉取远端仓库并安装环境。' : '先去训练页拉取 KohakuMossTrainer 并创建一个 commit 版本。'}
           action={
@@ -213,7 +213,7 @@ export function TrainerWindow(): React.JSX.Element {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <Card className="p-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-[12.5px] font-medium">训练配置</h2>
+              <h2 className="text-section font-medium">训练配置</h2>
               <Pill tone={ready ? 'accent' : 'amber'}>{ready ? '环境就绪' : '环境未就绪'}</Pill>
               {remote ? <Pill tone="neutral">{version?.hostName ?? 'SSH'}</Pill> : null}
             </div>
@@ -241,7 +241,7 @@ export function TrainerWindow(): React.JSX.Element {
                   <Input value={weights} onChange={(event) => setWeights(event.target.value)} placeholder="/path/to/MOSS-Image-Base" />
                 </Field>
                 <IconButton label="选择权重目录" onClick={() => void pick('weights')} className="mt-4">
-                  <FolderOpen className="size-3.5" />
+                  <FolderOpen className="size-4" />
                 </IconButton>
               </div>
               <div className="col-span-2 grid grid-cols-[1fr_auto] gap-1">
@@ -249,7 +249,7 @@ export function TrainerWindow(): React.JSX.Element {
                   <Input value={dataset} onChange={(event) => setDataset(event.target.value)} placeholder="/path/to/dataset（kohya 文件夹）" />
                 </Field>
                 <IconButton label="选择数据集目录" onClick={() => void pick('dataset')} className="mt-4">
-                  <FolderOpen className="size-3.5" />
+                  <FolderOpen className="size-4" />
                 </IconButton>
               </div>
               <Field label="Run 名称">
@@ -287,7 +287,7 @@ export function TrainerWindow(): React.JSX.Element {
             <div className="mt-3 flex flex-wrap gap-1.5">
               <Button tone="primary" onClick={() => void runAction('train')} disabled={!canStart || starting !== null}>
                 <span className="inline-flex items-center gap-1.5">
-                  {starting === 'train' ? <Spinner className="size-3" /> : <Play className="size-3" />}
+                  {starting === 'train' ? <Spinner className="size-4" /> : <Play className="size-4" />}
                   开始训练
                 </span>
               </Button>
@@ -316,22 +316,22 @@ export function TrainerWindow(): React.JSX.Element {
             {trainingJob ? (
               <Card className="p-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-[12.5px] font-medium">训练状态</h2>
+                  <h2 className="text-section font-medium">训练状态</h2>
                   <Pill tone={trainingJob.state === 'failed' ? 'red' : trainingJob.state === 'succeeded' ? 'accent' : 'amber'}>
                     {trainingJob.state}
                   </Pill>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--color-text-secondary)]">
+                <div className="mt-2 flex items-center justify-between text-caption text-[var(--color-text-secondary)]">
                   <span>step {trainingJob.metrics?.step ?? trainingJob.progress.current} / {trainingJob.progress.total || '—'}</span>
                   <span>loss {trainingJob.metrics?.loss !== undefined ? trainingJob.metrics.loss.toFixed(4) : '—'}</span>
                 </div>
                 <ProgressBar value={trainingJob.progress.percent} className="mt-1.5" />
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="text-[9.5px] text-[var(--color-text-tertiary)]">
+                  <span className="text-caption text-[var(--color-text-tertiary)]">
                     {trainingJob.error?.message ?? (trainingJob.state === 'running' ? '训练中，日志在共享终端' : '')}
                   </span>
                   <Button tone="ghost" onClick={() => openWindow('terminal')}>
-                    <span className="inline-flex items-center gap-1"><Terminal className="size-3" /> 终端</span>
+                    <span className="inline-flex items-center gap-1"><Terminal className="size-4" /> 终端</span>
                   </Button>
                 </div>
               </Card>
@@ -339,14 +339,14 @@ export function TrainerWindow(): React.JSX.Element {
 
             <Card className="p-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-[12.5px] font-medium">命令预览</h2>
+                <h2 className="text-section font-medium">命令预览</h2>
                 <Pill tone="neutral">copy-ready</Pill>
               </div>
-              <pre className="mt-2 max-h-[320px] overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/25 p-3 font-mono text-[9.5px] leading-5 text-[var(--color-text-secondary)]">
+              <pre className="mt-2 max-h-[320px] overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/25 p-3 font-mono text-caption leading-5 text-[var(--color-text-secondary)]">
                 {command}
               </pre>
               <div className="mt-2 flex items-center justify-between">
-                <span className="text-[9px] text-[var(--color-text-tertiary)]">
+                <span className="text-caption text-[var(--color-text-tertiary)]">
                   {ready ? '环境就绪；执行入口在下一阶段接入' : '先在训练页安装环境'}
                 </span>
                 <Button
@@ -362,15 +362,15 @@ export function TrainerWindow(): React.JSX.Element {
             </Card>
 
             <Card className="p-4">
-              <div className="flex items-center gap-2 text-[12px] font-medium">
-                <Terminal className="size-3.5" /> 环境体检
+              <div className="flex items-center gap-2 text-ui font-medium">
+                <Terminal className="size-4" /> 环境体检
               </div>
               {doctor ? (
-                <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/25 p-2.5 font-mono text-[9px] leading-4 text-[var(--color-text-secondary)]">
+                <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/25 p-2.5 font-mono text-caption leading-4 text-[var(--color-text-secondary)]">
                   {doctor.output || '没有输出'}
                 </pre>
               ) : (
-                <p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">
+                <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">
                   训练页安装环境后，可以在这里运行 <code className="rounded bg-white/[0.05] px-1">kohakumoss-doctor</code>。
                 </p>
               )}
@@ -398,7 +398,7 @@ export function TrainerWindow(): React.JSX.Element {
               }}
               disabled={starting !== null || !version || !ready}
             >
-              {starting === auxOpen ? <Spinner className="size-3" /> : null}
+              {starting === auxOpen ? <Spinner className="size-4" /> : null}
               执行
             </Button>
             <Button
@@ -413,7 +413,7 @@ export function TrainerWindow(): React.JSX.Element {
           </div>
         }
       >
-        <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/25 p-3 font-mono text-[9.5px] leading-5 text-[var(--color-text-secondary)]">
+        <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/25 p-3 font-mono text-caption leading-5 text-[var(--color-text-secondary)]">
           {auxOpen === 'export' ? buildExport() : buildSample()}
         </pre>
       </Modal>

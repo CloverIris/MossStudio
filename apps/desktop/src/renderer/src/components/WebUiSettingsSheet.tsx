@@ -115,7 +115,7 @@ export function WebUiSettingsSheet({ open, onClose, initialInstanceId }: Props):
         <>
           <Button tone="ghost" onClick={onClose} disabled={busy}>关闭</Button>
           <Button tone="primary" onClick={() => void save()} disabled={busy}>
-            {busy ? <Spinner className="size-3.5" /> : '保存并应用'}
+            {busy ? <Spinner className="size-4" /> : '保存并应用'}
           </Button>
         </>
       }
@@ -123,8 +123,8 @@ export function WebUiSettingsSheet({ open, onClose, initialInstanceId }: Props):
       <div className="space-y-4 p-5">
         <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2.5">
           <div>
-            <div className="text-[12px] font-medium">启用外部 UI</div>
-            <div className="mt-0.5 text-[10px] text-[var(--color-text-tertiary)]">
+            <div className="text-ui font-medium">启用外部 UI</div>
+            <div className="mt-0.5 text-caption text-[var(--color-text-tertiary)]">
               仅在可信局域网使用；关闭后只监听 127.0.0.1
             </div>
           </div>
@@ -152,15 +152,15 @@ export function WebUiSettingsSheet({ open, onClose, initialInstanceId }: Props):
 
         <div className="rounded-lg border border-[var(--color-border-subtle)] p-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-[11px] font-medium">
-              <Globe2 className="size-3.5 text-accent-300" /> 访问入口
+            <div className="flex items-center gap-1.5 text-ui font-medium">
+              <Globe2 className="size-4 text-accent-300" /> 访问入口
             </div>
             <Button tone="ghost" onClick={() => void refresh()}>
-              <RefreshCw className="size-3.5" />
+              <RefreshCw className="size-4" />
             </Button>
           </div>
           {!access?.ready ? (
-            <p className="mt-2 text-[10.5px] leading-5 text-amber-300">
+            <p className="mt-2 text-ui leading-5 text-amber-300">
               {access?.error ?? '保存后生成访问入口'}
             </p>
           ) : (
@@ -173,34 +173,34 @@ export function WebUiSettingsSheet({ open, onClose, initialInstanceId }: Props):
                     if (local) void call(Ipc.openExternal, { url: local })
                   }}
                 >
-                  <span className="inline-flex items-center gap-1"><Globe2 className="size-3" /> 本机打开</span>
+                  <span className="inline-flex items-center gap-1"><Globe2 className="size-4" /> 本机打开</span>
                 </Button>
-                <span className="text-[9px] text-[var(--color-text-tertiary)]">先用本机验证，再用手机扫二维码</span>
+                <span className="text-caption text-[var(--color-text-tertiary)]">先用本机验证，再用手机扫二维码</span>
               </div>
               {access.urls.map((url) => (
                 <div key={url} className="flex items-center gap-2">
-                  <span className="w-7 shrink-0 text-[8.5px] text-[var(--color-text-tertiary)]">
+                  <span className="w-7 shrink-0 text-micro text-[var(--color-text-tertiary)]">
                     {url.includes('127.0.0.1') ? '本机' : '局域网'}
                   </span>
-                  <code className="min-w-0 flex-1 truncate text-[9.5px] text-[var(--color-text-secondary)]">{url}</code>
+                  <code className="min-w-0 flex-1 truncate text-caption text-[var(--color-text-secondary)]">{url}</code>
                   <button type="button" className="shrink-0 text-accent-300" onClick={() => void copy(url)}>
-                    <Copy className="size-3" />
+                    <Copy className="size-4" />
                   </button>
                   <button
                     type="button"
                     className="shrink-0 text-accent-300"
                     onClick={() => void call(Ipc.openExternal, { url })}
                   >
-                    <ExternalLink className="size-3" />
+                    <ExternalLink className="size-4" />
                   </button>
                 </div>
               ))}
               <button
                 type="button"
-                className="mt-1 inline-flex items-center gap-1 text-[9.5px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+                className="mt-1 inline-flex items-center gap-1 text-caption text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
                 onClick={() => void rotate()}
               >
-                <QrCode className="size-3" /> 重新生成密钥（会断开现有页面）
+                <QrCode className="size-4" /> 重新生成密钥（会断开现有页面）
               </button>
             </div>
           )}
@@ -210,13 +210,13 @@ export function WebUiSettingsSheet({ open, onClose, initialInstanceId }: Props):
           <div className="flex items-center gap-4 rounded-lg border border-[var(--color-border-subtle)] p-3">
             <img src={qr} alt="MossStudio WebUI 二维码" className="size-28 rounded bg-white p-1" />
             <div className="min-w-0">
-              <div className="text-[11px] font-medium">手机扫码打开</div>
-              <p className="mt-1 text-[10px] leading-4 text-[var(--color-text-tertiary)]">
+              <div className="text-ui font-medium">手机扫码打开</div>
+              <p className="mt-1 text-caption leading-4 text-[var(--color-text-tertiary)]">
                 二维码包含访问 token；不要截图发到公共群。绑定实例后页面会默认选中它。
               </p>
               <button
                 type="button"
-                className="mt-2 text-[9.5px] text-accent-300"
+                className="mt-2 text-caption text-accent-300"
                 onClick={() => void copy(primary)}
               >
                 复制当前地址
@@ -225,7 +225,7 @@ export function WebUiSettingsSheet({ open, onClose, initialInstanceId }: Props):
           </div>
         ) : null}
 
-        <p className="text-[9.5px] leading-4 text-[var(--color-text-tertiary)]">
+        <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">
           当前手机端覆盖提示词、实例、尺寸/步数/seed、生成与任务状态；画布/画廊/完整 Project 仍在桌面版。
           对外暴露前请确认同一网络可信。
         </p>

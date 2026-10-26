@@ -307,7 +307,7 @@ export function GbcImportModal({ open, initialTab = 'run', onClose, onImport }: 
           <>
             <Button tone="ghost" onClick={onClose}>关闭</Button>
             <Button tone="primary" onClick={() => void runGbc()} disabled={busy || !status?.available}>
-              {busy ? <Spinner className="size-3.5" /> : <ScanSearch className="size-3.5" />}
+              {busy ? <Spinner className="size-4" /> : <ScanSearch className="size-4" />}
               {busy ? 'GBC 运行中…' : '开始解析'}
             </Button>
           </>
@@ -316,7 +316,7 @@ export function GbcImportModal({ open, initialTab = 'run', onClose, onImport }: 
     >
       <div className="flex shrink-0 gap-1 border-b border-[var(--color-border-subtle)] px-4 pt-2">
         {([['run', '解析与结果'], ['manage', 'GBC 版本'], ['env', '环境检测']] as const).map(([key, label]) => (
-          <button key={key} type="button" onClick={() => setTab(key)} className={`border-b-2 px-3 py-2 text-[11px] ${tab === key ? 'border-accent-400 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-tertiary)]'}`}>{label}</button>
+          <button key={key} type="button" onClick={() => setTab(key)} className={`border-b-2 px-3 py-2 text-ui ${tab === key ? 'border-accent-400 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-tertiary)]'}`}>{label}</button>
         ))}
       </div>
 
@@ -324,59 +324,59 @@ export function GbcImportModal({ open, initialTab = 'run', onClose, onImport }: 
         <div className="space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.025] p-3">
             <div>
-              <div className="flex items-center gap-1.5 text-[11.5px] font-medium"><GitBranch className="size-3.5" />KohakuGBC 版本仓库</div>
-              <p className="mt-1 text-[9.5px] text-[var(--color-text-tertiary)]">内嵌 Git 克隆上游；按 commit 创建独立版本目录，不依赖系统 git。</p>
+              <div className="flex items-center gap-1.5 text-ui font-medium"><GitBranch className="size-4" />KohakuGBC 版本仓库</div>
+              <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">内嵌 Git 克隆上游；按 commit 创建独立版本目录，不依赖系统 git。</p>
             </div>
             <Button tone="secondary" onClick={() => void pullBranches()} disabled={manageBusy !== null}>
-              {manageBusy === 'branches' ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />}拉取/更新
+              {manageBusy === 'branches' ? <Spinner className="size-4" /> : <RefreshCw className="size-4" />}拉取/更新
             </Button>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <Field label="分支"><Select value={branch} onChange={(event) => void loadCommits(event.target.value)}>{branches.length === 0 ? <option value="main">先拉取仓库</option> : null}{branches.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</Select></Field>
             <Field label="提交"><Select value={commit} onChange={(event) => setCommit(event.target.value)}>{commits.length === 0 ? <option value="">先拉取仓库</option> : null}{commits.map((item) => <option key={item.sha} value={item.sha}>{item.short} · {item.subject.slice(0, 42)}</option>)}</Select></Field>
           </div>
-          <Button tone="primary" onClick={() => void createVersion()} disabled={!commit || manageBusy !== null}>{manageBusy === 'create' ? <Spinner className="size-3.5" /> : <Download className="size-3.5" />}创建版本</Button>
+          <Button tone="primary" onClick={() => void createVersion()} disabled={!commit || manageBusy !== null}>{manageBusy === 'create' ? <Spinner className="size-4" /> : <Download className="size-4" />}创建版本</Button>
           <div className="space-y-1.5">
             {versions.map((version) => (
               <div key={version.id} className="flex items-center gap-2 rounded-lg border border-[var(--color-border-subtle)] px-3 py-2">
-                <Layers className="size-3.5 shrink-0 text-accent-300" />
-                <div className="min-w-0 flex-1"><div className="truncate text-[10.5px] font-medium">{version.name}</div><div className="truncate font-mono text-[8.5px] text-[var(--color-text-tertiary)]">{version.shortCommit} · {version.path}</div></div>
+                <Layers className="size-4 shrink-0 text-accent-300" />
+                <div className="min-w-0 flex-1"><div className="truncate text-ui font-medium">{version.name}</div><div className="truncate font-mono text-micro text-[var(--color-text-tertiary)]">{version.shortCommit} · {version.path}</div></div>
                 <Button tone="ghost" onClick={() => { setVersionId(version.id); setTab('run') }}>用于解析</Button>
-                <button type="button" className="text-[var(--color-text-tertiary)] hover:text-red-300" onClick={() => void removeVersion(version)} disabled={manageBusy !== null}><Trash2 className="size-3.5" /></button>
+                <button type="button" className="text-[var(--color-text-tertiary)] hover:text-red-300" onClick={() => void removeVersion(version)} disabled={manageBusy !== null}><Trash2 className="size-4" /></button>
               </div>
             ))}
-            {versions.length === 0 ? <p className="py-6 text-center text-[10px] text-[var(--color-text-tertiary)]">还没有 GBC 版本；先拉取上游并创建。</p> : null}
+            {versions.length === 0 ? <p className="py-6 text-center text-caption text-[var(--color-text-tertiary)]">还没有 GBC 版本；先拉取上游并创建。</p> : null}
           </div>
         </div>
       ) : tab === 'env' ? (
         <div className="space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.025] p-3">
-            <div><div className="text-[11.5px] font-medium">GBC 运行环境</div><p className="mt-0.5 text-[9.5px] text-[var(--color-text-tertiary)]">逐项检查版本、gbc、Python、torch/transformers/kohakugbc 和 CUDA。</p></div>
-            <Button tone="primary" onClick={() => void installEnvironment()} disabled={manageBusy !== null || !versionId}>{manageBusy === 'env' ? <Spinner className="size-3.5" /> : <Download className="size-3.5" />}安装/修复环境</Button>
+            <div><div className="text-ui font-medium">GBC 运行环境</div><p className="mt-0.5 text-caption text-[var(--color-text-tertiary)]">逐项检查版本、gbc、Python、torch/transformers/kohakugbc 和 CUDA。</p></div>
+            <Button tone="primary" onClick={() => void installEnvironment()} disabled={manageBusy !== null || !versionId}>{manageBusy === 'env' ? <Spinner className="size-4" /> : <Download className="size-4" />}安装/修复环境</Button>
           </div>
-          {!versionId ? <p className="text-[10px] text-amber-300">先在“GBC 版本”里创建或选择一个版本。</p> : null}
+          {!versionId ? <p className="text-caption text-amber-300">先在“GBC 版本”里创建或选择一个版本。</p> : null}
           <div className="space-y-1.5">
             {(status?.checks ?? []).map((check) => (
               <div key={check.id} className="flex items-start gap-2 rounded border border-[var(--color-border-subtle)] px-2.5 py-2">
                 {check.ok ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-400" /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-400" />}
-                <div className="min-w-0"><div className="text-[10px] font-medium">{check.label}</div><div className="mt-0.5 break-all font-mono text-[8.5px] text-[var(--color-text-tertiary)]">{check.detail}</div></div>
+                <div className="min-w-0"><div className="text-caption font-medium">{check.label}</div><div className="mt-0.5 break-all font-mono text-micro text-[var(--color-text-tertiary)]">{check.detail}</div></div>
               </div>
             ))}
-            {!status?.checks?.length ? <p className="py-4 text-center text-[10px] text-[var(--color-text-tertiary)]">正在检查环境…</p> : null}
+            {!status?.checks?.length ? <p className="py-4 text-center text-caption text-[var(--color-text-tertiary)]">正在检查环境…</p> : null}
           </div>
-          {envOutput ? <pre className="max-h-48 overflow-auto rounded bg-black/30 p-2 font-mono text-[8.5px] text-[var(--color-text-secondary)]">{envOutput}</pre> : null}
+          {envOutput ? <pre className="max-h-48 overflow-auto rounded bg-black/30 p-2 font-mono text-micro text-[var(--color-text-secondary)]">{envOutput}</pre> : null}
         </div>
       ) : result ? (
         <div className="grid min-h-[560px] grid-cols-1 md:grid-cols-[230px_1fr]">
           <div className="border-b border-[var(--color-border-subtle)] md:border-b-0 md:border-r">
-            <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] px-3 py-2 text-[10px] text-[var(--color-text-tertiary)]">
+            <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] px-3 py-2 text-caption text-[var(--color-text-tertiary)]">
               <span>解析结果</span><span>{result.images.length} 张</span>
             </div>
             <div className="max-h-[560px] overflow-y-auto p-1.5">
               {result.images.map((image) => (
                 <button key={image.key} type="button" onClick={() => setSelectedKey(image.key)} className={`mb-1 w-full rounded border px-2 py-2 text-left ${selected?.key === image.key ? 'border-accent-500/40 bg-accent-500/10' : 'border-transparent hover:bg-white/[0.04]'}`}>
-                  <div className="truncate text-[10.5px] font-medium">{image.name}</div>
-                  <div className="mt-0.5 text-[8.5px] text-[var(--color-text-tertiary)]">{image.vertices.length} 个区域 · {image.key}</div>
+                  <div className="truncate text-ui font-medium">{image.name}</div>
+                  <div className="mt-0.5 text-micro text-[var(--color-text-tertiary)]">{image.vertices.length} 个区域 · {image.key}</div>
                 </button>
               ))}
             </div>
@@ -385,12 +385,12 @@ export function GbcImportModal({ open, initialTab = 'run', onClose, onImport }: 
             {selected ? (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div><div className="text-[12px] font-medium">{selected.name}</div><div className="mt-0.5 break-all font-mono text-[8.5px] text-[var(--color-text-tertiary)]">{selected.path}</div></div>
+                  <div><div className="text-ui font-medium">{selected.name}</div><div className="mt-0.5 break-all font-mono text-micro text-[var(--color-text-tertiary)]">{selected.path}</div></div>
                   <Button tone="ghost" onClick={() => setResult(null)}>重新解析</Button>
                 </div>
                 <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_220px]">
                   <div className="relative overflow-hidden rounded border border-[var(--color-border-subtle)] bg-black/25">
-                    {detailThumb ? <img src={detailThumb} alt={selected.name} className="block max-h-[420px] w-full object-contain" /> : <div className="flex h-[280px] items-center justify-center text-[10px] text-[var(--color-text-tertiary)]">加载预览…</div>}
+                    {detailThumb ? <img src={detailThumb} alt={selected.name} className="block max-h-[420px] w-full object-contain" /> : <div className="flex h-[280px] items-center justify-center text-caption text-[var(--color-text-tertiary)]">加载预览…</div>}
                     <div className="pointer-events-none absolute inset-0">
                       {selected.vertices.filter((vertex) => vertex.bbox).map((vertex, index) => {
                         const box = vertex.bbox!
@@ -401,13 +401,13 @@ export function GbcImportModal({ open, initialTab = 'run', onClose, onImport }: 
                   <div className="max-h-[420px] overflow-y-auto rounded border border-[var(--color-border-subtle)] p-2">
                     {selected.vertices.map((vertex, index) => (
                       <div key={vertex.vertex_id ?? index} className="border-b border-[var(--color-border-subtle)] py-1.5 last:border-0">
-                        <div className="text-[9px] font-medium text-accent-300">{index + 1}. {vertex.label ?? 'object'}</div>
-                        <div className="mt-0.5 text-[9px] leading-4 text-[var(--color-text-secondary)]">{vertex.descs?.[0]?.text ?? '无描述'}</div>
+                        <div className="text-caption font-medium text-accent-300">{index + 1}. {vertex.label ?? 'object'}</div>
+                        <div className="mt-0.5 text-caption leading-4 text-[var(--color-text-secondary)]">{vertex.descs?.[0]?.text ?? '无描述'}</div>
                       </div>
                     ))}
                   </div>
                 </div>
-                {selected.summary ? <p className="mt-2 line-clamp-3 text-[9.5px] leading-4 text-[var(--color-text-tertiary)]">{selected.summary}</p> : null}
+                {selected.summary ? <p className="mt-2 line-clamp-3 text-caption leading-4 text-[var(--color-text-tertiary)]">{selected.summary}</p> : null}
               </>
             ) : null}
           </div>
@@ -415,28 +415,28 @@ export function GbcImportModal({ open, initialTab = 'run', onClose, onImport }: 
       ) : (
         <div className="min-h-[560px] space-y-3 p-4">
           {!status?.available ? (
-            <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[10.5px] leading-5 text-amber-200">
+            <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-ui leading-5 text-amber-200">
               {status?.error ?? '正在检查 gbc…'}
               <button type="button" className="ml-2 underline" onClick={() => setTab('env')}>去环境检测/安装</button>
             </div>
-          ) : <div className="text-[9.5px] text-emerald-300">GBC 可用；首次运行可能下载 OWLv2/EmbeddingGemma 模型。</div>}
+          ) : <div className="text-caption text-emerald-300">GBC 可用；首次运行可能下载 OWLv2/EmbeddingGemma 模型。</div>}
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex gap-1 rounded-[5px] border border-[var(--color-border-subtle)] p-0.5">
-              <button type="button" onClick={() => setInputMode('folder')} className={`rounded px-2.5 py-1 text-[10px] ${inputMode === 'folder' ? 'bg-accent-500/15 text-accent-200' : 'text-[var(--color-text-tertiary)]'}`}>图片目录</button>
-              <button type="button" onClick={() => { setInputMode('files'); setSelectedPaths(files) }} className={`rounded px-2.5 py-1 text-[10px] ${inputMode === 'files' ? 'bg-accent-500/15 text-accent-200' : 'text-[var(--color-text-tertiary)]'}`}>单图 / 多图</button>
+              <button type="button" onClick={() => setInputMode('folder')} className={`rounded px-2.5 py-1 text-caption ${inputMode === 'folder' ? 'bg-accent-500/15 text-accent-200' : 'text-[var(--color-text-tertiary)]'}`}>图片目录</button>
+              <button type="button" onClick={() => { setInputMode('files'); setSelectedPaths(files) }} className={`rounded px-2.5 py-1 text-caption ${inputMode === 'files' ? 'bg-accent-500/15 text-accent-200' : 'text-[var(--color-text-tertiary)]'}`}>单图 / 多图</button>
             </div>
-            <span className="text-[9px] text-[var(--color-text-tertiary)]">已选 {selectedPaths.length} / {inputMode === 'folder' ? folderImages.length : files.length} 张</span>
+            <span className="text-caption text-[var(--color-text-tertiary)]">已选 {selectedPaths.length} / {inputMode === 'folder' ? folderImages.length : files.length} 张</span>
           </div>
 
           <div className="rounded-lg border border-[var(--color-border-subtle)] bg-black/10 p-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <Input value={inputMode === 'folder' ? folder : ''} onChange={(event) => setFolder(event.target.value)} placeholder="图片目录，或直接添加图片…" className="h-7 min-w-0 flex-1 font-mono text-[9px]" />
+                <Input value={inputMode === 'folder' ? folder : ''} onChange={(event) => setFolder(event.target.value)} placeholder="图片目录，或直接添加图片…" className="h-7 min-w-0 flex-1 font-mono text-caption" />
                 {inputMode === 'folder' ? <Button tone="ghost" onClick={() => void scanFolder(folder)}>扫描</Button> : null}
               </div>
               <div className="flex gap-1">
-                <Button tone="secondary" onClick={() => inputMode === 'folder' ? void pickFolder() : void pickFiles()}>{inputMode === 'folder' ? <><FolderOpen className="size-3.5" />选择目录</> : <><ImagePlus className="size-3.5" />添加图片</>}</Button>
+                <Button tone="secondary" onClick={() => inputMode === 'folder' ? void pickFolder() : void pickFiles()}>{inputMode === 'folder' ? <><FolderOpen className="size-4" />选择目录</> : <><ImagePlus className="size-4" />添加图片</>}</Button>
                 {inputMode === 'files' ? <Button tone="ghost" onClick={() => setFiles([])}>清空</Button> : null}
               </div>
             </div>
@@ -445,15 +445,15 @@ export function GbcImportModal({ open, initialTab = 'run', onClose, onImport }: 
                 const checked = selectedPaths.includes(image.path)
                 return (
                   <button key={image.path} type="button" onClick={() => setSelectedPaths((current) => checked ? current.filter((path) => path !== image.path) : [...current, image.path])} className={`group relative aspect-square overflow-hidden rounded border text-left ${checked ? 'border-accent-400 ring-1 ring-accent-400/40' : 'border-[var(--color-border-subtle)] opacity-60 hover:opacity-100'}`}>
-                    {thumbs[image.path] ? <img src={thumbs[image.path]} alt={image.name} loading="lazy" className="size-full object-cover" /> : <span className="flex size-full items-center justify-center text-[8px] text-[var(--color-text-tertiary)]">加载中…</span>}
-                    <span className="absolute inset-x-0 bottom-0 truncate bg-black/65 px-1.5 py-1 text-[8px] text-white/85">{image.name}</span>
-                    <span className={`absolute right-1 top-1 flex size-4 items-center justify-center rounded border text-[9px] ${checked ? 'border-accent-300 bg-accent-500 text-white' : 'border-white/40 bg-black/35 text-transparent'}`}>✓</span>
+                    {thumbs[image.path] ? <img src={thumbs[image.path]} alt={image.name} loading="lazy" className="size-full object-cover" /> : <span className="flex size-full items-center justify-center text-micro text-[var(--color-text-tertiary)]">加载中…</span>}
+                    <span className="absolute inset-x-0 bottom-0 truncate bg-black/65 px-1.5 py-1 text-micro text-white/85">{image.name}</span>
+                    <span className={`absolute right-1 top-1 flex size-4 items-center justify-center rounded border text-caption ${checked ? 'border-accent-300 bg-accent-500 text-white' : 'border-white/40 bg-black/35 text-transparent'}`}>✓</span>
                   </button>
                 )
               })}
-              {(inputMode === 'folder' ? folderImages.length : files.length) === 0 ? <div className="col-span-full py-10 text-center text-[10px] text-[var(--color-text-tertiary)]">选择目录或添加图片后，这里直接显示缩略图</div> : null}
+              {(inputMode === 'folder' ? folderImages.length : files.length) === 0 ? <div className="col-span-full py-10 text-center text-caption text-[var(--color-text-tertiary)]">选择目录或添加图片后，这里直接显示缩略图</div> : null}
             </div>
-            {availableImages.length > visibleImages.length ? <div className="mt-2 flex items-center justify-center gap-2"><span className="text-[8.5px] text-[var(--color-text-tertiary)]">已显示 {visibleImages.length} / {availableImages.length}</span><Button tone="ghost" onClick={() => setVisibleCount((count) => count + 60)}>加载更多</Button></div> : null}
+            {availableImages.length > visibleImages.length ? <div className="mt-2 flex items-center justify-center gap-2"><span className="text-micro text-[var(--color-text-tertiary)]">已显示 {visibleImages.length} / {availableImages.length}</span><Button tone="ghost" onClick={() => setVisibleCount((count) => count + 60)}>加载更多</Button></div> : null}
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
@@ -464,15 +464,15 @@ export function GbcImportModal({ open, initialTab = 'run', onClose, onImport }: 
 
           <div className="rounded-lg border border-[var(--color-border-subtle)] p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><div className="text-[10px] font-medium">同目录结果文件</div><p className="mt-0.5 text-[8.5px] text-[var(--color-text-tertiary)]">在原图旁写出结果，不修改原图。</p></div>
+              <div><div className="text-caption font-medium">同目录结果文件</div><p className="mt-0.5 text-micro text-[var(--color-text-tertiary)]">在原图旁写出结果，不修改原图。</p></div>
               <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 text-[9.5px] text-[var(--color-text-secondary)]"><Switch aria-label="写出 JSON" checked={sidecarJson} onCheckedChange={setSidecarJson} />image.gbcout.json</label>
-                <label className="flex items-center gap-2 text-[9.5px] text-[var(--color-text-secondary)]"><Switch aria-label="写出 TXT" checked={sidecarTxt} onCheckedChange={setSidecarTxt} />image.gbcout.txt</label>
+                <label className="flex items-center gap-2 text-caption text-[var(--color-text-secondary)]"><Switch aria-label="写出 JSON" checked={sidecarJson} onCheckedChange={setSidecarJson} />image.gbcout.json</label>
+                <label className="flex items-center gap-2 text-caption text-[var(--color-text-secondary)]"><Switch aria-label="写出 TXT" checked={sidecarTxt} onCheckedChange={setSidecarTxt} />image.gbcout.txt</label>
               </div>
             </div>
           </div>
 
-          <p className="text-[9px] text-[var(--color-text-tertiary)]">解析结果先进入结果暂存区，不会直接改动画布。可逐张查看、复制，再写入画布。</p>
+          <p className="text-caption text-[var(--color-text-tertiary)]">解析结果先进入结果暂存区，不会直接改动画布。可逐张查看、复制，再写入画布。</p>
         </div>
       )}
     </Modal>

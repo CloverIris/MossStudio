@@ -94,7 +94,7 @@ export function TerminalPage(): React.JSX.Element {
       cursorStyle: 'bar',
       allowTransparency: true,
       fontFamily: '"Cascadia Code", "SF Mono", ui-monospace, Menlo, monospace',
-      fontSize: 11.5,
+      fontSize: 13,
       lineHeight: 1.45,
       scrollback: 5000,
       theme: {
@@ -205,27 +205,27 @@ export function TerminalPage(): React.JSX.Element {
     <div className="flex h-full min-h-0 bg-transparent">
       <aside className="glass-thin flex w-[260px] shrink-0 flex-col border-r border-[var(--color-border-subtle)]">
         <header className="flex items-center justify-between border-b border-[var(--color-border-subtle)] px-3 py-2.5">
-          <div className="flex items-center gap-1.5 text-[11px] font-medium">
-            <SquareTerminal className="size-3.5 text-[var(--color-text-tertiary)]" />
+          <div className="flex items-center gap-1.5 text-ui font-medium">
+            <SquareTerminal className="size-4 text-[var(--color-text-tertiary)]" />
             引擎 / 推理进程
           </div>
-          <span className="text-[9.5px] text-[var(--color-text-tertiary)]">{visible.length}</span>
+          <span className="text-caption text-[var(--color-text-tertiary)]">{visible.length}</span>
         </header>
         <div className="border-b border-[var(--color-border-subtle)] px-1.5 py-1.5">
-          <div className="mb-1 flex items-center justify-between text-[8.5px] font-medium uppercase tracking-[0.1em] text-[var(--color-text-tertiary)]">
+          <div className="mb-1 flex items-center justify-between text-micro font-medium uppercase tracking-[0.1em] text-[var(--color-text-tertiary)]">
             <span>SSH 会话</span>
             <span>{sessions.filter((item) => item.exitCode == null).length}</span>
           </div>
           <div className="space-y-1">
             {sessions.map((session) => (
               <div key={session.id} className={cn('flex items-center gap-1 rounded border px-1.5 py-1', activeSessionId === session.id ? 'border-accent-500/40 bg-accent-500/10' : 'border-[var(--color-border-subtle)]')}>
-                <button type="button" className="min-w-0 flex-1 truncate text-left text-[9px]" onClick={() => { setActiveSessionId(session.id); setActiveJob(null) }}>
+                <button type="button" className="min-w-0 flex-1 truncate text-left text-caption" onClick={() => { setActiveSessionId(session.id); setActiveJob(null) }}>
                   {session.hostName}{session.exitCode != null ? ' · 已结束' : ''}
                 </button>
-                <button type="button" className="text-[var(--color-text-tertiary)] hover:text-red-300" onClick={() => { void call(Ipc.sshTerminalClose, { id: session.id }); setSessions((previous) => previous.filter((item) => item.id !== session.id)); if (activeSessionId === session.id) setActiveSessionId(null) }}><span className="text-[10px]">×</span></button>
+                <button type="button" className="text-[var(--color-text-tertiary)] hover:text-red-300" onClick={() => { void call(Ipc.sshTerminalClose, { id: session.id }); setSessions((previous) => previous.filter((item) => item.id !== session.id)); if (activeSessionId === session.id) setActiveSessionId(null) }}><span className="text-caption">×</span></button>
               </div>
             ))}
-            {sessions.length === 0 ? <p className="text-[8.5px] text-[var(--color-text-tertiary)]">在引擎页点“SSH 终端”打开服务器 TTY</p> : null}
+            {sessions.length === 0 ? <p className="text-micro text-[var(--color-text-tertiary)]">在引擎页点“SSH 终端”打开服务器 TTY</p> : null}
           </div>
         </div>
         <div className="flex flex-wrap gap-1 border-b border-[var(--color-border-subtle)] px-1.5 py-1.5">
@@ -235,7 +235,7 @@ export function TerminalPage(): React.JSX.Element {
               type="button"
               onClick={() => setEngine(key)}
               className={cn(
-                'rounded border px-1.5 py-0.5 text-[8.5px]',
+                'rounded border px-1.5 py-0.5 text-micro',
                 engine === key ? 'border-accent-500/40 bg-accent-500/10 text-accent-200' : 'border-[var(--color-border-subtle)] text-[var(--color-text-tertiary)]',
               )}
             >
@@ -245,7 +245,7 @@ export function TerminalPage(): React.JSX.Element {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {ordered.length === 0 ? (
-            <p className="px-3 py-8 text-center text-[10.5px] leading-5 text-[var(--color-text-tertiary)]">
+            <p className="px-3 py-8 text-center text-ui leading-5 text-[var(--color-text-tertiary)]">
               还没有任务。
               <br />
               去 MossStudio 开始生成。
@@ -268,10 +268,10 @@ export function TerminalPage(): React.JSX.Element {
               >
                 <span className={cn('mt-1.5 size-1.5 shrink-0 rounded-full', stateColor[job.state])} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[11px] font-medium text-[var(--color-text)]">
+                  <span className="block truncate text-ui font-medium text-[var(--color-text)]">
                     {job.params.prompt.trim().slice(0, 32) || job.instanceName}
                   </span>
-                  <span className="mt-0.5 block truncate text-[9.5px] text-[var(--color-text-tertiary)]">
+                  <span className="mt-0.5 block truncate text-caption text-[var(--color-text-tertiary)]">
                     {job.kind === 'training' ? '训练' : '推理'} · {stateLabel[job.state]} · {job.instanceName}
                   </span>
                 </span>
@@ -291,7 +291,7 @@ export function TerminalPage(): React.JSX.Element {
                     }}
                     className="mt-0.5 rounded-[3px] p-1 text-[var(--color-text-tertiary)] hover:bg-red-500/15 hover:text-red-300"
                   >
-                    <Square className="size-3" />
+                    <Square className="size-4" />
                   </span>
                 ) : null}
               </button>
@@ -303,11 +303,11 @@ export function TerminalPage(): React.JSX.Element {
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] px-3">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="truncate text-[11px] font-medium">
+            <span className="truncate text-ui font-medium">
               {activeSessionId ? sessions.find((item) => item.id === activeSessionId)?.hostName ?? 'SSH 会话' : active ? active.params.prompt.trim().slice(0, 48) || active.instanceName : '没有选中任务'}
             </span>
             {active ? (
-              <span className="text-[9.5px] text-[var(--color-text-tertiary)]">
+              <span className="text-caption text-[var(--color-text-tertiary)]">
                 {active.kind === 'training' ? '训练' : '推理'} · {stateLabel[active.state]} · PID {active.pid ?? '—'}
               </span>
             ) : null}
@@ -316,7 +316,7 @@ export function TerminalPage(): React.JSX.Element {
             <button
               type="button"
               onClick={() => void cancelJob(active.id)}
-              className="rounded-[4px] px-2 py-1 text-[10px] text-red-300 hover:bg-red-500/10"
+              className="rounded-[4px] px-2 py-1 text-caption text-red-300 hover:bg-red-500/10"
             >
               停止
             </button>

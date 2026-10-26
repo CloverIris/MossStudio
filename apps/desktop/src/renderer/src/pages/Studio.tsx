@@ -62,9 +62,9 @@ const SIZE_PRESETS: Array<[string, number, number]> = [
 ]
 
 const LABEL_META: Record<LayoutLabel, { name: string; color: string; icon: React.ReactNode }> = {
-  object: { name: '物体', color: 'accent', icon: <Box className="size-3" /> },
-  character: { name: '人物', color: 'sky', icon: <UserRound className="size-3" /> },
-  text: { name: '文字', color: 'amber', icon: <Type className="size-3" /> },
+  object: { name: '物体', color: 'accent', icon: <Box className="size-4" /> },
+  character: { name: '人物', color: 'sky', icon: <UserRound className="size-4" /> },
+  text: { name: '文字', color: 'amber', icon: <Type className="size-4" /> },
 }
 
 type PanelId = 'prompt' | 'sampler' | 'summary' | 'layers' | 'gallery' | 'agent'
@@ -120,9 +120,9 @@ function DockPanel({
           event.dataTransfer.setData('text/moss-panel', id)
           event.dataTransfer.effectAllowed = 'move'
         }}
-        className="flex h-7 shrink-0 cursor-grab items-center gap-1.5 border-b border-[var(--color-border-subtle)] px-2 text-[10px] font-medium text-[var(--color-text-secondary)] active:cursor-grabbing"
+        className="flex h-8 shrink-0 cursor-grab items-center gap-1.5 border-b border-[var(--color-border-subtle)] px-3 text-ui font-medium text-[var(--color-text-secondary)] active:cursor-grabbing"
       >
-        <GripVertical className="size-3 text-[var(--color-text-tertiary)]" />
+        <GripVertical className="size-4 text-[var(--color-text-tertiary)]" />
         {title}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
@@ -164,7 +164,7 @@ function MiniGallery(): React.JSX.Element {
             <img src={cloverUrl(item.path)} alt={item.name} className="size-full object-cover" loading="lazy" />
           </button>
         ))}
-        {items.length === 0 ? <span className="col-span-4 py-4 text-center text-[9px] text-[var(--color-text-tertiary)]">画廊为空</span> : null}
+        {items.length === 0 ? <span className="col-span-4 py-4 text-center text-caption text-[var(--color-text-tertiary)]">画廊为空</span> : null}
       </div>
     </div>
   )
@@ -283,8 +283,8 @@ export function StudioPage(): React.JSX.Element {
   const [gbcTab, setGbcTab] = useState<'run' | 'manage'>('run')
   const [gbcPending, setGbcPending] = useState<{ result: GbcRunResult; image?: GbcImageResult } | null>(null)
   const [docks, setDocks] = useState(DEFAULT_DOCKS)
-  const [leftWidth, setLeftWidth] = useState(300)
-  const [rightWidth, setRightWidth] = useState(320)
+  const [leftWidth, setLeftWidth] = useState(320)
+  const [rightWidth, setRightWidth] = useState(340)
   const [leftCollapsed, setLeftCollapsed] = useState(false)
   const [rightCollapsed, setRightCollapsed] = useState(false)
   const [panelHeights, setPanelHeights] = useState<Partial<Record<PanelId, number>>>({ agent: 360 })
@@ -910,11 +910,11 @@ export function StudioPage(): React.JSX.Element {
     if (id === 'prompt') return (
       <div className="space-y-2 p-3">
         <div className="flex items-center justify-between">
-          <span className="text-[9px] text-[var(--color-text-tertiary)]">{prompt.length} 字符</span>
-          <button type="button" onClick={() => setSegmentsOpen(true)} className="text-[9px] text-accent-300 hover:underline">分段 / 确认</button>
+          <span className="text-caption text-[var(--color-text-tertiary)]">{prompt.length} 字符</span>
+          <button type="button" onClick={() => setSegmentsOpen(true)} className="text-caption text-accent-300 hover:underline">分段 / 确认</button>
         </div>
         <Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="描述画面、文字、风格与布局。" className="h-36 w-full resize-none leading-5" />
-        <label className="block text-[9.5px] text-[var(--color-text-tertiary)]">负面提示词</label>
+        <label className="block text-caption text-[var(--color-text-tertiary)]">负面提示词</label>
         <Input value={negative} onChange={(event) => setNegative(event.target.value)} className="w-full" />
       </div>
     )
@@ -922,32 +922,32 @@ export function StudioPage(): React.JSX.Element {
       <div className="space-y-2.5 p-3">
         <div className="flex flex-wrap gap-1">
           {SIZE_PRESETS.map(([name, width, height]) => (
-            <button key={name} type="button" onClick={() => changeSize(width, height)} className={cn('rounded-full border px-2 py-0.5 text-[9px]', draft.width === width && draft.height === height ? 'border-accent-500/40 bg-accent-500/12 text-accent-200' : 'border-[var(--color-border)] text-[var(--color-text-secondary)]')}>{name}</button>
+            <button key={name} type="button" onClick={() => changeSize(width, height)} className={cn('rounded-full border px-2 py-0.5 text-caption', draft.width === width && draft.height === height ? 'border-accent-500/40 bg-accent-500/12 text-accent-200' : 'border-[var(--color-border)] text-[var(--color-text-secondary)]')}>{name}</button>
           ))}
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <label className="space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">宽度</span><Input type="number" min={256} max={2048} step={16} value={draft.width} onChange={(event) => changeSize(Number(event.target.value) || draft.width, draft.height)} /></label>
-          <label className="space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">高度</span><Input type="number" min={256} max={2048} step={16} value={draft.height} onChange={(event) => changeSize(draft.width, Number(event.target.value) || draft.height)} /></label>
+          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">宽度</span><Input type="number" min={256} max={2048} step={16} value={draft.width} onChange={(event) => changeSize(Number(event.target.value) || draft.width, draft.height)} /></label>
+          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">高度</span><Input type="number" min={256} max={2048} step={16} value={draft.height} onChange={(event) => changeSize(draft.width, Number(event.target.value) || draft.height)} /></label>
         </div>
-        <div className="flex items-center justify-between"><span className="text-[9.5px]">步数</span><Segmented label="采样步数" value={String(steps)} onChange={(value) => setSteps(Number(value))} options={[{ value: '8', label: '8 DMD' }, { value: '20', label: '20' }, { value: '50', label: '50' }]} /></div>
+        <div className="flex items-center justify-between"><span className="text-caption">步数</span><Segmented label="采样步数" value={String(steps)} onChange={(value) => setSteps(Number(value))} options={[{ value: '8', label: '8 DMD' }, { value: '20', label: '20' }, { value: '50', label: '50' }]} /></div>
         <div className="grid grid-cols-2 gap-2">
-          <label className="space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">CFG</span><Input type="number" min={0} max={20} step={0.5} value={cfg} onChange={(event) => setCfg(Number(event.target.value))} /></label>
-          <label className="space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">Seed</span><Input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} /></label>
+          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">CFG</span><Input type="number" min={0} max={20} step={0.5} value={cfg} onChange={(event) => setCfg(Number(event.target.value))} /></label>
+          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">Seed</span><Input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} /></label>
         </div>
-        <label className="block space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">模型</span><Select value={modelBundleId} onChange={(event) => { setModelBundleId(event.target.value); localStorage.setItem('mossstudio.modelBundleId', event.target.value) }} className="w-full">{catalog?.bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}</Select></label>
-        <label className="block space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">设备</span><Select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); localStorage.setItem('mossstudio.deviceId', event.target.value) }} className="w-full">{devices.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.kind.toUpperCase()}</option>)}</Select></label>
-        <label className="block space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">引擎</span><Select value={engineHostId} onChange={(event) => setEngineHostId(event.target.value)} className="w-full"><option value="">本机 MossInfer</option>{hosts.map((host) => <option key={host.id} value={host.id}>{host.name} · 远端</option>)}</Select></label>
-        {engineHostId ? <label className="block space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">远端模型路径</span><Input value={remoteModelPath} onChange={(event) => setRemoteModelPath(event.target.value)} placeholder="~/.mossstudio/models/..." className="w-full" /></label> : null}
+        <label className="block space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">模型</span><Select value={modelBundleId} onChange={(event) => { setModelBundleId(event.target.value); localStorage.setItem('mossstudio.modelBundleId', event.target.value) }} className="w-full">{catalog?.bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}</Select></label>
+        <label className="block space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">设备</span><Select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); localStorage.setItem('mossstudio.deviceId', event.target.value) }} className="w-full">{devices.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.kind.toUpperCase()}</option>)}</Select></label>
+        <label className="block space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">引擎</span><Select value={engineHostId} onChange={(event) => setEngineHostId(event.target.value)} className="w-full"><option value="">本机 MossInfer</option>{hosts.map((host) => <option key={host.id} value={host.id}>{host.name} · 远端</option>)}</Select></label>
+        {engineHostId ? <label className="block space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">远端模型路径</span><Input value={remoteModelPath} onChange={(event) => setRemoteModelPath(event.target.value)} placeholder="~/.mossstudio/models/..." className="w-full" /></label> : null}
       </div>
     )
     if (id === 'summary') return (
       <div className="space-y-2 p-3">
-        <label className="space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">整体描述</span><Textarea value={draft.summary.caption} onChange={(event) => setDraft((previous) => ({ ...previous, summary: { ...previous.summary, caption: event.target.value } }))} placeholder="一句话描述整张图。" className="h-16 w-full resize-none" /></label>
+        <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">整体描述</span><Textarea value={draft.summary.caption} onChange={(event) => setDraft((previous) => ({ ...previous, summary: { ...previous.summary, caption: event.target.value } }))} placeholder="一句话描述整张图。" className="h-16 w-full resize-none" /></label>
         <div className="grid grid-cols-2 gap-2">
-          <label className="space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">meta</span><Input value={draft.summary.meta.join(', ')} onChange={(event) => setDraft((previous) => ({ ...previous, summary: { ...previous.summary, meta: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) } }))} className="w-full" /></label>
-          <label className="space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">canvas</span><Select value={draft.summary.canvas} onChange={(event) => setDraft((previous) => ({ ...previous, summary: { ...previous.summary, canvas: event.target.value as LayoutDraft['summary']['canvas'] } }))} className="w-full"><option value="single">single</option><option value="multi_panel">multi_panel</option><option value="collage">collage</option></Select></label>
+          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">meta</span><Input value={draft.summary.meta.join(', ')} onChange={(event) => setDraft((previous) => ({ ...previous, summary: { ...previous.summary, meta: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) } }))} className="w-full" /></label>
+          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">canvas</span><Select value={draft.summary.canvas} onChange={(event) => setDraft((previous) => ({ ...previous, summary: { ...previous.summary, canvas: event.target.value as LayoutDraft['summary']['canvas'] } }))} className="w-full"><option value="single">single</option><option value="multi_panel">multi_panel</option><option value="collage">collage</option></Select></label>
         </div>
-        <Button tone="secondary" className="w-full" onClick={compile}><SquareDashedMousePointer className="size-3.5" /> 编译布局 Prompt</Button>
+        <Button tone="secondary" className="w-full" onClick={compile}><SquareDashedMousePointer className="size-4" /> 编译布局 Prompt</Button>
       </div>
     )
     if (id === 'gallery') return <MiniGallery />
@@ -955,8 +955,8 @@ export function StudioPage(): React.JSX.Element {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] px-2 py-1.5">
-          <span className="text-[9px] text-[var(--color-text-tertiary)]">{draft.items.length} 个图层</span>
-          <Button tone="ghost" onClick={() => { setTool('draw'); setSelectedId(null) }}><Plus className="size-3" /> 画新框</Button>
+          <span className="text-caption text-[var(--color-text-tertiary)]">{draft.items.length} 个图层</span>
+          <Button tone="ghost" onClick={() => { setTool('draw'); setSelectedId(null) }}><Plus className="size-4" /> 画新框</Button>
         </div>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5">
           {draft.items.map((item, index) => {
@@ -975,15 +975,15 @@ export function StudioPage(): React.JSX.Element {
                 )}
               >
                 <div className="flex items-start gap-1.5 px-2 py-1.5">
-                  <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-[3px] bg-accent-500/12 font-mono text-[8px] text-accent-200">{index + 1}</span>
+                  <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-[3px] bg-accent-500/12 font-mono text-micro text-accent-200">{index + 1}</span>
                   <span className="mt-1 size-1.5 shrink-0 rounded-full" style={{ backgroundColor: item.label === 'text' ? '#f0b45a' : item.label === 'character' ? '#7fb6ff' : '#8bd1c7' }} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[9.5px] font-medium">{meta.name}</span>
+                      <span className="text-caption font-medium">{meta.name}</span>
                       {item.visible === false ? <EyeOff className="size-2.5 text-[var(--color-text-tertiary)]" /> : null}
                       {item.locked ? <Lock className="size-2.5 text-[var(--color-text-tertiary)]" /> : null}
                     </div>
-                    <p className="mt-0.5 truncate text-[9px] text-[var(--color-text-tertiary)]">{item.caption || '未填写提示词'}</p>
+                    <p className="mt-0.5 truncate text-caption text-[var(--color-text-tertiary)]">{item.caption || '未填写提示词'}</p>
                   </div>
                   <button
                     type="button"
@@ -991,28 +991,28 @@ export function StudioPage(): React.JSX.Element {
                     className="mt-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]"
                     title={item.visible === false ? '显示图层' : '隐藏图层'}
                   >
-                    {item.visible === false ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                    {item.visible === false ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
                 {isSelected ? (
                   <div className="space-y-2 border-t border-accent-500/20 p-2" onClick={(event) => event.stopPropagation()}>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <Select value={item.label} onChange={(event) => setItem(item.id, { label: event.target.value as LayoutLabel })} className="w-[76px]">
+                      <Select value={item.label} onChange={(event) => setItem(item.id, { label: event.target.value as LayoutLabel })} className="w-[90px]">
                         <option value="object">物体</option><option value="character">人物</option><option value="text">文字</option>
                       </Select>
-                      <button type="button" onClick={() => setItem(item.id, { locked: !item.locked })} title={item.locked ? '解锁' : '锁定'}>{item.locked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}</button>
-                      <span className="font-mono text-[8px] text-[var(--color-text-tertiary)]">{item.bbox.map((value) => Math.round(value)).join(',')}</span>
-                      <button type="button" onClick={() => removeItem(item.id)} className="ml-auto text-[var(--color-text-tertiary)] hover:text-red-400"><X className="size-3.5" /></button>
+                      <button type="button" onClick={() => setItem(item.id, { locked: !item.locked })} title={item.locked ? '解锁' : '锁定'}>{item.locked ? <Lock className="size-4" /> : <Unlock className="size-4" />}</button>
+                      <span className="font-mono text-micro text-[var(--color-text-tertiary)]">{item.bbox.map((value) => Math.round(value)).join(',')}</span>
+                      <button type="button" onClick={() => removeItem(item.id)} className="ml-auto text-[var(--color-text-tertiary)] hover:text-red-400"><X className="size-4" /></button>
                     </div>
                     <Textarea value={item.caption} onChange={(event) => setItem(item.id, { caption: event.target.value })} placeholder="区域提示词" className="h-20 w-full resize-none" />
                     {item.label === 'text' ? <Input value={item.text ?? ''} onChange={(event) => setItem(item.id, { text: event.target.value })} placeholder="图中文字" className="w-full border-amber-500/30" /> : null}
-                    <label className="flex items-center gap-2 text-[9px] text-[var(--color-text-tertiary)]">不透明度<input type="range" min={0.1} max={1} step={0.05} value={item.opacity ?? 1} onChange={(event) => setItem(item.id, { opacity: Number(event.target.value) })} className="flex-1 accent-[var(--color-accent)]" /></label>
+                    <label className="flex items-center gap-2 text-caption text-[var(--color-text-tertiary)]">不透明度<input type="range" min={0.1} max={1} step={0.05} value={item.opacity ?? 1} onChange={(event) => setItem(item.id, { opacity: Number(event.target.value) })} className="flex-1 accent-[var(--color-accent)]" /></label>
                   </div>
                 ) : null}
               </div>
             )
           })}
-          {draft.items.length === 0 ? <div className="rounded border border-dashed border-[var(--color-border)] px-2 py-6 text-center text-[9.5px] text-[var(--color-text-tertiary)]">用“画新框”在画布上拖出第一个区域</div> : null}
+          {draft.items.length === 0 ? <div className="rounded border border-dashed border-[var(--color-border)] px-2 py-6 text-center text-caption text-[var(--color-text-tertiary)]">用“画新框”在画布上拖出第一个区域</div> : null}
         </div>
       </div>
     )
@@ -1026,18 +1026,18 @@ export function StudioPage(): React.JSX.Element {
         <div className="flex min-w-0 items-center gap-3 px-4 py-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-[6px] bg-accent-500/12 text-accent-300"><ScanSearch className="size-4" /></div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[12px] font-semibold">GBC 图像结构解析 <span className="rounded border border-accent-500/25 bg-accent-500/10 px-1 py-px text-[8px] font-medium text-accent-300">OPTIONAL</span></div>
-            <p className="mt-0.5 truncate text-[9.5px] text-[var(--color-text-tertiary)]">执行层负责 bbox、文字和层级描述；复杂工作流由画布/Togeari 编排。</p>
+            <div className="flex items-center gap-2 text-ui font-semibold">GBC 图像结构解析 <span className="rounded border border-accent-500/25 bg-accent-500/10 px-1 py-px text-micro font-medium text-accent-300">OPTIONAL</span></div>
+            <p className="mt-0.5 truncate text-caption text-[var(--color-text-tertiary)]">执行层负责 bbox、文字和层级描述；复杂工作流由画布/Togeari 编排。</p>
           </div>
         </div>
-        <button type="button" onClick={() => { setGbcTab('run'); setGbcOpen(true) }} className="flex min-w-[150px] items-center justify-center gap-2 border-t border-[var(--color-border-subtle)] px-4 py-2 text-[11px] font-medium text-[var(--color-text)] transition hover:bg-white/[0.05] sm:border-l sm:border-t-0"><ScanSearch className="size-3.5 text-accent-300" />启动解析</button>
-        <button type="button" onClick={() => { setGbcTab('manage'); setGbcOpen(true) }} className="flex min-w-[150px] items-center justify-center gap-2 border-t border-[var(--color-border-subtle)] px-4 py-2 text-[11px] text-[var(--color-text-secondary)] transition hover:bg-white/[0.05] sm:border-l sm:border-t-0"><GitBranch className="size-3.5" />管理 GBC 版本</button>
+        <button type="button" onClick={() => { setGbcTab('run'); setGbcOpen(true) }} className="flex min-w-[150px] items-center justify-center gap-2 border-t border-[var(--color-border-subtle)] px-4 py-2 text-ui font-medium text-[var(--color-text)] transition hover:bg-white/[0.05] sm:border-l sm:border-t-0"><ScanSearch className="size-4 text-accent-300" />启动解析</button>
+        <button type="button" onClick={() => { setGbcTab('manage'); setGbcOpen(true) }} className="flex min-w-[150px] items-center justify-center gap-2 border-t border-[var(--color-border-subtle)] px-4 py-2 text-ui text-[var(--color-text-secondary)] transition hover:bg-white/[0.05] sm:border-l sm:border-t-0"><GitBranch className="size-4" />管理 GBC 版本</button>
       </div>
 
       <div className="flex min-h-0 flex-1 gap-0">
         {leftCollapsed ? (
           <button type="button" onClick={() => setLeftCollapsed(false)} className="flex w-6 shrink-0 items-start justify-center border-r border-[var(--color-border-subtle)] pt-2 text-[var(--color-text-tertiary)] hover:bg-white/[0.04] hover:text-[var(--color-text)]" title="展开左栏">
-            <PanelLeftOpen className="size-3.5" />
+            <PanelLeftOpen className="size-4" />
           </button>
         ) : (
           <>
@@ -1048,14 +1048,14 @@ export function StudioPage(): React.JSX.Element {
               onDrop={(event) => { const id = event.dataTransfer.getData('text/moss-panel') as PanelId; if (id) movePanel(id, 'left') }}
             >
               <button type="button" onClick={() => setLeftCollapsed(true)} className="absolute right-1 top-1 z-10 rounded p-0.5 text-[var(--color-text-tertiary)] hover:bg-white/[0.06] hover:text-[var(--color-text)]" title="收起左栏">
-                <PanelLeftClose className="size-3.5" />
+                <PanelLeftClose className="size-4" />
               </button>
           {docks.left.map((id) => (
             <DockPanel key={id} id={id} dock="left" onDock={movePanel} className={id === 'gallery' && !panelHeights[id] ? 'h-[150px]' : ''} style={id === 'gallery' && !panelHeights[id] ? { flex: 'none', height: 150 } : panelStyle(id)} onResize={(event) => beginPanelResize(id, event)} title={PANEL_TITLES[id]}>
               {renderPanel(id)}
             </DockPanel>
           ))}
-              {docks.left.length === 0 ? <div className="rounded border border-dashed p-4 text-center text-[9.5px] text-[var(--color-text-tertiary)]">把面板拖到这里</div> : null}
+              {docks.left.length === 0 ? <div className="rounded border border-dashed p-4 text-center text-caption text-[var(--color-text-tertiary)]">把面板拖到这里</div> : null}
             </aside>
             <div
               onPointerDown={(event) => beginColumnResize('left', event)}
@@ -1073,12 +1073,12 @@ export function StudioPage(): React.JSX.Element {
               type="button"
               onClick={restoreDraftTab}
               className={cn(
-                'flex h-7 max-w-[210px] shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 px-2.5 text-[10.5px] transition',
+                'flex h-8 max-w-[210px] shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 px-2.5 text-ui transition',
                 !projectId ? 'border-accent-400 bg-white/[0.07] text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
               )}
             >
               <span className="truncate">{draftTab.name}</span>
-              <span className="shrink-0 text-[8px] text-amber-300">未保存</span>
+              <span className="shrink-0 text-micro text-amber-300">未保存</span>
             </button>
           ) : null}
           {orderedProjects.map((item) => {
@@ -1103,43 +1103,43 @@ export function StudioPage(): React.JSX.Element {
                 }}
                 onClick={() => { if (!current) void openProject(item.id) }}
                 className={cn(
-                  'flex h-7 max-w-[210px] shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 px-2.5 text-[10.5px] transition',
+                  'flex h-8 max-w-[210px] shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 px-2.5 text-ui transition',
                   current ? 'border-accent-400 bg-white/[0.07] text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
                 )}
                 title={item.name}
               >
                 <span className="truncate">{item.name || '未命名画布'}</span>
-                <span className={cn('shrink-0 text-[8px]', status === '保存中' ? 'text-amber-300' : 'text-[var(--color-text-tertiary)]')}>{status}</span>
+                <span className={cn('shrink-0 text-micro', status === '保存中' ? 'text-amber-300' : 'text-[var(--color-text-tertiary)]')}>{status}</span>
               </button>
             )
           })}
           {!projectId && !draftTab ? (
-            <div className="flex h-7 shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 border-accent-400 bg-white/[0.07] px-2.5 text-[10.5px]">
+            <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 border-accent-400 bg-white/[0.07] px-2.5 text-ui">
               <span className="max-w-[180px] truncate">{projectName.trim() || '未命名画布'}</span>
-              <span className="text-[8px] text-amber-300">未保存</span>
+              <span className="text-micro text-amber-300">未保存</span>
             </div>
           ) : null}
-          {orderedProjects.length === 0 && projectId ? <span className="px-2 text-[9.5px] text-[var(--color-text-tertiary)]">还没有画布</span> : null}
+          {orderedProjects.length === 0 && projectId ? <span className="px-2 text-caption text-[var(--color-text-tertiary)]">还没有画布</span> : null}
         </div>
-        <Button tone="secondary" onClick={newProject}><Plus className="size-3.5" /> 新建画布</Button>
+        <Button tone="secondary" onClick={newProject}><Plus className="size-4" /> 新建画布</Button>
         {env ? <Pill tone="blue">{env.recommendation.width}² · {env.recommendation.steps} 步</Pill> : null}
       </div>
           <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--color-border-subtle)] px-2 py-1.5">
             <Segmented label="画布工具" value={tool} onChange={(value) => setTool(value as 'select' | 'draw' | 'pan')} options={[{ value: 'select', label: '选择' }, { value: 'draw', label: '画框' }, { value: 'pan', label: '手型' }]} />
             <Segmented value={label} onChange={(value) => setLabel(value as LayoutLabel)} options={[{ value: 'object', label: '物体' }, { value: 'character', label: '人物' }, { value: 'text', label: '文字' }]} />
-            <IconButton label="GBC 图像解析" onClick={() => { setGbcTab('run'); setGbcOpen(true) }}><ScanSearch className="size-3.5" /></IconButton>
-            <IconButton label="示例布局" onClick={() => { setDraft(exampleDraft()); setSelectedId(null) }}><Sparkles className="size-3.5" /></IconButton>
-            <IconButton label="清空画布" onClick={() => { setDraft(createDraft(draft.width, draft.height)); setSelectedId(null) }}><Eraser className="size-3.5" /></IconButton>
-            {background ? <IconButton label="清除底图" onClick={() => setStudioBackground(null)}><X className="size-3.5" /></IconButton> : null}
+            <IconButton label="GBC 图像解析" onClick={() => { setGbcTab('run'); setGbcOpen(true) }}><ScanSearch className="size-4" /></IconButton>
+            <IconButton label="示例布局" onClick={() => { setDraft(exampleDraft()); setSelectedId(null) }}><Sparkles className="size-4" /></IconButton>
+            <IconButton label="清空画布" onClick={() => { setDraft(createDraft(draft.width, draft.height)); setSelectedId(null) }}><Eraser className="size-4" /></IconButton>
+            {background ? <IconButton label="清除底图" onClick={() => setStudioBackground(null)}><X className="size-4" /></IconButton> : null}
             <div className="ml-1 flex items-center gap-0.5 border-l border-[var(--color-border-subtle)] pl-1">
-              <IconButton label="缩小画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 0.8) }}><Minus className="size-3.5" /></IconButton>
-              <button type="button" onClick={resetView} className="w-11 text-center font-mono text-[9.5px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]" title="重置为 100%">{Math.round(zoom * 100)}%</button>
-              <IconButton label="放大画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.25) }}><Plus className="size-3.5" /></IconButton>
-              <IconButton label="恢复画布视图" onClick={resetView}><RotateCcw className="size-3.5" /></IconButton>
+              <IconButton label="缩小画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 0.8) }}><Minus className="size-4" /></IconButton>
+              <button type="button" onClick={resetView} className="w-11 text-center font-mono text-caption text-[var(--color-text-secondary)] hover:text-[var(--color-text)]" title="重置为 100%">{Math.round(zoom * 100)}%</button>
+              <IconButton label="放大画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.25) }}><Plus className="size-4" /></IconButton>
+              <IconButton label="恢复画布视图" onClick={resetView}><RotateCcw className="size-4" /></IconButton>
             </div>
             <div className="ml-auto flex items-center gap-1.5">
               <Pill tone={backend?.ready ? 'accent' : 'amber'}>{backend?.ready ? '后端就绪' : '后端启动中'}</Pill>
-              <Button tone="primary" onClick={() => void generate()}><span className="inline-flex items-center gap-1.5">开始生成 <ArrowRight className="size-3.5" /></span></Button>
+              <Button tone="primary" onClick={() => void generate()}><span className="inline-flex items-center gap-1.5">开始生成 <ArrowRight className="size-4" /></span></Button>
             </div>
           </div>
 
@@ -1208,7 +1208,7 @@ export function StudioPage(): React.JSX.Element {
                         opacity: item.opacity ?? 1,
                       }}
                     >
-                      <span data-box-id={item.id} className="absolute -top-5 left-0 inline-flex max-w-full cursor-move items-center gap-1 truncate rounded bg-accent-600 px-1.5 py-0.5 text-[9px] font-medium text-white">
+                      <span data-box-id={item.id} className="absolute -top-5 left-0 inline-flex max-w-full cursor-move items-center gap-1 truncate rounded bg-accent-600 px-1.5 py-0.5 text-caption font-medium text-white">
                         {index + 1} · {meta.name}
                       </span>
                       <div className="absolute inset-0 flex flex-col gap-1 p-1.5 pt-2">
@@ -1217,7 +1217,7 @@ export function StudioPage(): React.JSX.Element {
                           onPointerDown={(event) => { event.stopPropagation(); setSelectedId(item.id) }}
                           onChange={(event) => setItem(item.id, { caption: event.target.value })}
                           placeholder="在框内写区域提示词…"
-                          className="min-h-0 flex-1 resize-none rounded border-0 bg-transparent p-0 text-[10px] leading-[15px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)]/60"
+                          className="min-h-0 flex-1 resize-none rounded border-0 bg-transparent p-0 text-caption leading-[15px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)]/60"
                           style={{ cursor: 'text' }}
                         />
                         {item.label === 'text' ? (
@@ -1226,7 +1226,7 @@ export function StudioPage(): React.JSX.Element {
                             onPointerDown={(event) => { event.stopPropagation(); setSelectedId(item.id) }}
                             onChange={(event) => setItem(item.id, { text: event.target.value })}
                             placeholder="图中文字"
-                            className="shrink-0 rounded border-0 bg-amber-500/15 px-1 py-0.5 text-[9px] text-amber-200 outline-none placeholder:text-amber-200/50"
+                            className="shrink-0 rounded border-0 bg-amber-500/15 px-1 py-0.5 text-caption text-amber-200 outline-none placeholder:text-amber-200/50"
                           />
                         ) : null}
                       </div>
@@ -1254,7 +1254,7 @@ export function StudioPage(): React.JSX.Element {
               </div>
               </div>
             </div>
-            <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-2.5 py-1 text-[8.5px] text-white/55">
+            <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-2.5 py-1 text-micro text-white/55">
               {Math.round(zoom * 100)}% · 滚轮缩放 · 手型/中键拖动
             </div>
             {docks.float.length > 0 ? (
@@ -1273,7 +1273,7 @@ export function StudioPage(): React.JSX.Element {
 
         {rightCollapsed ? (
           <button type="button" onClick={() => setRightCollapsed(false)} className="flex w-6 shrink-0 items-start justify-center border-l border-[var(--color-border-subtle)] pt-2 text-[var(--color-text-tertiary)] hover:bg-white/[0.04] hover:text-[var(--color-text)]" title="展开右栏">
-            <PanelRightOpen className="size-3.5" />
+            <PanelRightOpen className="size-4" />
           </button>
         ) : (
           <>
@@ -1289,14 +1289,14 @@ export function StudioPage(): React.JSX.Element {
               onDrop={(event) => { const id = event.dataTransfer.getData('text/moss-panel') as PanelId; if (id) movePanel(id, 'right') }}
             >
               <button type="button" onClick={() => setRightCollapsed(true)} className="absolute left-1 top-1 z-10 rounded p-0.5 text-[var(--color-text-tertiary)] hover:bg-white/[0.06] hover:text-[var(--color-text)]" title="收起右栏">
-                <PanelRightClose className="size-3.5" />
+                <PanelRightClose className="size-4" />
               </button>
           {docks.right.map((id) => (
             <DockPanel key={id} id={id} dock="right" onDock={movePanel} style={panelStyle(id)} onResize={(event) => beginPanelResize(id, event)} title={PANEL_TITLES[id]}>
               {renderPanel(id)}
             </DockPanel>
           ))}
-              {docks.right.length === 0 ? <div className="rounded border border-dashed p-4 text-center text-[9.5px] text-[var(--color-text-tertiary)]">把面板拖到这里</div> : null}
+              {docks.right.length === 0 ? <div className="rounded border border-dashed p-4 text-center text-caption text-[var(--color-text-tertiary)]">把面板拖到这里</div> : null}
             </aside>
           </>
         )}
@@ -1322,7 +1322,7 @@ export function StudioPage(): React.JSX.Element {
               }}
             >
               <span className="inline-flex items-center gap-1.5">
-                <Copy className="size-3.5" /> 复制
+                <Copy className="size-4" /> 复制
               </span>
             </Button>
             <Button tone="primary" onClick={insertPrompt}>
@@ -1331,11 +1331,11 @@ export function StudioPage(): React.JSX.Element {
           </>
         }
       >
-        <pre className="max-h-[46vh] overflow-auto rounded-[6px] bg-white/55 p-3 font-mono text-[10.5px] leading-5 dark:bg-black/30">
+        <pre className="max-h-[46vh] overflow-auto rounded-[6px] bg-white/55 p-3 font-mono text-ui leading-5 dark:bg-black/30">
           {compiled?.preview ?? ''}
         </pre>
         {compiled?.errors.length ? (
-          <div className="mt-2 text-[11px] text-red-500">{compiled.errors.join('；')}</div>
+          <div className="mt-2 text-ui text-red-500">{compiled.errors.join('；')}</div>
         ) : null}
       </Modal>
 
@@ -1360,7 +1360,7 @@ export function StudioPage(): React.JSX.Element {
           </>
         }
       >
-        <div className="p-4 text-[10.5px] leading-5 text-[var(--color-text-secondary)]">
+        <div className="p-4 text-ui leading-5 text-[var(--color-text-secondary)]">
           当前画布有 {draft.items.length} 个区域。追加会保留现有内容；覆盖会清空现有区域后写入本张 GBC 结果。
         </div>
       </Modal>

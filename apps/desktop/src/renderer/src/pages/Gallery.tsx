@@ -106,7 +106,7 @@ export function GalleryPage(): React.JSX.Element {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight">画廊</h1>
-          <p className="mt-1 text-[12px] text-[var(--color-text-secondary)]">
+          <p className="mt-1 text-ui text-[var(--color-text-secondary)]">
             从输出目录与自定义路径读取；分段加载 + content-visibility，大目录也不会一次性渲染。
           </p>
         </div>
@@ -138,7 +138,7 @@ export function GalleryPage(): React.JSX.Element {
 
       {items.length === 0 && !loading ? (
         <EmptyState
-          icon={<Images className="size-7" />}
+          icon={<Images className="size-8" />}
           title="还没有作品"
           description="生成图片后会自动出现在输出目录；也可以在设置里添加任意本地文件夹。"
           action={
@@ -170,8 +170,8 @@ export function GalleryPage(): React.JSX.Element {
                 />
               </div>
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-2.5 pb-2 pt-7">
-                <div className="truncate text-[11px] font-medium text-white">{item.name}</div>
-                <div className="mt-0.5 flex items-center justify-between text-[9.5px] text-white/70">
+                <div className="truncate text-ui font-medium text-white">{item.name}</div>
+                <div className="mt-0.5 flex items-center justify-between text-caption text-white/70">
                   <span>{relative(new Date(item.mtime).toISOString())}</span>
                   <span>{item.width && item.height ? `${item.width}×${item.height}` : bytes(item.size)}</span>
                 </div>
@@ -189,7 +189,7 @@ export function GalleryPage(): React.JSX.Element {
             加载更多
           </Button>
         ) : items.length > 0 ? (
-          <span className="text-[10.5px] text-[var(--color-text-tertiary)]">已加载全部 {total} 张</span>
+          <span className="text-ui text-[var(--color-text-tertiary)]">已加载全部 {total} 张</span>
         ) : null}
       </div>
 
@@ -207,7 +207,7 @@ export function GalleryPage(): React.JSX.Element {
             <>
               <Button tone="ghost" onClick={() => void call(Ipc.galleryReveal, { path: detail.path })}>
                 <span className="inline-flex items-center gap-1.5">
-                  <FolderOpen className="size-3.5" /> 在文件夹中显示
+                  <FolderOpen className="size-4" /> 在文件夹中显示
                 </span>
               </Button>
               <Button
@@ -224,7 +224,7 @@ export function GalleryPage(): React.JSX.Element {
                 }}
               >
                 <span className="inline-flex items-center gap-1.5">
-                  <Sparkles className="size-3.5" /> 用作布局底图
+                  <Sparkles className="size-4" /> 用作布局底图
                 </span>
               </Button>
             </>
@@ -240,36 +240,36 @@ export function GalleryPage(): React.JSX.Element {
             <div className="flex max-h-[52vh] items-center justify-center overflow-hidden rounded-[6px] bg-[var(--color-surface-secondary)]">
               <img src={cloverUrl(detail.path)} alt={detail.name} className="max-h-[52vh] w-full object-contain" />
             </div>
-            <div className="space-y-3 text-[11.5px]">
+            <div className="space-y-3 text-ui">
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-[4px] bg-white/[0.04] px-2.5 py-2 ">
-                  <div className="text-[10px] text-[var(--color-text-tertiary)]">尺寸</div>
+                  <div className="text-caption text-[var(--color-text-tertiary)]">尺寸</div>
                   <div className="mt-0.5 font-medium">
                     {detail.width && detail.height ? `${detail.width} × ${detail.height}` : '未知'}
                   </div>
                 </div>
                 <div className="rounded-[4px] bg-white/[0.04] px-2.5 py-2 ">
-                  <div className="text-[10px] text-[var(--color-text-tertiary)]">文件</div>
+                  <div className="text-caption text-[var(--color-text-tertiary)]">文件</div>
                   <div className="mt-0.5 font-medium">{bytes(detail.size)}</div>
                 </div>
                 <div className="rounded-[4px] bg-white/[0.04] px-2.5 py-2 ">
-                  <div className="text-[10px] text-[var(--color-text-tertiary)]">修改时间</div>
+                  <div className="text-caption text-[var(--color-text-tertiary)]">修改时间</div>
                   <div className="mt-0.5 font-medium">{dateTime(new Date(detail.mtime).toISOString())}</div>
                 </div>
                 <div className="rounded-[4px] bg-white/[0.04] px-2.5 py-2 ">
-                  <div className="text-[10px] text-[var(--color-text-tertiary)]">Seed</div>
+                  <div className="text-caption text-[var(--color-text-tertiary)]">Seed</div>
                   <div className="mt-0.5 font-mono font-medium">{detail.seed ?? '—'}</div>
                 </div>
               </div>
               <div>
-                <div className="mb-1 text-[10px] text-[var(--color-text-tertiary)]">Prompt / 元数据</div>
-                <div className="max-h-40 overflow-y-auto rounded-[4px] bg-white/[0.04] px-2.5 py-2 text-[10.5px] leading-5 text-[var(--color-text-secondary)] ">
+                <div className="mb-1 text-caption text-[var(--color-text-tertiary)]">Prompt / 元数据</div>
+                <div className="max-h-40 overflow-y-auto rounded-[4px] bg-white/[0.04] px-2.5 py-2 text-ui leading-5 text-[var(--color-text-secondary)] ">
                   {detail.prompt ?? '这张图没有可读的 prompt 元数据。'}
                 </div>
               </div>
               <div>
-                <div className="mb-1 text-[10px] text-[var(--color-text-tertiary)]">所在目录</div>
-                <div className="break-all rounded-[4px] bg-white/[0.04] px-2.5 py-2 font-mono text-[10px] text-[var(--color-text-secondary)] ">
+                <div className="mb-1 text-caption text-[var(--color-text-tertiary)]">所在目录</div>
+                <div className="break-all rounded-[4px] bg-white/[0.04] px-2.5 py-2 font-mono text-caption text-[var(--color-text-secondary)] ">
                   {detail.dir}
                 </div>
               </div>

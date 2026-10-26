@@ -88,8 +88,8 @@ function DeviceCard({ device }: { device: ComputeDevice }): React.JSX.Element {
     <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2.5">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <Cpu className="size-3.5 shrink-0 text-[var(--color-text-tertiary)]" />
-          <span className="truncate text-[11px] font-medium">{device.name}</span>
+          <Cpu className="size-4 shrink-0 text-[var(--color-text-tertiary)]" />
+          <span className="truncate text-ui font-medium">{device.name}</span>
         </div>
         <span
           className={cn(
@@ -98,7 +98,7 @@ function DeviceCard({ device }: { device: ComputeDevice }): React.JSX.Element {
           )}
         />
       </div>
-      <div className="mt-1.5 flex items-center justify-between gap-2 text-[9.5px] text-[var(--color-text-tertiary)]">
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-caption text-[var(--color-text-tertiary)]">
         <span className="truncate">{device.detail}</span>
         <span className="shrink-0">{device.source === 'remote' ? '远端' : '本机'}</span>
       </div>
@@ -258,7 +258,7 @@ export function DevicesPage(): React.JSX.Element {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight">设备管理器</h1>
-          <p className="mt-1 max-w-[620px] text-[12px] leading-5 text-[var(--color-text-secondary)]">
+          <p className="mt-1 max-w-[620px] text-ui leading-5 text-[var(--color-text-secondary)]">
             推理、训练和终端共用同一份算力库存。这里只管理连接与设备；实例仍由启动器管理。
           </p>
         </div>
@@ -268,13 +268,13 @@ export function DevicesPage(): React.JSX.Element {
           <Pill tone={activeJobs ? 'accent' : 'neutral'}>{activeJobs} 进行中</Pill>
           <Button tone="ghost" onClick={() => void refresh()} disabled={loading}>
             <span className="inline-flex items-center gap-1.5">
-              {loading ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />}
+              {loading ? <Spinner className="size-4" /> : <RefreshCw className="size-4" />}
               刷新
             </span>
           </Button>
           <Button data-oobe="device" data-oobe-hint="添加一台 Linux NVIDIA SSH 主机，保存后测试连接；再在准备清单中切换到这台主机。" tone="primary" onClick={openAdd}>
             <span className="inline-flex items-center gap-1.5">
-              <Plus className="size-3.5" /> 添加 SSH 设备
+              <Plus className="size-4" /> 添加 SSH 设备
             </span>
           </Button>
         </div>
@@ -283,11 +283,11 @@ export function DevicesPage(): React.JSX.Element {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr]">
         <Card className="h-fit overflow-hidden">
           <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] px-3 py-2.5">
-            <div className="flex items-center gap-1.5 text-[12px] font-medium">
-              <Server className="size-3.5 text-[var(--color-text-tertiary)]" />
+            <div className="flex items-center gap-1.5 text-ui font-medium">
+              <Server className="size-4 text-[var(--color-text-tertiary)]" />
               连接与设备
             </div>
-            <span className="text-[9.5px] text-[var(--color-text-tertiary)]">{remoteHosts.length} SSH</span>
+            <span className="text-caption text-[var(--color-text-tertiary)]">{remoteHosts.length} SSH</span>
           </div>
           <div className="p-1.5">
             {hosts.map((host) => {
@@ -315,15 +315,15 @@ export function DevicesPage(): React.JSX.Element {
                   />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
-                      <span className="truncate text-[11px] font-medium">{host.name}</span>
+                      <span className="truncate text-ui font-medium">{host.name}</span>
                       {host.kind === 'local' ? <Pill tone="neutral">本机</Pill> : null}
                     </span>
-                    <span className="mt-0.5 block truncate text-[9px] text-[var(--color-text-tertiary)]">
+                    <span className="mt-0.5 block truncate text-caption text-[var(--color-text-tertiary)]">
                       {host.kind === 'local'
                         ? `${host.devices.length} 个设备`
                         : `${host.user}@${host.host}:${host.port ?? 22}`}
                     </span>
-                    <span className="mt-0.5 block text-[8.5px] text-[var(--color-text-tertiary)]">
+                    <span className="mt-0.5 block text-micro text-[var(--color-text-tertiary)]">
                       {host.status === 'ok' ? `${host.devices.length} 设备` : statusLabel(host)}
                       {active ? ` · ${active} 进行中` : ''}
                     </span>
@@ -332,8 +332,8 @@ export function DevicesPage(): React.JSX.Element {
               )
             })}
             {loading && hosts.length === 0 ? (
-              <div className="flex items-center justify-center gap-2 px-3 py-8 text-[10.5px] text-[var(--color-text-tertiary)]">
-                <Spinner className="size-3.5" /> 读取设备库存…
+              <div className="flex items-center justify-center gap-2 px-3 py-8 text-ui text-[var(--color-text-tertiary)]">
+                <Spinner className="size-4" /> 读取设备库存…
               </div>
             ) : null}
           </div>
@@ -350,7 +350,7 @@ export function DevicesPage(): React.JSX.Element {
                     <Pill tone="neutral">{selected.kind === 'local' ? '本机' : 'SSH'}</Pill>
                     {selected.kind === 'local' ? <Pill tone="neutral">固定</Pill> : null}
                   </div>
-                  <p className="mt-1 truncate text-[10.5px] text-[var(--color-text-tertiary)]">
+                  <p className="mt-1 truncate text-ui text-[var(--color-text-tertiary)]">
                     {selected.kind === 'local'
                       ? 'Apple MPS / CUDA / CPU（按本机实际枚举）'
                       : `${selected.user}@${selected.host}:${selected.port ?? 22}`}
@@ -365,7 +365,7 @@ export function DevicesPage(): React.JSX.Element {
                     disabled={testing === selected.id}
                   >
                     <span className="inline-flex items-center gap-1.5">
-                      {testing === selected.id ? <Spinner className="size-3.5" /> : <Wifi className="size-3.5" />}
+                      {testing === selected.id ? <Spinner className="size-4" /> : <Wifi className="size-4" />}
                       测试连接
                     </span>
                   </Button>
@@ -373,12 +373,12 @@ export function DevicesPage(): React.JSX.Element {
                     <>
                       <Button tone="ghost" onClick={() => openEdit(selected)}>
                         <span className="inline-flex items-center gap-1.5">
-                          <Pencil className="size-3.5" /> 编辑
+                          <Pencil className="size-4" /> 编辑
                         </span>
                       </Button>
                       <Button tone="ghost" onClick={() => setRemoveTarget(selected)}>
                         <span className="inline-flex items-center gap-1.5 text-red-300">
-                          <Trash2 className="size-3.5" /> 移除
+                          <Trash2 className="size-4" /> 移除
                         </span>
                       </Button>
                     </>
@@ -388,32 +388,32 @@ export function DevicesPage(): React.JSX.Element {
 
               <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2">
-                  <div className="text-[9px] uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">设备</div>
+                  <div className="text-caption uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">设备</div>
                   <div className="mt-1 text-[15px] font-semibold tabular-nums">{selected.devices.length}</div>
                 </div>
                 <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2">
-                  <div className="text-[9px] uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">进行中</div>
+                  <div className="text-caption uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">进行中</div>
                   <div className="mt-1 text-[15px] font-semibold tabular-nums">{activeJobsFor(selected.id, jobs)}</div>
                 </div>
                 <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2">
-                  <div className="text-[9px] uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">根目录</div>
-                  <div className="mt-1 truncate text-[10.5px] text-[var(--color-text-secondary)]" title={selected.trainerRoot}>
+                  <div className="text-caption uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">根目录</div>
+                  <div className="mt-1 truncate text-ui text-[var(--color-text-secondary)]" title={selected.trainerRoot}>
                     {selected.trainerRoot}
                   </div>
                 </div>
               </div>
 
               {selected.error ? (
-                <div className="mt-3 flex items-start gap-2 rounded-[5px] border border-red-500/25 bg-red-500/[0.07] px-3 py-2 text-[10px] leading-4 text-red-200">
+                <div className="mt-3 flex items-start gap-2 rounded-[5px] border border-red-500/25 bg-red-500/[0.07] px-3 py-2 text-caption leading-4 text-red-200">
                   <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
                   <span className="break-words">{selected.error}</span>
                 </div>
               ) : null}
 
               {selected.kind === 'ssh' ? (
-                <div className="mt-3 grid grid-cols-1 gap-2 text-[10px] text-[var(--color-text-tertiary)] sm:grid-cols-2">
+                <div className="mt-3 grid grid-cols-1 gap-2 text-caption text-[var(--color-text-tertiary)] sm:grid-cols-2">
                   <div className="rounded-[5px] border border-[var(--color-border-subtle)] px-2.5 py-2">
-                    <div className="text-[8.5px] uppercase tracking-[0.1em]">远端路径</div>
+                    <div className="text-micro uppercase tracking-[0.1em]">远端路径</div>
                     <div className="mt-1 truncate" title={selected.instanceRoot}>
                       实例：{selected.instanceRoot ?? '未配置'}
                     </div>
@@ -422,7 +422,7 @@ export function DevicesPage(): React.JSX.Element {
                     </div>
                   </div>
                   <div className="rounded-[5px] border border-[var(--color-border-subtle)] px-2.5 py-2">
-                    <div className="text-[8.5px] uppercase tracking-[0.1em]">远端环境</div>
+                    <div className="text-micro uppercase tracking-[0.1em]">远端环境</div>
                     <div className="mt-1 truncate">OS：{selected.remote?.os ?? '未探测'}</div>
                     <div className="truncate">Python：{selected.remote?.python ?? '未探测'} · UV：{selected.remote?.uv ?? '无'}</div>
                   </div>
@@ -434,7 +434,7 @@ export function DevicesPage(): React.JSX.Element {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-[13px] font-semibold">设备库存</h3>
-                  <p className="mt-0.5 text-[10px] text-[var(--color-text-tertiary)]">
+                  <p className="mt-0.5 text-caption text-[var(--color-text-tertiary)]">
                     {selected.kind === 'local'
                       ? '本机由启动器自动枚举；禁用/重命名在设置里。'
                       : '远端设备来自最近一次 SSH 探测；未测试时为空。'}
@@ -449,7 +449,7 @@ export function DevicesPage(): React.JSX.Element {
                   ))}
                 </div>
               ) : (
-                <div className="mt-3 flex items-center gap-2 rounded-[5px] border border-dashed border-[var(--color-border)] px-3 py-5 text-[10.5px] text-[var(--color-text-tertiary)]">
+                <div className="mt-3 flex items-center gap-2 rounded-[5px] border border-dashed border-[var(--color-border)] px-3 py-5 text-ui text-[var(--color-text-tertiary)]">
                   {selected.kind === 'ssh' && selected.status === 'ok' ? (
                     <>
                       <AlertTriangle className="size-4 text-amber-300" />
@@ -470,16 +470,16 @@ export function DevicesPage(): React.JSX.Element {
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button tone="secondary" onClick={() => { announceTrainingHost(selected.id); openWindow('launcher', '/training') }}>
                   <span className="inline-flex items-center gap-1.5">
-                    <GraduationCap className="size-3.5" /> 在训练中使用
+                    <GraduationCap className="size-4" /> 在训练中使用
                   </span>
                 </Button>
                 <Button tone="ghost" onClick={() => openWindow('launcher', '/instances')}>
                   <span className="inline-flex items-center gap-1.5">
-                    <Boxes className="size-3.5" /> 部署实例
+                    <Boxes className="size-4" /> 部署实例
                   </span>
                 </Button>
               </div>
-              <p className="mt-2 text-[9.5px] leading-4 text-[var(--color-text-tertiary)]">
+              <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
                 选择后训练页会使用该 host；远端训练需要先部署对应的 SSH trainer 版本。
               </p>
             </Card>
@@ -500,7 +500,7 @@ export function DevicesPage(): React.JSX.Element {
             </Button>
             <Button tone="primary" onClick={() => void saveHost()} disabled={saving}>
               <span className="inline-flex items-center gap-1.5">
-                {saving ? <Spinner className="size-3.5" /> : null}
+                {saving ? <Spinner className="size-4" /> : null}
                 保存并测试
               </span>
             </Button>
@@ -510,7 +510,7 @@ export function DevicesPage(): React.JSX.Element {
         <div className="space-y-3">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">显示名称</span>
+              <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">显示名称</span>
               <Input
                 value={form.name}
                 onChange={(event) => setForm({ ...form, name: event.target.value })}
@@ -518,7 +518,7 @@ export function DevicesPage(): React.JSX.Element {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">Host</span>
+              <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">Host</span>
               <Input
                 value={form.host}
                 onChange={(event) => setForm({ ...form, host: event.target.value })}
@@ -526,7 +526,7 @@ export function DevicesPage(): React.JSX.Element {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">User</span>
+              <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">User</span>
               <Input
                 value={form.user}
                 onChange={(event) => setForm({ ...form, user: event.target.value })}
@@ -534,7 +534,7 @@ export function DevicesPage(): React.JSX.Element {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">Port</span>
+              <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">Port</span>
               <Input
                 inputMode="numeric"
                 value={form.port}
@@ -543,7 +543,7 @@ export function DevicesPage(): React.JSX.Element {
               />
             </label>
             <div className="sm:col-span-2">
-              <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">登录方式</span>
+              <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">登录方式</span>
               <div role="tablist" aria-label="SSH 登录方式" className="relative flex rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.035] p-0.5">
                 <span
                   aria-hidden="true"
@@ -569,7 +569,7 @@ export function DevicesPage(): React.JSX.Element {
                       setForm((current) => ({ ...current, authMethod: AUTH_METHODS[next].value }))
                       document.getElementById(`ssh-auth-tab-${AUTH_METHODS[next].value}`)?.focus()
                     }}
-                    className={cn('relative flex-1 rounded-[3px] px-2.5 py-1.5 text-[10.5px] font-medium transition-colors', form.authMethod === method.value ? 'text-[var(--color-text)]' : 'text-[var(--color-text-secondary)]')}
+                    className={cn('relative flex-1 rounded-[3px] px-2.5 py-1.5 text-ui font-medium transition-colors', form.authMethod === method.value ? 'text-[var(--color-text)]' : 'text-[var(--color-text-secondary)]')}
                   >
                     {method.label}
                   </button>
@@ -590,26 +590,26 @@ export function DevicesPage(): React.JSX.Element {
                       {method.value === 'identityFile' ? (
                         <>
                           <label className="block">
-                            <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">Identity file（可选）</span>
+                            <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">Identity file（可选）</span>
                             <div className="flex gap-1.5">
                               <Input value={form.identityFile} onChange={(event) => setForm({ ...form, identityFile: event.target.value })} placeholder="~/.ssh/id_ed25519" className="min-w-0 flex-1" />
                               <Button tone="secondary" style={{ height: 30 }} onClick={() => void pickIdentityFile()}>
-                                <span className="inline-flex items-center gap-1.5"><FolderOpen className="size-3.5" />选择文件</span>
+                                <span className="inline-flex items-center gap-1.5"><FolderOpen className="size-4" />选择文件</span>
                               </Button>
                             </div>
                           </label>
-                          <p className="text-[9.5px] text-[var(--color-text-tertiary)]">留空使用系统默认密钥或 SSH agent；加密私钥请先加入 agent。</p>
+                          <p className="text-caption text-[var(--color-text-tertiary)]">留空使用系统默认密钥或 SSH agent；加密私钥请先加入 agent。</p>
                         </>
                       ) : method.value === 'password' ? (
                         <>
                           <label className="block">
-                            <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">SSH 密码</span>
+                            <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">SSH 密码</span>
                             <Input type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder={form.hasPassword ? '留空保留已保存的密码' : '输入 SSH 登录密码'} />
                           </label>
-                          <p className="text-[9.5px] text-[var(--color-text-tertiary)]">密码通过本机系统安全存储加密保存。</p>
+                          <p className="text-caption text-[var(--color-text-tertiary)]">密码通过本机系统安全存储加密保存。</p>
                         </>
                       ) : (
-                        <p className="py-3 text-[10.5px] leading-5 text-[var(--color-text-secondary)]">仅适用于服务端允许无认证的账户，不会尝试密钥或密码。</p>
+                        <p className="py-3 text-ui leading-5 text-[var(--color-text-secondary)]">仅适用于服务端允许无认证的账户，不会尝试密钥或密码。</p>
                       )}
                     </div>
                   ))}
@@ -617,35 +617,35 @@ export function DevicesPage(): React.JSX.Element {
               </div>
             </div>
             <label className="block">
-              <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">训练器根目录</span>
+              <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">训练器根目录</span>
               <Input
                 value={form.trainerRoot}
                 onChange={(event) => setForm({ ...form, trainerRoot: event.target.value })}
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">推理引擎目录</span>
+              <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">推理引擎目录</span>
               <Input
                 value={form.engineRoot}
                 onChange={(event) => setForm({ ...form, engineRoot: event.target.value })}
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">远端输出目录</span>
+              <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">远端输出目录</span>
               <Input
                 value={form.outputRoot}
                 onChange={(event) => setForm({ ...form, outputRoot: event.target.value })}
               />
             </label>
             <label className="block sm:col-span-2">
-              <span className="mb-1 block text-[10px] text-[var(--color-text-secondary)]">模型 / 缓存根目录（远端）</span>
+              <span className="mb-1 block text-caption text-[var(--color-text-secondary)]">模型 / 缓存根目录（远端）</span>
               <Input
                 value={form.modelsRoot}
                 onChange={(event) => setForm({ ...form, modelsRoot: event.target.value })}
               />
             </label>
           </div>
-          <p className="text-[9.5px] leading-4 text-[var(--color-text-tertiary)]">
+          <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">
             远端模型由远端自行下载/缓存，不会自动上传本机的 27 GB 权重。路径不做自动创建，
             测试连接只读取能力与根目录状态。
           </p>
@@ -669,7 +669,7 @@ export function DevicesPage(): React.JSX.Element {
           </>
         }
       >
-        <div className="flex items-start gap-2 rounded-[5px] border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[10.5px] leading-5 text-red-200">
+        <div className="flex items-start gap-2 rounded-[5px] border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-ui leading-5 text-red-200">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           正在使用该 host 的训练 Job 不会被取消；如果它还在运行，请先在终端停止。
         </div>

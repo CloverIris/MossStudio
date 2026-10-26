@@ -75,7 +75,7 @@ export function Pill({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-[3px] border px-1.5 py-0.5 text-[10px] font-medium leading-4',
+        'inline-flex items-center gap-1 rounded-[3px] border px-1.5 py-0.5 text-caption font-medium leading-4',
         pillTone[tone],
         className,
       )}
@@ -111,9 +111,9 @@ export function Button({
       className={cn(tint, className)}
       style={{
         borderRadius: 'var(--radius-control)',
-        fontSize: 12,
-        lineHeight: '16px',
-        minHeight: 30,
+        fontSize: 'var(--text-ui)',
+        lineHeight: '20px',
+        minHeight: 32,
         paddingInline: 12,
         color: tone === 'primary' ? '#ffffff' : undefined,
         ...style,
@@ -137,7 +137,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={cn(
-        'app-icon-button inline-flex size-7 shrink-0 items-center justify-center rounded-[4px] text-[var(--color-text-secondary)] transition enabled:hover:bg-white/[0.07] enabled:hover:text-[var(--color-text)] disabled:opacity-45',
+        'app-icon-button inline-flex size-8 shrink-0 items-center justify-center rounded-[4px] text-[var(--color-text-secondary)] transition enabled:hover:bg-white/[0.07] enabled:hover:text-[var(--color-text)] disabled:opacity-45',
         className,
       )}
       {...rest}
@@ -251,7 +251,7 @@ function Dialog({
         <div className="min-w-0 break-words">
           <h2 id={titleId} className="text-[15px] font-semibold">{title}</h2>
           {description ? (
-            <p id={descriptionId} className="mt-1 break-all text-[12.5px] leading-5 text-[var(--color-text-secondary)]">{description}</p>
+            <p id={descriptionId} className="mt-1 break-all text-section leading-5 text-[var(--color-text-secondary)]">{description}</p>
           ) : null}
         </div>
         <IconButton label="关闭" onClick={onClose}>
@@ -380,7 +380,7 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
             preset="toast"
             onExited={() => setItems((previous) => previous.filter((entry) => entry.id !== item.id))}
             role="status"
-            className="glass-strong pointer-events-auto flex items-start gap-2 rounded-[6px] border border-[var(--color-border-subtle)] px-2.5 py-2 text-[11.5px] shadow-lg"
+            className="glass-strong pointer-events-auto flex items-start gap-2 rounded-[6px] border border-[var(--color-border-subtle)] px-2.5 py-2 text-ui shadow-lg"
           >
             {toastIcon[item.tone]}
             <span className="leading-5">{item.message}</span>
@@ -424,7 +424,7 @@ export function Segmented<T extends string>({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'rounded-[3px] px-2.5 py-1 text-[10.5px] font-medium transition',
+            'min-h-7 rounded-[3px] px-3 py-1 text-caption font-medium transition',
             value === option.value
               ? 'bg-white/[0.09] text-[var(--color-text)] shadow-sm'
               : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]',

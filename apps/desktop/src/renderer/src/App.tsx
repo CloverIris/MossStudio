@@ -132,25 +132,25 @@ function StudioShell(): React.JSX.Element {
     <div className="app-shell flex h-full flex-col text-[var(--color-text)]">
       <TitlebarFrame>
         <div className="no-drag flex items-center gap-2">
-          <IconButton label="回到创作" className="size-7" onClick={() => navigate('/studio')}>
+          <IconButton label="回到创作" className="size-8" onClick={() => navigate('/studio')}>
             <LayoutGrid className="size-4" />
           </IconButton>
-          <span className="text-[12px] font-semibold">MossStudio</span>
-          <span className="rounded border border-white/10 px-1 py-px text-[8px] uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
+          <span className="text-ui font-semibold">MossStudio</span>
+          <span className="rounded border border-white/10 px-1 py-px text-micro uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
             {page.title}
           </span>
         </div>
         <div className="no-drag flex items-center gap-0.5">
           <Oobe />
-          <IconButton label={terminalOpen ? '关闭终端' : '打开终端'} className="size-7" onClick={() => setTerminalOpen((open) => !open)}>
-            <SquareTerminal className="size-3.5" />
+          <IconButton label={terminalOpen ? '关闭终端' : '打开终端'} className="size-8" onClick={() => setTerminalOpen((open) => !open)}>
+            <SquareTerminal className="size-4" />
           </IconButton>
           <IconButton
             label={notificationsOpen ? '隐藏通知' : '显示通知'}
-            className={cn('size-7', notificationsOpen && 'bg-white/[0.07]')}
+            className={cn('size-8', notificationsOpen && 'bg-white/[0.07]')}
             onClick={() => setNotificationsOpen(!notificationsOpen)}
           >
-            <Bell className="size-3.5" />
+            <Bell className="size-4" />
           </IconButton>
         </div>
       </TitlebarFrame>
@@ -159,7 +159,7 @@ function StudioShell(): React.JSX.Element {
         <PageHost active={page.to} />
       </main>
 
-      <nav className="glass-thin flex h-9 shrink-0 items-stretch border-t border-[var(--color-border-subtle)] px-1">
+      <nav className="glass-thin flex h-11 shrink-0 items-stretch border-t border-[var(--color-border-subtle)] px-1">
         {PAGES.map((item) => {
           const Icon = item.icon
           const active = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
@@ -168,13 +168,13 @@ function StudioShell(): React.JSX.Element {
               key={item.to}
               to={item.to}
               className={cn(
-                'relative flex min-w-[68px] flex-1 items-center justify-center gap-1.5 border-b-2 px-2 text-[10px] transition',
+                'relative flex min-w-[68px] flex-1 items-center justify-center gap-1.5 border-b-2 px-2 text-ui transition',
                 active
                   ? 'border-accent-400 bg-white/[0.05] text-[var(--color-text)]'
                   : 'border-transparent text-[var(--color-text-tertiary)] hover:bg-white/[0.03] hover:text-[var(--color-text-secondary)]',
               )}
             >
-              <Icon className="size-3" />
+              <Icon className="size-4" />
               {item.label}
             </NavLink>
           )
@@ -182,12 +182,12 @@ function StudioShell(): React.JSX.Element {
       </nav>
 
       {terminalOpen ? (
-        <div className="fixed inset-x-0 bottom-9 z-40 h-[42vh] border-t border-[var(--color-border-subtle)] bg-[#14171c] shadow-2xl">
-          <div className="flex h-8 items-center justify-between border-b border-[var(--color-border-subtle)] px-3">
-            <span className="text-[10px] font-medium">终端</span>
-            <IconButton label="关闭终端" onClick={() => setTerminalOpen(false)}><X className="size-3.5" /></IconButton>
+        <div className="fixed inset-x-0 bottom-11 z-40 h-[42vh] border-t border-[var(--color-border-subtle)] bg-[#14171c] shadow-2xl">
+          <div className="flex h-10 items-center justify-between border-b border-[var(--color-border-subtle)] px-3">
+            <span className="text-caption font-medium">终端</span>
+            <IconButton label="关闭终端" onClick={() => setTerminalOpen(false)}><X className="size-4" /></IconButton>
           </div>
-          <div className="h-[calc(42vh-32px)]">
+          <div className="h-[calc(42vh-40px)]">
             <ErrorBoundary><TerminalPage /></ErrorBoundary>
           </div>
         </div>

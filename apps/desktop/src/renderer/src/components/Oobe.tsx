@@ -174,13 +174,13 @@ export function Oobe(): React.JSX.Element {
   return (
     <>
       <button ref={trigger} type="button" aria-label="新手引导" title="新手引导" disabled={!settings || busy}
-        className={cn('app-icon-button relative inline-flex size-7 items-center justify-center rounded-[4px] text-[var(--color-text-secondary)] hover:bg-white/[0.07]', docked && 'bg-white/[0.07] text-accent-300')}
+        className={cn('app-icon-button relative inline-flex size-8 items-center justify-center rounded-[4px] text-[var(--color-text-secondary)] hover:bg-white/[0.07]', docked && 'bg-white/[0.07] text-accent-300')}
         onClick={() => {
           if (docked) setCollapsed((value) => !value)
           else if (settings?.onboardingState === 'active') setScreen('overview')
           else void choose('active', 'overview')
         }}>
-        <ListChecks className="size-3.5" />
+        <ListChecks className="size-4" />
         {settings?.onboardingState === 'active' ? <span className="absolute right-1 top-1 size-1 rounded-full bg-accent-400" /> : null}
       </button>
       <OobeSpotlight active={docked && !collapsed && !spotlightDismissed} hostId={hostId} route={location.pathname}
@@ -197,43 +197,43 @@ export function Oobe(): React.JSX.Element {
                 className="absolute inset-0 rounded-t-[var(--radius-dialog)] outline-none transition-colors hover:bg-white/[0.04] focus-visible:bg-white/[0.07]"
                 onClick={() => setCollapsed((value) => !value)} /> : null}
               <div className={cn('min-w-0', docked && 'pointer-events-none relative')}>
-                {docked ? <div className="flex items-center gap-2"><ListChecks className="size-3.5 shrink-0 text-accent-300" /><h2 id="oobe-title" className="text-[12px] font-semibold">{canFinish ? '准备就绪' : '准备清单'}</h2><span className="text-[10px] tabular-nums text-[var(--color-text-tertiary)]" aria-live="polite">{completed} / {total}</span></div> : <>
-                  <div className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-accent-300"><ListChecks className="size-3" /> MossStudio · 初次见面</div>
+                {docked ? <div className="flex items-center gap-2"><ListChecks className="size-4 shrink-0 text-accent-300" /><h2 id="oobe-title" className="text-ui font-semibold">{canFinish ? '准备就绪' : '准备清单'}</h2><span className="text-caption tabular-nums text-[var(--color-text-tertiary)]" aria-live="polite">{completed} / {total}</span></div> : <>
+                  <div className="flex items-center gap-1.5 text-caption font-semibold uppercase tracking-[0.12em] text-accent-300"><ListChecks className="size-4" /> MossStudio · 初次见面</div>
                   <h2 id="oobe-title" className="mt-1 text-[18px] font-semibold tracking-tight">{screen === 'welcome' ? '需要带你完成首次配置吗？' : canFinish ? '准备就绪，开始创作吧' : '准备好你的第一次创作'}</h2>
-                  {screen !== 'welcome' ? <p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]" aria-live="polite">{completed} / {total} 项已就绪{checking ? ' · 检查中…' : ''}</p> : null}
+                  {screen !== 'welcome' ? <p className="mt-1 text-caption text-[var(--color-text-tertiary)]" aria-live="polite">{completed} / {total} 项已就绪{checking ? ' · 检查中…' : ''}</p> : null}
                 </>}
               </div>
               <div className={cn('flex shrink-0 items-center gap-0.5', docked && 'pointer-events-none relative')}>
-                {docked ? <IconButton label="重新检查准备清单" className="pointer-events-auto size-6" disabled={checking} onClick={refresh}>{checking ? <Spinner className="size-3" /> : <RefreshCw className="size-3" />}</IconButton> : null}
-                {docked ? <IconButton label="展开引导详情" className="pointer-events-auto size-6" onClick={() => { setScreen('overview'); setCollapsed(false) }}><Maximize2 className="size-3" /></IconButton> : null}
+                {docked ? <IconButton label="重新检查准备清单" className="pointer-events-auto size-6" disabled={checking} onClick={refresh}>{checking ? <Spinner className="size-4" /> : <RefreshCw className="size-4" />}</IconButton> : null}
+                {docked ? <IconButton label="展开引导详情" className="pointer-events-auto size-6" onClick={() => { setScreen('overview'); setCollapsed(false) }}><Maximize2 className="size-4" /></IconButton> : null}
                 <IconButton label={docked ? collapsed ? '展开准备清单' : '收起准备清单' : screen === 'welcome' ? '跳过引导' : '固定到右下角'} className="pointer-events-auto size-6" disabled={busy}
                   aria-expanded={docked ? !collapsed : undefined} aria-controls={docked ? 'oobe-content' : undefined}
                   onClick={() => docked ? setCollapsed((value) => !value) : close()}>
-                  {docked ? <ChevronDown className={cn('size-3.5 transition-transform', collapsed && 'rotate-180')} /> : <X className="size-3.5" />}
+                  {docked ? <ChevronDown className={cn('size-3.5 transition-transform', collapsed && 'rotate-180')} /> : <X className="size-4" />}
                 </IconButton>
               </div>
             </header>
             {screen === 'welcome' ? (
               <>
                 <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
-                  <p className="text-[12px] leading-6 text-[var(--color-text-secondary)]">从推理设备、MossInfer 引擎到模型权重，一步步准备好生成图片所需的内容。</p>
+                  <p className="text-ui leading-6 text-[var(--color-text-secondary)]">从推理设备、MossInfer 引擎到模型权重，一步步准备好生成图片所需的内容。</p>
                   <div className="grid grid-cols-3 gap-2">
                     {[{ icon: Boxes, label: '配置引擎' }, { icon: Download, label: '准备模型' }, { icon: ListChecks, label: '跟随清单' }].map(({ icon: Icon, label }) =>
-                      <div key={label} className="rounded-[6px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-3"><Icon className="mb-2 size-4 text-accent-300" /><span className="text-[11px] text-[var(--color-text-secondary)]">{label}</span></div>,
+                      <div key={label} className="rounded-[6px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-3"><Icon className="mb-2 size-4 text-accent-300" /><span className="text-ui text-[var(--color-text-secondary)]">{label}</span></div>,
                     )}
                   </div>
-                  <p className="text-[10.5px] leading-5 text-[var(--color-text-tertiary)]">配置时清单会停靠在右下角，可向下收起。也可以稍后通过标题栏的清单按钮重新开启。</p>
+                  <p className="text-ui leading-5 text-[var(--color-text-tertiary)]">配置时清单会停靠在右下角，可向下收起。也可以稍后通过标题栏的清单按钮重新开启。</p>
                 </div>
                 <footer className="flex shrink-0 justify-end gap-2 border-t border-[var(--color-border-subtle)] px-5 py-3">
                   <Button tone="ghost" disabled={busy} onClick={() => void choose('dismissed', null)}>暂时跳过</Button>
-                  <Button tone="primary" disabled={busy} onClick={() => void choose('active', 'overview')}>开始引导<ArrowRight className="size-3.5" /></Button>
+                  <Button tone="primary" disabled={busy} onClick={() => void choose('active', 'overview')}>开始引导<ArrowRight className="size-4" /></Button>
                 </footer>
               </>
             ) : (
               <div id="oobe-content" className="flex min-h-0 flex-1 flex-col overflow-hidden" inert={docked && collapsed} aria-hidden={docked && collapsed}>
                 <div className={cn('min-h-0 flex-1 overflow-y-auto', docked ? 'px-4' : 'px-5')}>
                   <div className={cn('space-y-2 border-b border-[var(--color-border-subtle)]', docked ? 'py-2' : 'py-3')}>
-                    <label className="flex items-center gap-3 text-[10px] text-[var(--color-text-secondary)]">准备位置
+                    <label className="flex items-center gap-3 text-caption text-[var(--color-text-secondary)]">准备位置
                       <select aria-label="引导准备位置" className="app-input min-w-0 flex-1" value={hostId} disabled={busy} onChange={(event) => void changeHost(event.target.value)}>
                         <option value="local">本机{window.clover.platform === 'darwin' ? '（macOS 需使用远端推理）' : ''}</option>
                         {hosts.map((host) => <option key={host.id} value={host.id}>{host.name} · SSH</option>)}
@@ -241,10 +241,10 @@ export function Oobe(): React.JSX.Element {
                       </select>
                     </label>
                     <ProgressBar value={completed / total * 100} />
-                    {!docked ? <p className="text-[10px] leading-4 text-[var(--color-text-tertiary)]">{current?.bundleName ? `模型组合：${current.bundleName}。` : ''}已有内容会自动勾选，下载可在对应页面暂停或继续。</p> : null}
+                    {!docked ? <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">{current?.bundleName ? `模型组合：${current.bundleName}。` : ''}已有内容会自动勾选，下载可在对应页面暂停或继续。</p> : null}
                   </div>
-                  {error ? <p role="alert" className="py-3 text-[11px] text-red-300">检查失败：{error}。请重新检查或切换准备位置。</p> : null}
-                  {!current ? !error ? <div className="flex items-center gap-2 py-6 text-[11px] text-[var(--color-text-secondary)]"><Spinner className="size-3.5" />正在检查所需项目…</div> : null : (
+                  {error ? <p role="alert" className="py-3 text-ui text-red-300">检查失败：{error}。请重新检查或切换准备位置。</p> : null}
+                  {!current ? !error ? <div className="flex items-center gap-2 py-6 text-ui text-[var(--color-text-secondary)]"><Spinner className="size-4" />正在检查所需项目…</div> : null : (
                     <ol className="divide-y divide-[var(--color-border-subtle)]">
                       {current.steps.map((step, index) => {
                         const done = step.status === 'ok'
@@ -258,22 +258,22 @@ export function Oobe(): React.JSX.Element {
                         const failed = !done && (tasks.some((task) => task.state === 'error') || engine?.phase === 'error' || remote?.phase === 'error')
                         const label = done ? '已就绪' : failed ? '下载失败，可重试' : running ? queued ? '排队中' : '准备中' : tasks.some((task) => task.state === 'paused') ? '已暂停' : step.status === 'partial' ? '待补齐' : '待准备'
                         return <li key={step.id} data-oobe-step={step.id} data-status={done ? 'ok' : failed ? 'error' : running ? 'running' : step.status} className="flex items-start gap-2.5 py-3">
-                          <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-[9px] tabular-nums', done ? 'border-accent-500/25 bg-accent-500/10 text-accent-300' : 'border-[var(--color-border)] text-[var(--color-text-tertiary)]')}>
-                            {done ? <Check className="size-3" /> : running ? <Spinner className="size-3" /> : index + 1}
+                          <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-caption tabular-nums', done ? 'border-accent-500/25 bg-accent-500/10 text-accent-300' : 'border-[var(--color-border)] text-[var(--color-text-tertiary)]')}>
+                            {done ? <Check className="size-4" /> : running ? <Spinner className="size-4" /> : index + 1}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><span className="text-[11px] font-medium">{step.title}</span><span className={cn('text-[9px]', failed ? 'text-red-300' : done ? 'text-accent-300' : 'text-[var(--color-text-tertiary)]')}>{label}</span></div>
-                            <p className="mt-1 break-words text-[10px] leading-4 text-[var(--color-text-tertiary)]">{step.detail}</p>
-                            {!done && step.sizeBytes ? <p className="mt-1 text-[9px] tabular-nums text-[var(--color-text-tertiary)]">约 {bytes(step.sizeBytes)}{taskTotal ? ` · 下载进度 ${Math.round(taskBytes / taskTotal * 100)}%` : ''}</p> : null}
+                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><span className="text-ui font-medium">{step.title}</span><span className={cn('text-caption', failed ? 'text-red-300' : done ? 'text-accent-300' : 'text-[var(--color-text-tertiary)]')}>{label}</span></div>
+                            <p className="mt-1 break-words text-caption leading-4 text-[var(--color-text-tertiary)]">{step.detail}</p>
+                            {!done && step.sizeBytes ? <p className="mt-1 text-caption tabular-nums text-[var(--color-text-tertiary)]">约 {bytes(step.sizeBytes)}{taskTotal ? ` · 下载进度 ${Math.round(taskBytes / taskTotal * 100)}%` : ''}</p> : null}
                           </div>
-                          {!done ? <button type="button" aria-label={`前往配置${step.title}`} className="shrink-0 rounded-[4px] px-1.5 py-1 text-[10px] text-accent-300 hover:bg-white/[0.05]" onClick={() => dock(step)}>{docked ? '配置' : '前往配置'}<ChevronRight className="ml-0.5 inline size-3" /></button> : null}
+                          {!done ? <button type="button" aria-label={`前往配置${step.title}`} className="shrink-0 rounded-[4px] px-1.5 py-1 text-caption text-accent-300 hover:bg-white/[0.05]" onClick={() => dock(step)}>{docked ? '配置' : '前往配置'}<ChevronRight className="ml-0.5 inline size-3" /></button> : null}
                         </li>
                       })}
                     </ol>
                   )}
                 </div>
                 <footer className={cn('flex shrink-0 flex-wrap items-center gap-2 border-t border-[var(--color-border-subtle)]', docked ? 'justify-end px-4 py-2' : 'justify-between px-5 py-3')}>
-                  {!docked ? <button type="button" className="text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] disabled:opacity-50" disabled={checking} onClick={refresh}>重新检查</button> : null}
+                  {!docked ? <button type="button" className="text-caption text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] disabled:opacity-50" disabled={checking} onClick={refresh}>重新检查</button> : null}
                   <div className="flex items-center gap-1">
                     <Button tone="ghost" disabled={busy} onClick={() => void choose('dismissed', null)}>结束引导</Button>
                     <Button tone="primary" className="min-w-20 tabular-nums" aria-busy={checking} disabled={busy || !canFinish} onClick={() => {

@@ -223,9 +223,9 @@ function App(): React.JSX.Element {
     return (
       <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 bg-[#191b1f] px-5 text-[var(--color-text)]">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">MossStudio · LAN</div>
+          <div className="text-caption font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">MossStudio · LAN</div>
           <h1 className="mt-2 text-[24px] font-semibold">连接到桌面主机</h1>
-          <p className="mt-1 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+          <p className="mt-1 text-ui leading-5 text-[var(--color-text-secondary)]">
             {error || '输入桌面端「设置 → 局域网 WebUI」里显示的访问令牌。'}
           </p>
         </div>
@@ -248,17 +248,17 @@ function App(): React.JSX.Element {
     <main className="mx-auto min-h-dvh w-full max-w-[760px] bg-[#191b1f] px-4 pb-10 pt-5 text-[var(--color-text)]">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">MossStudio · LAN</div>
+          <div className="text-caption font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">MossStudio · LAN</div>
           <h1 className="mt-1 text-[22px] font-semibold tracking-tight">MossStudio</h1>
         </div>
-        <span className="rounded-full border border-accent-500/30 bg-accent-500/10 px-2 py-1 text-[9px] text-accent-300">已连接桌面主机</span>
+        <span className="rounded-full border border-accent-500/30 bg-accent-500/10 px-2 py-1 text-caption text-accent-300">已连接桌面主机</span>
       </header>
 
-      {error ? <div className="mt-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] leading-5 text-red-300">{error}</div> : null}
+      {error ? <div className="mt-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-ui leading-5 text-red-300">{error}</div> : null}
 
       <section className="mt-4 flex items-end gap-2 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3">
         <label className="min-w-0 flex-1 space-y-1">
-          <span className="text-[10px] text-[var(--color-text-tertiary)]">Project</span>
+          <span className="text-caption text-[var(--color-text-tertiary)]">Project</span>
           <select
             value={projectId}
             onChange={(event) => { setProjectId(event.target.value); void openProject(event.target.value) }}
@@ -271,14 +271,14 @@ function App(): React.JSX.Element {
           </select>
         </label>
         <label className="w-[110px] space-y-1">
-          <span className="text-[10px] text-[var(--color-text-tertiary)]">系列</span>
+          <span className="text-caption text-[var(--color-text-tertiary)]">系列</span>
           <input value={seriesId} onChange={(event) => setSeriesId(event.target.value)} placeholder="可选" className="app-input w-full" />
         </label>
-        <span className="pb-2 text-[9px] text-[var(--color-text-tertiary)]">第 {page} 页</span>
+        <span className="pb-2 text-caption text-[var(--color-text-tertiary)]">第 {page} 页</span>
         <button
           type="button"
           onClick={() => { setProjectId(''); setProjectName('MossStudio Project'); setSeriesId(''); setPage(1); setPrompt(''); setNegative(''); setDraft(exampleDraft()) }}
-          className="rounded border border-[var(--color-border-subtle)] px-2.5 py-2 text-[10px] text-[var(--color-text-secondary)]"
+          className="rounded border border-[var(--color-border-subtle)] px-2.5 py-2 text-caption text-[var(--color-text-secondary)]"
         >
           新建
         </button>
@@ -287,7 +287,7 @@ function App(): React.JSX.Element {
 
       <section className="mt-4 space-y-3 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
         <label className="block space-y-1">
-          <span className="text-[10px] text-[var(--color-text-tertiary)]">实例</span>
+          <span className="text-caption text-[var(--color-text-tertiary)]">实例</span>
           <select value={instanceId} onChange={(event) => setInstanceId(event.target.value)} className="app-input w-full">
             {bootstrap?.instances.length ? bootstrap.instances.map((instance) => (
               <option key={instance.id} value={instance.id}>{instance.name} · {instance.commit.slice(0, 7)}</option>
@@ -296,12 +296,12 @@ function App(): React.JSX.Element {
         </label>
 
         <label className="block space-y-1">
-          <span className="text-[10px] text-[var(--color-text-tertiary)]">提示词</span>
+          <span className="text-caption text-[var(--color-text-tertiary)]">提示词</span>
           <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={5} className="app-input w-full resize-y" placeholder="写下一个画面……" />
         </label>
 
         <label className="block space-y-1">
-          <span className="text-[10px] text-[var(--color-text-tertiary)]">负向提示词</span>
+          <span className="text-caption text-[var(--color-text-tertiary)]">负向提示词</span>
           <input value={negative} onChange={(event) => setNegative(event.target.value)} className="app-input w-full" placeholder="可选" />
         </label>
 
@@ -314,7 +314,7 @@ function App(): React.JSX.Element {
 
         <div className="grid grid-cols-2 gap-2">
           <label className="space-y-1">
-            <span className="text-[10px] text-[var(--color-text-tertiary)]">尺寸</span>
+            <span className="text-caption text-[var(--color-text-tertiary)]">尺寸</span>
             <select
               value={`${draft.width}x${draft.height}`}
               onChange={(event) => {
@@ -332,15 +332,15 @@ function App(): React.JSX.Element {
             </select>
           </label>
           <label className="space-y-1">
-            <span className="text-[10px] text-[var(--color-text-tertiary)]">Seed</span>
+            <span className="text-caption text-[var(--color-text-tertiary)]">Seed</span>
             <input value={seed} onChange={(event) => setSeed(Number(event.target.value) || 0)} inputMode="numeric" className="app-input w-full" />
           </label>
           <label className="space-y-1">
-            <span className="text-[10px] text-[var(--color-text-tertiary)]">Steps</span>
+            <span className="text-caption text-[var(--color-text-tertiary)]">Steps</span>
             <input value={steps} onChange={(event) => setSteps(Number(event.target.value) || 1)} inputMode="numeric" className="app-input w-full" />
           </label>
           <label className="space-y-1">
-            <span className="text-[10px] text-[var(--color-text-tertiary)]">CFG</span>
+            <span className="text-caption text-[var(--color-text-tertiary)]">CFG</span>
             <input value={cfg} onChange={(event) => setCfg(Number(event.target.value) || 0)} inputMode="decimal" className="app-input w-full" />
           </label>
         </div>
@@ -348,7 +348,7 @@ function App(): React.JSX.Element {
         <button type="button" onClick={() => void generate()} disabled={busy || Boolean(active)} className="app-button-primary w-full disabled:opacity-50">
           {busy || active ? '生成中…' : '开始生成'}
         </button>
-        <p className="text-[9.5px] leading-4 text-[var(--color-text-tertiary)]">
+        <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">
           画布/布局 JSON 已可在手机端编辑；Project 全量同步与画廊仍在桌面版。
         </p>
       </section>
@@ -356,13 +356,13 @@ function App(): React.JSX.Element {
       {job ? (
         <section className="mt-4 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium">生成任务</span>
-            <span className="text-[10px] text-[var(--color-text-tertiary)]">{job.state}</span>
+            <span className="text-ui font-medium">生成任务</span>
+            <span className="text-caption text-[var(--color-text-tertiary)]">{job.state}</span>
           </div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
             <div className="h-full rounded-full bg-accent-500 transition-[width]" style={{ width: `${Math.max(0, Math.min(100, job.progress?.percent ?? 0))}%` }} />
           </div>
-          <div className="mt-2 flex justify-between text-[10px] text-[var(--color-text-tertiary)]">
+          <div className="mt-2 flex justify-between text-caption text-[var(--color-text-tertiary)]">
             <span>{job.stage} · {job.progress?.current ?? 0}/{job.progress?.total ?? steps}</span>
             <span>{job.error?.message ?? ''}</span>
           </div>
@@ -371,11 +371,11 @@ function App(): React.JSX.Element {
 
       <section className="mt-4 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-medium">最近结果</span>
-          <button type="button" onClick={() => void refreshGallery()} className="text-[10px] text-accent-300">刷新</button>
+          <span className="text-ui font-medium">最近结果</span>
+          <button type="button" onClick={() => void refreshGallery()} className="text-caption text-accent-300">刷新</button>
         </div>
         {gallery.length === 0 ? (
-          <p className="mt-2 text-[10px] text-[var(--color-text-tertiary)]">还没有输出；真实生成后会出现在这里。</p>
+          <p className="mt-2 text-caption text-[var(--color-text-tertiary)]">还没有输出；真实生成后会出现在这里。</p>
         ) : (
           <div className="mt-2 grid grid-cols-3 gap-1.5">
             {gallery.map((item) => {
@@ -383,7 +383,7 @@ function App(): React.JSX.Element {
               return (
                 <a key={item.id} href={src} target="_blank" rel="noreferrer" className="group relative overflow-hidden rounded-md border border-[var(--color-border-subtle)] bg-black/20" style={{ aspectRatio: '1 / 1' }}>
                   <img src={src} alt={item.name} loading="lazy" className="size-full object-cover transition group-hover:scale-[1.02]" />
-                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[8px] text-white/80">{item.name}</span>
+                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-micro text-white/80">{item.name}</span>
                 </a>
               )
             })}
@@ -393,11 +393,11 @@ function App(): React.JSX.Element {
 
       <section className="mt-4 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-medium">保存到 Project</span>
-          <button type="button" onClick={() => void saveProject()} className="text-[10px] text-accent-300">保存</button>
+          <span className="text-ui font-medium">保存到 Project</span>
+          <button type="button" onClick={() => void saveProject()} className="text-caption text-accent-300">保存</button>
         </div>
         <input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="app-input mt-2 w-full" />
-        <div className="mt-2 text-[10px] text-[var(--color-text-tertiary)]">
+        <div className="mt-2 text-caption text-[var(--color-text-tertiary)]">
           {bootstrap?.projects.length ?? 0} 个桌面 Project；手机端保存为单画布草稿。
         </div>
       </section>

@@ -66,13 +66,13 @@ export function DiagnosticsPage(): React.JSX.Element {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight">诊断</h1>
-          <p className="mt-1 text-[12px] text-[var(--color-text-secondary)]">
+          <p className="mt-1 text-ui text-[var(--color-text-secondary)]">
             运行失败会被翻译成可操作的卡片；同一错误不会反复弹窗。
           </p>
         </div>
         <div className="flex items-center gap-1.5">
           <IconButton label="刷新" onClick={() => void refreshDiagnostics()}>
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className="size-4" />
           </IconButton>
           <Button
             tone="secondary"
@@ -83,7 +83,7 @@ export function DiagnosticsPage(): React.JSX.Element {
             disabled={diagnostics.length === 0}
           >
             <span className="inline-flex items-center gap-1.5">
-              <Copy className="size-3.5" /> 导出
+              <Copy className="size-4" /> 导出
             </span>
           </Button>
           <Button
@@ -92,7 +92,7 @@ export function DiagnosticsPage(): React.JSX.Element {
             disabled={diagnostics.length === 0}
           >
             <span className="inline-flex items-center gap-1.5 text-[var(--color-text-tertiary)]">
-              <Trash2 className="size-3.5" /> 清空
+              <Trash2 className="size-4" /> 清空
             </span>
           </Button>
         </div>
@@ -112,7 +112,7 @@ export function DiagnosticsPage(): React.JSX.Element {
               type="button"
               onClick={() => setFilter(value)}
               className={cn(
-                'rounded-[7px] px-3 py-1 text-[11.5px] font-medium transition',
+                'rounded-[7px] px-3 py-1 text-ui font-medium transition',
                 filter === value
                   ? 'bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm'
                   : 'text-[var(--color-text-secondary)]',
@@ -122,13 +122,13 @@ export function DiagnosticsPage(): React.JSX.Element {
             </button>
           ))}
         </div>
-        <span className="text-[10px] text-[var(--color-text-tertiary)]">诊断数据保存在本地</span>
+        <span className="text-caption text-[var(--color-text-tertiary)]">诊断数据保存在本地</span>
       </div>
 
       <MotionPanel transitionKey={filter}>
         {filtered.length === 0 ? (
           <EmptyState
-            icon={<CheckCircle2 className="size-7 text-accent-500" />}
+            icon={<CheckCircle2 className="size-8 text-accent-500" />}
             title={diagnostics.length === 0 ? '没有诊断记录' : '当前筛选下没有记录'}
             description="任务失败、OOM、网络与依赖问题会生成卡片，并附带解决按钮。"
             action={
@@ -150,21 +150,21 @@ export function DiagnosticsPage(): React.JSX.Element {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[13px] font-medium">{diagnostic.title}</span>
                         <Pill tone={meta.tone}>{meta.label}</Pill>
-                        <span className="text-[10px] text-[var(--color-text-tertiary)]">{diagnostic.ruleId}</span>
+                        <span className="text-caption text-[var(--color-text-tertiary)]">{diagnostic.ruleId}</span>
                         {diagnostic.count > 1 ? (
-                          <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                          <span className="text-caption text-[var(--color-text-tertiary)]">
                             ×{diagnostic.count}
                           </span>
                         ) : null}
-                        <span className="ml-auto text-[10px] text-[var(--color-text-tertiary)]">
+                        <span className="ml-auto text-caption text-[var(--color-text-tertiary)]">
                           {relative(diagnostic.lastAt)}
                         </span>
                       </div>
-                      <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-secondary)]">
+                      <p className="mt-1 text-ui leading-5 text-[var(--color-text-secondary)]">
                         {diagnostic.explain}
                       </p>
                       {job ? (
-                        <p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">
+                        <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">
                           {job.instanceName} · {job.params.width}×{job.params.height} · {job.params.steps} 步
                         </p>
                       ) : null}
@@ -188,10 +188,10 @@ export function DiagnosticsPage(): React.JSX.Element {
                       </div>
                       {diagnostic.raw ? (
                         <details className="mt-2 group">
-                          <summary className="cursor-pointer list-none text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+                          <summary className="cursor-pointer list-none text-caption text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
                             原始输出 ▸
                           </summary>
-                          <pre className="mt-1.5 max-h-40 overflow-auto rounded-lg bg-white/45 p-2.5 font-mono text-[9.5px] leading-4 text-[var(--color-text-secondary)] dark:bg-black/25">
+                          <pre className="mt-1.5 max-h-40 overflow-auto rounded-lg bg-white/45 p-2.5 font-mono text-caption leading-4 text-[var(--color-text-secondary)] dark:bg-black/25">
                             {diagnostic.raw}
                           </pre>
                         </details>
@@ -203,7 +203,7 @@ export function DiagnosticsPage(): React.JSX.Element {
                       className="text-[var(--color-text-tertiary)] hover:text-red-500"
                       aria-label="关闭诊断"
                     >
-                      <XCircle className="size-3.5" />
+                      <XCircle className="size-4" />
                     </button>
                   </div>
                 </Card>
@@ -213,8 +213,8 @@ export function DiagnosticsPage(): React.JSX.Element {
         )}
       </MotionPanel>
 
-      <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-tertiary)]">
-        <ShieldAlert className="size-3.5" />
+      <div className="flex items-center gap-2 text-caption text-[var(--color-text-tertiary)]">
+        <ShieldAlert className="size-4" />
         同一 signature 60 秒内只弹一次 toast；全局 5 分钟最多 3 条。
       </div>
     </div>

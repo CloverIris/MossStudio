@@ -52,6 +52,17 @@ module.exports = async function checkOobe({ evaluate, waitFor, capture, webConte
   const shellTop = await evaluate('document.querySelector(".app-shell > header").getBoundingClientRect().top')
   await click('[data-oobe-step="model"] button')
   await waitFor('document.querySelector(".app-oobe")?.dataset.screen === "checklist"')
+  // Read the intermediate frame before protocol/style checks can outlast the
+  // docking animation's hidden-window cleanup timer.
+  const midpoint = await evaluate(`(() => {
+    const panel = document.querySelector('.app-oobe-panel');
+    const animation = panel.getAnimations()[0];
+    if (!animation) return null;
+    animation.pause(); animation.currentTime = 180;
+    return panel.getBoundingClientRect().left;
+  })()`)
+  assert.notEqual(midpoint, null, 'Docking must animate the existing panel')
+  await finish()
   assert.equal(await evaluate('document.querySelector(".app-oobe").matches(":modal")'), false)
   assert.equal(await evaluate('document.querySelector(".app-oobe").getAttribute("aria-modal")'), 'false')
   assert.equal(await evaluate('parseFloat(getComputedStyle(document.querySelector(".app-oobe-panel")).borderTopWidth)'), 0, 'The docked checklist must not have an outer border')
@@ -65,15 +76,6 @@ module.exports = async function checkOobe({ evaluate, waitFor, capture, webConte
     assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(selector)})).outlineStyle`), 'none', 'Opening or focusing the checklist must not draw a frame')
     await webContents.debugger.sendCommand('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] })
   }
-  const midpoint = await evaluate(`(() => {
-    const panel = document.querySelector('.app-oobe-panel');
-    const animation = panel.getAnimations()[0];
-    if (!animation) return null;
-    animation.pause(); animation.currentTime = 180;
-    return panel.getBoundingClientRect().left;
-  })()`)
-  assert.notEqual(midpoint, null, 'Docking must animate the existing panel')
-  await finish()
   await waitFor('document.querySelector("#oobe-route").textContent.includes("component=all")')
   assert.ok(await evaluate('document.querySelector("#oobe-route").textContent.startsWith("/models?")'))
   assert.equal(await evaluate(`document.querySelector('select[aria-label="推荐模型组合"]').value`), 'fixture-bundle')

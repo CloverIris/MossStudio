@@ -175,10 +175,10 @@ export function OobeSpotlight({ active, step, hostId, route, onActivate, onDismi
       </svg>
       {layout.hints.map((hint) => <aside key={hint.anchor} role="note" aria-label="配置引导提示" className="oobe-spotlight-hint" data-position={hint.position} style={{ '--oobe-hint-anchor': hint.anchor } as CSSProperties}>
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <div className="oobe-spotlight-heading flex items-center gap-1.5 text-[11px] font-semibold text-accent-300"><ListChecks className="size-3.5" />{hint.title}</div>
-          <p className="oobe-spotlight-description text-[11px] leading-5 text-[var(--color-text-secondary)]">{hint.text}</p>
+          <div className="oobe-spotlight-heading flex items-center gap-1.5 text-ui font-semibold text-accent-300"><ListChecks className="size-4" />{hint.title}</div>
+          <p className="oobe-spotlight-description text-ui leading-5 text-[var(--color-text-secondary)]">{hint.text}</p>
         </div>
-        <button type="button" aria-label="暂时隐藏引导高亮" title="隐藏高亮和提示，保留准备清单" className="app-icon-button inline-flex size-5 shrink-0 items-center justify-center rounded text-[var(--color-text-tertiary)] hover:bg-white/10" onClick={onDismiss}><X className="size-3" /></button>
+        <button type="button" aria-label="暂时隐藏引导高亮" title="隐藏高亮和提示，保留准备清单" className="app-icon-button inline-flex size-5 shrink-0 items-center justify-center rounded text-[var(--color-text-tertiary)] hover:bg-white/10" onClick={onDismiss}><X className="size-4" /></button>
       </aside>)}
     </div>, layout.container,
   )

@@ -44,9 +44,17 @@ module.exports = async function checkMotion({ evaluate, waitFor, webContents, ca
   assert.equal(await evaluate('document.querySelector("#collapse-demo").getBoundingClientRect().height'), 0)
   await click('#toggle-collapse')
   await waitFor('document.querySelector("#collapse-demo").getAnimations().length > 0')
-  await evaluate('document.querySelector("#collapse-demo").getAnimations().forEach(animation => { animation.currentTime = 90 })')
-  const height = await evaluate('document.querySelector("#collapse-demo").getBoundingClientRect().height')
-  assert.ok(height > 0 && height < 64, `Expected an intermediate collapse height, got ${height}`)
+  // Sample a paused frame atomically: separate renderer calls can let a short
+  // transition finish before its height is read on a busy machine.
+  const { height, expandedHeight } = await evaluate(`(() => {
+    const element = document.querySelector('#collapse-demo')
+    element.getAnimations().forEach(animation => {
+      animation.pause()
+      animation.currentTime = Number(animation.effect.getTiming().duration) / 2
+    })
+    return { height: element.getBoundingClientRect().height, expandedHeight: document.querySelector('#collapse-child').offsetHeight }
+  })()`)
+  assert.ok(height > 0 && height < expandedHeight, `Expected an intermediate collapse height, got ${height}/${expandedHeight}`)
   await finish('#collapse-demo')
   await click('#toggle-collapse')
   assert.equal(await evaluate('document.querySelector("#collapse-demo").inert'), true)

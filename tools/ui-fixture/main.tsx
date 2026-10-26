@@ -197,8 +197,8 @@ function Fixture(): React.JSX.Element {
       <MotionPanel transitionKey={view} data-testid="page-motion" className={view === 'oobe' ? 'hidden' : undefined}>
         {view === 'materials' ? <MaterialMotionProbe /> : view === 'settings' ? <SettingsPage /> : view === 'devices' ? <ToastProvider><DevicesPage /></ToastProvider> : view === 'studio' ? <ToastProvider><StudioPage /></ToastProvider> : (
           <div style={{ transform: 'translateX(20px)', backdropFilter: 'blur(2px)', width: 400, overflow: 'hidden' }}>
-            <input id="typography" className="text-[10.5px] font-mono leading-5" />
-            <button id="button-typography" className="text-[11px] font-medium">Typography</button>
+            <input id="typography" className="text-caption font-mono leading-5" />
+            <button id="button-typography" className="text-ui font-medium">Typography</button>
             <Field label="Shared input" hint="Field hint"><Input /></Field>
             <Switch aria-label="Shared switch" checked={checked} onCheckedChange={setChecked} />
             <Spinner className="motion-probe" />

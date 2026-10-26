@@ -54,7 +54,7 @@ function NavRow({
       title={collapsed ? t(item.key) : undefined}
       className={({ isActive }) =>
         cn(
-          'group relative flex items-center rounded-[4px] text-[11.5px] transition-colors',
+          'group relative flex items-center rounded-[4px] text-ui transition-colors',
           collapsed ? 'h-8 justify-center' : 'h-8 gap-2.5 px-2.5',
           isActive
             ? 'bg-white/[0.065] font-medium text-[var(--color-text)]'
@@ -70,7 +70,7 @@ function NavRow({
           />
           {!collapsed ? <span className="flex-1 truncate">{t(item.key)}</span> : null}
           {!collapsed && count ? (
-            <span className="rounded-[4px] bg-white/[0.07] px-1.5 text-[9.5px] leading-[16px] text-[var(--color-text-tertiary)]">
+            <span className="rounded-[4px] bg-white/[0.07] px-1.5 text-caption leading-[16px] text-[var(--color-text-tertiary)]">
               {count}
             </span>
           ) : null}
@@ -132,7 +132,7 @@ export function CreatorSidebar(): React.JSX.Element {
           <NavRow key={item.to} item={item} collapsed={false} />
         ))}
       </nav>
-      <div className="mt-auto px-2.5 pb-1 text-[9.5px] leading-4 text-[var(--color-text-tertiary)]">
+      <div className="mt-auto px-2.5 pb-1 text-caption leading-4 text-[var(--color-text-tertiary)]">
         MossStudio
       </div>
     </aside>

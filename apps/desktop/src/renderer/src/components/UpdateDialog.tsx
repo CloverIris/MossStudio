@@ -103,14 +103,14 @@ export function UpdateDialog(): React.JSX.Element | null {
           {updates.releaseUrl ? (
             <Button tone="secondary" onClick={openReleasePage}>
               <span className="inline-flex items-center gap-1.5">
-                <ExternalLink className="size-3.5" /> 发布页
+                <ExternalLink className="size-4" /> 发布页
               </span>
             </Button>
           ) : null}
           {installer && !finished ? (
             <Button tone="primary" onClick={() => void begin()} disabled={downloading}>
               <span className="inline-flex items-center gap-1.5">
-                {downloading ? <Spinner className="size-3.5" /> : <Download className="size-3.5" />}
+                {downloading ? <Spinner className="size-4" /> : <Download className="size-4" />}
                 {downloading ? '下载中' : '下载并安装'}
               </span>
             </Button>
@@ -140,7 +140,7 @@ export function UpdateDialog(): React.JSX.Element | null {
         </div>
 
         {!installer ? (
-          <div className="flex items-start gap-2 rounded-[5px] border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2.5 text-[11px] leading-5 text-amber-200">
+          <div className="flex items-start gap-2 rounded-[5px] border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2.5 text-ui leading-5 text-amber-200">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
             <span>
               这份发布没有为你的平台提供安装包。可以打开发布页手动下载；下载/安装链路不会在缺少
@@ -148,7 +148,7 @@ export function UpdateDialog(): React.JSX.Element | null {
             </span>
           </div>
         ) : (
-          <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2.5 text-[10.5px] leading-5 text-[var(--color-text-tertiary)]">
+          <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2.5 text-ui leading-5 text-[var(--color-text-tertiary)]">
             下载完成后会校验 sha256 并打开安装程序；你仍需在系统安装界面完成安装。当前构建未签名时，
             系统可能要求手动确认。
           </div>
@@ -157,8 +157,8 @@ export function UpdateDialog(): React.JSX.Element | null {
         {activeDownload ? (
           <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.03] px-3 py-3">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-secondary)]">
-                {activeDownload.phase === 'downloading' ? <Spinner className="size-3.5" /> : null}
+              <div className="flex items-center gap-2 text-ui text-[var(--color-text-secondary)]">
+                {activeDownload.phase === 'downloading' ? <Spinner className="size-4" /> : null}
                 <span>
                   {activeDownload.phase === 'downloading'
                     ? '正在下载安装包'
@@ -173,7 +173,7 @@ export function UpdateDialog(): React.JSX.Element | null {
                             : '下载失败'}
                 </span>
               </div>
-              <span className="text-[10px] tabular-nums text-[var(--color-text-tertiary)]">
+              <span className="text-caption tabular-nums text-[var(--color-text-tertiary)]">
                 {formatBytes(activeDownload.bytes)} / {formatBytes(activeDownload.totalBytes)}
                 {activeDownload.phase === 'downloading'
                   ? ` · ${formatSpeed(activeDownload.speedBps)}`
@@ -186,15 +186,15 @@ export function UpdateDialog(): React.JSX.Element | null {
               className="mt-2"
             />
             {activeDownload.phase === 'ready' || activeDownload.phase === 'opened' ? (
-              <div className="mt-2 flex items-center gap-1.5 text-[10.5px] text-[var(--color-text-tertiary)]">
-                <CheckCircle2 className="size-3.5 text-accent-300" />
+              <div className="mt-2 flex items-center gap-1.5 text-ui text-[var(--color-text-tertiary)]">
+                <CheckCircle2 className="size-4 text-accent-300" />
                 <span className="truncate">{activeDownload.path}</span>
               </div>
             ) : null}
             {activeDownload.error ? (
               <p
                 className={cn(
-                  'mt-2 text-[10.5px] leading-5',
+                  'mt-2 text-ui leading-5',
                   activeDownload.phase === 'canceled' ? 'text-[var(--color-text-tertiary)]' : 'text-red-300',
                 )}
               >
@@ -206,15 +206,15 @@ export function UpdateDialog(): React.JSX.Element | null {
 
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
+            <h3 className="text-ui font-semibold uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
               发布说明
             </h3>
             <button
               type="button"
-              className="inline-flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+              className="inline-flex items-center gap-1 text-caption text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
               onClick={() => setOpen(false)}
             >
-              <X className="size-3" /> 收起
+              <X className="size-4" /> 收起
             </button>
           </div>
           <div className="max-h-[34vh] overflow-y-auto rounded-[5px] border border-[var(--color-border-subtle)] bg-black/15 px-3 py-2.5">

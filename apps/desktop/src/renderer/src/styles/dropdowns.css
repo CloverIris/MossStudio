@@ -86,7 +86,7 @@ select option {
     overscroll-behavior: contain;
     scrollbar-width: thin;
     scrollbar-color: var(--dropdown-disabled) transparent;
-    font: 400 12px/18px var(--font-sans);
+    font: 400 var(--text-caption)/18px var(--font-sans);
     cursor: default;
   }
 
@@ -104,7 +104,7 @@ select option {
     border-radius: 6px;
     background: transparent;
     color: var(--dropdown-text);
-    font: 400 12px/18px var(--font-sans);
+    font: 400 var(--text-caption)/18px var(--font-sans);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

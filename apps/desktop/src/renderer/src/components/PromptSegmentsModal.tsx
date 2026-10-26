@@ -96,24 +96,24 @@ export function PromptSegmentsModal({
       <div className="space-y-2 p-4">
         {segments.map((segment, index) => (
           <div key={segment.id} className="flex items-center gap-2 rounded-lg border border-[var(--color-border-subtle)] p-2" style={{ borderLeft: `3px solid ${COLORS[segment.color]}` }}>
-            <span className="w-5 shrink-0 text-center text-[9px] font-mono text-[var(--color-text-tertiary)]">{index + 1}</span>
+            <span className="w-5 shrink-0 text-center text-caption font-mono text-[var(--color-text-tertiary)]">{index + 1}</span>
             <Input value={segment.text} onChange={(event) => update(segment.id, { text: event.target.value })} className="min-w-0 flex-1" />
             <select
               value={segment.color}
               onChange={(event) => update(segment.id, { color: event.target.value as Color })}
-              className="h-7 rounded border border-[var(--color-border-subtle)] bg-transparent px-1 text-[9px] text-[var(--color-text-tertiary)]"
+              className="h-7 rounded border border-[var(--color-border-subtle)] bg-transparent px-1 text-caption text-[var(--color-text-tertiary)]"
               aria-label="分段颜色"
             >
               {(Object.keys(COLORS) as Color[]).map((color) => <option key={color} value={color}>{color}</option>)}
             </select>
-            <button type="button" className={`rounded p-1 ${segment.pinned ? 'text-accent-300' : 'text-[var(--color-text-tertiary)]'}`} onClick={() => update(segment.id, { pinned: !segment.pinned })} title="固定到前面"><Pin className="size-3" /></button>
-            <button type="button" className="rounded p-1 text-[var(--color-text-tertiary)]" onClick={() => move(segment.id, -1)}><ArrowUp className="size-3" /></button>
-            <button type="button" className="rounded p-1 text-[var(--color-text-tertiary)]" onClick={() => move(segment.id, 1)}><ArrowDown className="size-3" /></button>
-            <button type="button" className="rounded p-1 text-red-300" onClick={() => setSegments((current) => current.filter((item) => item.id !== segment.id))}><Trash2 className="size-3" /></button>
+            <button type="button" className={`rounded p-1 ${segment.pinned ? 'text-accent-300' : 'text-[var(--color-text-tertiary)]'}`} onClick={() => update(segment.id, { pinned: !segment.pinned })} title="固定到前面"><Pin className="size-4" /></button>
+            <button type="button" className="rounded p-1 text-[var(--color-text-tertiary)]" onClick={() => move(segment.id, -1)}><ArrowUp className="size-4" /></button>
+            <button type="button" className="rounded p-1 text-[var(--color-text-tertiary)]" onClick={() => move(segment.id, 1)}><ArrowDown className="size-4" /></button>
+            <button type="button" className="rounded p-1 text-red-300" onClick={() => setSegments((current) => current.filter((item) => item.id !== segment.id))}><Trash2 className="size-4" /></button>
           </div>
         ))}
         <Button tone="ghost" onClick={() => setSegments((current) => [...current, { id: `seg-${Date.now()}`, text: '', pinned: false, color: 'slate' }])}>
-          <span className="inline-flex items-center gap-1"><Plus className="size-3" /> 添加分段</span>
+          <span className="inline-flex items-center gap-1"><Plus className="size-4" /> 添加分段</span>
         </Button>
       </div>
     </Modal>

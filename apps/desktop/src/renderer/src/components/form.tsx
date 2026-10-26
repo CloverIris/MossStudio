@@ -24,11 +24,11 @@ export function Field({
   return (
     <FieldContext.Provider value={{ id: controlId, hintId }}>
       <div className={`flex min-w-0 flex-col gap-1 ${className}`}>
-        <label htmlFor={controlId} className={`text-[10.5px] text-[var(--color-text-secondary)] ${labelClassName}`}>
+        <label htmlFor={controlId} className={`text-ui text-[var(--color-text-secondary)] ${labelClassName}`}>
           {label}
         </label>
         {children}
-        {hint ? <span id={hintId} className="text-[9.5px] leading-4 text-[var(--color-text-tertiary)]">{hint}</span> : null}
+        {hint ? <span id={hintId} className="text-caption leading-4 text-[var(--color-text-tertiary)]">{hint}</span> : null}
       </div>
     </FieldContext.Provider>
   )

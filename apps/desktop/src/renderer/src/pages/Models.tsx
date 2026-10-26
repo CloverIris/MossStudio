@@ -402,13 +402,13 @@ export function ModelsPage(): React.JSX.Element {
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight">模型库</h1>
-          <p className="mt-1 text-[12px] text-[var(--color-text-secondary)]">
+          <p className="mt-1 text-ui text-[var(--color-text-secondary)]">
             MossInfer 按 bundle 组合原地加载模型；单文件组件可作引擎级覆盖。
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button tone="secondary" disabled={busy !== null} onClick={() => void importFolder()}>
-            {busy === 'import' ? <Spinner className="size-3.5" /> : <FolderOpen className="size-3.5" />}
+            {busy === 'import' ? <Spinner className="size-4" /> : <FolderOpen className="size-4" />}
             导入本地模型
           </Button>
           <IconButton label="刷新模型库" onClick={() => void refreshCatalog()}>
@@ -418,8 +418,8 @@ export function ModelsPage(): React.JSX.Element {
       </header>
 
       <div className="flex items-center gap-1 border-b border-[var(--color-border-subtle)]">
-        <button type="button" onClick={() => setMode('local')} className={cn('border-b-2 px-4 py-2 text-[12px]', mode === 'local' ? 'border-accent-400 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-tertiary)]')}>本地模型管理</button>
-        <button type="button" onClick={() => setMode('remote')} className={cn('border-b-2 px-4 py-2 text-[12px]', mode === 'remote' ? 'border-accent-400 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-tertiary)]')}>远端模型管理</button>
+        <button type="button" onClick={() => setMode('local')} className={cn('border-b-2 px-4 py-2 text-ui', mode === 'local' ? 'border-accent-400 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-tertiary)]')}>本地模型管理</button>
+        <button type="button" onClick={() => setMode('remote')} className={cn('border-b-2 px-4 py-2 text-ui', mode === 'remote' ? 'border-accent-400 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-tertiary)]')}>远端模型管理</button>
       </div>
 
       <div data-oobe-host={remoteHostId} className={mode === 'remote' ? 'space-y-5' : 'hidden'}>
@@ -427,21 +427,21 @@ export function ModelsPage(): React.JSX.Element {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2"><HardDrive className="size-4 text-accent-300" /><h2 className="text-[14px] font-semibold">远端模型</h2></div>
-            <p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">在 Linux SSH 主机选择模型缓存目录、自动查找已有模型或准备默认 SFT。</p>
+            <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">在 Linux SSH 主机选择模型缓存目录、自动查找已有模型或准备默认 SFT。</p>
           </div>
-          <span className="text-[9px] text-[var(--color-text-tertiary)]">远端权重不占本机磁盘</span>
+          <span className="text-caption text-[var(--color-text-tertiary)]">远端权重不占本机磁盘</span>
         </div>
-        {hosts.length === 0 ? <p className="mt-3 text-[10px] text-[var(--color-text-tertiary)]">还没有 SSH 主机，请先在设备页添加。</p> : (
+        {hosts.length === 0 ? <p className="mt-3 text-caption text-[var(--color-text-tertiary)]">还没有 SSH 主机，请先在设备页添加。</p> : (
           <div className="mt-3 space-y-2">
             <div className="grid gap-2 sm:grid-cols-[180px_1fr]">
-              <label className="space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">SSH 主机</span><select value={remoteHostId} onChange={(event) => setRemoteHostId(event.target.value)} className="app-input w-full">{hosts.map((host) => <option key={host.id} value={host.id}>{host.name}</option>)}</select></label>
-              <label className="space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">模型缓存根目录</span><Input value={remoteRoot} onChange={(event) => setRemoteRoot(event.target.value)} /></label>
+              <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">SSH 主机</span><select value={remoteHostId} onChange={(event) => setRemoteHostId(event.target.value)} className="app-input w-full">{hosts.map((host) => <option key={host.id} value={host.id}>{host.name}</option>)}</select></label>
+              <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">模型缓存根目录</span><Input value={remoteRoot} onChange={(event) => setRemoteRoot(event.target.value)} /></label>
             </div>
-            <label className="block space-y-1"><span className="text-[9px] text-[var(--color-text-tertiary)]">模型目录（可自动查找）</span><Input value={remoteModelPath} onChange={(event) => setRemoteModelPath(event.target.value)} placeholder="/home/.../snapshots/..." /></label>
+            <label className="block space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">模型目录（可自动查找）</span><Input value={remoteModelPath} onChange={(event) => setRemoteModelPath(event.target.value)} placeholder="/home/.../snapshots/..." /></label>
             <div className="flex flex-wrap gap-1.5">
               <Button tone="secondary" onClick={() => void saveRemotePaths()} disabled={remoteBusy}>保存路径</Button>
               <Button data-oobe="model" tone="ghost" onClick={() => void findRemoteModel()} disabled={remoteBusy}>自动查找</Button>
-              <Button data-oobe="model" data-oobe-hint="在这台 SSH 主机准备完整的默认模型；已有权重可先自动查找。远端下载不占用本机模型空间。" tone="ghost" onClick={() => void prepareRemote()} disabled={remoteBusy}>{remoteBusy ? <Spinner className="size-3" /> : '准备默认 SFT'}</Button>
+              <Button data-oobe="model" data-oobe-hint="在这台 SSH 主机准备完整的默认模型；已有权重可先自动查找。远端下载不占用本机模型空间。" tone="ghost" onClick={() => void prepareRemote()} disabled={remoteBusy}>{remoteBusy ? <Spinner className="size-4" /> : '准备默认 SFT'}</Button>
               <Button tone="ghost" onClick={() => void removeRemote()} disabled={remoteBusy || !remoteModelPath}>删除模型目录</Button>
             </div>
           </div>
@@ -453,22 +453,22 @@ export function ModelsPage(): React.JSX.Element {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <nav data-oobe="model" data-oobe-hint-title="按组件挑选" data-oobe-hint-position="bottom" data-oobe-hint="也可以在下方按 MOSS 模型、Qwen 编码器、VAE 等分页单独挑选并下载组件，已有编码器和 VAE 可复用。" aria-label="远端组件分类" className="flex max-w-full gap-1 overflow-x-auto border-b border-[var(--color-border-subtle)]">
             {categories.map(({ id, name, icon: Icon }) => (
-              <button key={id} onClick={() => setRemoteCategory(id)} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[12px] transition-colors', remoteCategory === id ? 'border-accent-400 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]')}>
-                <Icon className="size-3.5" />{name}
+              <button key={id} onClick={() => setRemoteCategory(id)} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-ui transition-colors', remoteCategory === id ? 'border-accent-400 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]')}>
+                <Icon className="size-4" />{name}
               </button>
             ))}
           </nav>
           <label className="flex h-8 w-full items-center gap-2 rounded-[4px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-2.5 sm:w-52">
-            <Search className="size-3.5 shrink-0 text-[var(--color-text-tertiary)]" />
-            <input aria-label="搜索远端模型" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称或来源" className="w-full min-w-0 bg-transparent text-[12px] outline-none" />
+            <Search className="size-4 shrink-0 text-[var(--color-text-tertiary)]" />
+            <input aria-label="搜索远端模型" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称或来源" className="w-full min-w-0 bg-transparent text-ui outline-none" />
           </label>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             {remoteCategory !== 'adapter' ? <select aria-label="远端组件格式" value={format} onChange={(event) => setFormat(event.target.value)} className="model-select"><option value="diffusers">Diffusers · 可绑定 bundle</option><option value="comfyui">ComfyUI 单文件 · MossInfer 覆盖</option><option value="all">全部格式</option></select> : null}
-            <label className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-secondary)]"><input type="checkbox" checked={installedOnly} onChange={(event) => setInstalledOnly(event.target.checked)} className="accent-[var(--color-accent-500)]" />仅已部署</label>
+            <label className="flex items-center gap-1.5 text-ui text-[var(--color-text-secondary)]"><input type="checkbox" checked={installedOnly} onChange={(event) => setInstalledOnly(event.target.checked)} className="accent-[var(--color-accent-500)]" />仅已部署</label>
           </div>
-          <span className="text-[11px] text-[var(--color-text-tertiary)]">{remoteScan ? `${remoteScan.root} · ${remoteScan.files} 个文件` : '扫描远端模型'}</span>
+          <span className="text-ui text-[var(--color-text-tertiary)]">{remoteScan ? `${remoteScan.root} · ${remoteScan.files} 个文件` : '扫描远端模型'}</span>
         </div>
         {remoteCategory === 'adapter' ? (
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -478,9 +478,9 @@ export function ModelsPage(): React.JSX.Element {
               const working = remoteModelBusy === adapter.id
               return (
                 <Card key={adapter.id} className="flex min-w-0 flex-col p-4">
-                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="truncate text-[13px] font-medium">{adapter.name}</span><Pill tone={adapter.provider === 'hf' ? 'blue' : 'neutral'}>{adapter.provider.toUpperCase()}</Pill><Pill tone="neutral">{adapter.kind.toUpperCase()}</Pill></div><p className="mt-2 min-h-10 text-[12px] leading-5 text-[var(--color-text-secondary)]">{adapter.notes ?? '远端适配器。'}</p></div><Pill tone={installed ? 'accent' : 'neutral'}>{installed ? '已部署' : '未部署'}</Pill></div>
-                  <details className="my-2 text-[10px] text-[var(--color-text-tertiary)]"><summary className="cursor-pointer">来源与路径</summary><p className="mt-1 break-all font-mono">{adapter.repo}</p><p className="break-all font-mono">{scan?.path ?? '远端目录未发现此适配器'}</p></details>
-                  <div className="mt-auto flex items-center justify-between border-t border-[var(--color-border-subtle)] pt-3"><span className="text-[11px] tabular-nums text-[var(--color-text-tertiary)]">{bytes(adapter.sizeBytes)} <span className="ml-1.5">{adapter.license}</span></span>{installed && scan?.path ? <Button tone="ghost" onClick={() => void deleteRemoteModel(adapter, scan.path!)} disabled={working}>删除</Button> : <Button tone="secondary" onClick={() => void downloadRemoteModel(adapter)} disabled={working || !remoteHost}>{working ? <Spinner className="size-3.5" /> : <Download className="size-3.5" />}下载</Button>}</div>
+                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="truncate text-[13px] font-medium">{adapter.name}</span><Pill tone={adapter.provider === 'hf' ? 'blue' : 'neutral'}>{adapter.provider.toUpperCase()}</Pill><Pill tone="neutral">{adapter.kind.toUpperCase()}</Pill></div><p className="mt-2 min-h-10 text-ui leading-5 text-[var(--color-text-secondary)]">{adapter.notes ?? '远端适配器。'}</p></div><Pill tone={installed ? 'accent' : 'neutral'}>{installed ? '已部署' : '未部署'}</Pill></div>
+                  <details className="my-2 text-caption text-[var(--color-text-tertiary)]"><summary className="cursor-pointer">来源与路径</summary><p className="mt-1 break-all font-mono">{adapter.repo}</p><p className="break-all font-mono">{scan?.path ?? '远端目录未发现此适配器'}</p></details>
+                  <div className="mt-auto flex items-center justify-between border-t border-[var(--color-border-subtle)] pt-3"><span className="text-ui tabular-nums text-[var(--color-text-tertiary)]">{bytes(adapter.sizeBytes)} <span className="ml-1.5">{adapter.license}</span></span>{installed && scan?.path ? <Button tone="ghost" onClick={() => void deleteRemoteModel(adapter, scan.path!)} disabled={working}>删除</Button> : <Button tone="secondary" onClick={() => void downloadRemoteModel(adapter)} disabled={working || !remoteHost}>{working ? <Spinner className="size-4" /> : <Download className="size-4" />}下载</Button>}</div>
                 </Card>
               )
             })}
@@ -496,21 +496,21 @@ export function ModelsPage(): React.JSX.Element {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5"><span className="truncate text-[13px] font-medium">{model.name}</span><Pill tone={model.provider === 'hf' ? 'blue' : 'neutral'}>{model.provider.toUpperCase()}</Pill><Pill tone="neutral">{model.precision.toUpperCase()}</Pill></div>
-                    <p className="mt-2 min-h-10 text-[12px] leading-5 text-[var(--color-text-secondary)]">{model.notes ?? '远端模型组件。'}</p>
+                    <p className="mt-2 min-h-10 text-ui leading-5 text-[var(--color-text-secondary)]">{model.notes ?? '远端模型组件。'}</p>
                   </div>
                   <Pill tone={installed ? 'accent' : 'neutral'}>{installed ? '已部署' : '未部署'}</Pill>
                 </div>
-                <details className="my-2 text-[10px] text-[var(--color-text-tertiary)]"><summary className="cursor-pointer">来源与路径</summary><p className="mt-1 break-all font-mono">{model.repo}</p><p className="break-all font-mono">{scan?.path ?? '远端目录未发现此模型'}</p></details>
+                <details className="my-2 text-caption text-[var(--color-text-tertiary)]"><summary className="cursor-pointer">来源与路径</summary><p className="mt-1 break-all font-mono">{model.repo}</p><p className="break-all font-mono">{scan?.path ?? '远端目录未发现此模型'}</p></details>
                 <div className="mt-auto flex items-center justify-between border-t border-[var(--color-border-subtle)] pt-3">
-                  <span className="text-[11px] tabular-nums text-[var(--color-text-tertiary)]">{bytes(model.sizeBytes)} <span className="ml-1.5">{model.license}</span></span>
-                  {installed && scan?.path ? <Button tone="ghost" onClick={() => void deleteRemoteModel(model, scan.path!)} disabled={working}>删除</Button> : <Button tone="secondary" onClick={() => void downloadRemoteModel(model)} disabled={working || !remoteHost}>{working ? <Spinner className="size-3.5" /> : <Download className="size-3.5" />}下载</Button>}
+                  <span className="text-ui tabular-nums text-[var(--color-text-tertiary)]">{bytes(model.sizeBytes)} <span className="ml-1.5">{model.license}</span></span>
+                  {installed && scan?.path ? <Button tone="ghost" onClick={() => void deleteRemoteModel(model, scan.path!)} disabled={working}>删除</Button> : <Button tone="secondary" onClick={() => void downloadRemoteModel(model)} disabled={working || !remoteHost}>{working ? <Spinner className="size-4" /> : <Download className="size-4" />}下载</Button>}
                 </div>
               </Card>
             )
           })}
         </div>
         )}
-        {remoteCategory === 'adapter' && (catalog?.adapters?.length ?? 0) === 0 ? <p className="text-[10px] text-[var(--color-text-tertiary)]">没有适配器。</p> : null}
+        {remoteCategory === 'adapter' && (catalog?.adapters?.length ?? 0) === 0 ? <p className="text-caption text-[var(--color-text-tertiary)]">没有适配器。</p> : null}
         {remoteCategory !== 'adapter' && (catalog?.models?.length ?? 0) === 0 ? <EmptyState icon={<Package className="size-6" />} title="模型目录未加载" description="先刷新模型库。" /> : null}
       </section>
 
@@ -521,8 +521,8 @@ export function ModelsPage(): React.JSX.Element {
         <Card data-oobe="model" data-oobe-hint-title="推荐组合" data-oobe-hint-position="bottom" data-oobe-hint="首次使用建议选择推荐组合，点击「补齐组件」即可下载主模型、Qwen 编码器、VAE 与运行配置，已有组件会复用。" className="overflow-hidden">
           <div data-oobe-hint-target className="flex flex-wrap items-start justify-between gap-4 px-5 pt-4">
             <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-secondary)]">
-                <Layers className="size-3.5 text-accent-400" /> 推荐组合 · MossInfer bundle{' '}
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-ui text-[var(--color-text-secondary)]">
+                <Layers className="size-4 text-accent-400" /> 推荐组合 · MossInfer bundle{' '}
                 <span className="text-[var(--color-text-tertiary)]">· 引擎原地读取，无需转换</span>
                 {bundle.recommended ? <Pill tone="accent">官方推荐</Pill> : null}
               </div>
@@ -538,7 +538,7 @@ export function ModelsPage(): React.JSX.Element {
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+              <p className="mt-1 text-ui leading-5 text-[var(--color-text-secondary)]">
                 {bundle.description}
               </p>
             </div>
@@ -549,15 +549,15 @@ export function ModelsPage(): React.JSX.Element {
                 onClick={() => void install()}
               >
                 {busy === 'bundle' || bundleRunning ? (
-                  <Spinner className="size-3.5" />
+                  <Spinner className="size-4" />
                 ) : missing.length ? (
-                  <ArrowDownToLine className="size-3.5" />
+                  <ArrowDownToLine className="size-4" />
                 ) : (
-                  <Check className="size-3.5" />
+                  <Check className="size-4" />
                 )}
                 {bundleRunning ? '正在准备组件' : missing.length ? '补齐组件' : '组合已就绪'}
               </Button>
-              <span className="text-[11px] tabular-nums text-[var(--color-text-tertiary)]">
+              <span className="text-ui tabular-nums text-[var(--color-text-tertiary)]">
                 {missing.length ? `还需约 ${bytes(remaining)}` : '可在实例详情绑定使用'}
               </span>
             </div>
@@ -570,7 +570,7 @@ export function ModelsPage(): React.JSX.Element {
               value={percent(bundleModels.filter((m) => m.installed).length, bundleModels.length)}
               className="max-w-40 flex-1"
             />
-            <span className="text-[10px] tabular-nums text-[var(--color-text-tertiary)]">
+            <span className="text-caption tabular-nums text-[var(--color-text-tertiary)]">
               已就绪 {bundleModels.filter((m) => m.installed).length} / {bundleModels.length}
             </span>
           </div>
@@ -581,12 +581,12 @@ export function ModelsPage(): React.JSX.Element {
               return (
                 <div key={key} className="min-w-0 px-3.5 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] tracking-wide text-[var(--color-text-tertiary)]">
+                    <span className="text-caption tracking-wide text-[var(--color-text-tertiary)]">
                       {['01 · 主模型', '02 · 文本编码器', '03 · VAE'][i]}
                     </span>
                     <span
                       className={cn(
-                        'text-[10px]',
+                        'text-caption',
                         model?.installed ? 'text-accent-400' : 'text-[var(--color-text-secondary)]',
                       )}
                     >
@@ -597,10 +597,10 @@ export function ModelsPage(): React.JSX.Element {
                           : '待下载'}
                     </span>
                   </div>
-                  <div className="mt-2 truncate text-[12px] font-medium" title={model?.name}>
+                  <div className="mt-2 truncate text-ui font-medium" title={model?.name}>
                     {model?.name}
                   </div>
-                  <div className="mt-1 flex items-center justify-between text-[11px] text-[var(--color-text-tertiary)]">
+                  <div className="mt-1 flex items-center justify-between text-ui text-[var(--color-text-tertiary)]">
                     <span>
                       {model?.precision.toUpperCase()} {i > 0 ? '· 多组合共用' : '· 可独立更换'}
                     </span>
@@ -610,7 +610,7 @@ export function ModelsPage(): React.JSX.Element {
               )
             })}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-subtle)] px-5 py-2.5 text-[11px] text-[var(--color-text-tertiary)]">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-subtle)] px-5 py-2.5 text-ui text-[var(--color-text-tertiary)]">
             <span>
               含运行配置（{catalog?.models.find((m) => m.id === bundle.support)?.name ?? bundle.support}
               ）；bf16 bundle 对应 MossInfer auto / reference 档
@@ -626,7 +626,7 @@ export function ModelsPage(): React.JSX.Element {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2"><HardDrive className="size-4 text-accent-300" /><h2 className="text-[14px] font-semibold">本地模型目录</h2></div>
-              <p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">下载、导入和引用都使用这个根目录；修改后会刷新模型库。</p>
+              <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">下载、导入和引用都使用这个根目录；修改后会刷新模型库。</p>
             </div>
             <div className="flex flex-wrap gap-1">
               <Button tone="ghost" onClick={() => void openLocalRoot()} disabled={localBusy}>打开目录</Button>
@@ -634,7 +634,7 @@ export function ModelsPage(): React.JSX.Element {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            <Input value={localRoot} onChange={(event) => setLocalRoot(event.target.value)} placeholder={settings?.modelsRoot ?? '默认 ~/.mossstudio/models'} className="min-w-[240px] flex-1 font-mono text-[10px]" />
+            <Input value={localRoot} onChange={(event) => setLocalRoot(event.target.value)} placeholder={settings?.modelsRoot ?? '默认 ~/.mossstudio/models'} className="min-w-[240px] flex-1 font-mono text-caption" />
             <Button tone="secondary" onClick={() => void pickLocalRoot()} disabled={localBusy}>选择目录</Button>
             <Button tone="primary" onClick={() => void saveLocalRoot()} disabled={localBusy}>保存路径</Button>
           </div>
@@ -643,22 +643,22 @@ export function ModelsPage(): React.JSX.Element {
       {active.length ? (
         <Card className="overflow-hidden">
           <details open>
-            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[12px] font-medium">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-ui font-medium">
               <span className="flex items-center gap-2">
-                <Download className="size-3.5 text-accent-400" /> 下载队列{' '}
+                <Download className="size-4 text-accent-400" /> 下载队列{' '}
                 <span className="text-[var(--color-text-tertiary)]">{active.length}</span>
               </span>
-              <ChevronDown className="size-3.5" />
+              <ChevronDown className="size-4" />
             </summary>
             <div className="max-h-[280px] divide-y divide-[var(--color-border-subtle)] overflow-y-auto border-t border-[var(--color-border-subtle)]">
               {active.map((task) => (
                 <div key={task.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                      <span className="truncate text-[12px] font-medium">{task.label}</span>
+                      <span className="truncate text-ui font-medium">{task.label}</span>
                       <span
                         className={cn(
-                          'text-[11px]',
+                          'text-ui',
                           task.state === 'error'
                             ? 'text-red-300'
                             : 'text-[var(--color-text-secondary)]',
@@ -669,7 +669,7 @@ export function ModelsPage(): React.JSX.Element {
                     </div>
                     <ProgressBar value={percent(task.bytes, task.totalBytes)} className="mt-2" />
                     <p
-                      className="mt-1.5 truncate text-[10px] text-[var(--color-text-tertiary)]"
+                      className="mt-1.5 truncate text-caption text-[var(--color-text-tertiary)]"
                       title={task.error ?? task.currentFile}
                     >
                       {task.error ?? task.currentFile ?? '正在获取文件清单'}
@@ -681,7 +681,7 @@ export function ModelsPage(): React.JSX.Element {
                       label={`暂停 ${task.label}`}
                       onClick={() => void pauseDownload(task.id)}
                     >
-                      <Pause className="size-3.5" />
+                      <Pause className="size-4" />
                     </IconButton>
                   ) : (
                     <IconButton
@@ -689,11 +689,11 @@ export function ModelsPage(): React.JSX.Element {
                       disabled={busy === task.targetId}
                       onClick={() => void resume(task)}
                     >
-                      <Play className="size-3.5" />
+                      <Play className="size-4" />
                     </IconButton>
                   )}
                   <IconButton label={`取消 ${task.label}`} onClick={() => void cancel(task)}>
-                    <X className="size-3.5" />
+                    <X className="size-4" />
                   </IconButton>
                 </div>
               ))}
@@ -714,25 +714,25 @@ export function ModelsPage(): React.JSX.Element {
                 key={id}
                 onClick={() => setCategory(id)}
                 className={cn(
-                  'flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[12px] transition-colors',
+                  'flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-ui transition-colors',
                   category === id
                     ? 'border-accent-400 text-[var(--color-text)]'
                     : 'border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]',
                 )}
               >
-                <Icon className="size-3.5" />
+                <Icon className="size-4" />
                 {name}
               </button>
             ))}
           </nav>
           <label className="flex h-8 w-full items-center gap-2 rounded-[4px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-2.5 sm:w-52">
-            <Search className="size-3.5 shrink-0 text-[var(--color-text-tertiary)]" />
+            <Search className="size-4 shrink-0 text-[var(--color-text-tertiary)]" />
             <input
               aria-label="搜索组件"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索名称或来源"
-              className="w-full min-w-0 bg-transparent text-[12px] outline-none"
+              className="w-full min-w-0 bg-transparent text-ui outline-none"
             />
           </label>
         </div>
@@ -750,7 +750,7 @@ export function ModelsPage(): React.JSX.Element {
                 <option value="all">全部格式</option>
               </select>
             ) : null}
-            <label className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-secondary)]">
+            <label className="flex items-center gap-1.5 text-ui text-[var(--color-text-secondary)]">
               <input
                 type="checkbox"
                 checked={installedOnly}
@@ -760,12 +760,12 @@ export function ModelsPage(): React.JSX.Element {
               仅已安装
             </label>
           </div>
-          <span className="text-[11px] text-[var(--color-text-tertiary)]">
+          <span className="text-ui text-[var(--color-text-tertiary)]">
             {list.length} 个组件
           </span>
         </div>
         {format === 'comfyui' && category !== 'adapter' ? (
-          <p className="text-[11px] leading-5 text-[var(--color-text-secondary)]">
+          <p className="text-ui leading-5 text-[var(--color-text-secondary)]">
             单文件组件不能绑定进 bundle（绑定仅支持 Diffusers 组件）；MossInfer 可通过 dit_file / text_encoder_file / vae_file
             在引擎级覆盖使用，界面接线后续提供。
           </p>
@@ -811,7 +811,7 @@ export function ModelsPage(): React.JSX.Element {
                           ) : null}
                           {component ? <Pill>{component.precision.toUpperCase()}</Pill> : null}
                           {component?.tags.includes('shared') ? (
-                            <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                            <span className="text-caption text-[var(--color-text-tertiary)]">
                               共享组件
                             </span>
                           ) : null}
@@ -819,7 +819,7 @@ export function ModelsPage(): React.JSX.Element {
                       </div>
                       <span
                         className={cn(
-                          'shrink-0 text-[11px]',
+                          'shrink-0 text-ui',
                           model.installed ? 'text-accent-400' : 'text-[var(--color-text-tertiary)]',
                         )}
                       >
@@ -836,15 +836,15 @@ export function ModelsPage(): React.JSX.Element {
                               : '未安装'}
                       </span>
                     </div>
-                    <p className="mt-3 min-h-10 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+                    <p className="mt-3 min-h-10 text-ui leading-5 text-[var(--color-text-secondary)]">
                       {model.notes ?? '独立下载并管理此组件。'}
                     </p>
                     {compat?.hint ? (
-                      <p className="mb-1 text-[10px] leading-4 text-[var(--color-text-tertiary)]">
+                      <p className="mb-1 text-caption leading-4 text-[var(--color-text-tertiary)]">
                         {compat.hint}
                       </p>
                     ) : null}
-                    <details className="my-2 text-[10px] text-[var(--color-text-tertiary)]">
+                    <details className="my-2 text-caption text-[var(--color-text-tertiary)]">
                       <summary className="cursor-pointer">来源与文件</summary>
                       <p className="mt-1 break-all font-mono">{model.repo}</p>
                       <p className="break-all font-mono">
@@ -852,7 +852,7 @@ export function ModelsPage(): React.JSX.Element {
                       </p>
                     </details>
                     <div className="mt-auto flex items-center justify-between border-t border-[var(--color-border-subtle)] pt-3">
-                      <span className="text-[11px] tabular-nums text-[var(--color-text-tertiary)]">
+                      <span className="text-ui tabular-nums text-[var(--color-text-tertiary)]">
                         {bytes(model.installed ? model.installedBytes : model.sizeBytes)}{' '}
                         <span className="ml-1.5">{model.license}</span>
                       </span>
@@ -861,7 +861,7 @@ export function ModelsPage(): React.JSX.Element {
                         component?.installState === 'partial' ||
                         component?.installState === 'error' ? (
                           <IconButton label={`删除 ${model.name}`} onClick={() => setRemoving(entry)}>
-                            <Trash2 className="size-3.5" />
+                            <Trash2 className="size-4" />
                           </IconButton>
                         ) : null}
                         {!model.installed && component?.provider !== 'local' ? (
@@ -871,9 +871,9 @@ export function ModelsPage(): React.JSX.Element {
                             onClick={() => setPending(entry)}
                           >
                             {working ? (
-                              <Spinner className="size-3.5" />
+                              <Spinner className="size-4" />
                             ) : (
-                              <Download className="size-3.5" />
+                              <Download className="size-4" />
                             )}
                             {working
                               ? '准备中'
@@ -930,12 +930,12 @@ export function ModelsPage(): React.JSX.Element {
               disabled={busy !== null}
               onClick={() => pending && void start(pending)}
             >
-              {busy ? <Spinner className="size-3.5" /> : <Download className="size-3.5" />}开始下载
+              {busy ? <Spinner className="size-4" /> : <Download className="size-4" />}开始下载
             </Button>
           </>
         }
       >
-        <div className="space-y-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+        <div className="space-y-3 text-ui leading-5 text-[var(--color-text-secondary)]">
           <div className="flex justify-between">
             <span>组件大小</span>
             <span className="tabular-nums text-[var(--color-text)]">
@@ -972,10 +972,10 @@ export function ModelsPage(): React.JSX.Element {
           </>
         }
       >
-        <div className="space-y-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+        <div className="space-y-3 text-ui leading-5 text-[var(--color-text-secondary)]">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              <HardDrive className="size-3.5" />
+              <HardDrive className="size-4" />
               {removing?.kind === 'model' && removing.value.provider === 'local'
                 ? '外部文件引用'
                 : '最多可释放'}

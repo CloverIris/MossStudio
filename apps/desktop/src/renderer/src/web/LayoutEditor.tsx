@@ -181,27 +181,27 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
     <section className="mt-4 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <div className="text-[11px] font-medium">布局编辑器 · Layout JSON</div>
-          <div className="mt-0.5 text-[9.5px] text-[var(--color-text-tertiary)]">拖拽框选区域；生成前编译为官方 layout JSON</div>
+          <div className="text-ui font-medium">布局编辑器 · Layout JSON</div>
+          <div className="mt-0.5 text-caption text-[var(--color-text-tertiary)]">拖拽框选区域；生成前编译为官方 layout JSON</div>
         </div>
-        <button type="button" className="text-[10px] text-accent-300" onClick={openJson}>JSON</button>
+        <button type="button" className="text-caption text-accent-300" onClick={openJson}>JSON</button>
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <button type="button" onClick={() => setTool('select')} className={`rounded px-2 py-1 text-[10px] ${tool === 'select' ? 'bg-accent-500/20 text-accent-200' : 'bg-white/[0.04] text-[var(--color-text-secondary)]'}`}>选择</button>
+        <button type="button" onClick={() => setTool('select')} className={`rounded px-2 py-1 text-caption ${tool === 'select' ? 'bg-accent-500/20 text-accent-200' : 'bg-white/[0.04] text-[var(--color-text-secondary)]'}`}>选择</button>
         {LABELS.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => { setLabel(item.id); setTool('draw') }}
-            className={`rounded px-2 py-1 text-[10px] ${tool === 'draw' && label === item.id ? 'bg-accent-500/20 text-accent-200' : 'bg-white/[0.04] text-[var(--color-text-secondary)]'}`}
+            className={`rounded px-2 py-1 text-caption ${tool === 'draw' && label === item.id ? 'bg-accent-500/20 text-accent-200' : 'bg-white/[0.04] text-[var(--color-text-secondary)]'}`}
           >
             + {item.name}
           </button>
         ))}
-        <button type="button" onClick={() => setSize(1024, 1024)} className="ml-auto rounded bg-white/[0.04] px-2 py-1 text-[9.5px] text-[var(--color-text-tertiary)]">1024²</button>
-        <button type="button" onClick={() => setSize(768, 1024)} className="rounded bg-white/[0.04] px-2 py-1 text-[9.5px] text-[var(--color-text-tertiary)]">3:4</button>
-        <button type="button" onClick={() => setSize(1024, 768)} className="rounded bg-white/[0.04] px-2 py-1 text-[9.5px] text-[var(--color-text-tertiary)]">4:3</button>
+        <button type="button" onClick={() => setSize(1024, 1024)} className="ml-auto rounded bg-white/[0.04] px-2 py-1 text-caption text-[var(--color-text-tertiary)]">1024²</button>
+        <button type="button" onClick={() => setSize(768, 1024)} className="rounded bg-white/[0.04] px-2 py-1 text-caption text-[var(--color-text-tertiary)]">3:4</button>
+        <button type="button" onClick={() => setSize(1024, 768)} className="rounded bg-white/[0.04] px-2 py-1 text-caption text-[var(--color-text-tertiary)]">4:3</button>
       </div>
 
       <div
@@ -220,7 +220,7 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
             <div
               key={item.id}
               data-box-id={item.id}
-              className={`absolute cursor-move border text-[9px] ${item.locked ? 'cursor-not-allowed' : ''} ${selectedId === item.id ? 'ring-2 ring-white/50' : ''}`}
+              className={`absolute cursor-move border text-caption ${item.locked ? 'cursor-not-allowed' : ''} ${selectedId === item.id ? 'ring-2 ring-white/50' : ''}`}
               style={{
                 left: `${(item.bbox[0] / draft.width) * 100}%`,
                 top: `${(item.bbox[1] / draft.height) * 100}%`,
@@ -231,7 +231,7 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
                 opacity: item.visible === false ? 0.25 : item.opacity ?? 1,
               }}
             >
-              <span className="pointer-events-none absolute left-1 top-1 rounded px-1 py-0.5 text-[8px]" style={{ background: meta.color, color: '#10141c' }}>
+              <span className="pointer-events-none absolute left-1 top-1 rounded px-1 py-0.5 text-micro" style={{ background: meta.color, color: '#10141c' }}>
                 {meta.name}{item.text ? ` · ${item.text.slice(0, 10)}` : ''}
               </span>
               {!item.locked ? (
@@ -253,56 +253,56 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
       </div>
 
       <label className="mt-2 block space-y-1">
-        <span className="text-[9.5px] text-[var(--color-text-tertiary)]">总览描述 summary.caption</span>
+        <span className="text-caption text-[var(--color-text-tertiary)]">总览描述 summary.caption</span>
         <textarea value={draft.summary.caption} onChange={(event) => onChange({ ...draft, summary: { ...draft.summary, caption: event.target.value } })} rows={2} className="app-input w-full" placeholder="整张图的构图/风格/文字布局总览" />
       </label>
 
       {selected ? (
         <div className="mt-2 space-y-2 rounded-lg border border-[var(--color-border-subtle)] p-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-[var(--color-text-secondary)]">选中：{LABELS.find((entry) => entry.id === selected.label)?.name}</span>
-            <button type="button" onClick={() => removeItem(selected.id)} className="text-red-300"><Trash2 className="size-3" /></button>
+            <span className="text-caption text-[var(--color-text-secondary)]">选中：{LABELS.find((entry) => entry.id === selected.label)?.name}</span>
+            <button type="button" onClick={() => removeItem(selected.id)} className="text-red-300"><Trash2 className="size-4" /></button>
           </div>
           <input value={selected.caption} onChange={(event) => updateItem(selected.id, { caption: event.target.value })} className="app-input w-full" placeholder="区域描述（生成用）" />
           {selected.label === 'text' ? (
             <input value={selected.text ?? ''} onChange={(event) => updateItem(selected.id, { text: event.target.value })} className="app-input w-full" placeholder="图中的文字内容" />
           ) : null}
-          <div className="flex items-center gap-3 text-[9.5px] text-[var(--color-text-tertiary)]">
+          <div className="flex items-center gap-3 text-caption text-[var(--color-text-tertiary)]">
             <label className="inline-flex items-center gap-1"><input type="checkbox" checked={selected.visible !== false} onChange={(event) => updateItem(selected.id, { visible: event.target.checked })} /> 可见</label>
             <label className="inline-flex items-center gap-1"><input type="checkbox" checked={selected.locked === true} onChange={(event) => updateItem(selected.id, { locked: event.target.checked })} /> 锁定</label>
             <button type="button" className="ml-auto text-accent-300" onClick={compileAndInsert}>插入 Prompt</button>
           </div>
         </div>
       ) : (
-        <div className="mt-2 flex items-center justify-between text-[9.5px] text-[var(--color-text-tertiary)]">
+        <div className="mt-2 flex items-center justify-between text-caption text-[var(--color-text-tertiary)]">
           <span>点画布空白处开始框选</span>
           <button type="button" className="text-accent-300" onClick={compileAndInsert} disabled={!compiled.ok}>插入 Prompt</button>
         </div>
       )}
 
-      {message ? <div className="mt-2 rounded bg-accent-500/10 px-2 py-1.5 text-[9.5px] text-accent-200">{message}</div> : null}
-      {!compiled.ok ? <div className="mt-1 text-[9px] leading-4 text-amber-300">{compiled.errors[0]}</div> : null}
+      {message ? <div className="mt-2 rounded bg-accent-500/10 px-2 py-1.5 text-caption text-accent-200">{message}</div> : null}
+      {!compiled.ok ? <div className="mt-1 text-caption leading-4 text-amber-300">{compiled.errors[0]}</div> : null}
 
       <div className="mt-2 flex gap-2">
-        <button type="button" onClick={openJson} className="inline-flex flex-1 items-center justify-center gap-1 rounded border border-[var(--color-border-subtle)] px-2 py-1.5 text-[10px] text-[var(--color-text-secondary)]"><Copy className="size-3" /> JSON</button>
+        <button type="button" onClick={openJson} className="inline-flex flex-1 items-center justify-center gap-1 rounded border border-[var(--color-border-subtle)] px-2 py-1.5 text-caption text-[var(--color-text-secondary)]"><Copy className="size-4" /> JSON</button>
         <button type="button" onClick={compileAndInsert} disabled={!compiled.ok} className="app-button-primary flex-1 disabled:opacity-40">插入 Prompt</button>
-        <button type="button" onClick={onSaveProject} className="inline-flex items-center justify-center gap-1 rounded border border-[var(--color-border-subtle)] px-2 py-1.5 text-[10px] text-[var(--color-text-secondary)]"><Download className="size-3" /> 保存</button>
+        <button type="button" onClick={onSaveProject} className="inline-flex items-center justify-center gap-1 rounded border border-[var(--color-border-subtle)] px-2 py-1.5 text-caption text-[var(--color-text-secondary)]"><Download className="size-4" /> 保存</button>
       </div>
 
       {jsonOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center" onClick={() => setJsonOpen(false)}>
           <div className="w-full max-w-[680px] rounded-xl border border-[var(--color-border)] bg-[#1b2028] p-3 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium">Layout JSON</span>
-              <button type="button" onClick={() => setJsonOpen(false)} className="text-[10px] text-[var(--color-text-tertiary)]">关闭</button>
+              <span className="text-ui font-medium">Layout JSON</span>
+              <button type="button" onClick={() => setJsonOpen(false)} className="text-caption text-[var(--color-text-tertiary)]">关闭</button>
             </div>
-            <textarea value={jsonText} onChange={(event) => setJsonText(event.target.value)} rows={12} className="app-input mt-2 w-full font-mono text-[10px]" spellCheck={false} />
+            <textarea value={jsonText} onChange={(event) => setJsonText(event.target.value)} rows={12} className="app-input mt-2 w-full font-mono text-caption" spellCheck={false} />
             <div className="mt-2 flex gap-2">
-              <button type="button" onClick={() => void navigator.clipboard.writeText(jsonText)} className="flex-1 rounded border border-[var(--color-border-subtle)] px-2 py-1.5 text-[10px] text-[var(--color-text-secondary)]">复制</button>
+              <button type="button" onClick={() => void navigator.clipboard.writeText(jsonText)} className="flex-1 rounded border border-[var(--color-border-subtle)] px-2 py-1.5 text-caption text-[var(--color-text-secondary)]">复制</button>
               <button type="button" onClick={applyJson} className="app-button-primary flex-1">应用到画布</button>
               <button type="button" onClick={compileAndInsert} disabled={!compiled.ok} className="app-button-primary flex-1 disabled:opacity-40">插入 Prompt</button>
             </div>
-            <p className="mt-2 text-[9px] leading-4 text-[var(--color-text-tertiary)]">
+            <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
               编辑的是可导入草稿（width/height/summary/items）；插入 Prompt 时会编译成官方 abs_centralized + yxyx。
             </p>
           </div>
