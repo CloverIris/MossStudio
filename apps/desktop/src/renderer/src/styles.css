@@ -102,6 +102,17 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+* {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Covers editable controls and contenteditable descendants, excluding read-only regions. */
+:read-write {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .app-shell {
   background: transparent;
 }
