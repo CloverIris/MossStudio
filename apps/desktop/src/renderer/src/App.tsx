@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import defaultHomeBackground from './assets/home-background.png'
 import { Events } from '@shared/channels'
 import type { Diagnostic } from '@shared/types'
 import { onEvent } from './lib/api'
 import { useToast } from './components/ui'
-import { HashRouter, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { HashRouter, useLocation, useNavigate } from 'react-router-dom'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ToastProvider } from './components/ui'
 import { NotificationPanel } from './components/NotificationPanel'
@@ -24,20 +24,13 @@ import { useApp } from './store'
 import { cloverUrl } from './lib/clover'
 import { MotionPanel } from './components/motion'
 import { AppTitlebar, TitlebarFrame } from './components/AppTitlebar'
+import { APP_PAGES as PAGES, PageNavigation } from './components/PageNavigation'
 import type { WindowIntent } from './lib/windows'
 import {
   Bell,
-  Boxes,
-  Cpu,
-  GraduationCap,
-  Images,
   LayoutGrid,
-  Package,
-  Settings2,
   SquareTerminal,
-  Stethoscope,
   X,
-  GripVertical,
 } from 'lucide-react'
 import { IconButton, cn } from './components/ui'
 
@@ -52,17 +45,6 @@ function useAppBackground(): React.CSSProperties {
     backgroundColor: '#191b1f',
   }
 }
-
-const PAGES = [
-  { to: '/studio', label: '创作', title: 'Studio', icon: LayoutGrid },
-  { to: '/engines', label: '引擎', title: '引擎', icon: Boxes },
-  { to: '/models', label: '模型', title: '模型与下载', icon: Package },
-  { to: '/devices', label: '设备', title: '设备与连接', icon: Cpu },
-  { to: '/training', label: '训练', title: '训练', icon: GraduationCap },
-  { to: '/gallery', label: '画廊', title: '画廊', icon: Images },
-  { to: '/diagnostics', label: '诊断', title: '诊断', icon: Stethoscope },
-  { to: '/settings', label: '设置', title: '设置', icon: Settings2 },
-] as const
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
   '/studio': StudioPage,
@@ -106,7 +88,6 @@ function StudioShell(): React.JSX.Element {
   const notificationsOpen = useApp((state) => state.notificationsOpen)
   const setNotificationsOpen = useApp((state) => state.setNotificationsOpen)
   const [terminalOpen, setTerminalOpen] = useState(false)
-  const studio = location.pathname === '/studio'
   const page = PAGES.find((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)) ?? PAGES[0]
 
   useEffect(() => {
@@ -136,9 +117,7 @@ function StudioShell(): React.JSX.Element {
             <LayoutGrid className="size-4" />
           </IconButton>
           <span className="text-ui font-semibold">MossStudio</span>
-          <span className="rounded border border-white/10 px-1 py-px text-micro uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
-            {page.title}
-          </span>
+          <PageNavigation value={page.to} onChange={navigate} />
         </div>
         <div className="no-drag flex items-center gap-0.5">
           <Oobe />
@@ -161,30 +140,8 @@ function StudioShell(): React.JSX.Element {
         <PageHost active={page.to} />
       </main>
 
-      <nav className="glass-thin flex h-11 shrink-0 items-stretch border-t border-[var(--color-border-subtle)] px-1">
-        {PAGES.map((item) => {
-          const Icon = item.icon
-          const active = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={cn(
-                'relative flex min-w-[68px] flex-1 items-center justify-center gap-1.5 border-b-2 px-2 text-ui transition',
-                active
-                  ? 'border-accent-400 bg-white/[0.05] text-[var(--color-text)]'
-                  : 'border-transparent text-[var(--color-text-tertiary)] hover:bg-white/[0.03] hover:text-[var(--color-text-secondary)]',
-              )}
-            >
-              <Icon className="size-4" />
-              {item.label}
-            </NavLink>
-          )
-        })}
-      </nav>
-
       {terminalOpen ? (
-        <div className="fixed inset-x-0 bottom-11 z-40 h-[42vh] border-t border-[var(--color-border-subtle)] bg-[#14171c] shadow-2xl">
+        <div className="fixed inset-x-0 bottom-0 z-40 h-[42vh] border-t border-[var(--color-border-subtle)] bg-[#14171c] shadow-2xl" data-terminal-drawer>
           <div className="flex h-10 items-center justify-between border-b border-[var(--color-border-subtle)] px-3">
             <span className="text-caption font-medium">终端</span>
             <IconButton label="关闭终端" onClick={() => setTerminalOpen(false)}><X className="size-4" /></IconButton>

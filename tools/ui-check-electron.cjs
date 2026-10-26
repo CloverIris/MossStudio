@@ -39,7 +39,7 @@ app.whenReady().then(async () => {
     const deadline = Date.now() + 5000
     while (!(await evaluate(code))) {
       if (Date.now() > deadline) {
-        const state = await evaluate('({ dialogs: Array.from(document.querySelectorAll("dialog")).map(dialog => ({ open: dialog.open, state: dialog.dataset.motionState })), focus: document.activeElement.id, animations: document.getAnimations().length })')
+        const state = await evaluate('({ route: location.hash, popovers: Array.from(document.querySelectorAll("[popover]")).map(element => ({ id: element.id, open: element.matches(":popover-open") })), dialogs: Array.from(document.querySelectorAll("dialog")).map(dialog => ({ open: dialog.open, state: dialog.dataset.motionState })), focus: document.activeElement.outerHTML.slice(0, 250), animations: document.getAnimations().length })')
         throw new Error(`Timed out: ${code}; ${JSON.stringify(state)}`)
       }
       await new Promise((resolve) => setTimeout(resolve, 20))
@@ -47,12 +47,19 @@ app.whenReady().then(async () => {
   }
   const key = async (keyCode, modifiers = []) => {
     win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
+    // Printable Enter activation also needs the keypress/character event.
+    if (keyCode === 'Enter') win.webContents.sendInputEvent({ type: 'char', keyCode: '\r', modifiers })
     win.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
     await new Promise((resolve) => setTimeout(resolve, 30))
   }
   try {
-    await win.loadFile(join(output, 'index.html'))
+    await win.loadFile(join(output, 'index.html'), process.env.CLOVER_UI_NAVIGATION_ONLY === '1' ? { query: { dpi: '1' }, hash: '/studio' } : {})
     win.webContents.setZoomFactor(scale)
+    if (process.env.CLOVER_UI_NAVIGATION_ONLY === '1') {
+      await require('./ui-navigation-checks.cjs')({ evaluate, waitFor, capture, webContents: win.webContents, win, key })
+      app.exit(0)
+      return
+    }
     if (process.env.CLOVER_UI_UX_ONLY === '1') {
       await require('./ui-ux-checks.cjs')({ evaluate, waitFor, capture })
       app.exit(0)

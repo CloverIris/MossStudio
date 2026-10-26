@@ -58,6 +58,7 @@ window.clover = {
     return () => { listeners.delete(callback) }
   },
   async invoke<T>(channel: string, payload?: unknown): Promise<T> {
+    if (channel === Ipc.galleryList) return { ok: true, data: { items: [], nextCursor: null, total: 0 } } as T
     if (channel === Ipc.aiProvidersList) return { ok: true, data: agentReady ? [{ id: 'fixture-ai', name: 'Fixture AI', kind: 'openai', baseUrl: 'https://example.test', model: 'fixture', temperature: 0.7, hasKey: true }] : [] } as T
     if (channel === Ipc.aiConversations) return { ok: true, data: agentReady ? [{ id: 'fixture-history', title: '历史对话', providerId: 'fixture-ai', messages: [], createdAt: '', updatedAt: '' }] : [] } as T
     if (channel === Ipc.aiChat) {
@@ -274,7 +275,6 @@ function OobeProbe(): React.JSX.Element {
     <header className="glass-thin flex h-11 shrink-0 items-center justify-between border-b border-white/10 px-5"><span className="text-[12px] font-semibold">MossStudio</span><Oobe /></header>
     <output id="oobe-route" hidden>{location.pathname}{location.search}</output>
     <div id="oobe-page-scroll" className="min-h-0 flex-1 overflow-y-auto p-6">{location.pathname === '/models' ? <ModelsPage /> : location.pathname === '/engines' ? <EnginePage /> : location.pathname === '/devices' ? <DevicesPage /> : <><h1 className="text-[22px] font-semibold">Studio</h1><p className="mt-2 text-[12px] text-[var(--color-text-secondary)]">准备好模型与引擎，开始你的第一次创作。</p></>}</div>
-    <nav className="glass-thin flex h-9 shrink-0 items-center gap-10 border-t border-white/10 px-5 text-[10px] text-[var(--color-text-secondary)]">创作　引擎　模型　设备　训练　画廊　诊断　设置</nav>
   </div>
 }
 

@@ -2,6 +2,7 @@
 @import "@openai/apps-sdk-ui/css";
 @import "./styles/dropdowns.css";
 @import "./styles/studio.css";
+@import "./styles/page-navigation.css";
 @source "../../../node_modules/@openai/apps-sdk-ui";
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
@@ -252,14 +253,14 @@ body {
 }
 
 .app-oobe[data-screen="checklist"] {
-  inset: auto 12px 48px auto;
+  inset: auto 12px 12px auto;
   width: min(344px, calc(100vw - 24px));
   height: auto;
   padding: 0;
 }
 
 .app-oobe[data-screen="checklist"] .app-oobe-panel {
-  max-height: calc(100dvh - 104px);
+  max-height: calc(100dvh - 68px);
   transition: max-height 320ms var(--motion-ease);
 }
 

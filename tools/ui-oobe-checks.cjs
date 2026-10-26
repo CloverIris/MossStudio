@@ -82,7 +82,7 @@ module.exports = async function checkOobe({ evaluate, waitFor, capture, webConte
   assert.ok(await evaluate('[...document.querySelectorAll("nav button")].some(button => button.textContent.trim() === "全部" && button.className.includes("border-accent-400"))'))
   const after = await bounds()
   assert.ok(midpoint > before && midpoint < after.left, `Expected intermediate position: ${before}, ${midpoint}, ${after.left}`)
-  assert.ok(Math.abs(after.height - after.bottom - 48) < 1)
+  assert.ok(Math.abs(after.height - after.bottom - 12) < 1)
   assert.ok(Math.abs(after.width - after.right - 12) < 1)
   await ready()
   assert.equal(await evaluate('document.querySelector(".app-oobe footer button:last-child").textContent'), '1/3')

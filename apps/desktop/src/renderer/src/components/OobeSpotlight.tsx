@@ -119,7 +119,7 @@ export function OobeSpotlight({ active, step, hostId, route, onActivate, onDismi
       if (!scrolled && primary) {
         const rect = primary.getBoundingClientRect()
         const panel = document.querySelector('.app-oobe-panel')?.getBoundingClientRect()
-        if (rect.top < 52 || rect.bottom > innerHeight - 48 || panel && overlap(
+        if (rect.top < 52 || rect.bottom > innerHeight - 12 || panel && overlap(
           { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
           { x: panel.left, y: panel.top, width: panel.width, height: panel.height },
         )) {

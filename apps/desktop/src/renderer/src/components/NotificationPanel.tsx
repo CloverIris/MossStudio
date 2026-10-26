@@ -47,7 +47,7 @@ export function NotificationPanel(): React.JSX.Element | null {
     }
     const escape = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented) return
-      if (document.querySelector('dialog:modal, select:open')) return
+      if (document.querySelector('dialog:modal, select:open, [popover]:popover-open')) return
       event.preventDefault()
       toggle(false)
       document.querySelector<HTMLElement>('[aria-controls="notification-panel"]')?.focus({ preventScroll: true })
