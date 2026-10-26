@@ -5,16 +5,16 @@
   gap: 8px;
   height: 32px;
   padding: 0 10px;
-  border: 0;
+  border: 1px solid var(--dropdown-border);
   border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-text-secondary);
+  background: var(--dropdown-selected);
+  color: var(--dropdown-text-strong);
   font-size: var(--text-ui);
 }
 
 .page-navigation-trigger:is(:hover, [aria-expanded="true"]) {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--dropdown-border));
   background: var(--dropdown-hover);
-  color: var(--color-text);
 }
 
 .page-navigation-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

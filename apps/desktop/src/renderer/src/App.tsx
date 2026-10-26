@@ -26,12 +26,7 @@ import { MotionPanel } from './components/motion'
 import { AppTitlebar, TitlebarFrame } from './components/AppTitlebar'
 import { APP_PAGES as PAGES, PageNavigation } from './components/PageNavigation'
 import type { WindowIntent } from './lib/windows'
-import {
-  Bell,
-  LayoutGrid,
-  SquareTerminal,
-  X,
-} from 'lucide-react'
+import { Bell, SquareTerminal, X } from 'lucide-react'
 import { IconButton, cn } from './components/ui'
 
 function useAppBackground(): React.CSSProperties {
@@ -113,9 +108,6 @@ function StudioShell(): React.JSX.Element {
     <div className="app-shell flex h-full flex-col text-[var(--color-text)]">
       <TitlebarFrame>
         <div className="no-drag flex items-center gap-2">
-          <IconButton label="回到创作" className="size-8" onClick={() => navigate('/studio')}>
-            <LayoutGrid className="size-4" />
-          </IconButton>
           <span className="text-ui font-semibold">MossStudio</span>
           <PageNavigation value={page.to} onChange={navigate} />
         </div>
