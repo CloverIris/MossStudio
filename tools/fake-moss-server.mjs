@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Fake moss-server for MossStudio scenario tests (--scenario=mossinfer-job / mossinfer-cancel).
-// Speaks the moss-server JSON-lines protocol (protocol 1): hello/load/generate/cancel/
+// Speaks the moss-server JSON-lines protocol (protocol 2): hello/load/generate/cancel/
 // status/unload/shutdown, with plan/progress/done events. Writes a real (synthetic) PNG.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -72,9 +72,9 @@ function writePng(path, width, height) {
 }
 
 const HELLO = {
-  protocol_version: 1,
+  protocol_version: 2,
   server: 'fake-moss-server',
-  version: '1.0.0',
+  version: '2.0.0',
   abi_version: 1,
   capabilities: {
     preview: false,
@@ -180,7 +180,7 @@ function startGeneration(id, params) {
       report: {
         seed_used: seed,
         timings_s: { total: 1, dit_load: 0.1, text_encode: 0.2, denoise: 0.6, decode: 0.1 },
-        quality: { tier: 'reference' },
+        quality: { tier: loaded?.tier ?? 'high' },
       },
       warnings: [],
     })
@@ -220,7 +220,17 @@ function handle(message) {
         error(id, 'invalid_argument', `model path does not exist: ${String(params.model ?? '')}`)
         return
       }
-      loaded = { model: String(params.model), mode: params.mode ?? 'balanced', device: params.device ?? 0 }
+      // protocol 2: tier is required and must be reference | high | turbo
+      const tier = params.tier
+      if (tier === undefined || tier === null) {
+        error(id, 'invalid_params', `"tier" is required: reference, high or turbo`)
+        return
+      }
+      if (!['reference', 'high', 'turbo'].includes(String(tier))) {
+        error(id, 'invalid_params', `unknown tier: ${String(tier)} (reference, high or turbo)`)
+        return
+      }
+      loaded = { model: String(params.model), mode: params.mode ?? 'balanced', device: params.device ?? 0, tier: String(tier) }
       send({ event: 'log', id, level: 'info', message: `engine created for ${loaded.model} (fake)` })
       result(id, loaded)
       return

@@ -18,7 +18,7 @@ export interface RemoteEngineOptions {
   localOutput: string
   params: JobParams
   mode: 'min_memory' | 'balanced' | 'max_speed'
-  tier: 'auto' | 'reference' | 'high' | 'turbo'
+  tier: 'reference' | 'high' | 'turbo'
   device?: number
 }
 
@@ -203,8 +203,8 @@ export async function runRemoteEngineJob(
   })
 
   try {
-    const hello = await request('hello', { client: 'MossStudio', protocol_version: 1, devices: true })
-    if (Number(hello['protocol_version']) !== 1) throw new Error('远端 moss-server 协议不兼容')
+    const hello = await request('hello', { client: 'MossStudio', protocol_version: 2, devices: true })
+    if (Number(hello['protocol_version']) !== 2) throw new Error('远端 moss-server 协议不兼容，需要 protocol 2（MossInfer ≥ 2.0）')
     sink.event({ type: 'hello', protocol: 1, runner_version: `mossinfer-remote-${String(hello['version'] ?? '')}` })
     await request('load', {
       model: opts.model,

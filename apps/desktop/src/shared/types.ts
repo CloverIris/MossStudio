@@ -150,7 +150,7 @@ export interface Settings {
   inferenceBackend: 'runner' | 'mossinfer'
   mossInferServerPath: string | null
   mossInferMemoryMode: 'min_memory' | 'balanced' | 'max_speed'
-  mossInferTier: 'auto' | 'reference' | 'high' | 'turbo'
+  mossInferTier: 'reference' | 'high' | 'turbo'
   mossInferChannel: 'stable' | 'dev'
   mossInferVariant: 'system-cuda' | 'bundled'
   githubToken: string | null

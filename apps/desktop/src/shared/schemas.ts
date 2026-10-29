@@ -50,7 +50,7 @@ export const schemas = {
       inferenceBackend: z.enum(['runner', 'mossinfer']),
       mossInferServerPath: z.string().max(4096).nullable(),
       mossInferMemoryMode: z.enum(['min_memory', 'balanced', 'max_speed']),
-      mossInferTier: z.enum(['auto', 'reference', 'high', 'turbo']),
+      mossInferTier: z.enum(['reference', 'high', 'turbo']),
       mossInferChannel: z.enum(['stable', 'dev']),
       mossInferVariant: z.enum(['system-cuda', 'bundled']),
       githubToken: z.string().max(200).nullable(),
