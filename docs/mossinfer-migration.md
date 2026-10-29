@@ -1,5 +1,12 @@
 # MossInfer 迁移状态
 
+## 引擎版本
+
+- 适配 MossInfer 2.0（owoinfer v2.0.0，server protocol 2 / ABI 1）：
+  - `hello` 发送/校验 `protocol_version: 2`（本机 `mossInfer.ts`、远端 `remoteEngine.ts`、`probeMossInfer`）；
+  - `load` 的 `tier` 必填且只能是 `reference | high | turbo`：设置项移除 `auto`，旧配置迁移为 `high`（上游推荐默认；bf16 bundle 的精确档为 `reference`）；
+  - 下载/安装路径不变：release 资产与 CI artifact 命名在 2.0 未变（`mossinfer-<version>-<os>-cu<N>-x86_64[-system-cuda]` / `mossinfer-<platform>-cuda<N>`）。
+
 ## 已完成
 
 - 默认推理后端：`mossinfer`

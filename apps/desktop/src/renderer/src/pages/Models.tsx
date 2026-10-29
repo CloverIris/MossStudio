@@ -179,7 +179,7 @@ export function ModelsPage(): React.JSX.Element {
   const bundle = catalog?.bundles?.find((b) => b.id === bundleId) ?? catalog?.bundles?.find((b) => b.recommended) ?? catalog?.bundles?.[0]
   const engineLabel =
     settings?.inferenceBackend === 'mossinfer'
-      ? `MossInfer · ${settings?.mossInferTier ?? 'auto'} 档`
+      ? `MossInfer · ${settings?.mossInferTier ?? 'high'} 档`
       : 'Python runner'
   const bundleModels = bundle
     ? [...Object.values(bundle.components), bundle.support]
@@ -613,7 +613,7 @@ export function ModelsPage(): React.JSX.Element {
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-subtle)] px-5 py-2.5 text-ui text-[var(--color-text-tertiary)]">
             <span>
               含运行配置（{catalog?.models.find((m) => m.id === bundle.support)?.name ?? bundle.support}
-              ）；bf16 bundle 对应 MossInfer auto / reference 档
+              ）；bf16 bundle 对应 MossInfer reference 档
             </span>
             <span>
               当前引擎：{engineLabel} · 切换主模型时复用已下载的编码器与 VAE

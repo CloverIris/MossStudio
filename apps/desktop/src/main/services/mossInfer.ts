@@ -8,7 +8,7 @@ import { LineSplitter } from './parsers'
 
 /**
  * MossInfer sidecar client: one long-lived `moss-server` process shared by all
- * mossinfer jobs (JSON lines over stdio, protocol 1 / ABI 1). Generations are
+ * mossinfer jobs (JSON lines over stdio, protocol 2 / ABI 1). Generations are
  * serialized through an internal FIFO; the server is re-spawned on crash and
  * `load` is re-sent whenever the model/device/mode/tier config changes.
  * Events are translated into the runner NDJSON event shapes that
@@ -391,11 +391,11 @@ async function ensureEngine(config: EngineConfig, settings: Settings): Promise<n
     spawnServer(settings)
     const result = (await request('hello', {
       client: 'MossStudio',
-      protocol_version: 1,
+      protocol_version: 2,
       devices: true,
     })) as unknown as MossInferHello
-    if (result.protocol_version !== 1) {
-      throw new Error(`E_ENGINE: moss-server 协议不兼容 (protocol ${String(result.protocol_version)})`)
+    if (result.protocol_version !== 2) {
+      throw new Error(`E_ENGINE: moss-server 协议不兼容 (protocol ${String(result.protocol_version)})，需要 protocol 2（MossInfer ≥ 2.0）`)
     }
     hello = result
   }
@@ -430,7 +430,7 @@ async function pump(): Promise<void> {
       { model: opts.model, device: opts.device, mode: opts.settings.mossInferMemoryMode, tier: opts.settings.mossInferTier },
       opts.settings,
     )
-    sink.event({ type: 'hello', protocol: 1, runner_version: `mossinfer-${hello?.version ?? '1.0.0'}` })
+    sink.event({ type: 'hello', protocol: 1, runner_version: `mossinfer-${hello?.version ?? '2.0.0'}` })
     sink.event({
       type: 'ready',
       device: `cuda:${device}`,
@@ -594,7 +594,7 @@ export async function probeMossInfer(
         clearTimeout(timer)
         rejectPromise(new Error(`moss-server 退出 (code ${code ?? 'null'})，未完成 hello`))
       })
-      proc.stdin.write(`${JSON.stringify({ id: 'probe', method: 'hello', params: { client: 'MossStudio', protocol_version: 1, devices: true } })}\n`)
+      proc.stdin.write(`${JSON.stringify({ id: 'probe', method: 'hello', params: { client: 'MossStudio', protocol_version: 2, devices: true } })}\n`)
     })
   } finally {
     try {

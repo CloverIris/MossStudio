@@ -373,12 +373,11 @@ export function EnginePage(): React.JSX.Element {
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <Segmented
             label="质量档（tier）"
-            value={settings?.mossInferTier ?? 'auto'}
+            value={settings?.mossInferTier ?? 'high'}
             onChange={(mossInferTier) => void saveSettings({ mossInferTier }).then(() => toast.push('质量档已保存', 'success'))}
             options={[
-              { value: 'auto', label: 'Auto' },
-              { value: 'reference', label: 'Reference · bf16' },
-              { value: 'high', label: 'High · 8bit 注意力' },
+              { value: 'reference', label: 'Reference · bf16 精确' },
+              { value: 'high', label: 'High · 8bit 注意力 · 推荐' },
               { value: 'turbo', label: 'Turbo · INT4' },
             ]}
           />
@@ -395,7 +394,8 @@ export function EnginePage(): React.JSX.Element {
         </div>
         <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
           三个模式都会自动适配当前空闲显存，装不下就流式加载；区别只在主机内存目标（4 GiB / 8 GiB / 尽量用满）。
-          turbo 只接受 INT4 DiT 单文件（需绑定 dit_file）；auto 对 bf16 bundle 实际跑 reference。实际运行的档位以任务报告为准。
+          MossInfer 2.0 起档位由调用方显式选择：reference 是 bf16 精确档；high 默认 8-bit 注意力（无 FP8 的 GPU 自动用 q8_fp16）；
+          turbo 只接受 INT4 DiT 单文件（需绑定 dit_file）。实际运行的档位以任务报告为准。
         </p>
       </Card>
 

@@ -32,7 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   inferenceBackend: 'mossinfer',
   mossInferServerPath: null,
   mossInferMemoryMode: 'balanced',
-  mossInferTier: 'auto',
+  mossInferTier: 'high',
   mossInferChannel: 'stable',
   mossInferVariant: 'system-cuda',
   githubToken: null,
@@ -49,6 +49,9 @@ export function getSettings(): Settings {
     const parsed = JSON.parse(raw) as Partial<Settings>
     cache = { ...DEFAULT_SETTINGS, ...parsed }
     if (!Array.isArray(cache.dismissedAnnouncements)) cache.dismissedAnnouncements = []
+    // MossInfer 2.0 (server protocol 2) removed the auto tier: load requires
+    // reference | high | turbo. Map legacy configs to the recommended default.
+    if ((cache.mossInferTier as string) === 'auto') cache.mossInferTier = 'high'
   } catch {
     cache = { ...DEFAULT_SETTINGS }
   }
