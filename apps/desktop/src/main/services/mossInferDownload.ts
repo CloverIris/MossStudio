@@ -1,9 +1,9 @@
 ﻿import { app } from 'electron'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, chmodSync } from 'node:fs'
+import { createReadStream, createWriteStream, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, chmodSync, statSync, writeFileSync } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
-import { rename } from 'node:fs/promises'
+import { open, rename } from 'node:fs/promises'
 import { once } from 'node:events'
 import { dirname, join, resolve, sep } from 'node:path'
 import * as yauzl from 'yauzl'
@@ -189,6 +189,72 @@ function isRetryable(error: Error): boolean {
   return true
 }
 
+
+const MIRROR_CHUNK = 16 * 1024 * 1024
+const CHUNK_CONCURRENCY = 3
+const CHUNK_ATTEMPTS = 5
+
+interface PartMeta {
+  url: string
+  total: number
+  chunk: number
+  done: number[]
+}
+
+function metaPath(part: string): string {
+  return `${part}.json`
+}
+
+function readMeta(part: string, url: string, total: number): PartMeta | null {
+  try {
+    const raw = JSON.parse(readFileSync(metaPath(part), 'utf8')) as PartMeta
+    if (raw.url !== url || raw.chunk !== MIRROR_CHUNK) return null
+    if (total > 0 && raw.total > 0 && raw.total !== total) return null
+    return raw
+  } catch {
+    return null
+  }
+}
+
+function writeMeta(part: string, meta: PartMeta): void {
+  try {
+    writeFileSync(metaPath(part), JSON.stringify(meta))
+  } catch {
+    // best effort: losing the map only costs a re-download, not correctness
+  }
+}
+
+/** Candidate URLs for one GitHub file, honouring an explicitly configured mirror first. */
+function candidateUrls(url: string, settings: Settings): string[] {
+  if (!isGithubFileUrl(url)) return [url]
+  const preferred = settings.gitMirror?.trim() || getLastNetwork()?.selected.git || null
+  // gh-proxy family takes the full absolute URL after the prefix.
+  const mirrored = githubMirrorChain(settings).map((mirror) => `${mirror.replace(/\/$/, '')}/${url}`)
+  return [...new Set(preferred ? [...mirrored, url] : [url, ...mirrored])]
+}
+
+let lastPublish = 0
+
+function publishProgress(bytes: number, total: number, note?: string): void {
+  const now = Date.now()
+  if (note === undefined && now - lastPublish < 250) return
+  lastPublish = now
+  publish({
+    phase: 'downloading',
+    bytes,
+    totalBytes: total,
+    percent: total > 0 ? Math.min(99.9, (bytes / total) * 100) : 0,
+  })
+}
+
+/**
+ * Chunked, resumable, multi-mirror download.
+ *
+ * The map of finished 16 MB chunks lives next to the partial file, so an interrupted
+ * install (proxy drop, app quit, power loss) continues where it stopped instead of
+ * restarting a 700 MB archive. Chunks are pulled from rotating mirrors, which also
+ * spreads the load and lets one dead mirror cost a single chunk retry.
+ */
 async function downloadTo(
   url: string,
   target: string,
@@ -197,90 +263,93 @@ async function downloadTo(
   settings: Settings,
 ): Promise<string> {
   const part = `${target}.part`
-  if (existsSync(part)) rmSync(part, { force: true })
-  let received = 0
-  let total = totalHint
-  let attempt = 0
-  let lastError: Error | null = null
-  while (attempt < DOWNLOAD_ATTEMPTS) {
-    attempt += 1
-    try {
-      const response = await fetchGithubFile(url, settings, {
-        headers: {
-          'user-agent': `MossStudio-Launcher/${app.getVersion()}`,
-          // undici strips this header on the cross-origin redirect to the artifact blob store.
-          ...(token ? { authorization: `Bearer ${token}` } : {}),
-          // Resume where the previous attempt died; the proxy must honour Range.
-          ...(received > 0 ? { range: `bytes=${received}-` } : {}),
-        },
-        signal: controller?.signal,
-        redirect: 'follow',
-      }, 'GitHub Release/Actions 资产下载')
-      if (received > 0 && response.status !== 206) {
-        // Host ignored the Range header: start over rather than corrupt the archive.
-        received = 0
-        rmSync(part, { force: true })
-      }
-      if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}（${url.slice(0, 120)}）`)
-      if (!response.body) throw new Error('下载响应没有 body')
-      const length = Number(response.headers.get('content-length') ?? 0)
-      if (length > 0) total = received + length
-      else if (totalHint > 0 && received === 0) total = totalHint
+  const candidates = candidateUrls(url, settings)
+  const headers: Record<string, string> = {
+    'user-agent': `MossStudio-Launcher/${app.getVersion()}`,
+    // undici strips this header on the cross-origin redirect to the artifact blob store.
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+  }
 
-      const host = new URL(response.url || url).host
-      const stream = createWriteStream(part, { flags: received > 0 ? 'a' : 'w' })
-      let lastEmit = 0
-      let lastBytes = received
-      let lastTime = Date.now()
-      const reader = response.body.getReader()
-      try {
-        while (true) {
-          // stall watchdog: a silent blob-store connection must not hang forever
-          const { done, value } = await Promise.race([
-            reader.read(),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('下载停滞（120 秒无数据），请重试')), 120_000),
-            ),
-          ])
-          if (done) break
+  let total = totalHint
+  if (!(total > 0)) {
+    const head = await fetch(candidates[0]!, { method: 'HEAD', headers, redirect: 'follow', signal: controller?.signal })
+    const size = Number(head.headers.get('content-length') ?? 0)
+    await head.body?.cancel()
+    if (size > 0) total = size
+  }
+  if (!(total > 0)) throw new Error('无法确定引擎包大小；请稍后重试')
+
+  const meta = readMeta(part, url, total) ?? { url, total, chunk: MIRROR_CHUNK, done: [] as number[] }
+  const chunks = Math.ceil(total / MIRROR_CHUNK)
+  const done = new Set(meta.done.filter((index) => index >= 0 && index < chunks))
+  let received = 0
+  for (const index of done) received += Math.min(MIRROR_CHUNK, total - index * MIRROR_CHUNK)
+
+  // A missing partial file invalidates the map; start over rather than fail on open().
+  const resumed = done.size > 0 && existsSync(part)
+  if (!resumed) done.clear()
+  const handle = await open(part, resumed ? 'r+' : 'w+')
+  let written = received
+  try {
+    const queue: number[] = []
+    for (let index = 0; index < chunks; index += 1) if (!done.has(index)) queue.push(index)
+    publishProgress(written, total, resumed ? `从 ${(written / 1024 / 1024).toFixed(1)} MB 继续` : '开始下载')
+
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const index = queue.shift()
+        if (index === undefined) return
+        const start = index * MIRROR_CHUNK
+        const end = Math.min(total, start + MIRROR_CHUNK) - 1
+        const expected = end - start + 1
+        let lastError: Error | null = null
+        for (let attempt = 0; attempt < CHUNK_ATTEMPTS; attempt += 1) {
           if (controller?.signal.aborted) throw new Error('已取消下载')
-          const chunk = Buffer.from(value)
-          received += chunk.length
-          if (!stream.write(chunk)) await once(stream, 'drain')
-          const timestamp = Date.now()
-          if (timestamp - lastEmit >= 250) {
-            const elapsed = Math.max(0.001, (timestamp - lastTime) / 1000)
-            publish({
-              phase: 'downloading',
-              bytes: received,
-              totalBytes: total,
-              percent: total > 0 ? Math.min(99.9, (received / total) * 100) : 0,
-              speedBps: Math.max(0, (received - lastBytes) / elapsed),
-              note: `${host} · 第 ${attempt} 次尝试`,
+          try {
+            const response = await fetch(candidates[attempt % candidates.length]!, {
+              headers: { ...headers, range: `bytes=${start}-${end}` },
+              redirect: 'follow',
+              signal: controller?.signal,
             })
-            lastEmit = timestamp
-            lastBytes = received
-            lastTime = timestamp
+            if (response.status !== 206) {
+              await response.body?.cancel()
+              throw new Error(`HTTP ${response.status}`)
+            }
+            if (!response.body) throw new Error('响应没有 body')
+            const reader = response.body.getReader()
+            let position = start
+            while (true) {
+              const { done: finished, value } = await reader.read()
+              if (finished) break
+              const chunk = Buffer.from(value)
+              await handle.write(chunk, 0, chunk.length, position)
+              position += chunk.length
+              written += chunk.length
+              publishProgress(written, total)
+            }
+            if (position !== end + 1) throw new Error(`分段不完整（${position - start}/${expected}）`)
+            done.add(index)
+            meta.done = [...done]
+            writeMeta(part, meta)
+            lastError = null
+            break
+          } catch (error) {
+            if (controller?.signal.aborted) throw new Error('已取消下载')
+            lastError = error instanceof Error ? error : new Error(String(error))
           }
         }
-      } finally {
-        stream.end()
-        await once(stream, 'finish').catch(() => undefined)
+        if (lastError) throw lastError
       }
-      if (total > 0 && received < total) {
-        throw new Error(`连接中断（${received}/${total} 字节）`)
-      }
-      break
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error))
-      if (controller?.signal.aborted) throw new Error('已取消下载')
-      if (attempt >= DOWNLOAD_ATTEMPTS || !isRetryable(lastError)) throw lastError
-      publish({ phase: 'downloading', bytes: received, totalBytes: total, percent: total > 0 ? (received / total) * 100 : 0, speedBps: 0, note: `${lastError.message}，重试 ${attempt}/${DOWNLOAD_ATTEMPTS}` })
-      await new Promise((resolve) => setTimeout(resolve, Math.min(5000, 800 * attempt)))
     }
+
+    await Promise.all(Array.from({ length: Math.min(CHUNK_CONCURRENCY, Math.max(1, queue.length)) }, () => worker()))
+  } finally {
+    await handle.close()
   }
-  if (!existsSync(part)) throw lastError ?? new Error('下载失败')
-  // Hash the file at the end so resumed downloads still verify correctly.
+
+  const size = statSync(part).size
+  if (size !== total) throw new Error(`文件不完整（${size}/${total} 字节），请重试`)
+
   const hash = createHash('sha256')
   await new Promise<void>((resolvePromise, rejectPromise) => {
     createReadStream(part)
@@ -289,8 +358,10 @@ async function downloadTo(
       .on('error', rejectPromise)
   })
   await rename(part, target)
+  rmSync(metaPath(part), { force: true })
   return hash.digest('hex')
 }
+
 
 function sha256Of(sumsText: string, name: string): string | null {
   for (const line of sumsText.split(/\r?\n/)) {

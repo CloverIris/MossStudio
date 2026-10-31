@@ -76,8 +76,8 @@ function engineCompat(model: ModelEntry): EngineCompat {
     if (legacy) {
       return {
         kind: 'legacy',
-        label: '旧 PyTorch 链路',
-        hint: 'KBlueLeaf fp16-fixed，面向旧 Python runner（2080Ti / V100）；仍可绑定 fp16 bundle，MossInfer 建议改用 bf16 组合。',
+        label: '旧版 fp16 组合',
+        hint: 'KBlueLeaf fp16-fixed，2080Ti / V100 时代的产物；仍可绑定 fp16 bundle，MossInfer 建议改用 bf16 组合。',
       }
     }
     return { kind: 'bindable', label: '可绑定 bundle' }
@@ -85,8 +85,8 @@ function engineCompat(model: ModelEntry): EngineCompat {
   if (legacy) {
     return {
       kind: 'legacy',
-      label: '旧 PyTorch 链路',
-      hint: 'KBlueLeaf fp16-fixed 单文件，供旧 PyTorch 链路 / ComfyUI 使用；MossInfer 建议改用 bf16 bundle。',
+      label: 'ComfyUI 单文件',
+      hint: 'KBlueLeaf fp16-fixed 单文件，供 ComfyUI 等外部工具使用；MossInfer 建议改用 bf16 bundle。',
     }
   }
   const file =
