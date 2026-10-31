@@ -1,19 +1,35 @@
 # Studio 多 Canvas Project 设计
 
-- 状态：实施中
+- 状态：**已实现**（2026-10-31 更新到 as-built）
 - 日期：2026-10-31
 - 范围：Project 内的多 Canvas Board、串行推理任务、进度与生成结果呈现
 
+## As-built 差异（相对本设计早期提案）
+
+本设计最初假设"在 2×2 网格里平铺、默认就有一个「新建内容」占位"。落地时改成**自由坐标画布板**，与提案的差异：
+
+| 提案 | 落地 |
+| --- | --- |
+| `board.columns: 2` 网格 + `row/column` | 移除网格与行列字段，Canvas 用 `x/y`（board pixels）自由定位，可拖动 |
+| 固定槽位缩放 | 卡片按自身宽高比呈现，`BOARD_UNIT = 0.34`：512² 占 1024² 四分之一面积 |
+| 选中才启用面板 | 保留；另增加点选自动居中到 125% 工作缩放 |
+| 结果覆盖/追加到同一卡片 | 结果永远是**新的一张 Result Canvas**，放在来源卡片下方 |
+| 进度只在节点文字里 | 增加底部进度绑带 + 生成中卡片呼吸光晕，并移除了生成时自动弹出终端 |
+| 未提及 | 增加缩略图导航、滚轮光标锚点缩放、空白处拖动平移、适配视图 |
+| schema v2 + v1 迁移 | 最终定为 **schema v3**，删除全部向前兼容（旧工程不可读） |
+
+工作台信息架构也在同一轮调整：布局描述从左栏之外移回左栏，生成时自动编译布局 Prompt（见 [product-design.md](../product-design.md)）。
+
 ## 当前实现进度
 
-- 已落地：Project schema v2 Canvas 数据、v1 读取迁移、原子保存；空 Project Board 和 Canvas 选择/新增/复制/删除。
-- 已落地：Layout/Result Canvas 与 Job 关联、MossInfer FIFO 启动队列及排队取消；终端与结果节点显示结构化阶段/去噪进度。
+- 已落地：Project schema v3 Canvas 数据（自由 `x/y`）、原子保存；空 Project Board 与 Canvas 选择/新增/复制/删除/拖动。
+- 已落地：Layout/Result Canvas 与 Job 关联、MossInfer FIFO 启动队列及排队取消；Canvas 上显示结构化阶段/去噪进度。
 - 已落地：生成结果节点内预览图片；重跑创建新结果，不覆盖旧节点；无 Canvas 时编辑面板提示并禁用。
-- 已覆盖：Project v1 只读迁移、v2 多 Canvas/Job/输出持久化、多个同名背景资源隔离、空 Board 保存。
+- 已覆盖：Project v3 多 Canvas/Job/输出持久化、多个同名背景资源隔离、空 Board 保存、旧 schema 文件如实返回不可读。
 - 已覆盖：fake MossInfer FIFO、Canvas/Project 关联、排队取消与串行完成场景；Result 预览包含文件缺失与 Job 记录失联提示。
 - 已覆盖：Studio 窗口级创建 Canvas、独立 Prompt 自动保存、刷新后重新打开 Project 的交互测试。
-- 尚待完成：SM75 实际运行验收。
-- 本轮验证：`pnpm --filter @clover/desktop typecheck`、`pnpm --filter @clover/desktop build`、`project-canvases`、`mossinfer-queue` 与 `studio-canvas-ui` Electron 场景通过。
+- 本轮验证：`tsc -p tsconfig.node.json`、`tsc -p tsconfig.web.json`、`electron-vite build`、8 套工具链测试 55 项断言、本机 RTX 2080 真实出图。
+
 
 ## 1. 背景与目标
 
@@ -175,6 +191,8 @@ Canvas 底部和终端当前任务头部共同显示：
 - 画廊继续显示所有输出，并可从画廊跳转到拥有对应 Result Canvas 的 Project（若可追溯）；画廊不是生成成功后的唯一可发现路径。
 
 ## 7. 持久化与兼容迁移
+
+> **As-built（2026-10-31）**：最终落地的 `schemaVersion` 是 **3**，不是本节建议的 2。兼容策略也已反转——**不保留 v1/v2 读取**，旧文件直接视为不可读。本节以下内容保留为当时的推导过程，字段以 [backend-and-project.md](../backend-and-project.md) 为准。
 
 当前 `ProjectDocument` 为 `schemaVersion: 1`，在 Project 根记录一份尺寸、summary、layers、Prompt 和生成参数。多 Canvas 需要将创作状态下沉到节点层级。
 
