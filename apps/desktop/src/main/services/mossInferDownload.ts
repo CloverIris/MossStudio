@@ -15,7 +15,7 @@ import { run } from '../lib/run'
 import { probeMossInfer, shutdownMossInfer } from './mossInfer'
 import { installCudaWheels } from './cudaWheels'
 import { getSettings, updateSettings } from './settings'
-import { applyGitMirror, getLastNetwork } from './network'
+import { getLastNetwork, githubMirrorChain } from './network'
 
 /**
  * Downloads the MossInfer engine package from the upstream repo xycld/owoinfer:
@@ -68,10 +68,6 @@ export function resolveGithubToken(settings: Settings): string | null {
   return null
 }
 
-function githubMirror(settings: Settings): string | null {
-  return settings.gitMirror?.trim() || getLastNetwork()?.selected.git || null
-}
-
 function isGithubFileUrl(url: string): boolean {
   const hostname = new URL(url).hostname
   return hostname === 'github.com' || hostname === 'raw.githubusercontent.com'
@@ -91,10 +87,18 @@ async function fetchGithubFile(
   init: RequestInit,
   description: string,
 ): Promise<Response> {
-  const mirrorUrl = isGithubFileUrl(url) ? applyGitMirror(url, githubMirror(settings)) : url
-  const urls = mirrorUrl === url ? [url] : [mirrorUrl, url]
+  // A cached "direct works" probe result must not disable mirrors. Order: an explicitly
+  // configured mirror first, otherwise direct first and the built-ins only as fallback,
+  // so a dead mirror costs one failed attempt instead of stalling every download.
+  const preferred = settings.gitMirror?.trim() || getLastNetwork()?.selected.git || null
+  // gh-proxy family takes the full absolute URL after the prefix; a bare prefix would not
+  // resolve, so build it here instead of reusing the git-clone mirror helper.
+  const mirrored = githubMirrorChain(settings).map((mirror) => `${mirror.replace(/\/$/, '')}/${url}`)
+  const candidates = isGithubFileUrl(url)
+    ? [...new Set(preferred ? [...mirrored, url] : [url, ...mirrored])]
+    : [url]
   const failures: string[] = []
-  for (const candidate of urls) {
+  for (const candidate of candidates) {
     let response: Response
     try {
       response = await fetch(candidate, init)
@@ -108,7 +112,10 @@ async function fetchGithubFile(
     failures.push(`${hostLabel(candidate)}: HTTP ${response.status}`)
     await response.body?.cancel()
   }
-  throw new Error(`${description}请求失败：${failures.join('；')}`)
+  const hint = settings.networkMode === 'direct'
+    ? '当前网络策略是「直连」，请在设置里切到「自动」或填一个 git 镜像前缀。'
+    : '直连与内置镜像都失败了：请检查网络，或在设置 › 网络与下载里填写可用的 git 镜像前缀。'
+  throw new Error(`${description}请求失败：${failures.join('；')}。${hint}`)
 }
 
 async function ghJson(path: string, token: string | null): Promise<unknown> {

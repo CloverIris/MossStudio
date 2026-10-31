@@ -22,11 +22,18 @@ const TARGETS: ProbeTarget[] = [
     value: 'https://ghproxy.net/',
   },
   {
-    id: 'kkgithub',
-    label: 'kkgithub 镜像',
-    url: 'https://kkgithub.com',
+    id: 'isteed',
+    label: 'cors.isteed 镜像',
+    url: 'https://cors.isteed.cc/https://github.com',
     category: 'git',
-    value: 'https://kkgithub.com/',
+    value: 'https://cors.isteed.cc/',
+  },
+  {
+    id: 'geekertao',
+    label: 'geekertao 镜像',
+    url: 'https://ghfile.geekertao.top/https://github.com',
+    category: 'git',
+    value: 'https://ghfile.geekertao.top/',
   },
   { id: 'pypi', label: 'PyPI 官方', url: 'https://pypi.org/simple/', category: 'pip', value: 'https://pypi.org/simple' },
   {
@@ -74,7 +81,7 @@ const TARGETS: ProbeTarget[] = [
 ]
 
 const MIRROR_PREFERENCE: Record<ProbeTarget['category'], string[]> = {
-  git: ['ghproxy', 'kkgithub', 'github'],
+  git: ['ghproxy', 'isteed', 'geekertao', 'github'],
   pip: ['tuna', 'aliyun', 'pypi'],
   hf: ['hfmirror', 'hf'],
   manifest: ['jsdelivr', 'raw'],
@@ -146,6 +153,24 @@ export async function probeNetwork(mode: Settings['networkMode'] = 'auto'): Prom
 
 export function getLastNetwork(): NetworkReport | null {
   return lastReport
+}
+
+/** Mirrors worth trying even when nothing is configured or the probe picked direct. */
+export const GITHUB_MIRRORS = [
+  'https://ghproxy.net/',
+  'https://cors.isteed.cc/',
+  'https://ghfile.geekertao.top/',
+  'https://gh-proxy.com/',
+]
+
+/**
+ * Ordered mirror prefixes for a GitHub download. The probe only runs at startup, so a
+ * direct-connection result must not disable mirrors forever: built-ins stay in the chain.
+ */
+export function githubMirrorChain(settings: Settings): string[] {
+  if (settings.networkMode === 'direct') return []
+  const preferred = settings.gitMirror?.trim() || getLastNetwork()?.selected.git || null
+  return [...new Set([preferred, ...GITHUB_MIRRORS].filter((item): item is string => Boolean(item && item.trim())))]
 }
 
 export function applyGitMirror(url: string, mirror: string | null): string {
