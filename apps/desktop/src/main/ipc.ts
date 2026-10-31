@@ -146,6 +146,7 @@ export function registerIpc(): void {
     platform: process.platform,
     arch: process.arch,
     dataPath: paths.root(),
+    enginePath: paths.engineRoot(),
     modelsPath: paths.models(getSettings().modelsRoot),
     acrylic: false,
     backend: getBackendInfo(),
@@ -563,7 +564,7 @@ export function registerIpc(): void {
   })
 
   handle(Ipc.openPath, schemas.openPath, async ({ path }) => {
-    const allowed = [paths.root(), paths.models(getSettings().modelsRoot)]
+    const allowed = [paths.root(), paths.models(getSettings().modelsRoot), paths.engineRoot(), paths.outputs()]
     if (!allowed.some((base) => isInside(base, path))) throw new Error('路径不在允许范围内')
     if (!existsSync(path)) mkdirSync(path, { recursive: true })
     const stats = statSync(path)

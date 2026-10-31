@@ -1,4 +1,4 @@
-import type { ReleaseHomeCopy, ReleaseInstaller } from './release'
+﻿import type { ReleaseHomeCopy, ReleaseInstaller } from './release'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'unknown'
 
@@ -39,6 +39,7 @@ export interface DeviceInfo {
   diskTotal: number
   diskFree: number
   dataPath: string
+    enginePath?: string
   modelsPath: string
 }
 
@@ -146,6 +147,7 @@ export interface Settings {
   galleryRoots: string[]
   homeBackground: string | null
   trainerRoot: string | null
+  engineRoot: string | null
   gbcRoot: string | null
   inferenceBackend: 'runner' | 'mossinfer'
   mossInferServerPath: string | null
@@ -711,6 +713,7 @@ export interface AppInfo {
   platform: string
   arch: string
   dataPath: string
+    enginePath?: string
   modelsPath: string
   acrylic: boolean
   backend?: BackendInfo

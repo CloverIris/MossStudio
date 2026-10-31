@@ -16,6 +16,7 @@ import { probeMossInfer, shutdownMossInfer } from './mossInfer'
 import { installCudaWheels } from './cudaWheels'
 import { getSettings, updateSettings } from './settings'
 import { getLastNetwork, githubMirrorChain } from './network'
+import { assertFreeSpace } from '../lib/disk'
 
 /**
  * Downloads the MossInfer engine package from the upstream repo xycld/owoinfer:
@@ -278,6 +279,7 @@ async function downloadTo(
     if (size > 0) total = size
   }
   if (!(total > 0)) throw new Error('无法确定引擎包大小；请稍后重试')
+  await assertFreeSpace(part, total, '引擎包')
 
   const meta = readMeta(part, url, total) ?? { url, total, chunk: MIRROR_CHUNK, done: [] as number[] }
   const chunks = Math.ceil(total / MIRROR_CHUNK)

@@ -1,10 +1,35 @@
 import { app } from 'electron'
 import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
+let dataRootOverride: string | null = null
+let engineRootOverride: string | null = null
+
+/**
+ * Application data lives next to the executable when packaged (portable installs
+ * keep everything in one folder). Dev keeps using the repo's .dev-data, and
+ * MOSSSTUDIO_DATA wins over everything for tests and relocated installs.
+ */
 export function root(): string {
-  return app.getPath('userData')
+  const env = process.env['MOSSSTUDIO_DATA']?.trim()
+  if (env) return resolve(env)
+  if (dataRootOverride) return resolve(dataRootOverride)
+  if (!app.isPackaged) return app.getPath('userData')
+  return join(dirname(app.getPath('exe')), 'data')
+}
+
+export function setDataRoot(next: string | null): void {
+  dataRootOverride = next
+}
+
+/** Engine builds live under the data root unless the user points somewhere else. */
+export function engineRoot(): string {
+  return engineRootOverride ? resolve(engineRootOverride) : join(root(), 'mossinfer')
+}
+
+export function setEngineRoot(next: string | null): void {
+  engineRootOverride = next
 }
 
 export function modelsRoot(custom?: string | null): string {
@@ -13,6 +38,7 @@ export function modelsRoot(custom?: string | null): string {
 
 export const paths = {
   root,
+  engineRoot,
   settings: () => join(root(), 'settings.json'),
   announcements: () => join(root(), 'announcements.json'),
   git: () => join(root(), 'git'),
@@ -31,7 +57,7 @@ export const paths = {
   downloads: () => join(root(), 'downloads'),
   outputs: () => join(root(), 'outputs'),
   cache: () => join(root(), 'cache'),
-  mossinfer: () => join(root(), 'mossinfer'),
+  mossinfer: () => engineRoot(),
   logs: () => join(root(), 'logs'),
   trainerRoot: (custom?: string | null) => (custom ? resolve(custom) : join(root(), 'trainer')),
   trainerGit: () => join(root(), 'trainer', 'git'),
@@ -56,6 +82,7 @@ export function ensureDirs(customModelsRoot?: string | null): void {
     paths.downloads(),
     paths.cache(),
     paths.logs(),
+    paths.mossinfer(),
     paths.trainerGit(),
     paths.trainerVersions(),
     paths.trainerRuntimes(),

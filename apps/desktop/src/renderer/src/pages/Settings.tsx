@@ -1,4 +1,4 @@
-import {
+﻿import {
   Bell,
   Copy,
   Cpu,
@@ -156,6 +156,11 @@ export function SettingsPage(): React.JSX.Element {
     await persist({ galleryRoots: roots })
   }
 
+  async function pickEngineRoot(): Promise<void> {
+    const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: '选择引擎安装目录' })
+    if (!path) return
+    await persist({ engineRoot: path })
+  }
   async function pickTrainerRoot(): Promise<void> {
     const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: '选择训练器根目录' })
     if (!path) return
@@ -332,7 +337,18 @@ export function SettingsPage(): React.JSX.Element {
                     </IconButton>
                   </div>
                 </Row>
-                <Row title="模型根目录" hint="留空使用默认；修改后模型库会重新扫描。">
+                                <Row title="引擎目录" hint="MossInfer 构建的安装位置；修改后新下载的引擎落在这里，已安装的版本不受影响。">
+                  <div className="flex max-w-[320px] items-center gap-1">
+                    <span className="min-w-0 flex-1 truncate text-right font-mono text-caption text-[var(--color-text-tertiary)]">
+                      {draft.engineRoot ?? appInfo?.enginePath ?? '默认 <数据目录>/mossinfer'}
+                    </span>
+                    <Button tone="ghost" onClick={() => void pickEngineRoot()}>选择</Button>
+                    <IconButton label="打开引擎目录" onClick={() => void openPath(draft.engineRoot ?? appInfo?.enginePath, '引擎目录')} disabled={!draft.engineRoot && !appInfo?.enginePath}>
+                      <FolderOpen className="size-4" />
+                    </IconButton>
+                  </div>
+                </Row>
+<Row title="模型根目录" hint="留空使用默认；修改后模型库会重新扫描。">
                   <div className="flex items-center gap-1">
                     <IconButton label="打开模型目录" onClick={() => void openPath(env?.device.modelsPath, '模型目录')} disabled={!env?.device.modelsPath}>
                       <FolderOpen className="size-4" />

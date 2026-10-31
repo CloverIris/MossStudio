@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { releaseInstallerSchema } from './release'
 
 const pathLike = z.string().trim().min(1, '目录路径不能为空').max(4096)
@@ -97,6 +97,7 @@ export const schemas = {
       galleryRoots: z.array(z.string().max(4096)).max(20),
       homeBackground: z.string().max(4096).nullable(),
       trainerRoot: z.string().max(4096).nullable(),
+      engineRoot: z.string().max(4096).nullable(),
       gbcRoot: z.string().max(4096).nullable(),
       disabledDevices: z.array(z.string().max(200)).max(64),
       deviceLabels: z.record(z.string().max(200), z.string().max(200)),

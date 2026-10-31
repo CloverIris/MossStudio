@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+﻿import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import type { Settings } from '@shared/types'
-import { paths } from '../lib/paths'
+import { paths, setEngineRoot } from '../lib/paths'
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -27,7 +27,8 @@ export const DEFAULT_SETTINGS: Settings = {
   onboardingHostId: 'local',
   galleryRoots: [],
   homeBackground: null,
-  trainerRoot: null,
+    trainerRoot: null,
+    engineRoot: null,
   gbcRoot: null,
   inferenceBackend: 'mossinfer',
   mossInferServerPath: null,
@@ -56,6 +57,7 @@ export function getSettings(): Settings {
   } catch {
     cache = { ...DEFAULT_SETTINGS }
   }
+  setEngineRoot(cache.engineRoot)
   return cache
 }
 
@@ -66,6 +68,7 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   }
   atomicWriteJson(paths.settings(), next)
   cache = next
+  setEngineRoot(next.engineRoot)
   return next
 }
 
@@ -82,4 +85,6 @@ export function readJson<T>(file: string, fallback: T): T {
   } catch {
     return fallback
   }
+
+
 }
