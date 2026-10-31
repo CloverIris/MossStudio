@@ -2,11 +2,11 @@ import {
   CheckCircle2,
   Cpu,
   Download,
+  FolderOpen,
   HardDrive,
   PackageCheck,
   RefreshCw,
   ShieldCheck,
-  SlidersHorizontal,
   SquareTerminal,
   Trash2,
   X,
@@ -15,16 +15,22 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Events, Ipc } from '@shared/channels'
 import type {
+  Catalog,
   EngineRemoteProgress,
+  JobRecord,
   LocalEngineVersion,
   ManagedHost,
+  ModelBinding,
   MossInferDownloadState,
   MossInferRelease,
+  Settings,
 } from '@shared/types'
+import type { BackendInfo } from '@shared/backend'
 import { call, onEvent } from '../lib/api'
 import { useApp } from '../store'
 import { openWindow } from '../lib/windows'
 import { bytes, dateTime } from '../lib/format'
+import { electronStudioClient } from '../lib/studioClient'
 import { Button, Card, IconButton, Input, Modal, Pill, Segmented, Spinner, useToast } from '../components/ui'
 
 interface LocalEngineInfo {
@@ -32,6 +38,16 @@ interface LocalEngineInfo {
   path: string | null
   version?: string
   error?: string
+}
+
+type EngineTab = 'inference' | 'developer'
+
+interface EngineChainTest {
+  phase: 'running' | 'succeeded' | 'failed'
+  message: string
+  jobId?: string
+  outputPath?: string
+  suggestReference?: boolean
 }
 
 const downloadPhaseLabels: Record<MossInferDownloadState['phase'], string> = {
@@ -79,6 +95,9 @@ export function EnginePage(): React.JSX.Element {
   const [variant, setVariant] = useState<'bundled' | 'system-cuda'>('system-cuda')
   const [fallbackOpen, setFallbackOpen] = useState(false)
   const [preflight, setPreflight] = useState<{ supported: boolean; gpu: string; cublasLt: string[]; preferredFlavour?: 'cu12' | 'cu13'; error?: string } | null>(null)
+  const [activeTab, setActiveTab] = useState<EngineTab>('inference')
+  const [chainTest, setChainTest] = useState<EngineChainTest | null>(null)
+  const [chainTesting, setChainTesting] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -197,6 +216,17 @@ export function EnginePage(): React.JSX.Element {
     }
   }
 
+  async function savePerformanceSettings(
+    patch: Partial<Pick<Settings, 'mossInferTier' | 'mossInferMemoryMode'>>,
+  ): Promise<void> {
+    try {
+      await saveSettings(patch)
+      toast.push('引擎性能设置已保存', 'success')
+    } catch (error) {
+      toast.push(`保存引擎性能设置失败：${error instanceof Error ? error.message : String(error)}`, 'error')
+    }
+  }
+
   async function install(): Promise<void> {
     if (variant === 'system-cuda') {
       setBusy(true)
@@ -228,6 +258,138 @@ export function EnginePage(): React.JSX.Element {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function selectThirdPartyEngine(): Promise<void> {
+    setBusy(true)
+    try {
+      const directory = await call<string | null>(Ipc.pickDialog, {
+        kind: 'folder',
+        title: '选择第三方 MossInfer 引擎目录',
+      })
+      if (!directory) return
+      const next = await call<LocalEngineInfo>(Ipc.engineSelectDirectory, { path: directory })
+      setEngine(next)
+      setProbe(null)
+      toast.push('第三方 MossInfer 已接入，并设为本机推理引擎', 'success')
+      await refresh()
+    } catch (error) {
+      toast.push(`接入第三方引擎失败：${error instanceof Error ? error.message : String(error)}`, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runEngineChainTest(): Promise<void> {
+    setChainTesting(true)
+    setChainTest({ phase: 'running', message: '检查模型、后端和当前引擎…' })
+    try {
+      if (!engine?.available) throw new Error(engine?.error ?? '当前引擎不可用')
+      const catalog = await call<Catalog>(Ipc.modelsCatalog)
+      const isReady = (candidate: Catalog['bundles'][number]): boolean =>
+        [candidate.components.dit, candidate.components.textEncoder, candidate.components.vae, candidate.support]
+          .every((id) => {
+            const model = catalog.models.find((entry) => entry.id === id)
+            return Boolean(model?.installed && (model.installState === undefined || model.installState === 'ready'))
+          })
+      const bundle = catalog.bundles.find((candidate) => candidate.recommended && isReady(candidate))
+        ?? catalog.bundles.find(isReady)
+      if (!bundle) throw new Error('没有完整就绪的本机模型组合；请先在模型页准备一组包含 DiT、文本编码器、VAE 和运行配置的模型')
+
+      const backend: BackendInfo = await electronStudioClient.backendInfo()
+      if (!backend.ready || !backend.url || !backend.token) {
+        throw new Error(backend.error ?? '本机推理后端尚未就绪')
+      }
+
+      const modelBinding: ModelBinding = {
+        bundleId: bundle.id,
+        ...bundle.components,
+      }
+      const response = await fetch(`${backend.url}/api/engine-jobs`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${backend.token}`,
+        },
+        body: JSON.stringify({
+          modelBinding,
+          modelName: bundle.name,
+          prompt: 'a red apple on a wooden table',
+          negativePrompt: '',
+          width: 256,
+          height: 256,
+          steps: 4,
+          cfg: 3,
+          seed: 7,
+          profile: 'dmd8',
+          mode: 'runner',
+        }),
+      })
+      const started = (await response.json()) as {
+        id?: unknown
+        error?: string | { message?: string }
+      }
+      if (!response.ok) {
+        const message = typeof started.error === 'string' ? started.error : started.error?.message
+        throw new Error(message ?? `后端返回 ${response.status}`)
+      }
+      if (typeof started.id !== 'string') throw new Error('后端未返回有效的推理任务 ID')
+      const jobId = started.id
+      setChainTest({ phase: 'running', jobId, message: '任务已提交，等待引擎 load 与实际生成…' })
+
+      const deadline = Date.now() + 10 * 60_000
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        const statusResponse = await fetch(`${backend.url}/api/jobs/${encodeURIComponent(jobId)}`, {
+          headers: { authorization: `Bearer ${backend.token}` },
+        })
+        if (!statusResponse.ok) throw new Error(`读取推理任务失败：HTTP ${statusResponse.status}`)
+        const job = (await statusResponse.json()) as JobRecord | null
+        if (!job) throw new Error('后端未返回测试任务状态')
+        if (job.state === 'failed' || job.state === 'canceled') {
+          throw new Error(job.error?.message ?? `测试任务${job.state === 'failed' ? '失败' : '已取消'}`)
+        }
+        if (job.state === 'succeeded') {
+          const output = job.outputs?.[0]
+          if (job.engine !== 'mossinfer' || !output?.path) {
+            throw new Error('任务结束但没有 MossInfer 生成输出')
+          }
+          setChainTest({
+            phase: 'succeeded',
+            jobId: job.id,
+            outputPath: output.path,
+            message: `完整链路通过：${job.engine} · ${output.width}×${output.height} · seed ${output.seed}`,
+          })
+          return
+        }
+        setChainTest({
+          phase: 'running',
+          jobId: job.id,
+          message: `推理中：${job.stage} ${job.progress.percent.toFixed(0)}%`,
+        })
+      }
+      throw new Error('真实生成测试超过 10 分钟仍未完成')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setChainTest({
+        phase: 'failed',
+        message,
+        suggestReference: /tier high with attention exact on a bf16/i.test(message),
+      })
+      toast.push(`引擎链路测试失败：${message}`, 'error')
+    } finally {
+      setChainTesting(false)
+    }
+  }
+
+  async function retryChainTestWithReference(): Promise<void> {
+    try {
+      await saveSettings({ mossInferTier: 'reference' })
+      toast.push('已切换到 Reference，重新运行链路测试', 'info')
+      await runEngineChainTest()
+    } catch (error) {
+      toast.push(`切换到 Reference 失败：${error instanceof Error ? error.message : String(error)}`, 'error')
     }
   }
 
@@ -354,6 +516,77 @@ export function EnginePage(): React.JSX.Element {
         </div>
       </header>
 
+      <Card className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-[14px] font-semibold">当前推理配置</h2>
+              <Pill tone={settings?.inferenceBackend === 'mossinfer' && engine?.available ? 'accent' : 'amber'}>
+                {settings?.inferenceBackend === 'mossinfer' && engine?.available ? '首页使用 MossInfer' : '首页未使用 MossInfer'}
+              </Pill>
+            </div>
+            <p className="mt-1 break-all font-mono text-caption text-[var(--color-text-secondary)]">
+              {settings?.inferenceBackend === 'mossinfer'
+                ? engine?.path ?? engine?.error ?? 'MossInfer 引擎路径未配置'
+                : '首页当前使用 Runner 后端；下方性能参数仅在 MossInfer 后端生效。'}
+            </p>
+            {engine?.version ? <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">{engine.version}</p> : null}
+          </div>
+          <Pill tone={engine?.available ? 'accent' : 'amber'}>{engine?.available ? '本机引擎 ready' : '本机引擎缺失'}</Pill>
+        </div>
+        <div className="mt-3 grid gap-3 border-t border-[var(--color-border-subtle)] pt-3 sm:grid-cols-2">
+          <Segmented
+            label="质量档（tier）"
+            value={settings?.mossInferTier ?? 'high'}
+            onChange={(mossInferTier) => void savePerformanceSettings({ mossInferTier })}
+            options={[
+              { value: 'reference', label: 'Reference · bf16 精确' },
+              { value: 'high', label: 'High · 8bit 注意力' },
+              { value: 'turbo', label: 'Turbo · INT4' },
+            ]}
+          />
+          <Segmented
+            label="显存模式"
+            value={settings?.mossInferMemoryMode ?? 'balanced'}
+            onChange={(mossInferMemoryMode) => void savePerformanceSettings({ mossInferMemoryMode })}
+            options={[
+              { value: 'min_memory', label: '省显存' },
+              { value: 'balanced', label: '均衡' },
+              { value: 'max_speed', label: '最快' },
+            ]}
+          />
+        </div>
+        <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
+          参数在下次引擎 load 时生效。BF16 模型配合 exact attention 时请选择 Reference；High 需要量化 DiT 或可用的 8-bit attention，Turbo 需要 INT4 DiT。
+        </p>
+      </Card>
+
+      <nav role="tablist" aria-label="引擎管理模式" className="flex w-fit max-w-full gap-1 rounded-lg border border-[var(--color-border-subtle)] bg-black/15 p-1">
+        {([
+          ['inference', '推理引擎'],
+          ['developer', '开发模式'],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            id={`engine-tab-${id}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === id}
+            aria-controls={`engine-panel-${id}`}
+            onClick={() => setActiveTab(id)}
+            className={`rounded-md px-3 py-1.5 text-ui transition ${
+              activeTab === id
+                ? 'bg-white/[0.09] font-medium text-[var(--color-text-primary)]'
+                : 'text-[var(--color-text-tertiary)] hover:bg-white/[0.04] hover:text-[var(--color-text-secondary)]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === 'inference' ? (
+      <div role="tabpanel" id="engine-panel-inference" aria-labelledby="engine-tab-inference" className="space-y-4">
       <Card className="p-4" data-oobe-host="local">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -383,9 +616,6 @@ export function EnginePage(): React.JSX.Element {
                 </Button>
               ) : null
             })()}
-            <Button tone="secondary" onClick={() => void probeEngine()} disabled={busy || !engine?.available}>
-              {busy ? <Spinner className="size-4" /> : <SquareTerminal className="size-4" />} 检测 hello
-            </Button>
           </div>
         </div>
 
@@ -581,46 +811,6 @@ export function EnginePage(): React.JSX.Element {
           )}
         </div>
 
-        {probe ? (
-          <pre className="mt-3 max-h-52 overflow-auto rounded-lg bg-black/25 p-3 font-mono text-caption leading-4 text-[var(--color-text-secondary)]">{JSON.stringify(probe, null, 2)}</pre>
-        ) : null}
-      </Card>
-
-      <Card className="p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-[14px] font-semibold">生成质量</h2>
-            <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">MossInfer 引擎档位，改动在下一次引擎加载时生效（配置变化会自动重新 load）。</p>
-          </div>
-          <SlidersHorizontal className="size-4 text-[var(--color-text-tertiary)]" />
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Segmented
-            label="质量档（tier）"
-            value={settings?.mossInferTier ?? 'high'}
-            onChange={(mossInferTier) => void saveSettings({ mossInferTier }).then(() => toast.push('质量档已保存', 'success'))}
-            options={[
-              { value: 'reference', label: 'Reference · bf16 精确' },
-              { value: 'high', label: 'High · 8bit 注意力 · 推荐' },
-              { value: 'turbo', label: 'Turbo · INT4' },
-            ]}
-          />
-          <Segmented
-            label="显存模式（每次生成自动按剩余显存规划）"
-            value={settings?.mossInferMemoryMode ?? 'balanced'}
-            onChange={(mossInferMemoryMode) => void saveSettings({ mossInferMemoryMode }).then(() => toast.push('显存模式已保存', 'success'))}
-            options={[
-              { value: 'min_memory', label: '省显存' },
-              { value: 'balanced', label: '均衡 · 推荐' },
-              { value: 'max_speed', label: '最快' },
-            ]}
-          />
-        </div>
-        <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
-          三个模式都会自动适配当前空闲显存，装不下就流式加载；区别只在主机内存目标（4 GiB / 8 GiB / 尽量用满）。
-          MossInfer 2.0 起档位由调用方显式选择：reference 是 bf16 精确档；high 默认 8-bit 注意力（无 FP8 的 GPU 自动用 q8_fp16）；
-          turbo 只接受 INT4 DiT 单文件（需绑定 dit_file）。实际运行的档位以任务报告为准。
-        </p>
       </Card>
 
       <Card className="p-4">
@@ -699,6 +889,82 @@ export function EnginePage(): React.JSX.Element {
           })}
         </div>
       </Card>
+      </div>
+      ) : (
+      <div role="tabpanel" id="engine-panel-developer" aria-labelledby="engine-tab-developer" className="space-y-4">
+        <Card className="p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[14px] font-semibold">第三方 / 本地开发引擎</h2>
+              <p className="mt-1 max-w-[760px] text-caption leading-4 text-[var(--color-text-tertiary)]">
+                用于 SM75、定制编译或本地调试。选择包含 moss-server 的安装根目录或 bin 目录；接入前会验证 protocol 2，成功后会设为首页使用的 MossInfer 引擎。
+              </p>
+            </div>
+            <Pill tone={settings?.inferenceBackend === 'mossinfer' && engine?.available ? 'accent' : 'neutral'}>
+              {settings?.inferenceBackend === 'mossinfer' && engine?.available ? '当前激活' : '未激活'}
+            </Pill>
+          </div>
+          <div className="mt-3 rounded-lg border border-[var(--color-border-subtle)] bg-black/15 p-3">
+            <p className="text-caption font-medium">当前引擎路径</p>
+            <p className="mt-1 break-all font-mono text-caption text-[var(--color-text-secondary)]">
+              {engine?.path ?? engine?.error ?? '未配置本机引擎'}
+            </p>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button tone="secondary" onClick={() => void probeEngine()} disabled={busy || !engine?.available}>
+              {busy ? <Spinner className="size-4" /> : <SquareTerminal className="size-4" />} 测试 hello / GPU
+            </Button>
+            <Button tone="primary" onClick={() => void selectThirdPartyEngine()} disabled={busy}>
+              <FolderOpen className="size-4" /> 选择第三方引擎目录
+            </Button>
+          </div>
+          {probe ? (
+            <pre className="mt-3 max-h-64 overflow-auto rounded-lg bg-black/25 p-3 font-mono text-caption leading-4 text-[var(--color-text-secondary)]">{JSON.stringify(probe, null, 2)}</pre>
+          ) : null}
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[14px] font-semibold">真实生成链路测试</h2>
+              <p className="mt-1 max-w-[760px] text-caption leading-4 text-[var(--color-text-tertiary)]">
+                使用一组已就绪的本机模型，沿用 Studio 的后端提交、模型绑定、引擎 load、生成和输出保存链路，执行 256×256 / 4 步测试。会实际占用 GPU 并写入一张测试图片。
+              </p>
+            </div>
+            <Button tone="primary" onClick={() => void runEngineChainTest()} disabled={chainTesting || busy || !engine?.available}>
+              {chainTesting ? <Spinner className="size-4" /> : <Cpu className="size-4" />} 运行真实生成测试
+            </Button>
+          </div>
+          {chainTest ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`mt-3 rounded-lg border p-3 text-caption ${
+                chainTest.phase === 'failed'
+                  ? 'border-red-400/25 bg-red-400/[0.05] text-red-200'
+                  : chainTest.phase === 'succeeded'
+                    ? 'border-emerald-400/25 bg-emerald-400/[0.04] text-emerald-200'
+                    : 'border-[var(--color-border-subtle)] bg-white/[0.025] text-[var(--color-text-secondary)]'
+              }`}
+            >
+              <p>{chainTest.message}</p>
+              {chainTest.jobId ? <p className="mt-1 font-mono text-micro">任务：{chainTest.jobId}</p> : null}
+              {chainTest.outputPath ? <p className="mt-1 break-all font-mono text-micro">{chainTest.outputPath}</p> : null}
+              {chainTest.suggestReference ? (
+                <Button
+                  tone="secondary"
+                  className="mt-2"
+                  onClick={() => void retryChainTestWithReference()}
+                  disabled={chainTesting}
+                >
+                  切换到 Reference 并重试
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </Card>
+      </div>
+      )}
       <Modal
         open={fallbackOpen}
         onClose={() => setFallbackOpen(false)}

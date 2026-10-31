@@ -52,7 +52,28 @@ function findLocalEngineVersion(id: string): LocalEngineVersion {
 
 export async function selectLocalEngineVersion(id: string): Promise<LocalEngineInfo> {
   const version = findLocalEngineVersion(id)
-  const updated = updateSettings({ mossInferServerPath: version.path })
+  const updated = updateSettings({ inferenceBackend: 'mossinfer', mossInferServerPath: version.path })
+  emit(Events.settingsChanged, updated)
+  await shutdownMossInfer()
+  return localEngineInfo()
+}
+
+export async function selectLocalEngineDirectory(directory: string): Promise<LocalEngineInfo> {
+  const root = resolve(directory)
+  if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error('所选路径不是有效的引擎目录')
+
+  const serverName = process.platform === 'win32' ? 'moss-server.exe' : 'moss-server'
+  const serverPath = [join(root, 'bin', serverName), join(root, serverName)].find(existsSync)
+  if (!serverPath) {
+    throw new Error(`所选目录中未找到 ${serverName}；请选择解压后的引擎根目录或 bin 目录`)
+  }
+
+  const hello = await probeMossInfer(serverPath)
+  if (Number(hello['protocol_version']) !== 2) {
+    throw new Error(`引擎协议不兼容（protocol ${String(hello['protocol_version'] ?? 'unknown')}），需要 protocol 2`)
+  }
+
+  const updated = updateSettings({ inferenceBackend: 'mossinfer', mossInferServerPath: serverPath })
   emit(Events.settingsChanged, updated)
   await shutdownMossInfer()
   return localEngineInfo()

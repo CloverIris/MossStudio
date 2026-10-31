@@ -213,6 +213,7 @@ function finish(job: JobRecord, runningJob: RunningJob, code: number | null): vo
   for (const line of runningJob.out.flush()) appendLog(job, 'stdout', line, runningJob)
   for (const line of runningJob.err.flush()) appendLog(job, 'stderr', line, runningJob)
   running.delete(job.id)
+  scheduleEngineQueue()
 
   const exitCode = code ?? -1
   if (job.state === 'succeeded' || job.state === 'canceled') {
@@ -431,6 +432,8 @@ function handleLine(job: JobRecord, runningJob: RunningJob, stream: 'stdout' | '
 }
 
 export interface StartEngineJobInput {
+  projectId?: string
+  canvasId?: string
   modelBinding?: ModelBinding
   modelName?: string
   prompt: string
@@ -446,8 +449,98 @@ export interface StartEngineJobInput {
   remoteModelPath?: string
 }
 
+interface QueuedEngineJob {
+  input: StartEngineJobInput
+  job: JobRecord
+}
+
+const engineQueue: QueuedEngineJob[] = []
+let engineStartClaimed = false
+
+function hasActiveEngineJob(): boolean {
+  return [...running.keys()].some((id) => {
+    const job = jobs.get(id)
+    return job?.kind === 'inference' && job.engine === 'mossinfer' && (job.state === 'starting' || job.state === 'running')
+  })
+}
+
+function scheduleEngineQueue(): void {
+  setTimeout(() => { void pumpEngineQueue() }, 0)
+}
+
+async function pumpEngineQueue(): Promise<void> {
+  if (engineStartClaimed || hasActiveEngineJob() || engineQueue.length === 0) return
+  const next = engineQueue.shift()!
+  engineStartClaimed = true
+  try {
+    await startEngineJobNow(next.input, next.job)
+  } catch (error) {
+    update(next.job, {
+      state: 'failed',
+      error: { code: 'E_ENGINE', message: error instanceof Error ? error.message : String(error) },
+      endedAt: new Date().toISOString(),
+      exitCode: 1,
+    })
+    notifyCompleted(next.job)
+    scheduleEngineQueue()
+  } finally {
+    engineStartClaimed = false
+  }
+}
+
 /** Generate directly through MossInfer; no Instance, repo worktree or Python runtime. */
 export async function startEngineJob(input: StartEngineJobInput): Promise<JobRecord> {
+  await loadJobs()
+  if (!input.prompt.trim()) throw new Error('提示词不能为空')
+
+  if (engineStartClaimed || hasActiveEngineJob() || engineQueue.length > 0) {
+    const params: JobParams = {
+      prompt: input.prompt,
+      negativePrompt: input.negativePrompt ?? '',
+      width: input.width,
+      height: input.height,
+      steps: input.steps,
+      cfg: input.cfg,
+      seed: input.seed,
+      profile: input.profile ?? 'base',
+    }
+    const job: JobRecord = {
+      id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
+      instanceId: 'engine',
+      instanceName: input.modelName ?? 'MossInfer',
+      workspace: 'clover',
+      projectId: input.projectId,
+      canvasId: input.canvasId,
+      deviceId: input.deviceId,
+      hostId: input.hostId,
+      kind: 'inference',
+      mode: 'runner',
+      engine: 'mossinfer',
+      state: 'queued',
+      stage: 'idle',
+      params,
+      progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
+      startedAt: new Date().toISOString(),
+    }
+    job.logPath = logPath(job.id)
+    jobs.set(job.id, job)
+    logs.set(job.id, [])
+    seqs.set(job.id, 0)
+    update(job, {})
+    engineQueue.push({ input, job })
+    return snapshot(job)
+  }
+
+  engineStartClaimed = true
+  try {
+    return await startEngineJobNow(input)
+  } finally {
+    engineStartClaimed = false
+    if (engineQueue.length) scheduleEngineQueue()
+  }
+}
+
+async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobRecord): Promise<JobRecord> {
   await loadJobs()
   const settings = getSettings()
   if (!input.prompt.trim()) throw new Error('提示词不能为空')
@@ -487,11 +580,13 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
       seed: input.seed,
       profile: input.profile ?? 'base',
     }
-    const job: JobRecord = {
+    const job: JobRecord = queuedJob ?? {
       id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
       instanceId: 'engine',
       instanceName: input.modelName ?? host.name,
       workspace: 'clover',
+      projectId: input.projectId,
+      canvasId: input.canvasId,
       deviceId: input.deviceId,
       hostId: host.id,
       kind: 'inference',
@@ -503,6 +598,18 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
       progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
       startedAt: new Date().toISOString(),
     }
+    Object.assign(job, {
+      instanceName: input.modelName ?? host.name,
+      projectId: input.projectId,
+      canvasId: input.canvasId,
+      deviceId: input.deviceId,
+      hostId: host.id,
+      state: 'starting' as const,
+      params,
+      progress: { stage: 'idle' as const, current: 0, total: params.steps, percent: 0 },
+      error: undefined,
+      endedAt: undefined,
+    })
     job.logPath = logPath(job.id)
     jobs.set(job.id, job)
     logs.set(job.id, [])
@@ -549,11 +656,13 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
     seed: input.seed,
     profile: input.profile ?? 'base',
   }
-  const job: JobRecord = {
+  const job: JobRecord = queuedJob ?? {
     id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
     instanceId: 'engine',
     instanceName: input.modelName ?? 'MossInfer',
     workspace: 'clover',
+    projectId: input.projectId,
+    canvasId: input.canvasId,
     modelSnapshot,
     deviceId: input.deviceId,
     kind: 'inference',
@@ -565,6 +674,18 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
     progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
     startedAt: new Date().toISOString(),
   }
+  Object.assign(job, {
+    instanceName: input.modelName ?? 'MossInfer',
+    projectId: input.projectId,
+    canvasId: input.canvasId,
+    deviceId: input.deviceId,
+    modelSnapshot,
+    state: 'starting' as const,
+    params,
+    progress: { stage: 'idle' as const, current: 0, total: params.steps, percent: 0 },
+    error: undefined,
+    endedAt: undefined,
+  })
   job.logPath = logPath(job.id)
   jobs.set(job.id, job)
   logs.set(job.id, [])
@@ -762,6 +883,14 @@ export async function cancelJob(id: string): Promise<JobRecord | null> {
   const job = jobs.get(id)
   const runningJob = running.get(id)
   if (!job) return null
+  const queuedIndex = engineQueue.findIndex((entry) => entry.job.id === id)
+  if (queuedIndex >= 0) {
+    engineQueue.splice(queuedIndex, 1)
+    update(job, { state: 'canceled', endedAt: new Date().toISOString() })
+    notifyCompleted(job)
+    scheduleEngineQueue()
+    return snapshot(job)
+  }
   if (!runningJob) {
     if (job.state === 'running' || job.state === 'starting') {
       update(job, { state: 'canceled', endedAt: new Date().toISOString() })

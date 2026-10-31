@@ -126,6 +126,7 @@ export const Ipc = {
   engineVersions: 'engine:versions',
   engineVersionSelect: 'engine:version-select',
   engineVersionRemove: 'engine:version-remove',
+  engineSelectDirectory: 'engine:select-directory',
   engineProbe: 'engine:probe',
   engineRemoteStatus: 'engine:remote-status',
   enginePrepareRemoteModel: 'engine:prepare-remote-model',

@@ -1,6 +1,6 @@
 import type { BackendInfo } from '@shared/backend'
 import { Ipc } from '@shared/channels'
-import type { ProjectDocument, ProjectSummary } from '@shared/types'
+import type { ProjectCanvas, ProjectDocument, ProjectSummary } from '@shared/types'
 import { call } from './api'
 
 export interface StudioProjectInput {
@@ -21,6 +21,9 @@ export interface StudioProjectInput {
   backgroundPath?: string
   seriesId?: string
   page?: number
+  canvases?: ProjectCanvas[]
+  selectedCanvasId?: string
+  board?: ProjectDocument['board']
 }
 
 /**

@@ -640,7 +640,7 @@ export function ModelsPage(): React.JSX.Element {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            <Input value={localRoot} onChange={(event) => setLocalRoot(event.target.value)} placeholder={settings?.modelsRoot ?? '默认 ~/.mossstudio/models'} className="min-w-[240px] flex-1 font-mono text-caption" />
+            <Input value={localRoot} onChange={(event) => setLocalRoot(event.target.value)} placeholder={env?.device.modelsPath ?? '默认 <userData>/models'} className="min-w-[240px] flex-1 font-mono text-caption" />
             <Button tone="secondary" onClick={() => void pickLocalRoot()} disabled={localBusy}>选择目录</Button>
             <Button tone="primary" onClick={() => void saveLocalRoot()} disabled={localBusy}>保存路径</Button>
           </div>

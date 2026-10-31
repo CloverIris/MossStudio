@@ -608,6 +608,8 @@ export interface JobProgress {
 export interface JobRecord {
   modelSnapshot?: unknown
   engine?: 'runner' | 'mossinfer'
+  projectId?: string
+  canvasId?: string
   id: string
   instanceId: string
   instanceName: string
@@ -733,9 +735,13 @@ export interface ProjectLayer {
 }
 
 export interface ProjectDocument {
-  schemaVersion: 1
+  schemaVersion: 2
   id: string
   name: string
+  canvases: ProjectCanvas[]
+  selectedCanvasId?: string
+  board: { columns: 2 }
+  /** Compatibility snapshot for v1 clients and current Studio editor migration. */
   width: number
   height: number
   summary: { caption: string; meta: string[]; canvas: 'single' | 'multi_panel' | 'collage' }
@@ -753,6 +759,32 @@ export interface ProjectDocument {
   page?: number
   createdAt: string
   updatedAt: string
+}
+
+export interface ProjectCanvas {
+  id: string
+  kind: 'layout' | 'result'
+  title: string
+  row: number
+  column: number
+  width: number
+  height: number
+  summary: ProjectDocument['summary']
+  layers: ProjectLayer[]
+  prompt: string
+  negative: string
+  seed: number
+  steps: number
+  cfg: number
+  modelBundleId?: string
+  deviceId?: string
+  backgroundPath?: string
+  sourceCanvasId?: string
+  jobId?: string
+  jobState?: JobState
+  progress?: JobProgress
+  outputs?: NonNullable<JobRecord['outputs']>
+  error?: JobRecord['error']
 }
 
 export interface ProjectSummary {

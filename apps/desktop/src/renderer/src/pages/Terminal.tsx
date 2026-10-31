@@ -26,6 +26,22 @@ const stateColor = {
   canceled: 'bg-neutral-500',
 }
 
+const stageLabel: Record<string, string> = {
+  idle: '等待启动',
+  ready: '引擎就绪',
+  load: '加载模型',
+  text: '文本编码',
+  denoise: '去噪',
+  decode: '图像解码',
+  save: '保存结果',
+}
+
+function etaLabel(etaMs: number | undefined): string {
+  if (etaMs === undefined || !Number.isFinite(etaMs) || etaMs <= 0) return ''
+  const seconds = Math.ceil(etaMs / 1000)
+  return seconds < 60 ? ` · 约 ${seconds} 秒` : ` · 约 ${Math.ceil(seconds / 60)} 分钟`
+}
+
 export function TerminalPage(): React.JSX.Element {
   const jobs = useApp((state) => state.jobs)
   const activeJobId = useApp((state) => state.activeJobId)
@@ -322,6 +338,43 @@ export function TerminalPage(): React.JSX.Element {
             </button>
           ) : null}
         </header>
+        {!activeSessionId && active && (active.state === 'running' || active.state === 'starting' || active.state === 'queued') ? (
+          <div className="shrink-0 border-b border-[var(--color-border-subtle)] px-3 py-2">
+            <div className="mb-1 flex items-center justify-between gap-3 text-caption">
+              <span className="truncate text-[var(--color-text-secondary)]">
+                {active.state === 'queued'
+                  ? `排队中${active.progress.message ? ` · ${active.progress.message}` : ''}`
+                  : stageLabel[active.progress.stage] ?? '处理中'}
+                {active.progress.stage === 'denoise' && active.progress.total > 0
+                  ? ` · ${active.progress.current}/${active.progress.total} 步`
+                  : ''}
+                {active.state === 'running' ? etaLabel(active.progress.etaMs) : ''}
+              </span>
+              {active.progress.stage === 'denoise' && active.progress.total > 0 ? (
+                <span className="shrink-0 font-mono text-micro text-[var(--color-text-tertiary)]">
+                  {Math.round(active.progress.percent)}%
+                </span>
+              ) : null}
+            </div>
+            <div
+              role="progressbar"
+              aria-label={stageLabel[active.progress.stage] ?? '推理进度'}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={active.progress.stage === 'denoise' && active.progress.total > 0 ? active.progress.percent : undefined}
+              className="h-1 overflow-hidden rounded-full bg-white/10"
+            >
+              <div
+                className={`h-full rounded-full bg-accent-400 transition-[width] duration-300 ${
+                  active.progress.stage === 'denoise' && active.progress.total > 0 ? '' : 'w-1/3 animate-pulse'
+                }`}
+                style={active.progress.stage === 'denoise' && active.progress.total > 0
+                  ? { width: `${Math.min(100, Math.max(0, active.progress.percent))}%` }
+                  : undefined}
+              />
+            </div>
+          </div>
+        ) : null}
         <div ref={hostRef} className="min-h-0 flex-1 p-2" />
       </section>
     </div>

@@ -3,6 +3,56 @@ import { releaseInstallerSchema } from './release'
 
 const pathLike = z.string().trim().min(1, '目录路径不能为空').max(4096)
 const urlLike = z.string().min(8).max(2048).regex(/^https?:\/\//)
+const projectCanvasSchema = z.object({
+  id: z.string().min(1).max(120),
+  kind: z.enum(['layout', 'result']),
+  title: z.string().max(200),
+  row: z.number().int().min(0).max(10000),
+  column: z.number().int().min(0).max(1),
+  width: z.number().int().min(64).max(4096),
+  height: z.number().int().min(64).max(4096),
+  summary: z.object({
+    caption: z.string().max(4000),
+    meta: z.array(z.string().max(200)).max(100),
+    canvas: z.enum(['single', 'multi_panel', 'collage']),
+  }),
+  layers: z.array(z.object({
+    id: z.string().min(1).max(120),
+    kind: z.enum(['object', 'character', 'text']),
+    caption: z.string().max(4000),
+    text: z.string().max(4000).optional(),
+    bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+    visible: z.boolean(),
+    locked: z.boolean(),
+    opacity: z.number().min(0).max(1),
+  })).max(200),
+  prompt: z.string().max(20000),
+  negative: z.string().max(8000),
+  seed: z.number().int(),
+  steps: z.number().int().min(1).max(1000),
+  cfg: z.number().min(0).max(20),
+  modelBundleId: z.string().max(160).optional(),
+  deviceId: z.string().max(160).optional(),
+  backgroundPath: z.string().max(4096).optional(),
+  sourceCanvasId: z.string().max(120).optional(),
+  jobId: z.string().max(160).optional(),
+  jobState: z.enum(['queued', 'starting', 'running', 'succeeded', 'failed', 'canceled']).optional(),
+  progress: z.object({
+    stage: z.enum(['load', 'text', 'denoise', 'decode', 'save', 'ready', 'idle']),
+    current: z.number(),
+    total: z.number(),
+    percent: z.number(),
+    etaMs: z.number().optional(),
+    message: z.string().optional(),
+  }).optional(),
+  outputs: z.array(z.object({
+    path: z.string().max(4096),
+    width: z.number(),
+    height: z.number(),
+    seed: z.number(),
+  })).max(64).optional(),
+  error: z.object({ code: z.string().max(120), message: z.string().max(4000) }).optional(),
+})
 
 
 
@@ -66,6 +116,7 @@ export const schemas = {
   }),
 
   engineVersionId: z.object({ id: z.string().min(1).max(240) }),
+  engineSelectDirectory: z.object({ path: pathLike }),
 
   onboardingStatus: z.object({ hostId: z.string().min(1).max(80).optional() }).optional(),
 
@@ -345,6 +396,9 @@ export const schemas = {
     backgroundPath: z.string().max(4096).optional(),
     seriesId: z.string().max(120).optional(),
     page: z.number().int().min(1).max(9999).optional(),
+    canvases: z.array(projectCanvasSchema).max(1000).optional(),
+    selectedCanvasId: z.string().max(120).optional(),
+    board: z.object({ columns: z.literal(2) }).optional(),
   }),
 
   caseSave: z.object({

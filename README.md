@@ -94,6 +94,9 @@ MossInfer 冒烟（fake sidecar，无需真实 GPU）：
 ```bash
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-remote-job
+env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-queue
+env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=project-canvases
+env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=studio-canvas-ui
 ```
 
 ## 目录

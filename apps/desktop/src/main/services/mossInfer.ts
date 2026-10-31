@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { extname, join } from 'node:path'
 import type { JobParams, JobRecord, JobStage, Settings } from '@shared/types'
 import { paths } from '../lib/paths'
 import { LineSplitter } from './parsers'
@@ -21,10 +21,33 @@ export interface MossInferSink {
   done(exitCode: number): void
 }
 
+function spawnMossServer(
+  serverPath: string,
+  args: string[],
+  extraEnv?: Record<string, string>,
+): ChildProcessWithoutNullStreams {
+  const isJavaScript = ['.js', '.cjs', '.mjs'].includes(extname(serverPath).toLowerCase())
+  const command = isJavaScript ? process.execPath : serverPath
+  const commandArgs = isJavaScript ? [serverPath, ...args] : args
+  const env = {
+    ...process.env,
+    ...extraEnv,
+    ...(isJavaScript ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+  }
+  return spawn(command, commandArgs, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+    env,
+  })
+}
+
 interface MossInferHelloDevice {
   index: number
   name: string
   supported: boolean
+  compute_major?: number
+  compute_minor?: number
+  unsupported_reason?: string
   free_memory_bytes?: number
 }
 
@@ -112,6 +135,14 @@ function mapErr(code: string): string {
   if (code === 'invalid_argument' || code === 'invalid_params') return 'E_INPUT'
   if (code === 'not_supported') return 'E_NOT_SUPPORTED'
   return `E_${code.toUpperCase()}`
+}
+
+function engineFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/cudaErrorNoKernelImageForDevice|no kernel image is available/i.test(message)) {
+    return `E_DEVICE: 当前引擎构建没有适配此 GPU 的 CUDA kernel image。RTX 20 系列需要在引擎页选择本地 SM75/第三方引擎目录；更换性能档不能绕过硬件兼容限制。原始错误：${message}`
+  }
+  return message
 }
 
 const PHASE_TO_STAGE: Record<string, JobStage> = {
@@ -359,10 +390,7 @@ function spawnServer(settings: Settings): void {
   const serverPath = resolveServerPath(settings)
   if (!serverPath) throw new Error('未找到 moss-server 可执行文件')
   stderrRing.length = 0
-  const proc = spawn(serverPath, ['--parent-pid', String(process.pid)], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
-  })
+  const proc = spawnMossServer(serverPath, ['--parent-pid', String(process.pid)])
   child = proc
   proc.stdout.setEncoding('utf8')
   proc.stderr.setEncoding('utf8')
@@ -399,14 +427,28 @@ async function ensureEngine(config: EngineConfig, settings: Settings): Promise<n
     }
     hello = result
   }
-  let device = config.device
-  if (device < 0) {
-    const first = hello?.probe?.devices?.find((item) => item.supported)
-    if (!first) {
-      throw new Error('E_DEVICE: MossInfer 需要计算能力 ≥ 8.0 的 NVIDIA GPU（CUDA）')
-    }
-    device = first.index
+  const devices = hello?.probe?.devices ?? []
+  const selected = config.device < 0
+    ? devices.find((item) => item.supported)
+    : devices.find((item) => item.index === config.device)
+  if (!selected) {
+    throw new Error(
+      config.device < 0
+        ? 'E_DEVICE: 未检测到当前 MossInfer 构建支持的 NVIDIA GPU；RTX 20 系列需要选择本地 SM75/第三方引擎目录。'
+        : `E_DEVICE: MossInfer 未检测到 CUDA 设备 ${config.device}`,
+    )
   }
+  if (!selected.supported) {
+    const compute = selected.compute_major === undefined
+      ? ''
+      : `（计算能力 ${selected.compute_major}.${selected.compute_minor ?? 0}）`
+    const reason = selected.unsupported_reason?.trim()
+    throw new Error(
+      `E_DEVICE: ${selected.name}${compute} 不受当前 MossInfer 构建支持。` +
+        `${reason ? `${reason}；` : ''}请安装包含该 GPU 架构的引擎构建；更换性能档或 CUDA 库不能解决此兼容问题。`,
+    )
+  }
+  const device = selected.index
   const key = JSON.stringify({ model: config.model, device, mode: config.mode, tier: config.tier })
   if (key !== loadedKey) {
     await request('load', {
@@ -456,20 +498,22 @@ async function pump(): Promise<void> {
       await requestWithId(genId, 'generate', generateParams)
     } catch (error) {
       active = null
+      const message = engineFailureMessage(error)
       sink.event({
         type: 'error',
-        code: 'E_ENGINE',
-        message: error instanceof Error ? error.message : String(error),
+        code: message.startsWith('E_DEVICE:') ? 'E_DEVICE' : 'E_ENGINE',
+        message,
         fatal: true,
       })
       sink.done(1)
       void pump()
     }
   } catch (error) {
+    const message = engineFailureMessage(error)
     sink.event({
       type: 'error',
-      code: 'E_ENGINE',
-      message: error instanceof Error ? error.message : String(error),
+      code: message.startsWith('E_DEVICE:') ? 'E_DEVICE' : 'E_ENGINE',
+      message,
       fatal: true,
     })
     sink.done(1)
@@ -559,11 +603,7 @@ export async function probeMossInfer(
   serverPath: string,
   extraEnv?: Record<string, string>,
 ): Promise<Record<string, unknown>> {
-  const proc = spawn(serverPath, [], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
-    env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
-  })
+  const proc = spawnMossServer(serverPath, [], extraEnv)
   try {
     return await new Promise((resolvePromise, rejectPromise) => {
       const splitter = new LineSplitter()

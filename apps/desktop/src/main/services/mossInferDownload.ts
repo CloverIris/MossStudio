@@ -15,10 +15,11 @@ import { run } from '../lib/run'
 import { probeMossInfer, shutdownMossInfer } from './mossInfer'
 import { installCudaWheels } from './cudaWheels'
 import { getSettings, updateSettings } from './settings'
+import { applyGitMirror, getLastNetwork } from './network'
 
 /**
  * Downloads the MossInfer engine package from the upstream repo xycld/owoinfer:
- * - stable: the latest GitHub Release assets (anonymous, sha256-verified via SHA256SUMS);
+ * - stable: the latest GitHub Release assets (sha256-verified via SHA256SUMS);
  * - dev: the latest successful `ci` run's Actions artifact (requires a token: GitHub
  *   answers 401 on artifact zips even for public repos).
  * The extracted tree keeps its upstream layout (bin/moss-server + lib/), and the
@@ -67,8 +68,53 @@ export function resolveGithubToken(settings: Settings): string | null {
   return null
 }
 
+function githubMirror(settings: Settings): string | null {
+  return settings.gitMirror?.trim() || getLastNetwork()?.selected.git || null
+}
+
+function isGithubFileUrl(url: string): boolean {
+  const hostname = new URL(url).hostname
+  return hostname === 'github.com' || hostname === 'raw.githubusercontent.com'
+}
+
+function hostLabel(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return '镜像 URL'
+  }
+}
+
+async function fetchGithubFile(
+  url: string,
+  settings: Settings,
+  init: RequestInit,
+  description: string,
+): Promise<Response> {
+  const mirrorUrl = isGithubFileUrl(url) ? applyGitMirror(url, githubMirror(settings)) : url
+  const urls = mirrorUrl === url ? [url] : [mirrorUrl, url]
+  const failures: string[] = []
+  for (const candidate of urls) {
+    let response: Response
+    try {
+      response = await fetch(candidate, init)
+    } catch (error) {
+      if (controller?.signal.aborted) throw new Error('已取消下载')
+      const reason = error instanceof Error ? error.message : String(error)
+      failures.push(`${hostLabel(candidate)}: ${reason}`)
+      continue
+    }
+    if (response.ok) return response
+    failures.push(`${hostLabel(candidate)}: HTTP ${response.status}`)
+    await response.body?.cancel()
+  }
+  throw new Error(`${description}请求失败：${failures.join('；')}`)
+}
+
 async function ghJson(path: string, token: string | null): Promise<unknown> {
-  const response = await fetch(`${API}${path}`, {
+  let response: Response
+  try {
+    response = await fetch(`${API}${path}`, {
     headers: {
       accept: 'application/vnd.github+json',
       'user-agent': `MossStudio-Launcher/${app.getVersion()}`,
@@ -77,8 +123,22 @@ async function ghJson(path: string, token: string | null): Promise<unknown> {
     signal: controller
       ? AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
       : AbortSignal.timeout(20_000),
-  })
-  if (!response.ok) throw new Error(`GitHub API ${path} 返回 HTTP ${response.status}`)
+    })
+  } catch (error) {
+    if (controller?.signal.aborted) throw new Error('已取消下载')
+    throw new Error(`GitHub API 网络请求失败（${path}）：${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (!response.ok) {
+    if (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') {
+      throw new Error(
+        `GitHub API 请求限流（403）：${path}。请在引擎页保存 GitHub Token 后重试，或等待限流重置。`,
+      )
+    }
+    if (response.status === 403 && !token) {
+      throw new Error(`GitHub API ${path} 返回 HTTP 403；可能是匿名请求限流，请在引擎页保存 GitHub Token 后重试。`)
+    }
+    throw new Error(`GitHub API ${path} 返回 HTTP ${response.status}`)
+  }
   return response.json()
 }
 
@@ -107,7 +167,8 @@ function archiveExt(): 'tar.gz' | 'zip' {
 type Variant = 'system-cuda' | 'bundled'
 
 function archiveBase(version: string, flavour: 'cu12' | 'cu13', variant: Variant): string {
-  return `mossinfer-${version}-${osToken()}-${flavour}-x86_64${variant === 'system-cuda' ? '-system-cuda' : ''}`
+  const suffix = variant === 'system-cuda' ? '-system-cuda' : ''
+  return `mossinfer-${version}-${osToken()}-${flavour}-x86_64${suffix}`
 }
 
 async function downloadTo(
@@ -115,10 +176,11 @@ async function downloadTo(
   target: string,
   token: string | null,
   totalHint: number,
+  settings: Settings,
 ): Promise<string> {
   const part = `${target}.part`
   if (existsSync(part)) rmSync(part, { force: true })
-  const response = await fetch(url, {
+  const response = await fetchGithubFile(url, settings, {
     headers: {
       'user-agent': `MossStudio-Launcher/${app.getVersion()}`,
       // undici strips this header on the cross-origin redirect to the artifact blob store.
@@ -126,7 +188,7 @@ async function downloadTo(
     },
     signal: controller?.signal,
     redirect: 'follow',
-  })
+  }, 'GitHub Release/Actions 资产下载')
   if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}（${url.slice(0, 120)}）`)
   if (!response.body) throw new Error('下载响应没有 body')
   const length = Number(response.headers.get('content-length') ?? 0)
@@ -324,7 +386,8 @@ interface GhRelease {
 class MissingReleaseAssetError extends Error {}
 
 export async function listMossInferReleases(): Promise<MossInferRelease[]> {
-  const releases = (await ghJson('/releases?per_page=20', null)) as GhRelease[]
+  const settings = getSettings()
+  const releases = (await ghJson('/releases?per_page=20', resolveGithubToken(settings))) as GhRelease[]
   return releases
     .filter((release) => !release.draft && !release.prerelease)
     .map((release) => ({
@@ -336,8 +399,16 @@ export async function listMossInferReleases(): Promise<MossInferRelease[]> {
     }))
 }
 
-async function queryStable(flavour: 'cu12' | 'cu13', variant: Variant, releaseTag?: string): Promise<Source> {
-  const release = (await ghJson(releaseTag ? `/releases/tags/${encodeURIComponent(releaseTag)}` : '/releases/latest', null)) as {
+async function queryStable(
+  flavour: 'cu12' | 'cu13',
+  variant: Variant,
+  settings: Settings,
+  releaseTag?: string,
+): Promise<Source> {
+  const release = (await ghJson(
+    releaseTag ? `/releases/tags/${encodeURIComponent(releaseTag)}` : '/releases/latest',
+    resolveGithubToken(settings),
+  )) as {
     tag_name: string
     assets: GhAsset[]
   }
@@ -365,8 +436,16 @@ async function queryStable(flavour: 'cu12' | 'cu13', variant: Variant, releaseTa
   const sumsAsset = release.assets.find((item) => item.name === 'SHA256SUMS')
   let expected: string | null = null
   if (sumsAsset) {
-    const response = await fetch(sumsAsset.browser_download_url, { signal: AbortSignal.timeout(20_000) })
-    if (response.ok) expected = sha256Of(await response.text(), name)
+    const signal = controller
+      ? AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
+      : AbortSignal.timeout(20_000)
+    const response = await fetchGithubFile(
+      sumsAsset.browser_download_url,
+      settings,
+      { signal },
+      'Release SHA256SUMS 校验文件',
+    )
+    expected = sha256Of(await response.text(), name)
   }
   return {
     url: asset.browser_download_url,
@@ -422,7 +501,7 @@ async function downloadAndInstall(
   let source: Source
   if (channel === 'stable') {
     try {
-      source = await queryStable(flavour, variant, releaseTag)
+      source = await queryStable(flavour, variant, settings, releaseTag)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const noLatestRelease = !releaseTag && /\/releases\/latest 返回 HTTP 404|Not Found/i.test(message)
@@ -440,7 +519,7 @@ async function downloadAndInstall(
   const workDir = join(paths.mossinfer(), 'downloads')
   mkdirSync(workDir, { recursive: true })
   const downloadPath = join(workDir, `${source.stamp}.download`)
-  const digest = await downloadTo(source.url, downloadPath, source.token, source.totalHint)
+  const digest = await downloadTo(source.url, downloadPath, source.token, source.totalHint, settings)
 
   publish({ phase: 'verifying', bytes: source.totalHint, percent: 100 })
   let archivePath = downloadPath

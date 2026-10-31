@@ -1,4 +1,5 @@
 import { app, clipboard, dialog, ipcMain, shell } from 'electron'
+import { spawn } from 'node:child_process'
 import { mkdirSync, statSync } from 'node:fs'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
@@ -33,6 +34,7 @@ import {
   probeLocalEngine,
   remoteEngineInfo,
   removeLocalEngineVersion,
+  selectLocalEngineDirectory,
   selectLocalEngineVersion,
 } from './services/engines'
 import { detectSystemCuda } from './services/systemCuda'
@@ -349,6 +351,8 @@ export function registerIpc(): void {
 
   handle(Ipc.engineVersionRemove, schemas.engineVersionId, ({ id }) => removeLocalEngineVersion(id))
 
+  handle(Ipc.engineSelectDirectory, schemas.engineSelectDirectory, ({ path }) => selectLocalEngineDirectory(path))
+
   handle(Ipc.engineProbe, null, () => probeLocalEngine())
 
   handle(Ipc.engineRemoteStatus, schemas.engineRemoteStatus, ({ hostId }) => remoteEngineInfo(hostId))
@@ -525,7 +529,14 @@ export function registerIpc(): void {
     mkdirSync(path, { recursive: true })
     if (!statSync(path).isDirectory()) throw new Error('目标路径不是目录')
     const error = await shell.openPath(path)
-    if (error) throw new Error(`无法打开目录：${error}`)
+    // ShellExecuteW can fail here even for a directory the app can read (it then
+    // shows its own "Windows cannot access..." dialog). Fall back to launching
+    // Explorer directly so the user still gets the folder open.
+    if (error) {
+      const child = spawn('explorer.exe', [path], { detached: true, stdio: 'ignore' })
+      child.on('error', () => undefined)
+      child.unref()
+    }
     return true
   })
 

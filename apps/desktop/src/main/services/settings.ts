@@ -49,6 +49,7 @@ export function getSettings(): Settings {
     const parsed = JSON.parse(raw) as Partial<Settings>
     cache = { ...DEFAULT_SETTINGS, ...parsed }
     if (!Array.isArray(cache.dismissedAnnouncements)) cache.dismissedAnnouncements = []
+    if ((cache.mossInferVariant as string) === 'sm75') cache.mossInferVariant = 'system-cuda'
     // MossInfer 2.0 (server protocol 2) removed the auto tier: load requires
     // reference | high | turbo. Map legacy configs to the recommended default.
     if ((cache.mossInferTier as string) === 'auto') cache.mossInferTier = 'high'

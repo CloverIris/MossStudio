@@ -2,10 +2,12 @@ import { app, dialog, nativeTheme, protocol } from 'electron'
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { runModelManagementTests } from './modelManagement.test'
 import { runModelManagementUi } from './modelManagementUi.test'
+import { runProjectCanvasTests } from './projects.test'
+import { runStudioCanvasUiTests } from './studioCanvasUi.test'
 import { ensureDirs, paths } from './lib/paths'
 import { getBackendInfo, getWebAccessInfo, startBackend, stopBackend } from './services/backend'
 import { listProviders, removeProvider, saveProvider } from './services/ai'
@@ -20,7 +22,7 @@ import { ensureMirror, listBranches, listCommits } from './services/git'
 import { createInstance, deleteInstance, listInstances, updateInstance } from './services/instances'
 import { installDeps, readRuntime, resolveTorchIndex, writeRemoteRuntime } from './services/runtimes'
 import { cancelJob, getJob, getJobLogs, onJobCompleted, purgeLegacySimulationJobs, startEngineJob, startTrainingJob } from './services/supervisor'
-import { shutdownMossInfer } from './services/mossInfer'
+import { probeMossInfer, resolveServerPath, shutdownMossInfer } from './services/mossInfer'
 import { closeAllSshTerminals } from './services/sshSessions'
 import { createTrainerVersion, listTrainerVersions, startTrainerRun } from './services/trainers'
 import { listLaunchRows, removeLaunchRow, upsertLaunchRow } from './services/launchQueue'
@@ -62,8 +64,11 @@ if (isDev) {
   // Keep dev data inside the checkout: easier to inspect, reset and sandbox-friendly.
   app.setPath('userData', join(app.getAppPath(), '..', '..', '.dev-data'))
 }
-if (scenario?.startsWith('model-management') || scenario?.startsWith('mossinfer'))
-  app.setPath('userData', join(tmpdir(), `clover-${scenario.replace(/[^a-z-]/g, '')}-${process.pid}`))
+if (scenario) {
+  const scenarioRoot = resolve(app.getAppPath(), '..', '..', '.dev-data', `scenario-${scenario}-${process.pid}`)
+  mkdirSync(scenarioRoot, { recursive: true })
+  app.setPath('userData', scenarioRoot)
+}
 app.setName('MossStudio')
 if (process.platform === 'win32') app.setAppUserModelId('com.mossstudio.app')
 nativeTheme.themeSource = 'dark'
@@ -136,7 +141,16 @@ app.whenReady().then(async () => {
     catch (error) { console.error(error); app.exit(1) }
     return
   }
+  if (scenario === 'project-canvases') {
+    try { runProjectCanvasTests(); console.log(JSON.stringify({ scenario, ok: true })); app.exit(0) }
+    catch (error) { console.error(error); app.exit(1) }
+    return
+  }
   await startBackend()
+  if (scenario === 'studio-canvas-ui') {
+    await runStudioCanvasUiTests()
+    return
+  }
   if (scenario === 'model-management-ui') {
     try { await runModelManagementUi(); app.exit(0) }
     catch (error) { console.error(error); app.exit(1) }
@@ -897,6 +911,68 @@ app.whenReady().then(async () => {
     return
   }
 
+  if (scenario === 'mossinfer-queue') {
+    try {
+      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'fake-moss-server.mjs')
+      chmodSync(serverPath, 0o755)
+      setupMossInferScenario(serverPath, null)
+      const input = (canvasId: string, prompt: string) => ({
+        projectId: 'project-queue-test',
+        canvasId,
+        prompt,
+        width: 256,
+        height: 256,
+        steps: 4,
+        cfg: 1,
+        seed: 9,
+        profile: 'dmd8' as const,
+      })
+      const first = await startEngineJob(input('layout-first', 'queue first'))
+      const second = await startEngineJob(input('layout-second', 'queue second'))
+      const third = await startEngineJob(input('layout-third', 'queue third'))
+      const fourth = await startEngineJob(input('layout-fourth', 'queue fourth'))
+      if (first.canvasId !== 'layout-first' || second.state !== 'queued' || third.state !== 'queued' || fourth.state !== 'queued')
+        throw new Error(`Engine jobs were not associated and queued in FIFO order: ${JSON.stringify([first, second, third, fourth].map((job) => ({ id: job.id, state: job.state, canvasId: job.canvasId })))}`)
+      const canceled = await cancelJob(fourth.id)
+      if (canceled?.state !== 'canceled') throw new Error('Queued job was not canceled')
+      const firstDone = await waitForJob(first.id, 30_000)
+      const secondStartedDeadline = Date.now() + 10_000
+      let secondCurrent = await getJob(second.id)
+      while (Date.now() < secondStartedDeadline && secondCurrent?.state === 'queued') {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        secondCurrent = await getJob(second.id)
+      }
+      const thirdBeforeSecondCompletion = await getJob(third.id)
+      if (!secondCurrent || secondCurrent.state === 'failed' || thirdBeforeSecondCompletion?.state !== 'queued')
+        throw new Error('Engine queue did not start jobs in FIFO order')
+      const secondDone = await waitForJob(second.id, 30_000)
+      const thirdDone = await waitForJob(third.id, 30_000)
+      const ok = firstDone.state === 'succeeded'
+        && secondDone.state === 'succeeded'
+        && thirdDone.state === 'succeeded'
+        && thirdDone.canvasId === 'layout-third'
+        && thirdDone.projectId === 'project-queue-test'
+        && (firstDone.outputs?.length ?? 0) > 0
+        && (thirdDone.outputs?.length ?? 0) > 0
+      writeFileSync(join(app.getPath('userData'), 'mossinfer-queue-result.json'), JSON.stringify({
+        scenario,
+        ok,
+        states: [firstDone.state, secondDone.state, thirdDone.state, canceled.state],
+        associations: [firstDone.canvasId, secondDone.canvasId, thirdDone.canvasId, canceled.canvasId],
+      }, null, 2))
+      setTimeout(() => app.exit(ok ? 0 : 1), 50)
+    } catch (error) {
+      console.error(error)
+      writeFileSync(join(app.getPath('userData'), 'mossinfer-queue-result.json'), JSON.stringify({
+        scenario,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      }, null, 2))
+      setTimeout(() => app.exit(1), 50)
+    }
+    return
+  }
+
   if (scenario === 'mossinfer-job' || scenario === 'mossinfer-cancel') {
     try {
       const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'fake-moss-server.mjs')
@@ -1145,6 +1221,10 @@ app.whenReady().then(async () => {
         return
       }
       updateSettings({ inferenceBackend: 'mossinfer', mossInferServerPath: serverPath })
+      const activeServerPath = resolveServerPath(getSettings())
+      const activeEngineMatches = Boolean(activeServerPath && resolve(activeServerPath) === resolve(serverPath))
+      const hello = await probeMossInfer(serverPath)
+      const protocolReady = Number(hello['protocol_version']) === 2
       const [instance] = await listInstances()
       if (!instance) throw new Error('.dev-data 里没有实例，先跑 --scenario=create')
       const catalog = await getCatalog(getSettings(), true)
@@ -1165,18 +1245,41 @@ app.whenReady().then(async () => {
       })
       const done = await waitForJob(job.id, 600_000)
       const output = done.outputs?.[0]
+      const outputIsPng = Boolean(
+        output &&
+          existsSync(output.path) &&
+          readFileSync(output.path).subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+      )
+      const sidecarPath = output?.path.replace(/\.png$/i, '.json')
+      const sidecar = sidecarPath && existsSync(sidecarPath)
+        ? (JSON.parse(readFileSync(sidecarPath, 'utf8')) as Record<string, unknown>)
+        : null
       const ok = done.state === 'succeeded' && !!output && existsSync(output.path) &&
+        done.engine === 'mossinfer' && activeEngineMatches && protocolReady && outputIsPng &&
+        sidecar?.['seed'] === 7 && sidecar?.['width'] === 256 && sidecar?.['height'] === 256 &&
+        sidecar?.['tier'] === getSettings().mossInferTier && done.modelSnapshot != null &&
         components.every((c) => c.state === 'ready')
       console.log(
         JSON.stringify(
           {
             scenario: 'devdata-mossinfer-real',
             instance: instance.id,
+            activeServerPath,
+            activeEngineMatches,
+            hello: {
+              protocol_version: hello['protocol_version'],
+              version: hello['version'],
+              probe: hello['probe'],
+            },
+            configuredTier: getSettings().mossInferTier,
+            configuredMemoryMode: getSettings().mossInferMemoryMode,
             components,
             state: done.state,
             engine: done.engine,
             bundleUsed: done.modelSnapshot != null,
             outputs: done.outputs,
+            outputIsPng,
+            sidecar,
             error: done.error,
             ok,
           },
@@ -1823,6 +1926,9 @@ exit 0
   app.on('activate', () => {
     openWindow('studio')
   })
+}).catch((error: unknown) => {
+  console.error('[startup]', error)
+  app.exit(1)
 })
 
 app.on('window-all-closed', () => {

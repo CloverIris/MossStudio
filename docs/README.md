@@ -28,6 +28,7 @@
 | [status.md](status.md) | 完成度与验证证据 |
 | [architecture.md](architecture.md) | 当前进程/窗口/服务/引擎架构 |
 | [product-design.md](product-design.md) | 三列工作台、底部页面、交互边界 |
+| [design/multi-canvas-studio.md](design/multi-canvas-studio.md) | Project 多 Canvas Board、串行生成与结果呈现设计（Proposal） |
 | [mossinfer-migration.md](mossinfer-migration.md) | sidecar、远端、HF、CUDA wheel、旧链路清理 |
 | [layout-schema.md](layout-schema.md) | 画布坐标、布局编译契约 |
 | [backend-and-project.md](backend-and-project.md) | HTTP/WS、Project、输出 |

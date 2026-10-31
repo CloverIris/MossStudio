@@ -8,7 +8,9 @@ import {
   Plus,
   RotateCcw,
   Copy,
+  CircleStop,
   Eraser,
+  Play,
   Sparkles,
   ScanSearch,
   SquareDashedMousePointer,
@@ -19,9 +21,10 @@ import {
   EyeOff,
   Lock,
   Unlock,
+  Trash2,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { GalleryItem, JobRecord, ManagedHost, ProjectDocument, ProjectSummary } from '@shared/types'
+import type { GalleryItem, JobRecord, ManagedHost, ProjectCanvas, ProjectDocument, ProjectSummary } from '@shared/types'
 import type { BackendInfo } from '@shared/backend'
 import { Events, Ipc } from '@shared/channels'
 import { call, onEvent } from '../lib/api'
@@ -101,6 +104,36 @@ function MiniGallery(): React.JSX.Element {
   )
 }
 
+function ResultPreview(props: {
+  path: string
+  title: string
+  onOpen: () => void
+}): React.JSX.Element {
+  const [unavailable, setUnavailable] = useState(false)
+  return (
+    <button
+      type="button"
+      title={unavailable ? '图片文件无法读取' : '点击打开生成图片'}
+      onClick={(event) => {
+        event.stopPropagation()
+        if (!unavailable) props.onOpen()
+      }}
+      className="flex min-h-0 items-center justify-center overflow-hidden"
+    >
+      {unavailable ? (
+        <span className="px-2 text-center text-micro text-red-300">图片文件无法读取<br /><span className="break-all text-[var(--color-text-tertiary)]">{props.path}</span></span>
+      ) : (
+        <img
+          src={cloverUrl(props.path)}
+          alt={props.title}
+          className="max-h-full max-w-full object-contain"
+          onError={() => setUnavailable(true)}
+        />
+      )}
+    </button>
+  )
+}
+
 interface DraftTabSnapshot {
   name: string
   draft: LayoutDraft
@@ -114,6 +147,8 @@ interface DraftTabSnapshot {
   seriesId: string
   page: number
   background: GalleryItem | null
+  canvases: ProjectCanvas[]
+  selectedCanvasId: string | null
 }
 
 type DragState =
@@ -153,6 +188,14 @@ function projectSnapshot(input: {
   page: number
 }): string {
   return JSON.stringify(input)
+}
+
+function isJobRecord(value: unknown): value is JobRecord {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return typeof record['id'] === 'string'
+    && typeof record['state'] === 'string'
+    && ['queued', 'starting', 'running', 'succeeded', 'failed', 'canceled'].includes(record['state'])
 }
 
 export function StudioPage(): React.JSX.Element {
@@ -253,6 +296,8 @@ export function StudioPage(): React.JSX.Element {
   const modelBundle = catalog?.bundles.find((bundle) => bundle.id === modelBundleId) ?? null
   const modelBinding = modelBundle ? { bundleId: modelBundle.id, ...modelBundle.components } : undefined
   const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [canvases, setCanvases] = useState<ProjectCanvas[]>([])
+  const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [projectName, setProjectName] = useState('未命名 Project')
   const [seriesId, setSeriesId] = useState('')
@@ -261,9 +306,67 @@ export function StudioPage(): React.JSX.Element {
   const [backend, setBackend] = useState<BackendInfo | null>(null)
   const lastSaved = useRef('')
   const skipAutosave = useRef(false)
+  const jobs = useApp((state) => state.jobs)
+  const cancelJob = useApp((state) => state.cancelJob)
+  const selectedCanvas = canvases.find((canvas) => canvas.id === selectedCanvasId) ?? null
+  const currentCanvasSnapshot = useMemo<ProjectCanvas | null>(() => {
+    if (!selectedCanvas || selectedCanvas.kind !== 'layout') return selectedCanvas
+    return {
+      ...selectedCanvas,
+      width: draft.width,
+      height: draft.height,
+      summary: draft.summary,
+      layers: draft.items.map((item) => ({
+        id: item.id,
+        kind: item.label,
+        caption: item.caption,
+        text: item.text,
+        bbox: item.bbox,
+        visible: item.visible !== false,
+        locked: item.locked === true,
+        opacity: item.opacity ?? 1,
+      })),
+      prompt,
+      negative,
+      seed,
+      steps,
+      cfg,
+      modelBundleId: modelBundleId || undefined,
+      deviceId: deviceId || undefined,
+      backgroundPath: background?.path,
+    }
+  }, [selectedCanvas, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, background?.path])
+  const persistedCanvases = useMemo(
+    () => currentCanvasSnapshot
+      ? canvases.map((canvas) => canvas.id === currentCanvasSnapshot.id ? currentCanvasSnapshot : canvas)
+      : canvases,
+    [canvases, currentCanvasSnapshot],
+  )
+  useEffect(() => {
+    if (!jobs.length) return
+    setCanvases((previous) => {
+      let changed = false
+      const next = previous.map((canvas) => {
+        if (!canvas.jobId) return canvas
+        const job = jobs.find((item) => item.id === canvas.jobId)
+        if (!job) return canvas
+        const outputs = job.outputs ?? canvas.outputs ?? []
+        const outputChanged = outputs.length !== (canvas.outputs?.length ?? 0)
+          || outputs.some((output, index) => output.path !== canvas.outputs?.[index]?.path)
+        if (canvas.jobState === job.state && !outputChanged && canvas.error?.message === job.error?.message) return canvas
+        changed = true
+        return { ...canvas, jobState: job.state, outputs, error: job.error }
+      })
+      return changed ? next : previous
+    })
+  }, [jobs])
   const snapshot = useMemo(
-    () => projectSnapshot({ name: projectName, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, backgroundPath: background?.path, seriesId, page }),
-    [projectName, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, background?.path, seriesId, page],
+    () => JSON.stringify({
+      project: projectSnapshot({ name: projectName, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, backgroundPath: background?.path, seriesId, page }),
+      canvases: persistedCanvases,
+      selectedCanvasId,
+    }),
+    [projectName, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, background?.path, seriesId, page, persistedCanvases, selectedCanvasId],
   )
   const canvasRef = useRef<HTMLDivElement>(null)
 
@@ -299,12 +402,12 @@ export function StudioPage(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (!projectId || snapshot === lastSaved.current || skipAutosave.current) return
+    if ((!projectId && persistedCanvases.length === 0) || snapshot === lastSaved.current || skipAutosave.current) return
     const timer = setTimeout(() => {
       void saveProjectNow(true)
     }, 1200)
     return () => clearTimeout(timer)
-  }, [projectId, snapshot])
+  }, [projectId, snapshot, persistedCanvases.length])
 
   const selected = draft.items.find((item) => item.id === selectedId) ?? null
   const layerRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -477,8 +580,138 @@ export function StudioPage(): React.JSX.Element {
     else resetLayout(action)
   }
 
-  async function saveProjectNow(auto = false): Promise<void> {
-    if (projectSaving) return
+  function hydrateCanvas(canvas: ProjectCanvas): void {
+    setSelectedCanvasId(canvas.id)
+    setDraft({
+      width: canvas.width,
+      height: canvas.height,
+      summary: canvas.summary,
+      items: canvas.layers.map((layer) => ({
+        id: layer.id,
+        label: layer.kind,
+        caption: layer.caption,
+        text: layer.text,
+        bbox: layer.bbox,
+        visible: layer.visible,
+        locked: layer.locked,
+        opacity: layer.opacity,
+      })),
+    })
+    setPrompt(canvas.prompt)
+    setStudioPrompt(canvas.prompt)
+    setNegative(canvas.negative)
+    setSeed(canvas.seed)
+    setSteps(canvas.steps)
+    setCfg(canvas.cfg)
+    setModelBundleId(canvas.modelBundleId ?? '')
+    setDeviceId(canvas.deviceId ?? '')
+    if (canvas.backgroundPath) {
+      const path = canvas.backgroundPath
+      setStudioBackground({
+        id: `project-bg-${canvas.id}`,
+        path,
+        name: path.split(/[\\/]/).pop() ?? 'background',
+        dir: path.slice(0, Math.max(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')))),
+        root: '',
+        size: 0,
+        mtime: 0,
+        ext: path.split('.').pop() ?? '',
+      })
+    } else {
+      setStudioBackground(null)
+    }
+    setSelectedId(null)
+  }
+
+  function createLayoutCanvas(source?: ProjectCanvas): ProjectCanvas {
+    const id = crypto.randomUUID()
+    const occupied = new Set(canvases.map((canvas) => `${canvas.row}:${canvas.column}`))
+    let index = 0
+    while (occupied.has(`${Math.floor(index / 2)}:${index % 2}`)) index += 1
+    const nextDraft = source
+      ? {
+          width: source.width,
+          height: source.height,
+          summary: structuredClone(source.summary),
+          items: source.layers.map((layer) => ({ ...layer, id: crypto.randomUUID(), label: layer.kind })),
+        }
+      : createDraft(1024, 1024)
+    return {
+      id,
+      kind: 'layout',
+      title: source ? `${source.title} · 复制` : `Canvas ${canvases.length + 1}`,
+      row: Math.floor(index / 2),
+      column: index % 2,
+      width: nextDraft.width,
+      height: nextDraft.height,
+      summary: nextDraft.summary,
+      layers: nextDraft.items.map((item) => ({
+        id: item.id,
+        kind: item.label,
+        caption: item.caption,
+        text: item.text,
+        bbox: item.bbox,
+        visible: item.visible !== false,
+        locked: item.locked === true,
+        opacity: item.opacity ?? 1,
+      })),
+      prompt: source?.prompt ?? '',
+      negative: source?.negative ?? negative,
+      seed: source?.seed ?? seed,
+      steps: source?.steps ?? steps,
+      cfg: source?.cfg ?? cfg,
+      modelBundleId: (source?.modelBundleId ?? modelBundleId) || undefined,
+      deviceId: (source?.deviceId ?? deviceId) || undefined,
+      backgroundPath: source?.backgroundPath,
+    }
+  }
+
+  function addCanvas(source?: ProjectCanvas): void {
+    const canvas = createLayoutCanvas(source)
+    setCanvases((previous) => [...previous, canvas])
+    hydrateCanvas(canvas)
+    setTool('draw')
+  }
+
+  function selectCanvas(canvas: ProjectCanvas): void {
+    if (canvas.id === selectedCanvasId) return
+    setCanvases((previous) => currentCanvasSnapshot
+      ? previous.map((item) => item.id === currentCanvasSnapshot.id ? currentCanvasSnapshot : item)
+      : previous)
+    hydrateCanvas(canvas)
+  }
+
+  async function deleteCanvas(canvas: ProjectCanvas): Promise<void> {
+    const job = canvas.jobId ? jobs.find((item) => item.id === canvas.jobId) : undefined
+    const state = job?.state ?? canvas.jobState
+    if (state === 'queued' || state === 'starting' || state === 'running') {
+      toast.push('请先在终端取消该任务，再删除 Canvas', 'error')
+      return
+    }
+    if (!window.confirm(`删除「${canvas.title}」？生成文件会保留在画廊中。`)) return
+    const remaining = persistedCanvases.filter((item) => item.id !== canvas.id)
+    setCanvases(remaining)
+    if (selectedCanvasId === canvas.id) {
+      const next = remaining.find((item) => item.kind === 'layout') ?? remaining[0]
+      if (next) hydrateCanvas(next)
+      else {
+        setSelectedCanvasId(null)
+        setDraft(createDraft(1024, 1024))
+        setPrompt('')
+        setStudioPrompt('')
+        setNegative('')
+        setSelectedId(null)
+      }
+    }
+  }
+
+  async function saveProjectNow(
+    auto = false,
+    boardSnapshot?: { canvases: ProjectCanvas[]; selectedCanvasId: string | null },
+  ): Promise<ProjectDocument | null> {
+    const canvasesToSave = boardSnapshot?.canvases ?? persistedCanvases
+    const selectedIdToSave = boardSnapshot ? boardSnapshot.selectedCanvasId : selectedCanvasId
+    if (projectSaving || (!projectId && canvasesToSave.length === 0)) return null
     setProjectSaving(true)
     try {
       const saved = await electronStudioClient.saveProject({
@@ -507,18 +740,21 @@ export function StudioPage(): React.JSX.Element {
         backgroundPath: background?.path,
         seriesId: seriesId || undefined,
         page,
+        canvases: canvasesToSave,
+        selectedCanvasId: selectedIdToSave ?? undefined,
+        board: { columns: 2 },
       })
       setProjectId(saved.id)
       setDraftTab(null)
       setProjectName(saved.name)
-      lastSaved.current = projectSnapshot({
-        name: saved.name, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId,
-        backgroundPath: background?.path, seriesId, page,
-      })
+      setCanvases(saved.canvases)
+      lastSaved.current = snapshot
       setProjects(await electronStudioClient.listProjects())
       if (!auto) toast.push('Project 已保存', 'success')
+      return saved
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
+      return null
     } finally {
       setProjectSaving(false)
     }
@@ -539,6 +775,8 @@ export function StudioPage(): React.JSX.Element {
       seriesId,
       page,
       background,
+      canvases: persistedCanvases,
+      selectedCanvasId,
     })
   }
 
@@ -560,6 +798,8 @@ export function StudioPage(): React.JSX.Element {
     setModelBundleId(draftTab.modelBundleId)
     setDeviceId(draftTab.deviceId)
     setStudioBackground(draftTab.background)
+    setCanvases(draftTab.canvases)
+    setSelectedCanvasId(draftTab.selectedCanvasId)
     setSelectedId(null)
     lastSaved.current = ''
     setTimeout(() => { skipAutosave.current = false }, 300)
@@ -570,32 +810,67 @@ export function StudioPage(): React.JSX.Element {
     try {
       const project = await electronStudioClient.getProject(id)
       if (!project) return
-      const nextDraft = draftFromProject(project)
+      const nextCanvases = project.canvases ?? []
+      const nextSelected = nextCanvases.find((canvas) => canvas.id === project.selectedCanvasId)
+        ?? nextCanvases.find((canvas) => canvas.kind === 'layout')
+        ?? nextCanvases[0]
+      const nextDraft = nextSelected
+        ? {
+            width: nextSelected.width,
+            height: nextSelected.height,
+            summary: nextSelected.summary,
+            items: nextSelected.layers.map((layer) => ({
+              id: layer.id, label: layer.kind, caption: layer.caption, text: layer.text,
+              bbox: layer.bbox, visible: layer.visible, locked: layer.locked, opacity: layer.opacity,
+            })),
+          }
+        : draftFromProject(project)
       skipAutosave.current = true
       setProjectId(project.id)
       setProjectName(project.name)
+      setCanvases(nextCanvases)
+      setSelectedCanvasId(nextSelected?.id ?? null)
       setSeriesId(project.seriesId ?? '')
       setPage(project.page ?? 1)
-      setPrompt(project.prompt)
-      setStudioPrompt(project.prompt)
-      setNegative(project.negative)
       setDraft(nextDraft)
       setStudioDraft(nextDraft)
-      setSeed(project.seed)
-      setSteps(project.steps)
-      setCfg(project.cfg)
-      if (project.modelBundleId) setModelBundleId(project.modelBundleId)
-      if (project.deviceId) setDeviceId(project.deviceId)
-      if (project.backgroundPath) {
-        const path = project.backgroundPath
-        setStudioBackground({ id: `project-bg-${project.id}`, path, name: path.split('/').pop() ?? 'background', dir: path.slice(0, Math.max(0, path.lastIndexOf('/'))), root: '', size: 0, mtime: 0, ext: path.split('.').pop() ?? '' })
+      if (nextSelected) {
+        setPrompt(nextSelected.prompt)
+        setStudioPrompt(nextSelected.prompt)
+        setNegative(nextSelected.negative)
+        setSeed(nextSelected.seed)
+        setSteps(nextSelected.steps)
+        setCfg(nextSelected.cfg)
+        setModelBundleId(nextSelected.modelBundleId ?? '')
+        setDeviceId(nextSelected.deviceId ?? '')
+        if (nextSelected.backgroundPath) {
+          const path = nextSelected.backgroundPath
+          setStudioBackground({ id: `project-bg-${nextSelected.id}`, path, name: path.split(/[\\/]/).pop() ?? 'background', dir: path.slice(0, Math.max(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')))), root: '', size: 0, mtime: 0, ext: path.split('.').pop() ?? '' })
+        } else {
+          setStudioBackground(null)
+        }
       } else {
-        setStudioBackground(null)
+        setPrompt(project.prompt)
+        setStudioPrompt(project.prompt)
+        setNegative(project.negative)
+        setSeed(project.seed)
+        setSteps(project.steps)
+        setCfg(project.cfg)
+        if (project.backgroundPath) {
+          const path = project.backgroundPath
+          setStudioBackground({ id: `project-bg-${project.id}`, path, name: path.split(/[\\/]/).pop() ?? 'background', dir: path.slice(0, Math.max(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')))), root: '', size: 0, mtime: 0, ext: path.split('.').pop() ?? '' })
+        } else {
+          setStudioBackground(null)
+        }
       }
-      lastSaved.current = projectSnapshot({
+      lastSaved.current = JSON.stringify({
+        project: projectSnapshot({
         name: project.name, draft: nextDraft, prompt: project.prompt, negative: project.negative,
         seed: project.seed, steps: project.steps, cfg: project.cfg, modelBundleId: project.modelBundleId ?? modelBundleId, deviceId: project.deviceId ?? deviceId,
         backgroundPath: project.backgroundPath, seriesId: project.seriesId ?? '', page: project.page ?? 1,
+        }),
+        canvases: nextCanvases,
+        selectedCanvasId: nextSelected?.id ?? null,
       })
       setTimeout(() => { skipAutosave.current = false }, 600)
       toast.push('Project 已打开', 'success')
@@ -608,6 +883,8 @@ export function StudioPage(): React.JSX.Element {
     setDraftTab(null)
     setProjectId(null)
     setProjectName('未命名 Project')
+    setCanvases([])
+    setSelectedCanvasId(null)
     setSeriesId('')
     setPage(1)
     setPrompt('')
@@ -693,9 +970,24 @@ export function StudioPage(): React.JSX.Element {
     applyGbcImport(result, image, 'append')
   }
 
-  async function generate(): Promise<void> {
+  async function generate(sourceOverride?: ProjectCanvas): Promise<void> {
     if (submittingRef.current) return
-    if (!modelBinding) {
+    const source = sourceOverride?.id === selectedCanvasId
+      ? currentCanvasSnapshot ?? sourceOverride
+      : sourceOverride ?? currentCanvasSnapshot
+    if (!source) {
+      toast.push('先点击选择一个 Canvas，再开始生成', 'error')
+      return
+    }
+    const selectedBundle = source.modelBundleId
+      ? catalog?.bundles.find((bundle) => bundle.id === source.modelBundleId)
+      : modelBundle
+    if (source.modelBundleId && !selectedBundle) {
+      toast.push('此 Canvas 引用的模型已不可用；请复制参数到新 Canvas 并重新选择模型', 'error')
+      return
+    }
+    const sourceBinding = selectedBundle ? { bundleId: selectedBundle.id, ...selectedBundle.components } : undefined
+    if (!sourceBinding) {
       toast.push('先在模型库准备一个完整模型', 'error')
       return
     }
@@ -703,52 +995,106 @@ export function StudioPage(): React.JSX.Element {
       toast.push('选择远端引擎后需要填写远端模型路径', 'error')
       return
     }
-    if (!prompt.trim()) {
+    if (!source.prompt.trim()) {
       toast.push('先写提示词或插入布局 Prompt', 'error')
       return
     }
     submittingRef.current = true
     setSubmitting(true)
+    let taskCanvasId: string | null = null
+    let taskCanvases: ProjectCanvas[] | null = null
     try {
+      const savedProject = await saveProjectNow(true)
+      if (!savedProject) throw new Error('Project 尚未保存，请稍后重试')
+      taskCanvasId = crypto.randomUUID()
+      const occupiedSlots = new Set(persistedCanvases.map((canvas) => `${canvas.row}:${canvas.column}`))
+      let row = source.row + 1
+      while (occupiedSlots.has(`${row}:${source.column}`)) row += 1
+      const taskCanvas: ProjectCanvas = {
+        ...source,
+        id: taskCanvasId,
+        kind: 'result',
+        title: `生成 · ${source.title}`,
+        row,
+        column: source.column,
+        sourceCanvasId: source.id,
+        jobId: undefined,
+        jobState: 'starting',
+        progress: undefined,
+        outputs: [],
+        error: undefined,
+      }
+      taskCanvases = [...persistedCanvases, taskCanvas]
+      setCanvases(taskCanvases)
+      setSelectedCanvasId(taskCanvasId)
+      const savedBoard = await saveProjectNow(true, { canvases: taskCanvases, selectedCanvasId: taskCanvasId })
+      if (!savedBoard) throw new Error('任务 Canvas 保存失败，请稍后重试')
       let info = backend
       if (!info?.ready) {
         info = await electronStudioClient.backendInfo().catch(() => null)
         setBackend(info)
       }
       if (!info?.ready || !info.url || !info.token) {
-        toast.push(info?.error ?? 'Clover 后端尚未就绪；请稍后重试', 'error')
-        return
+        throw new Error(info?.error ?? 'Clover 后端尚未就绪；请稍后重试')
       }
       const response = await fetch(`${info.url}/api/engine-jobs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${info.token}` },
         body: JSON.stringify({
-          modelBinding,
-          modelName: modelBundle?.name,
-          deviceId: deviceId || undefined,
+          projectId: savedBoard.id,
+          canvasId: taskCanvasId,
+          modelBinding: sourceBinding,
+          modelName: selectedBundle?.name,
+          deviceId: source.deviceId || undefined,
           hostId: engineHostId || undefined,
           remoteModelPath: engineHostId ? remoteModelPath.trim() : undefined,
-          prompt,
-          negativePrompt: negative,
-          width: draft.width,
-          height: draft.height,
-          steps,
-          cfg,
-          seed,
-          profile: steps <= 8 ? 'dmd8' : 'base',
+          prompt: source.prompt,
+          negativePrompt: source.negative,
+          width: source.width,
+          height: source.height,
+          steps: source.steps,
+          cfg: source.cfg,
+          seed: source.seed,
+          profile: source.steps <= 8 ? 'dmd8' : 'base',
           mode: 'runner',
         }),
       })
-      const body = (await response.json()) as JobRecord | { error?: string }
-      if (!response.ok || 'error' in body) {
-        const raw = 'error' in body ? body.error : undefined
-        const message = typeof raw === 'string' ? raw : raw?.message ?? `后端返回 ${response.status}`
+      const body: unknown = await response.json()
+      if (!response.ok) {
+        const raw = body && typeof body === 'object' && 'error' in body ? body.error : undefined
+        const message = typeof raw === 'string'
+          ? raw
+          : raw && typeof raw === 'object' && 'message' in raw && typeof raw.message === 'string'
+            ? raw.message
+            : `后端返回 ${response.status}`
         throw new Error(message)
       }
-      toast.push('已提交到 MossInfer，正在终端运行', 'success')
+      if (!isJobRecord(body)) throw new Error('后端返回了无效的任务记录')
+      const observedJob = useApp.getState().jobs.find((job) => job.id === body.id)
+      taskCanvases = taskCanvases.map((canvas) => canvas.id === taskCanvasId
+        ? { ...canvas, jobId: body.id, jobState: observedJob?.state ?? body.state }
+        : canvas)
+      setCanvases(taskCanvases)
+      setSelectedCanvasId(taskCanvasId)
+      const linkedProject = await saveProjectNow(true, { canvases: taskCanvases, selectedCanvasId: taskCanvasId })
+      if (linkedProject) {
+        toast.push('已提交到 MossInfer，正在终端运行', 'success')
+      } else {
+        toast.push('任务已提交，但关联记录未能保存；可在终端查看任务', 'error')
+      }
       openWindow('terminal')
     } catch (error) {
-      toast.push(error instanceof Error ? error.message : String(error), 'error')
+      const message = error instanceof Error ? error.message : String(error)
+      if (taskCanvasId) {
+        taskCanvases = taskCanvases?.map((canvas) => canvas.id === taskCanvasId
+          ? { ...canvas, jobState: 'failed', error: { code: 'E_SUBMIT', message } }
+          : canvas) ?? null
+        if (taskCanvases) {
+          setCanvases(taskCanvases)
+          await saveProjectNow(true, { canvases: taskCanvases, selectedCanvasId: taskCanvasId })
+        }
+      }
+      toast.push(message, 'error')
     } finally {
       submittingRef.current = false
       setSubmitting(false)
@@ -759,6 +1105,10 @@ export function StudioPage(): React.JSX.Element {
     ...tabOrder.map((id) => projects.find((item) => item.id === id)).filter(Boolean),
     ...projects.filter((item) => !tabOrder.includes(item.id)),
   ] as ProjectSummary[]
+  const occupiedBoardSlots = new Set(persistedCanvases.map((canvas) => `${canvas.row}:${canvas.column}`))
+  let nextBoardSlotIndex = 0
+  while (occupiedBoardSlots.has(`${Math.floor(nextBoardSlotIndex / 2)}:${nextBoardSlotIndex % 2}`)) nextBoardSlotIndex += 1
+  const nextBoardSlot = { row: Math.floor(nextBoardSlotIndex / 2), column: nextBoardSlotIndex % 2 }
   useEffect(() => {
     setTabOrder((previous) => [...previous.filter((id) => projects.some((item) => item.id === id)), ...projects.map((item) => item.id).filter((id) => !previous.includes(id))])
   }, [projects])
@@ -932,9 +1282,29 @@ export function StudioPage(): React.JSX.Element {
           <IconButton label="收起左栏" data-sidebar-collapse aria-expanded={true} onClick={() => setLeftCollapsed(true)}><PanelLeftClose className="size-4" /></IconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <StudioSection title="提示词">{renderSection('prompt')}</StudioSection>
-          <StudioSection title="生成参数">{renderSection('sampler')}</StudioSection>
-          <StudioSection title="图库">{renderSection('gallery')}</StudioSection>
+          {selectedCanvas?.kind === 'layout' ? (
+            <>
+              <StudioSection title="提示词">{renderSection('prompt')}</StudioSection>
+              <StudioSection title="生成参数">{renderSection('sampler')}</StudioSection>
+              <StudioSection title="图库">{renderSection('gallery')}</StudioSection>
+            </>
+          ) : selectedCanvas ? (
+            <div className="space-y-3 px-4 py-5 text-caption text-[var(--color-text-secondary)]">
+              <p className="font-medium text-[var(--color-text)]">本次生成参数（只读）</p>
+              <p className="whitespace-pre-wrap break-words">{selectedCanvas.prompt || '（空提示词）'}</p>
+              <dl className="grid grid-cols-2 gap-2 text-[var(--color-text-tertiary)]">
+                <dt>尺寸</dt><dd>{selectedCanvas.width}×{selectedCanvas.height}</dd>
+                <dt>步数</dt><dd>{selectedCanvas.steps}</dd>
+                <dt>CFG</dt><dd>{selectedCanvas.cfg}</dd>
+                <dt>Seed</dt><dd>{selectedCanvas.seed}</dd>
+              </dl>
+              <p>使用 Canvas 上的“重跑”按相同参数创建新结果，或复制参数创建可编辑 Canvas。</p>
+            </div>
+          ) : (
+            <div className="px-5 py-10 text-center text-caption leading-5 text-[var(--color-text-tertiary)]">
+              请点击选择一个 Canvas，再编辑提示词和生成参数。
+            </div>
+          )}
         </div>
       </StudioSidebar>
 
@@ -994,15 +1364,21 @@ export function StudioPage(): React.JSX.Element {
             ) : null}
             {orderedProjects.length === 0 && projectId ? <span className="px-2 text-caption text-[var(--color-text-tertiary)]">还没有画布</span> : null}
           </div>
-          <Button tone="secondary" onClick={newProject}><Plus className="size-4" /> 新建画布</Button>
+          <Button tone="secondary" onClick={newProject}><Plus className="size-4" /> 新建 Project</Button>
           {env ? <Pill tone="blue">{env.recommendation.width}² · {env.recommendation.steps} 步</Pill> : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--color-border-subtle)] px-2 py-1.5">
-          <Segmented label="画布工具" value={tool} onChange={(value) => setTool(value as 'select' | 'draw' | 'pan')} options={[{ value: 'select', label: '选择' }, { value: 'draw', label: '画框' }, { value: 'pan', label: '手型' }]} />
-          <Segmented value={label} onChange={(value) => setLabel(value as LayoutLabel)} options={[{ value: 'object', label: '物体' }, { value: 'character', label: '人物' }, { value: 'text', label: '文字' }]} />
-          <IconButton label="示例布局" onClick={() => requestLayoutReset('example')}><Sparkles className="size-4" /></IconButton>
-          <IconButton label="清空画布" onClick={() => requestLayoutReset('clear')} disabled={!draft.items.length}><Eraser className="size-4" /></IconButton>
-          {background ? <IconButton label="清除底图" onClick={() => setStudioBackground(null)}><X className="size-4" /></IconButton> : null}
+          <div
+            inert={selectedCanvas?.kind !== 'layout'}
+            aria-disabled={selectedCanvas?.kind !== 'layout'}
+            className={cn('flex flex-wrap items-center gap-1.5', selectedCanvas?.kind !== 'layout' && 'pointer-events-none opacity-40')}
+          >
+            <Segmented label="画布工具" value={tool} onChange={(value) => setTool(value as 'select' | 'draw' | 'pan')} options={[{ value: 'select', label: '选择' }, { value: 'draw', label: '画框' }, { value: 'pan', label: '手型' }]} />
+            <Segmented value={label} onChange={(value) => setLabel(value as LayoutLabel)} options={[{ value: 'object', label: '物体' }, { value: 'character', label: '人物' }, { value: 'text', label: '文字' }]} />
+            <IconButton label="示例布局" onClick={() => requestLayoutReset('example')}><Sparkles className="size-4" /></IconButton>
+            <IconButton label="清空画布" onClick={() => requestLayoutReset('clear')} disabled={!draft.items.length}><Eraser className="size-4" /></IconButton>
+            {background ? <IconButton label="清除底图" onClick={() => setStudioBackground(null)}><X className="size-4" /></IconButton> : null}
+          </div>
           <div className="ml-1 flex items-center gap-0.5 border-l border-[var(--color-border-subtle)] pl-1">
             <IconButton label="缩小画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 0.8) }}><Minus className="size-4" /></IconButton>
             <button type="button" onClick={resetView} className="w-11 text-center font-mono text-caption text-[var(--color-text-secondary)] hover:text-[var(--color-text)]" title="重置为 100%">{Math.round(zoom * 100)}%</button>
@@ -1011,7 +1387,7 @@ export function StudioPage(): React.JSX.Element {
           </div>
           <div className="ml-auto flex items-center gap-1.5">
             <Pill tone={backend?.ready ? 'accent' : 'amber'}>{backend?.ready ? '后端就绪' : '后端启动中'}</Pill>
-            <Button tone="primary" data-studio-generate disabled={submitting} aria-busy={submitting} onClick={() => void generate()}><span className="inline-flex items-center gap-1.5">{submitting ? '正在提交…' : '开始生成'} {submitting ? <Spinner /> : <ArrowRight className="size-4" />}</span></Button>
+            <Button tone="primary" data-studio-generate disabled={submitting || projectSaving || selectedCanvas?.kind !== 'layout'} aria-busy={submitting} onClick={() => void generate()}><span className="inline-flex items-center gap-1.5">{submitting ? '正在提交…' : '开始生成'} {submitting ? <Spinner /> : <ArrowRight className="size-4" />}</span></Button>
           </div>
         </div>
 
@@ -1027,23 +1403,163 @@ export function StudioPage(): React.JSX.Element {
           onLostPointerCapture={finishPan}
           onAuxClickCapture={(event) => { if (event.button === 1) event.preventDefault() }}
         >
-          <div className="studio-canvas-content absolute inset-0 flex items-center justify-center p-4">
-            <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} className="relative w-full max-w-[820px]">
-                            <div
-              ref={canvasRef}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              className={cn(
-                'relative mx-auto select-none overflow-hidden rounded-[5px] border border-[var(--color-border)]',
-                tool === 'draw' ? 'cursor-crosshair' : 'cursor-default',
-              )}
-              style={{
-                aspectRatio: `${draft.width} / ${draft.height}`,
-                width: `min(100%, calc((100cqh - 32px) * ${draft.width / draft.height}))`,
-              }}
-            >
+          <div className="studio-canvas-content absolute inset-0 overflow-auto p-5">
+            {canvases.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => addCanvas()}
+                className="flex min-h-[320px] w-full items-center justify-center rounded-lg border border-dashed border-accent-400/40 bg-white/[0.025] text-ui text-[var(--color-text-secondary)] transition hover:border-accent-300 hover:bg-accent-400/[0.06]"
+              >
+                <span className="flex flex-col items-center gap-2">
+                  <Plus className="size-7 text-accent-300" />
+                  <span className="font-medium">新建内容</span>
+                  <span className="text-caption text-[var(--color-text-tertiary)]">创建第一个可编辑 Canvas</span>
+                </span>
+              </button>
+            ) : (
+              <div
+                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'top left' }}
+                className="grid min-w-[720px] grid-cols-2 items-start gap-5 pb-12"
+              >
+                {[...persistedCanvases].sort((a, b) => a.row - b.row || a.column - b.column).map((canvas) => {
+                  const isActive = canvas.id === selectedCanvasId
+                  const job = canvas.jobId ? jobs.find((item) => item.id === canvas.jobId) : undefined
+                  const outputs = job?.outputs?.length ? job.outputs : canvas.outputs ?? []
+                  const progress = job?.progress ?? canvas.progress
+                  const activeTask = job && ['queued', 'starting', 'running'].includes(job.state)
+                  const missingJob = Boolean(
+                    canvas.jobId
+                    && !job
+                    && ['queued', 'starting', 'running'].includes(canvas.jobState ?? ''),
+                  )
+                  const queuePosition = job?.state === 'queued'
+                    ? jobs
+                        .filter((item) => item.engine === 'mossinfer' && item.kind === 'inference' && item.state === 'queued')
+                        .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+                        .findIndex((item) => item.id === job.id) + 1
+                    : 0
+                  const currentPercent = progress?.stage === 'denoise' && progress.total > 0
+                    ? Math.min(100, Math.max(0, progress.percent))
+                    : undefined
+                  return (
+                    <article
+                      key={canvas.id}
+                      role="group"
+                      aria-label={`${canvas.title}${isActive ? '，已选中' : ''}`}
+                      tabIndex={0}
+                      aria-current={isActive ? 'true' : undefined}
+                      style={{ gridColumnStart: canvas.column + 1, gridRowStart: canvas.row + 1 }}
+                      onClick={() => selectCanvas(canvas)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          selectCanvas(canvas)
+                        }
+                      }}
+                      className={cn(
+                        'min-h-[350px] overflow-hidden rounded-lg border bg-[#171a20] transition',
+                        isActive ? 'border-accent-400 ring-1 ring-accent-400/50' : 'border-[var(--color-border)] hover:border-white/25',
+                      )}
+                    >
+                      <header className="flex min-h-10 items-center gap-2 border-b border-[var(--color-border-subtle)] px-2.5">
+                        <span className="min-w-0 flex-1 truncate text-caption font-medium">
+                          {canvas.title}
+                          <span className="ml-1.5 text-micro text-[var(--color-text-tertiary)]">
+                            {canvas.kind === 'result' ? '结果' : `${canvas.width}×${canvas.height}`}
+                          </span>
+                        </span>
+                        {canvas.kind === 'result' && missingJob ? (
+                          <Pill tone="red">任务记录不可用</Pill>
+                        ) : canvas.kind === 'result' && job ? (
+                          <Pill tone={job.state === 'succeeded' ? 'accent' : job.state === 'failed' ? 'red' : job.state === 'canceled' ? 'neutral' : 'amber'}>
+                            {job.state === 'queued' ? `排队第 ${queuePosition} 位` : job.state === 'starting' ? '启动中' : job.state === 'running' ? '生成中' : job.state === 'succeeded' ? '完成' : job.state === 'canceled' ? '已取消' : '失败'}
+                          </Pill>
+                        ) : canvas.kind === 'result' ? (
+                          <Pill tone={canvas.jobState === 'succeeded' ? 'accent' : canvas.jobState === 'failed' ? 'red' : 'amber'}>
+                            {canvas.jobState === 'succeeded' ? '完成' : canvas.jobState === 'failed' ? '失败' : canvas.jobState === 'canceled' ? '已取消' : '等待任务'}
+                          </Pill>
+                        ) : null}
+                        <button
+                          type="button"
+                          title="复制参数为新 Canvas"
+                          aria-label={`复制 ${canvas.title} 参数为新 Canvas`}
+                          onClick={(event) => { event.stopPropagation(); addCanvas(canvas) }}
+                          className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-white/10 hover:text-[var(--color-text)]"
+                        ><Copy className="size-3.5" /></button>
+                        <button
+                          type="button"
+                          title="重跑并保留旧结果"
+                          aria-label={`重跑 ${canvas.title}`}
+                          onClick={(event) => { event.stopPropagation(); void generate(canvas) }}
+                          disabled={submitting || projectSaving || !canvas.prompt.trim()}
+                          className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-accent-400/10 hover:text-accent-200 disabled:opacity-40"
+                        ><Play className="size-3.5" /></button>
+                        {canvas.jobId && activeTask ? (
+                          <button
+                            type="button"
+                            title="取消任务"
+                            aria-label={`取消 ${canvas.title} 任务`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void cancelJob(canvas.jobId!).catch((error) => toast.push(error instanceof Error ? error.message : String(error), 'error'))
+                            }}
+                            className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-amber-400/10 hover:text-amber-200"
+                          ><CircleStop className="size-3.5" /></button>
+                        ) : null}
+                        <button
+                          type="button"
+                          title="删除 Canvas"
+                          aria-label={`删除 ${canvas.title}`}
+                          onClick={(event) => { event.stopPropagation(); void deleteCanvas(canvas) }}
+                          className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-red-400/10 hover:text-red-300"
+                        ><Trash2 className="size-3.5" /></button>
+                      </header>
+
+                      {canvas.kind === 'result' ? (
+                        <div className="flex h-[280px] items-center justify-center bg-black/20 p-2">
+                          {outputs.length > 0 ? (
+                            <div className={cn('grid size-full gap-1', outputs.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
+                              {outputs.map((output, index) => (
+                                <ResultPreview
+                                  key={output.path}
+                                  title={`${canvas.title} 生成结果 ${index + 1}`}
+                                  path={output.path}
+                                  onOpen={() => {
+                                    void call(Ipc.openPath, { path: output.path }).catch((error) => toast.push(error instanceof Error ? error.message : String(error), 'error'))
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="px-4 text-center text-caption text-[var(--color-text-tertiary)]">
+                              {job?.error?.message
+                                ?? canvas.error?.message
+                                ?? (job?.state === 'succeeded'
+                                  ? '任务完成，但未返回图片输出'
+                                  : missingJob
+                                    ? '应用重启或任务记录已清理，无法恢复该任务状态'
+                                  : job?.state === 'canceled'
+                                    ? '任务已取消'
+                                    : activeTask
+                                      ? '任务运行中，结果将在此显示'
+                                      : '尚无生成结果')}
+                            </div>
+                          )}
+                        </div>
+                      ) : isActive ? (
+                        <div className="flex h-[280px] items-center justify-center overflow-hidden p-2">
+                          <div
+                            ref={canvasRef}
+                            onPointerDown={handlePointerDown}
+                            onPointerMove={handlePointerMove}
+                            onPointerUp={handlePointerUp}
+                            onPointerCancel={handlePointerUp}
+                            className={cn(
+                              'relative mx-auto select-none overflow-hidden rounded-[5px] border border-[var(--color-border)]',
+                              tool === 'draw' ? 'cursor-crosshair' : 'cursor-default',
+                            )}
+                            style={{ aspectRatio: `${draft.width} / ${draft.height}`, width: `min(100%, 320px)` }}
+                          >
               {background ? (
                 <img
                   src={cloverUrl(background.path)}
@@ -1121,8 +1637,67 @@ export function StudioPage(): React.JSX.Element {
                   }}
                 />
               ) : null}
-            </div>
-            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative mx-auto mt-3 aspect-square h-[250px] max-w-full overflow-hidden rounded border border-[var(--color-border-subtle)] bg-black/20">
+                          {canvas.backgroundPath ? <img src={cloverUrl(canvas.backgroundPath)} alt="" className="absolute inset-0 size-full object-contain opacity-50" /> : null}
+                          {canvas.layers.filter((layer) => layer.visible).map((layer) => {
+                            const [x1, y1, x2, y2] = layer.bbox
+                            return (
+                              <div
+                                key={layer.id}
+                                className="absolute rounded border border-sky-300/70 bg-sky-300/10"
+                                style={{
+                                  left: `${x1 / canvas.width * 100}%`,
+                                  top: `${y1 / canvas.height * 100}%`,
+                                  width: `${(x2 - x1) / canvas.width * 100}%`,
+                                  height: `${(y2 - y1) / canvas.height * 100}%`,
+                                }}
+                              />
+                            )
+                          })}
+                          {canvas.layers.length === 0 ? <span className="absolute inset-0 flex items-center justify-center text-caption text-[var(--color-text-tertiary)]">空布局 · 点击选择并编辑</span> : null}
+                        </div>
+                      )}
+
+                      {canvas.kind === 'result' ? (
+                        <div className="border-t border-[var(--color-border-subtle)] px-2.5 py-2">
+                          <p className="truncate text-micro text-[var(--color-text-tertiary)]">{canvas.prompt}</p>
+                          {activeTask ? (
+                            <div className="mt-1.5">
+                              <div className="mb-1 flex justify-between gap-2 text-micro">
+                                <span>{job?.state === 'queued' ? '排队等待' : ({
+                                  idle: '准备引擎', ready: '引擎就绪', load: '加载模型', text: '文本编码',
+                                  denoise: '去噪', decode: '图像解码', save: '保存结果',
+                                }[progress?.stage ?? 'idle'] ?? '处理中')}
+                                  {progress?.stage === 'denoise' && progress.total > 0 ? ` · ${progress.current}/${progress.total} 步` : ''}
+                                </span>
+                                {currentPercent !== undefined ? <span>{Math.round(currentPercent)}%</span> : null}
+                              </div>
+                              <div className="h-1 overflow-hidden rounded-full bg-white/10">
+                                <div
+                                  className={`h-full rounded-full bg-accent-400 transition-[width] ${currentPercent === undefined ? 'w-1/3 animate-pulse' : ''}`}
+                                  style={currentPercent === undefined ? undefined : { width: `${currentPercent}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : canvas.error?.message ? <p className="mt-1 text-micro text-red-300">{canvas.error.message}</p> : null}
+                        </div>
+                      ) : null}
+                    </article>
+                  )
+                })}
+                <button
+                  type="button"
+                  onClick={() => addCanvas()}
+                  style={{ gridColumnStart: nextBoardSlot.column + 1, gridRowStart: nextBoardSlot.row + 1 }}
+                  className="flex min-h-[350px] items-center justify-center rounded-lg border border-dashed border-white/15 bg-white/[0.015] text-caption text-[var(--color-text-tertiary)] transition hover:border-accent-400/50 hover:bg-accent-400/[0.04] hover:text-[var(--color-text-secondary)]"
+                >
+                  <span className="flex flex-col items-center gap-2"><Plus className="size-6" /><span>新建内容</span></span>
+                </button>
+              </div>
+            )}
           </div>
           <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-2.5 py-1 text-micro text-white/55">
             {Math.round(zoom * 100)}% · 滚轮缩放 · 手型/中键拖动
@@ -1140,6 +1715,7 @@ export function StudioPage(): React.JSX.Element {
                 id={`studio-tab-${tab.id}`}
                 type="button"
                 role="tab"
+                disabled={!selectedCanvas || selectedCanvas.kind !== 'layout'}
                 aria-selected={activeTool === tab.id}
                 aria-controls={`studio-tool-${tab.id}`}
                 tabIndex={activeTool === tab.id ? 0 : -1}
@@ -1157,23 +1733,33 @@ export function StudioPage(): React.JSX.Element {
           </div>
           <IconButton label="收起右栏" data-sidebar-collapse aria-expanded={true} onClick={() => setRightCollapsed(true)}><PanelRightClose className="size-4" /></IconButton>
         </header>
-        <div id="studio-tool-layout" role="tabpanel" aria-labelledby="studio-tab-layout" hidden={activeTool !== 'layout'} className="min-h-0 flex-1 overflow-y-auto">
-          <StudioSection title="图层">{renderSection('layers')}</StudioSection>
-          <StudioSection title="布局描述">{renderSection('summary')}</StudioSection>
-        </div>
-        <div id="studio-tool-agent" role="tabpanel" aria-labelledby="studio-tab-agent" hidden={activeTool !== 'agent'} className="min-h-0 flex-1 overflow-hidden">
-          <AgentSidebar embedded />
-        </div>
-        <div id="studio-tool-analysis" role="tabpanel" aria-labelledby="studio-tab-analysis" hidden={activeTool !== 'analysis'} className="min-h-0 flex-1 overflow-y-auto">
-          <StudioSection title="图像结构解析">
-            <div className="space-y-3 p-3">
-              <p className="text-caption leading-5 text-[var(--color-text-secondary)]">从参考图提取区域、文字和层级描述，导入当前画布继续编辑。</p>
-              <Button tone="primary" className="w-full" onClick={() => { setGbcTab('run'); setGbcOpen(true) }}><ScanSearch className="size-4" />选择图片并解析</Button>
-              <Button tone="ghost" className="w-full" onClick={() => { setGbcTab('manage'); setGbcOpen(true) }}><GitBranch className="size-4" />管理解析工具</Button>
-              <p className="text-caption leading-5 text-[var(--color-text-tertiary)]">GBC 是可选工具，可随时在这里配置或打开。</p>
+        {selectedCanvas?.kind === 'layout' ? (
+          <>
+            <div id="studio-tool-layout" role="tabpanel" aria-labelledby="studio-tab-layout" hidden={activeTool !== 'layout'} className="min-h-0 flex-1 overflow-y-auto">
+              <StudioSection title="图层">{renderSection('layers')}</StudioSection>
+              <StudioSection title="布局描述">{renderSection('summary')}</StudioSection>
             </div>
-          </StudioSection>
-        </div>
+            <div id="studio-tool-agent" role="tabpanel" aria-labelledby="studio-tab-agent" hidden={activeTool !== 'agent'} className="min-h-0 flex-1 overflow-hidden">
+              <AgentSidebar embedded />
+            </div>
+            <div id="studio-tool-analysis" role="tabpanel" aria-labelledby="studio-tab-analysis" hidden={activeTool !== 'analysis'} className="min-h-0 flex-1 overflow-y-auto">
+              <StudioSection title="图像结构解析">
+                <div className="space-y-3 p-3">
+                  <p className="text-caption leading-5 text-[var(--color-text-secondary)]">从参考图提取区域、文字和层级描述，导入当前画布继续编辑。</p>
+                  <Button tone="primary" className="w-full" onClick={() => { setGbcTab('run'); setGbcOpen(true) }}><ScanSearch className="size-4" />选择图片并解析</Button>
+                  <Button tone="ghost" className="w-full" onClick={() => { setGbcTab('manage'); setGbcOpen(true) }}><GitBranch className="size-4" />管理解析工具</Button>
+                  <p className="text-caption leading-5 text-[var(--color-text-tertiary)]">GBC 是可选工具，可随时在这里配置或打开。</p>
+                </div>
+              </StudioSection>
+            </div>
+          </>
+        ) : (
+          <div className="px-5 py-10 text-center text-caption leading-5 text-[var(--color-text-tertiary)]">
+            {selectedCanvas
+              ? '这是生成结果 Canvas。可在左侧调整参数后重跑，或复制参数创建可编辑 Canvas。'
+              : '请点击选择一个 Canvas，创作工具将在此启用。'}
+          </div>
+        )}
       </StudioSidebar>
       <ConfirmDialog
         open={layoutReset !== null}
