@@ -451,7 +451,7 @@ export function Segmented<T extends string>({
   label?: string
 }): React.JSX.Element {
   return (
-    <div role="group" aria-label={label} className={cn('app-segmented inline-flex rounded-[4px] border border-[var(--color-border-subtle)] bg-white/[0.035] p-0.5', className)}>
+    <div role="group" aria-label={label} className={cn('app-segmented inline-flex shrink-0 rounded-[4px] border border-[var(--color-border-subtle)] bg-white/[0.035] p-0.5', className)}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -460,7 +460,7 @@ export function Segmented<T extends string>({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'min-h-7 rounded-[3px] px-3 py-1 text-caption font-medium transition',
+            'min-h-7 whitespace-nowrap rounded-[3px] px-3 py-1 text-caption font-medium transition',
             value === option.value
               ? 'bg-white/[0.09] text-[var(--color-text)] shadow-sm'
               : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]',

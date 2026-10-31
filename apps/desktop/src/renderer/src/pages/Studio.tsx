@@ -6,10 +6,12 @@ import {
   PanelLeftClose,
   PanelRightClose,
   Plus,
-  RotateCcw,
+  Maximize2,
+  Save,
   Copy,
   CircleStop,
   Eraser,
+  GripVertical,
   Play,
   Sparkles,
   ScanSearch,
@@ -87,7 +89,7 @@ const LABEL_META: Record<LayoutLabel, { name: string; color: string; icon: React
 
 type SectionId = 'prompt' | 'sampler' | 'summary' | 'layers' | 'gallery'
 const TOOL_TABS = [
-  { id: 'layout', label: '图层与布局' },
+  { id: 'layout', label: '图层' },
   { id: 'agent', label: 'Agent' },
   { id: 'analysis', label: '图像解析' },
 ] as const
@@ -358,6 +360,8 @@ export function StudioPage(): React.JSX.Element {
   const previewJob = previewOutput?.canvas.jobId
     ? jobs.find((item) => item.id === previewOutput.canvas.jobId)
     : undefined
+  /** Prompt the footer will send for the selected Canvas, shown as a one-line summary. */
+  const pendingPrompt = selectedCanvas ? effectivePromptFor(selectedCanvas) : { prompt: '', source: 'text' as const, regions: 0 }
   const currentCanvasSnapshot = useMemo<ProjectCanvas | null>(() => {
     if (!selectedCanvas || selectedCanvas.kind !== 'layout') return selectedCanvas
     return {
@@ -460,9 +464,25 @@ export function StudioPage(): React.JSX.Element {
     return () => clearTimeout(timer)
   }, [projectId, snapshot, persistedCanvases.length])
 
+  // Explicit save: Ctrl/Cmd+S forces a write even while the autosave timer is pending.
+  const projectDirty = snapshot !== lastSaved.current
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+      event.preventDefault()
+      if (snapshot !== lastSaved.current && !projectSaving) void saveProjectNow()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [snapshot, projectSaving])
+
   const selected = draft.items.find((item) => item.id === selectedId) ?? null
   const layerRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const focusLayerRef = useRef(false)
+  const [dragLayerId, setDragLayerId] = useState<string | null>(null)
+  const [dropLayerId, setDropLayerId] = useState<string | null>(null)
+  const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
   useEffect(() => {
     if (!selectedId) return
     setActiveTool('layout')
@@ -601,6 +621,19 @@ export function StudioPage(): React.JSX.Element {
     if (selectedId === id) setSelectedId(null)
   }
 
+  /** Reorder layers; array order is what the layout prompt and the region numbering use. */
+  function moveLayer(fromId: string, toId: string): void {
+    setDraft((previous) => {
+      const from = previous.items.findIndex((item) => item.id === fromId)
+      const to = previous.items.findIndex((item) => item.id === toId)
+      if (from < 0 || to < 0 || from === to) return previous
+      const items = [...previous.items]
+      const [moved] = items.splice(from, 1)
+      items.splice(to, 0, moved)
+      return { ...previous, items }
+    })
+  }
+
   function compile(): void {
     const result = compileLayout(draft)
     if (!result.ok) {
@@ -609,6 +642,34 @@ export function StudioPage(): React.JSX.Element {
     }
     setCompiled(result)
     setJsonOpen(true)
+  }
+
+  /**
+   * What actually goes to the engine: a Canvas with regions is compiled from its
+   * layout, an empty one falls back to the hand-written prompt. Both panels then
+   * describe the same thing instead of competing.
+   */
+  function effectivePromptFor(canvas: ProjectCanvas): { prompt: string; source: 'layout' | 'text'; regions: number } {
+    const regions = canvas.layers.filter((layer) => layer.visible !== false).length
+    if (regions > 0) {
+      const result = compileLayout({
+        width: canvas.width,
+        height: canvas.height,
+        summary: canvas.summary,
+        items: canvas.layers.map((layer) => ({
+          id: layer.id,
+          label: layer.kind,
+          caption: layer.caption,
+          text: layer.text,
+          bbox: layer.bbox,
+          visible: layer.visible,
+          locked: layer.locked,
+          opacity: layer.opacity,
+        })),
+      })
+      if (result.ok) return { prompt: result.prompt, source: 'layout', regions }
+    }
+    return { prompt: canvas.prompt, source: 'text', regions: 0 }
   }
 
   function insertPrompt(): void {
@@ -1023,10 +1084,53 @@ export function StudioPage(): React.JSX.Element {
     }
   }
 
+  async function renameProject(id: string, name: string): Promise<void> {
+    setRenamingProjectId(null)
+    const trimmed = name.trim()
+    if (!trimmed) return
+    try {
+      const source = id === projectId
+        ? { canvases: persistedCanvases, selectedCanvasId: selectedCanvasId ?? undefined, seriesId: seriesId || undefined, page }
+        : await electronStudioClient.getProject(id).then((project) => (project
+          ? { canvases: project.canvases, selectedCanvasId: project.selectedCanvasId, seriesId: project.seriesId, page: project.page ?? 1 }
+          : null))
+      if (!source) return
+      await electronStudioClient.saveProject({ id, name: trimmed, ...source })
+      if (id === projectId) setProjectName(trimmed)
+      setProjects(await electronStudioClient.listProjects())
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    }
+  }
+
+  async function removeProject(id: string): Promise<void> {
+    if (!window.confirm('删除这个 Project？画布和任务记录会一起移除，生成图片仍保留在画廊。')) return
+    try {
+      await call(Ipc.projectDelete, { id })
+      const next = projects.filter((item) => item.id !== id)
+      setProjects(next)
+      if (id === projectId) {
+        if (next[0]) await openProject(next[0].id)
+        else newProject()
+      }
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    }
+  }
+
+  /** Untitled name that does not collide with an existing project. */
+  function nextProjectName(): string {
+    const used = new Set(projects.map((item) => item.name))
+    if (!used.has('未命名 Project')) return '未命名 Project'
+    let index = 2
+    while (used.has(`未命名 Project ${index}`)) index += 1
+    return `未命名 Project ${index}`
+  }
+
   function newProject(): void {
     setDraftTab(null)
     setProjectId(null)
-    setProjectName('未命名 Project')
+    setProjectName(nextProjectName())
     setCanvases([])
     setSelectedCanvasId(null)
     setSeriesId('')
@@ -1127,8 +1231,10 @@ export function StudioPage(): React.JSX.Element {
       toast.push('选择远端引擎后需要填写远端模型路径', 'error')
       return
     }
-    if (!source.prompt.trim()) {
-      toast.push('先写提示词或插入布局 Prompt', 'error')
+    // Regions win over the handwritten prompt: the layout is the more specific input.
+    const effective = effectivePromptFor(source)
+    if (!effective.prompt.trim()) {
+      toast.push('先写提示词，或在画布上拖出一个区域', 'error')
       return
     }
     submittingRef.current = true
@@ -1203,7 +1309,7 @@ export function StudioPage(): React.JSX.Element {
           deviceId: source.deviceId || undefined,
           hostId: engineHostId || undefined,
           remoteModelPath: engineHostId ? remoteModelPath.trim() : undefined,
-          prompt: source.prompt,
+          prompt: effective.prompt,
           negativePrompt: source.negative,
           width: source.width,
           height: source.height,
@@ -1233,7 +1339,7 @@ export function StudioPage(): React.JSX.Element {
       setSelectedCanvasId(taskCanvasId)
       const linkedProject = await saveProjectNow(true, { canvases: taskCanvases, selectedCanvasId: taskCanvasId })
       if (linkedProject) {
-        toast.push('已提交到 MossInfer，进度显示在对应 Canvas 上', 'success')
+        toast.push(`已提交到 MossInfer${effective.source === 'layout' ? `（布局 Prompt · ${effective.regions} 个区域）` : '（手写提示词）'}，进度显示在对应 Canvas 上`, 'success')
       } else {
         toast.push('任务已提交，但关联记录未能保存；可在终端查看任务', 'error')
       }
@@ -1401,28 +1507,61 @@ export function StudioPage(): React.JSX.Element {
         <Input value={negative} onChange={(event) => setNegative(event.target.value)} className="w-full" />
       </div>
     )
-    if (id === 'sampler') return (
-      <div className="space-y-2.5 p-3">
-        <div className="flex flex-wrap gap-1">
-          {SIZE_PRESETS.map(([name, width, height]) => (
-            <button key={name} type="button" onClick={() => changeSize(width, height)} className={cn('rounded-full border px-2 py-0.5 text-caption', draft.width === width && draft.height === height ? 'border-accent-500/40 bg-accent-500/12 text-accent-200' : 'border-[var(--color-border)] text-[var(--color-text-secondary)]')}>{name}</button>
+    if (id === 'sampler') {
+      const row = (rowLabel: string, control: React.ReactNode, hint?: string): React.JSX.Element => (
+        <div className="flex items-center justify-between gap-2 py-1.5">
+          <span className="shrink-0 text-caption text-[var(--color-text-tertiary)]" title={hint}>{rowLabel}</span>
+          {control}
+        </div>
+      )
+      return (
+        <div className="divide-y divide-[var(--color-border-subtle)] px-3">
+          <div className="flex flex-wrap gap-1 py-2">
+            {SIZE_PRESETS.map(([name, width, height]) => (
+              <button key={name} type="button" onClick={() => changeSize(width, height)} className={cn('rounded-full border px-2 py-0.5 text-caption', draft.width === width && draft.height === height ? 'border-accent-500/40 bg-accent-500/12 text-accent-200' : 'border-[var(--color-border)] text-[var(--color-text-secondary)]')}>{name}</button>
+            ))}
+          </div>
+          {row('尺寸', (
+            <div className="flex items-center gap-1">
+              <Input type="number" min={256} max={2048} step={16} value={draft.width} onChange={(event) => changeSize(Number(event.target.value) || draft.width, draft.height)} className="w-[68px] text-right font-mono" />
+              <span className="text-caption text-[var(--color-text-tertiary)]">×</span>
+              <Input type="number" min={256} max={2048} step={16} value={draft.height} onChange={(event) => changeSize(draft.width, Number(event.target.value) || draft.height)} className="w-[68px] text-right font-mono" />
+            </div>
           ))}
+          {row('步数', (
+            <Segmented label="采样步数" value={String(steps)} onChange={(value) => setSteps(Number(value))} options={[{ value: '8', label: '8 DMD' }, { value: '20', label: '20' }, { value: '50', label: '50' }]} />
+          ))}
+          {row('CFG', (
+            <Input type="number" min={0} max={20} step={0.5} value={cfg} onChange={(event) => setCfg(Number(event.target.value))} className="w-[68px] text-right font-mono" />
+          ))}
+          {row('Seed', (
+            <Input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} className="w-[92px] text-right font-mono" />
+          ))}
+          {row('模型', (
+            <Select value={modelBundleId} onChange={(event) => { setModelBundleId(event.target.value); localStorage.setItem('mossstudio.modelBundleId', event.target.value) }} className="w-[184px]">
+              {catalog?.bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}
+            </Select>
+          ))}
+          {row('设备', (
+            <Select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); localStorage.setItem('mossstudio.deviceId', event.target.value) }} className="w-[184px]">
+              {devices.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.kind.toUpperCase()}</option>)}
+            </Select>
+          ))}
+          {row('引擎', (
+            <Select value={engineHostId} onChange={(event) => setEngineHostId(event.target.value)} className="w-[184px]">
+              <option value="">本机 MossInfer</option>
+              {hosts.map((host) => <option key={host.id} value={host.id}>{host.name} · 远端</option>)}
+            </Select>
+          ))}
+          {engineHostId ? (
+            <div className="space-y-1 py-2">
+              <span className="text-caption text-[var(--color-text-tertiary)]">远端模型路径</span>
+              <Input value={remoteModelPath} onChange={(event) => setRemoteModelPath(event.target.value)} placeholder="~/.mossstudio/models/..." className="w-full font-mono" />
+            </div>
+          ) : null}
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">宽度</span><Input type="number" min={256} max={2048} step={16} value={draft.width} onChange={(event) => changeSize(Number(event.target.value) || draft.width, draft.height)} /></label>
-          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">高度</span><Input type="number" min={256} max={2048} step={16} value={draft.height} onChange={(event) => changeSize(draft.width, Number(event.target.value) || draft.height)} /></label>
-        </div>
-        <div className="flex items-center justify-between"><span className="text-caption">步数</span><Segmented label="采样步数" value={String(steps)} onChange={(value) => setSteps(Number(value))} options={[{ value: '8', label: '8 DMD' }, { value: '20', label: '20' }, { value: '50', label: '50' }]} /></div>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">CFG</span><Input type="number" min={0} max={20} step={0.5} value={cfg} onChange={(event) => setCfg(Number(event.target.value))} /></label>
-          <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">Seed</span><Input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} /></label>
-        </div>
-        <label className="block space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">模型</span><Select value={modelBundleId} onChange={(event) => { setModelBundleId(event.target.value); localStorage.setItem('mossstudio.modelBundleId', event.target.value) }} className="w-full">{catalog?.bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}</Select></label>
-        <label className="block space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">设备</span><Select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); localStorage.setItem('mossstudio.deviceId', event.target.value) }} className="w-full">{devices.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.kind.toUpperCase()}</option>)}</Select></label>
-        <label className="block space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">引擎</span><Select value={engineHostId} onChange={(event) => setEngineHostId(event.target.value)} className="w-full"><option value="">本机 MossInfer</option>{hosts.map((host) => <option key={host.id} value={host.id}>{host.name} · 远端</option>)}</Select></label>
-        {engineHostId ? <label className="block space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">远端模型路径</span><Input value={remoteModelPath} onChange={(event) => setRemoteModelPath(event.target.value)} placeholder="~/.mossstudio/models/..." className="w-full" /></label> : null}
-      </div>
-    )
+      )
+    }
     if (id === 'summary') return (
       <div className="space-y-2 p-3">
         <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">整体描述</span><Textarea value={draft.summary.caption} onChange={(event) => setDraft((previous) => ({ ...previous, summary: { ...previous.summary, caption: event.target.value } }))} placeholder="一句话描述整张图。" className="h-16 w-full resize-none" /></label>
@@ -1430,7 +1569,9 @@ export function StudioPage(): React.JSX.Element {
           <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">meta</span><Input value={draft.summary.meta.join(', ')} onChange={(event) => setDraft((previous) => ({ ...previous, summary: { ...previous.summary, meta: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) } }))} className="w-full" /></label>
           <label className="space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">canvas</span><Select value={draft.summary.canvas} onChange={(event) => setDraft((previous) => ({ ...previous, summary: { ...previous.summary, canvas: event.target.value as LayoutDraft['summary']['canvas'] } }))} className="w-full"><option value="single">single</option><option value="multi_panel">multi_panel</option><option value="collage">collage</option></Select></label>
         </div>
-        <Button tone="secondary" className="w-full" onClick={compile}><SquareDashedMousePointer className="size-4" /> 编译布局 Prompt</Button>
+        <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">
+          这段描述和画布上的区域会一起编译成布局 Prompt，点下面的「开始生成」时自动发送，不需要再手动插入。
+        </p>
       </div>
     )
     if (id === 'gallery') return <MiniGallery />
@@ -1450,13 +1591,41 @@ export function StudioPage(): React.JSX.Element {
                 ref={(element) => { layerRefs.current[item.id] = element }}
                 data-layer-id={item.id}
                 tabIndex={-1}
+                draggable
                 onClick={() => { focusLayerRef.current = true; setSelectedId(item.id) }}
+                onDragStart={(event) => {
+                  // Never hijack a drag that starts on a control or a text selection.
+                  if ((event.target as HTMLElement).closest('textarea, input, select, button, a')) {
+                    event.preventDefault()
+                    return
+                  }
+                  setDragLayerId(item.id)
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('text/plain', item.id)
+                }}
+                onDragOver={(event) => {
+                  if (!dragLayerId || dragLayerId === item.id) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                  setDropLayerId(item.id)
+                }}
+                onDragLeave={() => setDropLayerId((current) => (current === item.id ? null : current))}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  if (dragLayerId && dragLayerId !== item.id) moveLayer(dragLayerId, item.id)
+                  setDragLayerId(null)
+                  setDropLayerId(null)
+                }}
+                onDragEnd={() => { setDragLayerId(null); setDropLayerId(null) }}
                 className={cn(
-                  'overflow-hidden transition-colors',
+                  'relative overflow-hidden transition-colors',
                   isSelected ? 'bg-accent-500/[0.07]' : 'hover:bg-white/[0.025]',
+                  dragLayerId === item.id && 'opacity-45',
+                  dropLayerId === item.id && 'before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-accent-400',
                 )}
               >
                 <div className="flex items-start gap-1.5 px-2 py-1.5">
+                  <GripVertical className="mt-0.5 size-3.5 shrink-0 cursor-grab text-[var(--color-text-tertiary)]" aria-hidden="true" />
                   <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-[3px] bg-accent-500/12 font-mono text-micro text-accent-200">{index + 1}</span>
                   <span className="mt-1 size-1.5 shrink-0 rounded-full" style={{ backgroundColor: item.label === 'text' ? '#f0b45a' : item.label === 'character' ? '#7fb6ff' : '#8bd1c7' }} />
                   <div className="min-w-0 flex-1">
@@ -1512,6 +1681,7 @@ export function StudioPage(): React.JSX.Element {
           {selectedCanvas?.kind === 'layout' ? (
             <>
               <StudioSection title="提示词">{renderSection('prompt')}</StudioSection>
+              <StudioSection title="布局描述">{renderSection('summary')}</StudioSection>
               <StudioSection title="生成参数">{renderSection('sampler')}</StudioSection>
               <StudioSection title="图库">{renderSection('gallery')}</StudioSection>
             </>
@@ -1533,27 +1703,80 @@ export function StudioPage(): React.JSX.Element {
             </div>
           )}
         </div>
+
+        {/* Single action zone: what will be sent, plus the one primary action. */}
+        <div className="shrink-0 border-t border-[var(--color-border-subtle)] p-2.5">
+          {selectedCanvas?.kind === 'layout' ? (
+            <>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="inline-flex min-w-0 items-center gap-1.5 text-caption text-[var(--color-text-tertiary)]">
+                  <span className={cn('size-1.5 shrink-0 rounded-full', pendingPrompt.regions > 0 ? 'bg-accent-400' : 'bg-white/30')} />
+                  <span className="truncate">
+                    {pendingPrompt.regions > 0 ? `布局 Prompt · ${pendingPrompt.regions} 个区域` : '手写提示词'}
+                  </span>
+                </span>
+                <button type="button" onClick={compile} className="shrink-0 text-caption text-accent-300 hover:underline">预览</button>
+              </div>
+              <Button
+                tone="primary"
+                className="w-full"
+                data-studio-generate
+                aria-busy={submitting}
+                disabled={submitting || projectSaving || !pendingPrompt.prompt.trim()}
+                title={pendingPrompt.regions > 0 ? `编译布局后生成到 ${selectedCanvas.title}` : `用手写提示词生成到 ${selectedCanvas.title}`}
+                onClick={() => void generate()}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  {submitting ? '正在提交…' : '开始生成'}
+                  {submitting ? <Spinner /> : <ArrowRight className="size-4" />}
+                </span>
+              </Button>
+              {!pendingPrompt.prompt.trim() ? (
+                <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">写提示词或在画布上拖出一个区域</p>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">选中一张布局 Canvas 后可以生成。</p>
+          )}
+        </div>
       </StudioSidebar>
 
       <section aria-label="画布" className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--color-border-subtle)] px-3">
-          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--color-border-subtle)] px-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
             {draftTab ? (
               <button
                 type="button"
                 onClick={restoreDraftTab}
                 className={cn(
-                  'flex h-8 max-w-[210px] shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 px-2.5 text-ui transition',
-                  !projectId ? 'border-accent-400 bg-white/[0.07] text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
+                  'flex h-7 max-w-[168px] shrink-0 items-center gap-1.5 rounded-[5px] border px-2 text-caption transition',
+                  !projectId ? 'border-accent-400/60 bg-accent-400/10 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
                 )}
               >
                 <span className="truncate">{draftTab.name}</span>
-                <span className="shrink-0 text-micro text-amber-300">未保存</span>
+                <span className="shrink-0 size-1.5 rounded-full bg-amber-400" title="未保存" />
               </button>
             ) : null}
             {orderedProjects.map((item) => {
               const current = item.id === projectId
-              const status = current && projectSaving ? '保存中' : current ? '已保存' : '已保存'
+              const saving = current && projectSaving
+              if (renamingProjectId === item.id) {
+                return (
+                  <div key={item.id} className="flex h-7 shrink-0 items-center rounded-[5px] border border-accent-400/60 bg-accent-400/10 px-1">
+                    <input
+                      autoFocus
+                      value={renameDraft}
+                      onChange={(event) => setRenameDraft(event.target.value)}
+                      onBlur={() => void renameProject(item.id, renameDraft)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') { event.preventDefault(); void renameProject(item.id, renameDraft) }
+                        if (event.key === 'Escape') { event.preventDefault(); setRenamingProjectId(null) }
+                      }}
+                      className="h-6 w-[132px] rounded-[3px] bg-black/35 px-1.5 text-caption outline-none"
+                    />
+                  </div>
+                )
+              }
               return (
                 <button
                   key={item.id}
@@ -1572,49 +1795,82 @@ export function StudioPage(): React.JSX.Element {
                     setDragTab(null)
                   }}
                   onClick={() => { if (!current) void openProject(item.id) }}
+                  onDoubleClick={() => { setRenamingProjectId(item.id); setRenameDraft(item.name) }}
                   className={cn(
-                    'flex h-8 max-w-[210px] shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 px-2.5 text-ui transition',
-                    current ? 'border-accent-400 bg-white/[0.07] text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
+                    'group flex h-7 max-w-[180px] shrink-0 items-center gap-1.5 rounded-[5px] border px-2 text-caption transition',
+                    current
+                      ? 'border-accent-400/60 bg-accent-400/10 text-[var(--color-text)]'
+                      : 'border-transparent text-[var(--color-text-secondary)] hover:bg-white/[0.04]',
                   )}
-                  title={item.name}
+                  title={`${item.name}${saving ? ' · 保存中' : ''}（双击重命名）`}
                 >
-                  <span className="truncate">{item.name || '未命名画布'}</span>
-                  <span className={cn('shrink-0 text-micro', status === '保存中' ? 'text-amber-300' : 'text-[var(--color-text-tertiary)]')}>{status}</span>
+                  <span className="truncate">{item.name || '未命名 Project'}</span>
+                  {saving ? <span className="shrink-0 size-1.5 rounded-full bg-amber-400" /> : null}
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    aria-label={`删除 ${item.name}`}
+                    title="删除 Project"
+                    onClick={(event) => { event.stopPropagation(); void removeProject(item.id) }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    className="ml-0.5 shrink-0 rounded p-0.5 text-[var(--color-text-tertiary)] opacity-0 transition group-hover:opacity-100 hover:bg-red-400/15 hover:text-red-300"
+                  >
+                    <X className="size-3" />
+                  </span>
                 </button>
               )
             })}
             {!projectId && !draftTab ? (
-              <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-t-[5px] border-b-2 border-accent-400 bg-white/[0.07] px-2.5 text-ui">
-                <span className="max-w-[180px] truncate">{projectName.trim() || '未命名画布'}</span>
-                <span className="text-micro text-amber-300">未保存</span>
+              <div className="flex h-7 shrink-0 items-center gap-1.5 rounded-[5px] border border-accent-400/60 bg-accent-400/10 px-2 text-caption">
+                <span className="max-w-[168px] truncate">{projectName.trim() || '未命名 Project'}</span>
+                <span className="shrink-0 size-1.5 rounded-full bg-amber-400" title="未保存" />
               </div>
             ) : null}
-            {orderedProjects.length === 0 && projectId ? <span className="px-2 text-caption text-[var(--color-text-tertiary)]">还没有画布</span> : null}
+            {orderedProjects.length === 0 && projectId ? <span className="px-2 text-caption text-[var(--color-text-tertiary)]">还没有 Project</span> : null}
           </div>
-          <Button tone="secondary" onClick={newProject}><Plus className="size-4" /> 新建 Project</Button>
-          {env ? <Pill tone="blue">{env.recommendation.width}² · {env.recommendation.steps} 步</Pill> : null}
+
+          <Pill tone={backend?.ready ? 'accent' : 'amber'}>{backend?.ready ? '后端就绪' : '后端启动中'}</Pill>
+          <Button tone="ghost" size="sm" onClick={() => void saveProjectNow(true)} disabled={!projectDirty || projectSaving} title="保存 Project（Ctrl+S）">
+            <span className="inline-flex items-center gap-1.5">
+              <Save className="size-4" />
+              {projectSaving ? '保存中…' : projectDirty ? '保存' : '已保存'}
+            </span>
+          </Button>
+          <Button tone="secondary" size="sm" onClick={newProject}>
+            <span className="inline-flex items-center gap-1.5"><Plus className="size-4" /> 新建</span>
+          </Button>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--color-border-subtle)] px-2 py-1.5">
-          <div
-            inert={selectedCanvas?.kind !== 'layout'}
-            aria-disabled={selectedCanvas?.kind !== 'layout'}
-            className={cn('flex flex-wrap items-center gap-1.5', selectedCanvas?.kind !== 'layout' && 'pointer-events-none opacity-40')}
-          >
-            <Segmented label="画布工具" value={tool} onChange={(value) => setTool(value as 'select' | 'draw' | 'pan')} options={[{ value: 'select', label: '选择' }, { value: 'draw', label: '画框' }, { value: 'pan', label: '手型' }]} />
-            <Segmented value={label} onChange={(value) => setLabel(value as LayoutLabel)} options={[{ value: 'object', label: '物体' }, { value: 'character', label: '人物' }, { value: 'text', label: '文字' }]} />
-            <IconButton label="示例布局" onClick={() => requestLayoutReset('example')}><Sparkles className="size-4" /></IconButton>
-            <IconButton label="清空画布" onClick={() => requestLayoutReset('clear')} disabled={!draft.items.length}><Eraser className="size-4" /></IconButton>
-            {background ? <IconButton label="清除底图" onClick={() => setStudioBackground(null)}><X className="size-4" /></IconButton> : null}
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--color-border-subtle)] px-2.5">
+          {selectedCanvas?.kind === 'layout' ? (
+            <div className="flex min-w-0 shrink-0 items-center gap-1.5">
+              <Segmented label="画布工具" value={tool} onChange={(value) => setTool(value as 'select' | 'draw' | 'pan')} options={[{ value: 'select', label: '选择' }, { value: 'draw', label: '画框' }, { value: 'pan', label: '手型' }]} />
+              <Segmented value={label} onChange={(value) => setLabel(value as LayoutLabel)} options={[{ value: 'object', label: '物体' }, { value: 'character', label: '人物' }, { value: 'text', label: '文字' }]} />
+              <span className="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border-subtle)]" />
+              <IconButton label="示例布局" onClick={() => requestLayoutReset('example')}><Sparkles className="size-4" /></IconButton>
+              <IconButton label="清空画布" onClick={() => requestLayoutReset('clear')} disabled={!draft.items.length}><Eraser className="size-4" /></IconButton>
+              {background ? <IconButton label="清除底图" onClick={() => setStudioBackground(null)}><X className="size-4" /></IconButton> : null}
+            </div>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-caption text-[var(--color-text-tertiary)]">
+              {selectedCanvas ? '结果 Canvas · 选中一张布局 Canvas 才能编辑区域' : '未选中 Canvas · 在画布上点选一张'}
+            </span>
+          )}
+
+          <div className="hidden min-w-0 flex-1 justify-center px-2 md:flex">
+            {selectedCanvas ? (
+              <span className="truncate text-caption text-[var(--color-text-tertiary)]">
+                <span className="text-[var(--color-text-secondary)]">{selectedCanvas.title}</span>
+                {' · '}{selectedCanvas.width}×{selectedCanvas.height}
+                {' · '}{selectedCanvas.layers.length} 个区域
+              </span>
+            ) : null}
           </div>
-          <div className="ml-1 flex items-center gap-0.5 border-l border-[var(--color-border-subtle)] pl-1">
+
+          <div className="flex shrink-0 items-center gap-0.5">
             <IconButton label="缩小画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 0.8) }}><Minus className="size-4" /></IconButton>
-            <button type="button" onClick={resetView} className="w-11 text-center font-mono text-caption text-[var(--color-text-secondary)] hover:text-[var(--color-text)]" title="重置为 100%">{Math.round(zoom * 100)}%</button>
+            <button type="button" onClick={() => resetView()} className="w-11 text-center font-mono text-caption text-[var(--color-text-secondary)] hover:text-[var(--color-text)]" title="适配全部画布">{Math.round(zoom * 100)}%</button>
             <IconButton label="放大画布" onClick={() => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.25) }}><Plus className="size-4" /></IconButton>
-            <IconButton label="恢复画布视图" onClick={resetView}><RotateCcw className="size-4" /></IconButton>
-          </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <Pill tone={backend?.ready ? 'accent' : 'amber'}>{backend?.ready ? '后端就绪' : '后端启动中'}</Pill>
-            <Button tone="primary" data-studio-generate disabled={submitting || projectSaving || selectedCanvas?.kind !== 'layout'} aria-busy={submitting} onClick={() => void generate()}><span className="inline-flex items-center gap-1.5">{submitting ? '正在提交…' : '开始生成'} {submitting ? <Spinner /> : <ArrowRight className="size-4" />}</span></Button>
+            <IconButton label="适配全部画布" onClick={() => resetView()}><Maximize2 className="size-4" /></IconButton>
           </div>
         </div>
 
@@ -2082,7 +2338,6 @@ export function StudioPage(): React.JSX.Element {
           <>
             <div id="studio-tool-layout" role="tabpanel" aria-labelledby="studio-tab-layout" hidden={activeTool !== 'layout'} className="min-h-0 flex-1 overflow-y-auto">
               <StudioSection title="图层">{renderSection('layers')}</StudioSection>
-              <StudioSection title="布局描述">{renderSection('summary')}</StudioSection>
             </div>
             <div id="studio-tool-agent" role="tabpanel" aria-labelledby="studio-tab-agent" hidden={activeTool !== 'agent'} className="min-h-0 flex-1 overflow-hidden">
               <AgentSidebar embedded />
