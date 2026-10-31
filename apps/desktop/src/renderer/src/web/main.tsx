@@ -111,17 +111,18 @@ function App(): React.JSX.Element {
       setProjectName(project.name)
       setSeriesId(project.seriesId ?? '')
       setPage(project.page ?? 1)
-      setPrompt(project.prompt)
-      setNegative(project.negative)
-      setSeed(project.seed)
-      setSteps(project.steps)
-      setCfg(project.cfg)
-      if (project.instanceId) setInstanceId(project.instanceId)
+      const canvas = project.canvases.find((item) => item.kind === 'layout') ?? project.canvases[0]
+      if (!canvas) return
+      setPrompt(canvas.prompt)
+      setNegative(canvas.negative)
+      setSeed(canvas.seed)
+      setSteps(canvas.steps)
+      setCfg(canvas.cfg)
       setDraft({
-        width: project.width,
-        height: project.height,
-        summary: project.summary,
-        items: project.layers.map((layer) => ({
+        width: canvas.width,
+        height: canvas.height,
+        summary: canvas.summary,
+        items: canvas.layers.map((layer) => ({
           id: layer.id,
           label: layer.kind,
           caption: layer.caption,

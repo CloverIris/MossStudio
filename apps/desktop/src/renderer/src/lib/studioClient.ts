@@ -6,24 +6,10 @@ import { call } from './api'
 export interface StudioProjectInput {
   id?: string
   name: string
-  width: number
-  height: number
-  summary: ProjectDocument['summary']
-  layers: ProjectDocument['layers']
-  prompt: string
-  negative: string
-  seed: number
-  steps: number
-  cfg: number
-  instanceId?: string
-  modelBundleId?: string
-  deviceId?: string
-  backgroundPath?: string
+  canvases: ProjectCanvas[]
+  selectedCanvasId?: string
   seriesId?: string
   page?: number
-  canvases?: ProjectCanvas[]
-  selectedCanvasId?: string
-  board?: ProjectDocument['board']
 }
 
 /**

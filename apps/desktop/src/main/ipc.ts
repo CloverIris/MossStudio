@@ -1,6 +1,6 @@
 import { app, clipboard, dialog, ipcMain, shell } from 'electron'
 import { spawn } from 'node:child_process'
-import { mkdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, statSync } from 'node:fs'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
 import { schemas } from '@shared/schemas'
@@ -526,16 +526,24 @@ export function registerIpc(): void {
   handle(Ipc.openPath, schemas.openPath, async ({ path }) => {
     const allowed = [paths.root(), paths.models(getSettings().modelsRoot)]
     if (!allowed.some((base) => isInside(base, path))) throw new Error('路径不在允许范围内')
-    mkdirSync(path, { recursive: true })
-    if (!statSync(path).isDirectory()) throw new Error('目标路径不是目录')
+    // Both folders (model root) and files (generated images) arrive here, so only
+    // create the directory when the target is really missing. mkdir on an existing
+    // file throws EEXIST.
+    if (!existsSync(path)) mkdirSync(path, { recursive: true })
+    const stats = statSync(path)
+    if (!stats.isDirectory() && !stats.isFile()) throw new Error('目标路径不可打开')
     const error = await shell.openPath(path)
-    // ShellExecuteW can fail here even for a directory the app can read (it then
-    // shows its own "Windows cannot access..." dialog). Fall back to launching
-    // Explorer directly so the user still gets the folder open.
+    // ShellExecuteW can fail here even for a path the app can read (it then shows
+    // its own "Windows cannot access..." dialog). Fall back to Explorer so the user
+    // still gets the folder, or the file selected in its folder.
     if (error) {
-      const child = spawn('explorer.exe', [path], { detached: true, stdio: 'ignore' })
-      child.on('error', () => undefined)
-      child.unref()
+      if (stats.isDirectory()) {
+        const child = spawn('explorer.exe', [path], { detached: true, stdio: 'ignore' })
+        child.on('error', () => undefined)
+        child.unref()
+      } else {
+        shell.showItemInFolder(path)
+      }
     }
     return true
   })

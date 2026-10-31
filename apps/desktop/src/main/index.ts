@@ -1497,26 +1497,39 @@ exit 0
   if (scenario === 'project-save') {
     const saved = saveProject({
       name: 'Scenario Project',
-      width: 1024,
-      height: 1024,
-      summary: { caption: 'test', meta: ['test'], canvas: 'single' },
-      layers: [{ id: 'layer-1', kind: 'object', caption: 'test region', bbox: [10, 20, 300, 400], visible: true, locked: false, opacity: 1 }],
-      prompt: 'test prompt',
-      negative: '',
-      seed: 42,
-      steps: 8,
-      cfg: 1,
+      canvases: [{
+        id: 'scenario-canvas',
+        kind: 'layout',
+        title: 'Canvas 1',
+        x: 0,
+        y: 0,
+        width: 1024,
+        height: 1024,
+        summary: { caption: 'test', meta: ['test'], canvas: 'single' },
+        layers: [{ id: 'layer-1', kind: 'object', caption: 'test region', bbox: [10, 20, 300, 400], visible: true, locked: false, opacity: 1 }],
+        prompt: 'test prompt',
+        negative: '',
+        seed: 42,
+        steps: 8,
+        cfg: 1,
+      }],
     })
     const loaded = getProject(saved.id)
     const count = listProjects().filter((item) => item.id === saved.id).length
     deleteProject(saved.id)
-    console.log(JSON.stringify({ scenario: 'project-save', id: saved.id, loaded: loaded?.name, layers: loaded?.layers.length, listed: count }, null, 2))
+    console.log(JSON.stringify({ scenario: 'project-save', id: saved.id, loaded: loaded?.name, layers: loaded?.canvases[0]?.layers.length, listed: count }, null, 2))
     app.exit(loaded && count === 1 ? 0 : 1)
     return
   }
 
   if (scenario === 'project-series') {
-    const base = {
+    const seriesId = `series-test-${Date.now()}`
+    const canvas = (id: string) => ({
+      id,
+      kind: 'layout' as const,
+      title: 'Canvas 1',
+      x: 0,
+      y: 0,
       width: 1024,
       height: 1024,
       summary: { caption: 'series', meta: ['test'], canvas: 'single' as const },
@@ -1526,15 +1539,14 @@ exit 0
       seed: 42,
       steps: 8,
       cfg: 1,
-      seriesId: `series-test-${Date.now()}`,
-    }
-    const first = saveProject({ ...base, name: 'Page 1', page: 1 })
-    const second = saveProject({ ...base, name: 'Page 2', page: 2 })
-    const summaries = listProjects().filter((item) => item.seriesId === base.seriesId).sort((a, b) => (a.page ?? 1) - (b.page ?? 1))
+    })
+    const first = saveProject({ name: 'Page 1', page: 1, seriesId, canvases: [canvas('page-1-canvas')] })
+    const second = saveProject({ name: 'Page 2', page: 2, seriesId, canvases: [canvas('page-2-canvas')] })
+    const summaries = listProjects().filter((item) => item.seriesId === seriesId).sort((a, b) => (a.page ?? 1) - (b.page ?? 1))
     const loaded = getProject(second.id)
     deleteProject(first.id)
     deleteProject(second.id)
-    console.log(JSON.stringify({ scenario: 'project-series', pages: summaries.map((item) => item.page), secondPage: loaded?.page, series: loaded?.seriesId === base.seriesId }, null, 2))
+    console.log(JSON.stringify({ scenario: 'project-series', pages: summaries.map((item) => item.page), secondPage: loaded?.page, series: loaded?.seriesId === seriesId }, null, 2))
     app.exit(summaries.length === 2 && summaries[0]?.page === 1 && summaries[1]?.page === 2 && loaded?.page === 2 ? 0 : 1)
     return
   }

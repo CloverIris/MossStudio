@@ -91,3 +91,58 @@
   outline: 2px solid var(--accent);
   outline-offset: -3px;
 }
+
+/* A Canvas that is generating: slow outer glow plus a light sweep across the card,
+   so the job state is readable on the board without opening the terminal. */
+.studio-canvas-running {
+  position: relative;
+  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+  animation: studio-canvas-glow 2.6s ease-in-out infinite;
+}
+
+.studio-canvas-running::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(112deg, transparent 34%, rgb(255 255 255 / 0.07) 50%, transparent 66%);
+  background-size: 240% 100%;
+  animation: studio-canvas-sweep 2.4s linear infinite;
+}
+
+@keyframes studio-canvas-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
+      0 0 20px -10px color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+      0 0 28px -6px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+}
+
+@keyframes studio-canvas-sweep {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -130% 0;
+  }
+}
+
+/* Indeterminate state of the bottom progress band. */
+.studio-canvas-progress-slide {
+  animation: studio-canvas-progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes studio-canvas-progress-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(360%);
+  }
+}

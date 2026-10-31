@@ -29,7 +29,6 @@ import type { BackendInfo } from '@shared/backend'
 import { Events, Ipc } from '@shared/channels'
 import { call, onEvent } from '../lib/api'
 import { electronStudioClient } from '../lib/studioClient'
-import { openWindow } from '../lib/windows'
 import { cloverUrl } from '../lib/clover'
 import {
   clampBox,
@@ -57,8 +56,31 @@ const SIZE_PRESETS: Array<[string, number, number]> = [
   ['768×1024', 768, 1024],
 ]
 
-const LABEL_META: Record<LayoutLabel, { name: string; color: string; icon: React.ReactNode }> = {
-  object: { name: '物体', color: 'accent', icon: <Box className="size-4" /> },
+/**
+ * Board scale: one Canvas pixel maps to BOARD_UNIT board pixels, so a 512² Canvas
+ * covers a quarter of the area of a 1024² one, and every Canvas can be dragged to
+ * any position on the board instead of sitting in a grid cell.
+ */
+const BOARD_UNIT = 0.34
+const BOARD_GAP = 28
+const CARD_HEADER = 40
+const SLOT_W = Math.round(1024 * BOARD_UNIT)
+const SLOT_H = Math.round(1024 * BOARD_UNIT) + CARD_HEADER
+
+function boardCardWidth(canvas: ProjectCanvas): number {
+  return Math.round(canvas.width * BOARD_UNIT)
+}
+function boardCardBodyHeight(canvas: ProjectCanvas): number {
+  return Math.round(canvas.height * BOARD_UNIT)
+}
+function boardCardHeight(canvas: ProjectCanvas): number {
+  return boardCardBodyHeight(canvas) + CARD_HEADER
+}
+function boardCardPosition(canvas: ProjectCanvas): { x: number; y: number } {
+  return { x: canvas.x, y: canvas.y }
+}
+
+const LABEL_META: Record<LayoutLabel, { name: string; color: string; icon: React.ReactNode }> = {  object: { name: '物体', color: 'accent', icon: <Box className="size-4" /> },
   character: { name: '人物', color: 'sky', icon: <UserRound className="size-4" /> },
   text: { name: '文字', color: 'amber', icon: <Type className="size-4" /> },
 }
@@ -104,33 +126,32 @@ function MiniGallery(): React.JSX.Element {
   )
 }
 
-function ResultPreview(props: {
-  path: string
-  title: string
-  onOpen: () => void
-}): React.JSX.Element {
+/** Board geometry in unscaled board coordinates, for the corner overview. */
+interface MinimapState {
+  width: number
+  height: number
+  cards: Array<{ id: string; x: number; y: number; width: number; height: number }>
+  view: { x: number; y: number; width: number; height: number }
+}
+
+/** Result image with a readable fallback when the file on disk is gone. */
+function ResultImage(props: { path: string; title: string; className?: string }): React.JSX.Element {
   const [unavailable, setUnavailable] = useState(false)
+  if (unavailable) {
+    return (
+      <span className="flex size-full items-center justify-center px-2 text-center text-micro text-red-300">
+        图片文件无法读取<br /><span className="break-all text-[var(--color-text-tertiary)]">{props.path}</span>
+      </span>
+    )
+  }
   return (
-    <button
-      type="button"
-      title={unavailable ? '图片文件无法读取' : '点击打开生成图片'}
-      onClick={(event) => {
-        event.stopPropagation()
-        if (!unavailable) props.onOpen()
-      }}
-      className="flex min-h-0 items-center justify-center overflow-hidden"
-    >
-      {unavailable ? (
-        <span className="px-2 text-center text-micro text-red-300">图片文件无法读取<br /><span className="break-all text-[var(--color-text-tertiary)]">{props.path}</span></span>
-      ) : (
-        <img
-          src={cloverUrl(props.path)}
-          alt={props.title}
-          className="max-h-full max-w-full object-contain"
-          onError={() => setUnavailable(true)}
-        />
-      )}
-    </button>
+    <img
+      src={cloverUrl(props.path)}
+      alt={props.title}
+      className={props.className ?? 'size-full object-cover'}
+      draggable={false}
+      onError={() => setUnavailable(true)}
+    />
   )
 }
 
@@ -154,41 +175,6 @@ interface DraftTabSnapshot {
 type DragState =
   | { kind: 'move' | 'resize'; id: string; startX: number; startY: number; origin: [number, number, number, number] }
   | null
-
-function draftFromProject(project: ProjectDocument): LayoutDraft {
-  return {
-    width: project.width,
-    height: project.height,
-    summary: project.summary,
-    items: project.layers.map((layer) => ({
-      id: layer.id,
-      label: layer.kind,
-      caption: layer.caption,
-      text: layer.text,
-      bbox: layer.bbox,
-      visible: layer.visible,
-      locked: layer.locked,
-      opacity: layer.opacity,
-    })),
-  }
-}
-
-function projectSnapshot(input: {
-  name: string
-  draft: LayoutDraft
-  prompt: string
-  negative: string
-  seed: number
-  steps: number
-  cfg: number
-  modelBundleId: string
-  deviceId: string
-  backgroundPath?: string
-  seriesId: string
-  page: number
-}): string {
-  return JSON.stringify(input)
-}
 
 function isJobRecord(value: unknown): value is JobRecord {
   if (!value || typeof value !== 'object') return false
@@ -273,6 +259,15 @@ export function StudioPage(): React.JSX.Element {
   const [isPanning, setIsPanning] = useState(false)
   const panRef = useRef<{ pointerId: number; buttons: number; x: number; y: number; ox: number; oy: number } | null>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
+  /** The transformed board element; its untransformed origin anchors all zoom math. */
+  const boardRef = useRef<HTMLDivElement>(null)
+  /** Latest board extent, readable from callbacks without re-subscribing. */
+  const boardBoxRef = useRef({ width: SLOT_W + BOARD_GAP, height: SLOT_H + BOARD_GAP })
+  /** Live pan/zoom mirrors so deferred callbacks never read a stale closure. */
+  const panLiveRef = useRef(pan)
+  const zoomLiveRef = useRef(zoom)
+  panLiveRef.current = pan
+  zoomLiveRef.current = zoom
   useEffect(() => {
     window.addEventListener('blur', endPan)
     return () => window.removeEventListener('blur', endPan)
@@ -298,6 +293,49 @@ export function StudioPage(): React.JSX.Element {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [canvases, setCanvases] = useState<ProjectCanvas[]>([])
   const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null)
+  const canvasCardRefs = useRef<Map<string, HTMLElement>>(new Map())
+  /** Layout Canvas whose result is temporarily swapped back to the bbox editor. */
+  const [editingCanvasId, setEditingCanvasId] = useState<string | null>(null)
+  const [previewOutput, setPreviewOutput] = useState<{ canvas: ProjectCanvas; path: string } | null>(null)
+  const cardDragRef = useRef<{ id: string; pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null)
+  const cardDragMovedRef = useRef(false)
+  /** Until this timestamp, a click that follows a drag must not re-centre the board. */
+  const suppressFocusRef = useRef(0)
+  const [dragCanvasId, setDragCanvasId] = useState<string | null>(null)
+  const [minimap, setMinimap] = useState<MinimapState | null>(null)
+  useEffect(() => {
+    const grid = boardRef.current
+    const viewport = viewportRef.current
+    if (!grid || !viewport) {
+      setMinimap(null)
+      return
+    }
+    const rect = grid.getBoundingClientRect()
+    const viewRect = viewport.getBoundingClientRect()
+    const cards = [...canvasCardRefs.current.entries()].map(([id, element]) => {
+      const cardRect = element.getBoundingClientRect()
+      return {
+        id,
+        x: (cardRect.left - rect.left) / zoom,
+        y: (cardRect.top - rect.top) / zoom,
+        width: cardRect.width / zoom,
+        height: cardRect.height / zoom,
+      }
+    })
+    const view = {
+      x: (viewRect.left - rect.left) / zoom,
+      y: (viewRect.top - rect.top) / zoom,
+      width: viewRect.width / zoom,
+      height: viewRect.height / zoom,
+    }
+    const width = Math.max(grid.offsetWidth, view.x + view.width)
+    const height = Math.max(grid.offsetHeight, view.y + view.height)
+    if (!width || !height) {
+      setMinimap(null)
+      return
+    }
+    setMinimap({ width, height, cards, view })
+  }, [pan.x, pan.y, zoom, canvases.length, selectedCanvasId])
   const [projectId, setProjectId] = useState<string | null>(null)
   const [projectName, setProjectName] = useState('未命名 Project')
   const [seriesId, setSeriesId] = useState('')
@@ -309,6 +347,17 @@ export function StudioPage(): React.JSX.Element {
   const jobs = useApp((state) => state.jobs)
   const cancelJob = useApp((state) => state.cancelJob)
   const selectedCanvas = canvases.find((canvas) => canvas.id === selectedCanvasId) ?? null
+  // Fit the board once per opened project, as soon as its Canvases are on screen.
+  const fitPendingRef = useRef(true)
+  useEffect(() => { fitPendingRef.current = true }, [projectId])
+  useEffect(() => {
+    if (!fitPendingRef.current || canvases.length === 0) return
+    fitPendingRef.current = false
+    requestAnimationFrame(() => fitBoard())
+  }, [canvases.length, projectId])
+  const previewJob = previewOutput?.canvas.jobId
+    ? jobs.find((item) => item.id === previewOutput.canvas.jobId)
+    : undefined
   const currentCanvasSnapshot = useMemo<ProjectCanvas | null>(() => {
     if (!selectedCanvas || selectedCanvas.kind !== 'layout') return selectedCanvas
     return {
@@ -362,11 +411,13 @@ export function StudioPage(): React.JSX.Element {
   }, [jobs])
   const snapshot = useMemo(
     () => JSON.stringify({
-      project: projectSnapshot({ name: projectName, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, backgroundPath: background?.path, seriesId, page }),
+      name: projectName,
+      seriesId,
+      page,
       canvases: persistedCanvases,
       selectedCanvasId,
     }),
-    [projectName, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, background?.path, seriesId, page, persistedCanvases, selectedCanvasId],
+    [projectName, seriesId, page, persistedCanvases, selectedCanvasId],
   )
   const canvasRef = useRef<HTMLDivElement>(null)
 
@@ -623,11 +674,27 @@ export function StudioPage(): React.JSX.Element {
     setSelectedId(null)
   }
 
+  /** First board position where a card of this pixel size does not overlap anything. */
+  function nextFreeBoardSpot(width: number, height: number): { x: number; y: number } {
+    const taken = canvases.map((item) => {
+      const pos = boardCardPosition(item)
+      return { x: pos.x, y: pos.y, w: boardCardWidth(item), h: boardCardHeight(item) }
+    })
+    const w = Math.round(width * BOARD_UNIT)
+    const h = Math.round(height * BOARD_UNIT) + CARD_HEADER
+    for (let row = 0; row < 200; row += 1) {
+      for (let column = 0; column < 8; column += 1) {
+        const candidate = { x: column * (SLOT_W + BOARD_GAP), y: row * (SLOT_H + BOARD_GAP) }
+        const clash = taken.some((item) => candidate.x < item.x + item.w && candidate.x + w > item.x
+          && candidate.y < item.y + item.h && candidate.y + h > item.y)
+        if (!clash) return candidate
+      }
+    }
+    return { x: 0, y: 0 }
+  }
+
   function createLayoutCanvas(source?: ProjectCanvas): ProjectCanvas {
     const id = crypto.randomUUID()
-    const occupied = new Set(canvases.map((canvas) => `${canvas.row}:${canvas.column}`))
-    let index = 0
-    while (occupied.has(`${Math.floor(index / 2)}:${index % 2}`)) index += 1
     const nextDraft = source
       ? {
           width: source.width,
@@ -635,13 +702,23 @@ export function StudioPage(): React.JSX.Element {
           summary: structuredClone(source.summary),
           items: source.layers.map((layer) => ({ ...layer, id: crypto.randomUUID(), label: layer.kind })),
         }
-      : createDraft(1024, 1024)
+      : // A new Canvas inherits the size currently picked in the sampler panel.
+        createDraft(draft.width, draft.height)
+    const position = source
+      ? { x: boardCardPosition(source).x + boardCardWidth(source) + BOARD_GAP, y: boardCardPosition(source).y }
+      : nextFreeBoardSpot(nextDraft.width, nextDraft.height)
+    // Number after the highest existing "Canvas N" so titles never collide.
+    let highest = 0
+    for (const item of canvases) {
+      const match = /^Canvas (\d+)$/.exec(item.title)
+      if (match) highest = Math.max(highest, Number(match[1]))
+    }
     return {
       id,
       kind: 'layout',
-      title: source ? `${source.title} · 复制` : `Canvas ${canvases.length + 1}`,
-      row: Math.floor(index / 2),
-      column: index % 2,
+      title: source ? `${source.title} · 复制` : `Canvas ${highest + 1}`,
+      x: position.x,
+      y: position.y,
       width: nextDraft.width,
       height: nextDraft.height,
       summary: nextDraft.summary,
@@ -673,12 +750,114 @@ export function StudioPage(): React.JSX.Element {
     setTool('draw')
   }
 
-  function selectCanvas(canvas: ProjectCanvas): void {
-    if (canvas.id === selectedCanvasId) return
-    setCanvases((previous) => currentCanvasSnapshot
-      ? previous.map((item) => item.id === currentCanvasSnapshot.id ? currentCanvasSnapshot : item)
-      : previous)
-    hydrateCanvas(canvas)
+  function selectCanvas(canvas: ProjectCanvas, options?: { focus?: boolean }): void {
+    if (canvas.id !== selectedCanvasId) {
+      setCanvases((previous) => currentCanvasSnapshot
+        ? previous.map((item) => item.id === currentCanvasSnapshot.id ? currentCanvasSnapshot : item)
+        : previous)
+      hydrateCanvas(canvas)
+    }
+    if (options?.focus === false) return
+    // Measure on the next frame: selecting swaps the card body for the editor, so the
+    // pre-render rect no longer matches the height that is about to be centred.
+    requestAnimationFrame(() => focusCanvasInViewport(canvas.id))
+  }
+
+  function beginCardDrag(event: React.PointerEvent<HTMLElement>, canvas: ProjectCanvas): void {
+    if (event.button !== 0) return
+    // Let the header buttons handle their own clicks.
+    if ((event.target as HTMLElement).closest('button')) return
+    event.preventDefault()
+    event.stopPropagation()
+    const position = boardCardPosition(canvas)
+    cardDragRef.current = {
+      id: canvas.id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: position.x,
+      originY: position.y,
+    }
+    cardDragMovedRef.current = false
+    setDragCanvasId(canvas.id)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function moveCardDrag(event: React.PointerEvent<HTMLElement>): void {
+    const drag = cardDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    // Self-heal a missed pointerup: without a held button this is no longer a drag.
+    if ((event.buttons & 1) === 0) {
+      endCardDrag(event)
+      return
+    }
+    event.stopPropagation()
+    const dx = (event.clientX - drag.startX) / zoom
+    const dy = (event.clientY - drag.startY) / zoom
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) cardDragMovedRef.current = true
+    setCanvases((previous) => previous.map((item) => item.id === drag.id
+      ? { ...item, x: Math.round(drag.originX + dx), y: Math.round(drag.originY + dy) }
+      : item))
+  }
+
+  function endCardDrag(event: React.PointerEvent<HTMLElement>): void {
+    const drag = cardDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    cardDragRef.current = null
+    setDragCanvasId(null)
+    // The browser still fires a click on the card after a drag; do not let that click
+    // re-centre the board, or the card appears to fly away from where it was dropped.
+    if (cardDragMovedRef.current) suppressFocusRef.current = performance.now() + 400
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  /** Focusing a Canvas centres it and lands on the 125% working zoom. */
+  function focusCanvasInViewport(id: string): void {
+    const card = canvasCardRefs.current.get(id)
+    const viewport = viewportRef.current
+    const origin = boardOrigin()
+    if (!card || !viewport || !origin) {
+      boardDebug('focus.skip', { id, hasCard: Boolean(card), hasViewport: Boolean(viewport), hasOrigin: Boolean(origin) })
+      return
+    }
+    const view = viewport.getBoundingClientRect()
+    const rect = card.getBoundingClientRect()
+    const zoomNow = zoomLiveRef.current
+    const panNow = panLiveRef.current
+    const nextZoom = 1.25
+    // Screen → board: subtract the origin AND the pan before dividing by zoom.
+    const cx = (rect.left + rect.width / 2 - origin.x - panNow.x) / zoomNow
+    const cy = (rect.top + rect.height / 2 - origin.y - panNow.y) / zoomNow
+    const nextPan = {
+      x: view.left + view.width / 2 - origin.x - nextZoom * cx,
+      y: view.top + view.height / 2 - origin.y - nextZoom * cy,
+    }
+    boardDebug('focus.input', {
+      id,
+      card: { left: Math.round(rect.left), top: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) },
+      boardPoint: { cx: Math.round(cx), cy: Math.round(cy) },
+      nextZoom,
+      nextPan: { x: Math.round(nextPan.x), y: Math.round(nextPan.y) },
+    })
+    setZoom(nextZoom)
+    setPan(nextPan)
+    // Verify on a later frame: where did the card actually land?
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const element = canvasCardRefs.current.get(id)
+      const viewRect = viewportRef.current?.getBoundingClientRect()
+      if (!element || !viewRect) return
+      const after = element.getBoundingClientRect()
+      boardDebug('focus.result', {
+        id,
+        wantCentre: { x: Math.round(viewRect.left + viewRect.width / 2), y: Math.round(viewRect.top + viewRect.height / 2) },
+        gotCentre: { x: Math.round(after.left + after.width / 2), y: Math.round(after.top + after.height / 2) },
+        dx: Math.round(after.left + after.width / 2 - (viewRect.left + viewRect.width / 2)),
+        dy: Math.round(after.top + after.height / 2 - (viewRect.top + viewRect.height / 2)),
+        card: { left: Math.round(after.left), top: Math.round(after.top), w: Math.round(after.width), h: Math.round(after.height) },
+      })
+    }))
   }
 
   async function deleteCanvas(canvas: ProjectCanvas): Promise<void> {
@@ -717,32 +896,10 @@ export function StudioPage(): React.JSX.Element {
       const saved = await electronStudioClient.saveProject({
         id: projectId ?? undefined,
         name: projectName.trim() || '未命名 Project',
-        width: draft.width,
-        height: draft.height,
-        summary: draft.summary,
-        layers: draft.items.map((item) => ({
-          id: item.id,
-          kind: item.label,
-          caption: item.caption,
-          text: item.text,
-          bbox: item.bbox,
-          visible: item.visible !== false,
-          locked: item.locked === true,
-          opacity: item.opacity ?? 1,
-        })),
-        prompt,
-        negative,
-        seed,
-        steps,
-        cfg,
-        modelBundleId: modelBundleId || undefined,
-        deviceId: deviceId || undefined,
-        backgroundPath: background?.path,
-        seriesId: seriesId || undefined,
-        page,
         canvases: canvasesToSave,
         selectedCanvasId: selectedIdToSave ?? undefined,
-        board: { columns: 2 },
+        seriesId: seriesId || undefined,
+        page,
       })
       setProjectId(saved.id)
       setDraftTab(null)
@@ -824,7 +981,7 @@ export function StudioPage(): React.JSX.Element {
               bbox: layer.bbox, visible: layer.visible, locked: layer.locked, opacity: layer.opacity,
             })),
           }
-        : draftFromProject(project)
+        : createDraft(1024, 1024)
       skipAutosave.current = true
       setProjectId(project.id)
       setProjectName(project.name)
@@ -850,25 +1007,12 @@ export function StudioPage(): React.JSX.Element {
           setStudioBackground(null)
         }
       } else {
-        setPrompt(project.prompt)
-        setStudioPrompt(project.prompt)
-        setNegative(project.negative)
-        setSeed(project.seed)
-        setSteps(project.steps)
-        setCfg(project.cfg)
-        if (project.backgroundPath) {
-          const path = project.backgroundPath
-          setStudioBackground({ id: `project-bg-${project.id}`, path, name: path.split(/[\\/]/).pop() ?? 'background', dir: path.slice(0, Math.max(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')))), root: '', size: 0, mtime: 0, ext: path.split('.').pop() ?? '' })
-        } else {
-          setStudioBackground(null)
-        }
+        setStudioBackground(null)
       }
       lastSaved.current = JSON.stringify({
-        project: projectSnapshot({
-        name: project.name, draft: nextDraft, prompt: project.prompt, negative: project.negative,
-        seed: project.seed, steps: project.steps, cfg: project.cfg, modelBundleId: project.modelBundleId ?? modelBundleId, deviceId: project.deviceId ?? deviceId,
-        backgroundPath: project.backgroundPath, seriesId: project.seriesId ?? '', page: project.page ?? 1,
-        }),
+        name: project.name,
+        seriesId: project.seriesId ?? '',
+        page: project.page ?? 1,
         canvases: nextCanvases,
         selectedCanvasId: nextSelected?.id ?? null,
       })
@@ -900,25 +1044,13 @@ export function StudioPage(): React.JSX.Element {
     const nextSeries = seriesId || `series-${crypto.randomUUID().slice(0, 8)}`
     setProjectSaving(true)
     try {
+      // A page is a project with a single layout Canvas that carries the current
+      // sampler settings, prompt and layout.
+      const canvas = createLayoutCanvas()
       const saved = await electronStudioClient.saveProject({
         name: `${projectName.replace(/ · 第\d+页$/, '')} · 第${page + 1}页`,
-        width: draft.width,
-        height: draft.height,
-        summary: draft.summary,
-        layers: draft.items.map((item) => ({
-          id: item.id,
-          kind: item.label,
-          caption: item.caption,
-          text: item.text,
-          bbox: item.bbox,
-          visible: item.visible !== false,
-          locked: item.locked === true,
-          opacity: item.opacity ?? 1,
-        })),
-        prompt, negative, seed, steps, cfg,
-        modelBundleId: modelBundleId || undefined,
-        deviceId: deviceId || undefined,
-        backgroundPath: background?.path,
+        canvases: [canvas],
+        selectedCanvasId: canvas.id,
         seriesId: nextSeries,
         page: page + 1,
       })
@@ -1006,25 +1138,48 @@ export function StudioPage(): React.JSX.Element {
     try {
       const savedProject = await saveProjectNow(true)
       if (!savedProject) throw new Error('Project 尚未保存，请稍后重试')
-      taskCanvasId = crypto.randomUUID()
-      const occupiedSlots = new Set(persistedCanvases.map((canvas) => `${canvas.row}:${canvas.column}`))
-      let row = source.row + 1
-      while (occupiedSlots.has(`${row}:${source.column}`)) row += 1
-      const taskCanvas: ProjectCanvas = {
-        ...source,
-        id: taskCanvasId,
-        kind: 'result',
-        title: `生成 · ${source.title}`,
-        row,
-        column: source.column,
-        sourceCanvasId: source.id,
-        jobId: undefined,
-        jobState: 'starting',
-        progress: undefined,
-        outputs: [],
-        error: undefined,
+      // A layout Canvas with no result yet renders its first run in place; re-runs
+      // and already-finished Canvases spawn a result Canvas below, so history is
+      // never overwritten.
+      const runInPlace = source.kind === 'layout' && (source.outputs?.length ?? 0) === 0
+      taskCanvasId = runInPlace ? source.id : crypto.randomUUID()
+      if (runInPlace) {
+        taskCanvases = persistedCanvases.map((item) => item.id === source.id
+          ? { ...item, jobId: undefined, jobState: 'starting', progress: undefined, outputs: [], error: undefined }
+          : item)
+      } else {
+        // Drop the result directly under its source Canvas and shift down while the
+        // area is taken, so a board with several results never stacks them.
+        const sourcePosition = boardCardPosition(source)
+        const resultWidth = boardCardWidth(source)
+        const resultHeight = boardCardHeight(source)
+        const taken = persistedCanvases.map((item) => {
+          const position = boardCardPosition(item)
+          return { x: position.x, y: position.y, w: boardCardWidth(item), h: boardCardHeight(item) }
+        })
+        let y = sourcePosition.y + boardCardHeight(source) + BOARD_GAP
+        for (let guard = 0; guard < 200; guard += 1) {
+          const clash = taken.some((item) => sourcePosition.x < item.x + item.w && sourcePosition.x + resultWidth > item.x
+            && y < item.y + item.h && y + resultHeight > item.y)
+          if (!clash) break
+          y += resultHeight + BOARD_GAP
+        }
+        const taskCanvas: ProjectCanvas = {
+          ...source,
+          id: taskCanvasId,
+          kind: 'result',
+          title: `生成 · ${source.title}`,
+          x: sourcePosition.x,
+          y,
+          sourceCanvasId: source.id,
+          jobId: undefined,
+          jobState: 'starting',
+          progress: undefined,
+          outputs: [],
+          error: undefined,
+        }
+        taskCanvases = [...persistedCanvases, taskCanvas]
       }
-      taskCanvases = [...persistedCanvases, taskCanvas]
       setCanvases(taskCanvases)
       setSelectedCanvasId(taskCanvasId)
       const savedBoard = await saveProjectNow(true, { canvases: taskCanvases, selectedCanvasId: taskCanvasId })
@@ -1078,11 +1233,10 @@ export function StudioPage(): React.JSX.Element {
       setSelectedCanvasId(taskCanvasId)
       const linkedProject = await saveProjectNow(true, { canvases: taskCanvases, selectedCanvasId: taskCanvasId })
       if (linkedProject) {
-        toast.push('已提交到 MossInfer，正在终端运行', 'success')
+        toast.push('已提交到 MossInfer，进度显示在对应 Canvas 上', 'success')
       } else {
         toast.push('任务已提交，但关联记录未能保存；可在终端查看任务', 'error')
       }
-      openWindow('terminal')
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (taskCanvasId) {
@@ -1105,31 +1259,104 @@ export function StudioPage(): React.JSX.Element {
     ...tabOrder.map((id) => projects.find((item) => item.id === id)).filter(Boolean),
     ...projects.filter((item) => !tabOrder.includes(item.id)),
   ] as ProjectSummary[]
-  const occupiedBoardSlots = new Set(persistedCanvases.map((canvas) => `${canvas.row}:${canvas.column}`))
-  let nextBoardSlotIndex = 0
-  while (occupiedBoardSlots.has(`${Math.floor(nextBoardSlotIndex / 2)}:${nextBoardSlotIndex % 2}`)) nextBoardSlotIndex += 1
-  const nextBoardSlot = { row: Math.floor(nextBoardSlotIndex / 2), column: nextBoardSlotIndex % 2 }
+  // Board bounds and the spot for the "新建内容" entry, both in board pixels.
+  const boardBox = (() => {
+    let right = SLOT_W
+    let bottom = SLOT_H
+    for (const canvas of persistedCanvases) {
+      const position = boardCardPosition(canvas)
+      right = Math.max(right, position.x + boardCardWidth(canvas))
+      bottom = Math.max(bottom, position.y + boardCardHeight(canvas))
+    }
+    return { width: right + BOARD_GAP, height: bottom + BOARD_GAP }
+  })()
+  boardBoxRef.current = boardBox
+  const nextBoardSpot = nextFreeBoardSpot(draft.width, draft.height)
   useEffect(() => {
     setTabOrder((previous) => [...previous.filter((id) => projects.some((item) => item.id === id)), ...projects.map((item) => item.id).filter((id) => !previous.includes(id))])
   }, [projects])
+  /** Screen position of the board's untransformed origin (transform is translate → scale). */
+  function boardOrigin(): { x: number; y: number } | null {
+    const grid = boardRef.current
+    if (!grid) return null
+    const rect = grid.getBoundingClientRect()
+    return { x: rect.left - panLiveRef.current.x, y: rect.top - panLiveRef.current.y }
+  }
+
+  /** TEMP diagnostics: one compact JSON line per interaction, read back from the dev log. */
+  function boardDebug(tag: string, extra: Record<string, unknown> = {}): void {
+    const grid = boardRef.current
+    const viewport = viewportRef.current
+    const content = grid?.closest('.studio-canvas-content') as HTMLElement | null
+    const gridRect = grid?.getBoundingClientRect()
+    const viewRect = viewport?.getBoundingClientRect()
+    console.log('[board]', tag, JSON.stringify({
+      zoom: Number(zoomLiveRef.current.toFixed(4)),
+      pan: { x: Math.round(panLiveRef.current.x), y: Math.round(panLiveRef.current.y) },
+      board: gridRect
+        ? { left: Math.round(gridRect.left), top: Math.round(gridRect.top), w: Math.round(gridRect.width), h: Math.round(gridRect.height) }
+        : null,
+      view: viewRect
+        ? { left: Math.round(viewRect.left), top: Math.round(viewRect.top), w: Math.round(viewRect.width), h: Math.round(viewRect.height) }
+        : null,
+      scroll: content ? { left: content.scrollLeft, top: content.scrollTop } : null,
+      origin: gridRect
+        ? { x: Math.round(gridRect.left - panLiveRef.current.x), y: Math.round(gridRect.top - panLiveRef.current.y) }
+        : null,
+      ...extra,
+    }))
+  }
+
   function zoomAt(clientX: number, clientY: number, factor: number): void {
-    const rect = viewportRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const nextZoom = Math.min(2.5, Math.max(0.3, zoom * factor))
-    if (nextZoom === zoom) return
-    const dx = clientX - rect.left - rect.width / 2
-    const dy = clientY - rect.top - rect.height / 2
-    const ratio = nextZoom / zoom
-    setPan({ x: dx - (dx - pan.x) * ratio, y: dy - (dy - pan.y) * ratio })
+    const origin = boardOrigin()
+    if (!origin) return
+    const zoomNow = zoomLiveRef.current
+    const nextZoom = Math.min(2.5, Math.max(0.3, zoomNow * factor))
+    if (nextZoom === zoomNow) return
+    // Pin the board point under the cursor: pan' = m - (zoom' / zoom) * (m - pan),
+    // where m is the cursor offset from the board origin in screen pixels.
+    const ratio = nextZoom / zoomNow
+    const mx = clientX - origin.x
+    const my = clientY - origin.y
+    const nextPan = { x: mx - (mx - panLiveRef.current.x) * ratio, y: my - (my - panLiveRef.current.y) * ratio }
+    if (Math.abs(nextZoom - 1.05) < 0.06 || Math.abs(nextZoom - 1.25) < 0.06) {
+      boardDebug('zoom.input', { clientX: Math.round(clientX), clientY: Math.round(clientY), ratio: Number(ratio.toFixed(3)), nextZoom, nextPan: { x: Math.round(nextPan.x), y: Math.round(nextPan.y) } })
+    }
+    setPan(nextPan)
     setZoom(nextZoom)
   }
   function resetView(): void {
-    setZoom(1)
-    setPan({ x: 0, y: 0 })
+    fitBoard()
+  }
+
+  /** Zoom/pan so the whole board fits the viewport; used on open and by 恢复视图. */
+  function fitBoard(): void {
+    const viewport = viewportRef.current
+    const origin = boardOrigin()
+    if (!viewport || !origin) return
+    const view = viewport.getBoundingClientRect()
+    const scale = Math.min(
+      1,
+      (view.width - 64) / Math.max(1, boardBoxRef.current.width),
+      (view.height - 64) / Math.max(1, boardBoxRef.current.height),
+    )
+    const nextZoom = Math.min(2.5, Math.max(0.3, scale))
+    setZoom(nextZoom)
+    setPan({
+      x: view.left + (view.width - boardBoxRef.current.width * nextZoom) / 2 - origin.x,
+      y: view.top + (view.height - boardBoxRef.current.height * nextZoom) / 2 - origin.y,
+    })
+    boardDebug('fit.input', { boardBox: boardBoxRef.current, scale: Number(scale.toFixed(3)), nextZoom: Number(nextZoom.toFixed(3)) })
   }
 
   function pickUpPan(event: React.PointerEvent<HTMLDivElement>): void {
-    if (event.button !== 1 && !(tool === 'pan' && event.button === 0)) return
+    const target = event.target as HTMLElement
+    // Dragging the empty board with the left button pans it, the way a canvas
+    // workbench behaves; a gesture that starts on a card keeps its own meaning.
+    const onEmptyBoard = event.button === 0
+      && !target.closest('[data-canvas-card]')
+      && !target.closest('button')
+    if (event.button !== 1 && !onEmptyBoard && !(tool === 'pan' && event.button === 0)) return
     if (panRef.current || drawing || drag) return
     // Capture before canvas layers and their text fields can handle this gesture.
     event.preventDefault()
@@ -1403,7 +1630,9 @@ export function StudioPage(): React.JSX.Element {
           onLostPointerCapture={finishPan}
           onAuxClickCapture={(event) => { if (event.button === 1) event.preventDefault() }}
         >
-          <div className="studio-canvas-content absolute inset-0 overflow-auto p-5">
+          {/* Panning is done with the transform below, so no native scrolling here:
+              a scrollable ancestor would shift the board origin under our zoom math. */}
+          <div className="studio-canvas-content absolute inset-0 overflow-hidden p-5">
             {canvases.length === 0 ? (
               <button
                 type="button"
@@ -1418,10 +1647,16 @@ export function StudioPage(): React.JSX.Element {
               </button>
             ) : (
               <div
-                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'top left' }}
-                className="grid min-w-[720px] grid-cols-2 items-start gap-5 pb-12"
+                ref={boardRef}
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: 'top left',
+                  width: boardBox.width,
+                  height: boardBox.height,
+                }}
+                className="relative"
               >
-                {[...persistedCanvases].sort((a, b) => a.row - b.row || a.column - b.column).map((canvas) => {
+                {[...persistedCanvases].sort((a, b) => a.y - b.y || a.x - b.x).map((canvas) => {
                   const isActive = canvas.id === selectedCanvasId
                   const job = canvas.jobId ? jobs.find((item) => item.id === canvas.jobId) : undefined
                   const outputs = job?.outputs?.length ? job.outputs : canvas.outputs ?? []
@@ -1441,15 +1676,32 @@ export function StudioPage(): React.JSX.Element {
                   const currentPercent = progress?.stage === 'denoise' && progress.total > 0
                     ? Math.min(100, Math.max(0, progress.percent))
                     : undefined
+                  const hasOutputs = outputs.length > 0
+                  // Result Canvases always show the picture; a layout Canvas shows its
+                  // result too, until the user switches back to the bbox editor.
+                  const showResultImage = hasOutputs && (canvas.kind === 'result' || editingCanvasId !== canvas.id)
                   return (
                     <article
                       key={canvas.id}
+                      data-canvas-card={canvas.id}
+                      ref={(element) => {
+                        if (element) canvasCardRefs.current.set(canvas.id, element)
+                        else canvasCardRefs.current.delete(canvas.id)
+                      }}
                       role="group"
                       aria-label={`${canvas.title}${isActive ? '，已选中' : ''}`}
                       tabIndex={0}
                       aria-current={isActive ? 'true' : undefined}
-                      style={{ gridColumnStart: canvas.column + 1, gridRowStart: canvas.row + 1 }}
-                      onClick={() => selectCanvas(canvas)}
+                      style={{
+                        position: 'absolute',
+                        left: boardCardPosition(canvas).x,
+                        top: boardCardPosition(canvas).y,
+                        width: boardCardWidth(canvas),
+                      }}
+                      onClick={() => {
+                        // A drag just ended here: keep the board where the user put it.
+                        selectCanvas(canvas, { focus: performance.now() > suppressFocusRef.current })
+                      }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
@@ -1457,24 +1709,48 @@ export function StudioPage(): React.JSX.Element {
                         }
                       }}
                       className={cn(
-                        'min-h-[350px] overflow-hidden rounded-lg border bg-[#171a20] transition',
+                        'relative overflow-hidden rounded-lg border bg-[#171a20] transition',
+                        dragCanvasId === canvas.id && 'z-10 shadow-2xl',
+                        activeTask && 'studio-canvas-running',
                         isActive ? 'border-accent-400 ring-1 ring-accent-400/50' : 'border-[var(--color-border)] hover:border-white/25',
                       )}
                     >
-                      <header className="flex min-h-10 items-center gap-2 border-b border-[var(--color-border-subtle)] px-2.5">
+                      <header
+                        onPointerDown={(event) => beginCardDrag(event, canvas)}
+                        onPointerMove={moveCardDrag}
+                        onPointerUp={endCardDrag}
+                        onPointerCancel={endCardDrag}
+                        className={cn(
+                          'flex min-h-10 touch-none items-center gap-2 border-b border-[var(--color-border-subtle)] px-2.5 select-none',
+                          dragCanvasId === canvas.id ? 'cursor-grabbing' : 'cursor-grab',
+                        )}
+                      >
                         <span className="min-w-0 flex-1 truncate text-caption font-medium">
                           {canvas.title}
                           <span className="ml-1.5 text-micro text-[var(--color-text-tertiary)]">
                             {canvas.kind === 'result' ? '结果' : `${canvas.width}×${canvas.height}`}
                           </span>
                         </span>
-                        {canvas.kind === 'result' && missingJob ? (
+                        {hasOutputs && canvas.kind === 'layout' ? (
+                          <button
+                            type="button"
+                            title={editingCanvasId === canvas.id ? '查看生成结果' : '回到布局编辑'}
+                            aria-label={editingCanvasId === canvas.id ? `查看 ${canvas.title} 的结果` : `编辑 ${canvas.title} 的布局`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              selectCanvas(canvas)
+                              setEditingCanvasId(editingCanvasId === canvas.id ? null : canvas.id)
+                            }}
+                            className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-white/10 hover:text-[var(--color-text)]"
+                          >{editingCanvasId === canvas.id ? <Eye className="size-3.5" /> : <SquareDashedMousePointer className="size-3.5" />}</button>
+                        ) : null}
+                        {missingJob ? (
                           <Pill tone="red">任务记录不可用</Pill>
-                        ) : canvas.kind === 'result' && job ? (
+                        ) : job ? (
                           <Pill tone={job.state === 'succeeded' ? 'accent' : job.state === 'failed' ? 'red' : job.state === 'canceled' ? 'neutral' : 'amber'}>
                             {job.state === 'queued' ? `排队第 ${queuePosition} 位` : job.state === 'starting' ? '启动中' : job.state === 'running' ? '生成中' : job.state === 'succeeded' ? '完成' : job.state === 'canceled' ? '已取消' : '失败'}
                           </Pill>
-                        ) : canvas.kind === 'result' ? (
+                        ) : canvas.jobState ? (
                           <Pill tone={canvas.jobState === 'succeeded' ? 'accent' : canvas.jobState === 'failed' ? 'red' : 'amber'}>
                             {canvas.jobState === 'succeeded' ? '完成' : canvas.jobState === 'failed' ? '失败' : canvas.jobState === 'canceled' ? '已取消' : '等待任务'}
                           </Pill>
@@ -1515,39 +1791,54 @@ export function StudioPage(): React.JSX.Element {
                         ><Trash2 className="size-3.5" /></button>
                       </header>
 
-                      {canvas.kind === 'result' ? (
-                        <div className="flex h-[280px] items-center justify-center bg-black/20 p-2">
-                          {outputs.length > 0 ? (
-                            <div className={cn('grid size-full gap-1', outputs.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
-                              {outputs.map((output, index) => (
-                                <ResultPreview
-                                  key={output.path}
-                                  title={`${canvas.title} 生成结果 ${index + 1}`}
-                                  path={output.path}
-                                  onOpen={() => {
-                                    void call(Ipc.openPath, { path: output.path }).catch((error) => toast.push(error instanceof Error ? error.message : String(error), 'error'))
-                                  }}
-                                />
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="px-4 text-center text-caption text-[var(--color-text-tertiary)]">
-                              {job?.error?.message
-                                ?? canvas.error?.message
-                                ?? (job?.state === 'succeeded'
-                                  ? '任务完成，但未返回图片输出'
-                                  : missingJob
-                                    ? '应用重启或任务记录已清理，无法恢复该任务状态'
-                                  : job?.state === 'canceled'
-                                    ? '任务已取消'
-                                    : activeTask
-                                      ? '任务运行中，结果将在此显示'
-                                      : '尚无生成结果')}
-                            </div>
-                          )}
+                      {showResultImage ? (
+                        <button
+                          type="button"
+                          onClick={() => selectCanvas(canvas)}
+                          onDoubleClick={(event) => {
+                            event.stopPropagation()
+                            const first = outputs[0]
+                            if (first) setPreviewOutput({ canvas, path: first.path })
+                          }}
+                          title="双击查看大图与生成参数"
+                          className="relative block w-full cursor-zoom-in overflow-hidden bg-black/25"
+                          style={{ aspectRatio: `${canvas.width} / ${canvas.height}` }}
+                        >
+                          <ResultImage
+                            path={outputs[0]!.path}
+                            title={canvas.title}
+                            className="size-full object-cover"
+                          />
+                          {outputs.length > 1 ? (
+                            <span className="absolute right-2 top-2 rounded bg-black/65 px-1.5 py-0.5 text-micro text-white/85">
+                              {outputs.length} 张 · 双击查看
+                            </span>
+                          ) : null}
+                        </button>
+                      ) : canvas.kind === 'result' ? (
+                        <div
+                          className="flex items-center justify-center bg-black/20 p-3"
+                          style={{ aspectRatio: `${canvas.width} / ${canvas.height}` }}
+                        >
+                          <div className="px-4 text-center text-caption text-[var(--color-text-tertiary)]">
+                            {job?.error?.message
+                              ?? canvas.error?.message
+                              ?? (job?.state === 'succeeded'
+                                ? '任务完成，但未返回图片输出'
+                                : missingJob
+                                  ? '应用重启或任务记录已清理，无法恢复该任务状态'
+                                : job?.state === 'canceled'
+                                  ? '任务已取消'
+                                  : activeTask
+                                    ? '任务运行中，结果将在此显示'
+                                    : '尚无生成结果')}
+                          </div>
                         </div>
                       ) : isActive ? (
-                        <div className="flex h-[280px] items-center justify-center overflow-hidden p-2">
+                        <div
+                          className="relative w-full overflow-hidden bg-black/20"
+                          style={{ aspectRatio: `${canvas.width} / ${canvas.height}` }}
+                        >
                           <div
                             ref={canvasRef}
                             onPointerDown={handlePointerDown}
@@ -1555,10 +1846,9 @@ export function StudioPage(): React.JSX.Element {
                             onPointerUp={handlePointerUp}
                             onPointerCancel={handlePointerUp}
                             className={cn(
-                              'relative mx-auto select-none overflow-hidden rounded-[5px] border border-[var(--color-border)]',
+                              'absolute inset-0 select-none overflow-hidden',
                               tool === 'draw' ? 'cursor-crosshair' : 'cursor-default',
                             )}
-                            style={{ aspectRatio: `${draft.width} / ${draft.height}`, width: `min(100%, 320px)` }}
                           >
               {background ? (
                 <img
@@ -1640,7 +1930,10 @@ export function StudioPage(): React.JSX.Element {
                           </div>
                         </div>
                       ) : (
-                        <div className="relative mx-auto mt-3 aspect-square h-[250px] max-w-full overflow-hidden rounded border border-[var(--color-border-subtle)] bg-black/20">
+                        <div
+                          className="relative w-full overflow-hidden bg-black/20"
+                          style={{ aspectRatio: `${canvas.width} / ${canvas.height}` }}
+                        >
                           {canvas.backgroundPath ? <img src={cloverUrl(canvas.backgroundPath)} alt="" className="absolute inset-0 size-full object-contain opacity-50" /> : null}
                           {canvas.layers.filter((layer) => layer.visible).map((layer) => {
                             const [x1, y1, x2, y2] = layer.bbox
@@ -1661,28 +1954,34 @@ export function StudioPage(): React.JSX.Element {
                         </div>
                       )}
 
-                      {canvas.kind === 'result' ? (
-                        <div className="border-t border-[var(--color-border-subtle)] px-2.5 py-2">
-                          <p className="truncate text-micro text-[var(--color-text-tertiary)]">{canvas.prompt}</p>
+                      {canvas.kind === 'result' || activeTask || canvas.error ? (
+                        <div className="border-t border-[var(--color-border-subtle)] px-2.5 pb-1.5 pt-2">
+                          {canvas.kind === 'result' ? <p className="truncate text-micro text-[var(--color-text-tertiary)]">{canvas.prompt}</p> : null}
                           {activeTask ? (
-                            <div className="mt-1.5">
-                              <div className="mb-1 flex justify-between gap-2 text-micro">
-                                <span>{job?.state === 'queued' ? '排队等待' : ({
+                            <div className="mt-1 flex justify-between gap-2 text-micro">
+                              <span className="truncate">
+                                {job?.state === 'queued' ? '排队等待' : ({
                                   idle: '准备引擎', ready: '引擎就绪', load: '加载模型', text: '文本编码',
                                   denoise: '去噪', decode: '图像解码', save: '保存结果',
                                 }[progress?.stage ?? 'idle'] ?? '处理中')}
-                                  {progress?.stage === 'denoise' && progress.total > 0 ? ` · ${progress.current}/${progress.total} 步` : ''}
-                                </span>
-                                {currentPercent !== undefined ? <span>{Math.round(currentPercent)}%</span> : null}
-                              </div>
-                              <div className="h-1 overflow-hidden rounded-full bg-white/10">
-                                <div
-                                  className={`h-full rounded-full bg-accent-400 transition-[width] ${currentPercent === undefined ? 'w-1/3 animate-pulse' : ''}`}
-                                  style={currentPercent === undefined ? undefined : { width: `${currentPercent}%` }}
-                                />
-                              </div>
+                                {progress?.stage === 'denoise' && progress.total > 0 ? ` · ${progress.current}/${progress.total} 步` : ''}
+                              </span>
+                              {currentPercent !== undefined ? <span className="shrink-0 font-mono">{Math.round(currentPercent)}%</span> : null}
                             </div>
                           ) : canvas.error?.message ? <p className="mt-1 text-micro text-red-300">{canvas.error.message}</p> : null}
+                        </div>
+                      ) : null}
+
+                      {/* Progress band pinned to the Canvas edge while a job runs. */}
+                      {activeTask ? (
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] overflow-hidden bg-white/10">
+                          <div
+                            className={cn(
+                              'h-full bg-accent-400 transition-[width] duration-500 ease-out',
+                              currentPercent === undefined && 'w-1/3 studio-canvas-progress-slide',
+                            )}
+                            style={currentPercent === undefined ? undefined : { width: `${currentPercent}%` }}
+                          />
                         </div>
                       ) : null}
                     </article>
@@ -1691,8 +1990,14 @@ export function StudioPage(): React.JSX.Element {
                 <button
                   type="button"
                   onClick={() => addCanvas()}
-                  style={{ gridColumnStart: nextBoardSlot.column + 1, gridRowStart: nextBoardSlot.row + 1 }}
-                  className="flex min-h-[350px] items-center justify-center rounded-lg border border-dashed border-white/15 bg-white/[0.015] text-caption text-[var(--color-text-tertiary)] transition hover:border-accent-400/50 hover:bg-accent-400/[0.04] hover:text-[var(--color-text-secondary)]"
+                  style={{
+                    position: 'absolute',
+                    left: nextBoardSpot.x,
+                    top: nextBoardSpot.y,
+                    width: Math.round(draft.width * BOARD_UNIT),
+                    height: Math.round(draft.height * BOARD_UNIT) + CARD_HEADER,
+                  }}
+                  className="flex items-center justify-center rounded-lg border border-dashed border-white/15 bg-white/[0.015] text-caption text-[var(--color-text-tertiary)] transition hover:border-accent-400/50 hover:bg-accent-400/[0.04] hover:text-[var(--color-text-secondary)]"
                 >
                   <span className="flex flex-col items-center gap-2"><Plus className="size-6" /><span>新建内容</span></span>
                 </button>
@@ -1700,8 +2005,48 @@ export function StudioPage(): React.JSX.Element {
             )}
           </div>
           <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-2.5 py-1 text-micro text-white/55">
-            {Math.round(zoom * 100)}% · 滚轮缩放 · 手型/中键拖动
+            {Math.round(zoom * 100)}% · 滚轮缩放 · 拖空白处或中键平移
           </div>
+
+          {minimap ? (
+            <div
+              className="pointer-events-none absolute bottom-3 right-3 overflow-hidden rounded-md border border-white/15 bg-black/55 shadow-lg backdrop-blur-sm"
+              style={{ width: 168, height: 112 }}
+              aria-hidden="true"
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  transform: `scale(${Math.min(160 / minimap.width, 104 / minimap.height)})`,
+                  transformOrigin: 'top left',
+                  width: minimap.width,
+                  height: minimap.height,
+                }}
+              >
+                {minimap.cards.map((card) => (
+                  <div
+                    key={card.id}
+                    className={cn(
+                      'absolute rounded-[2px] border',
+                      card.id === selectedCanvasId
+                        ? 'border-accent-300/80 bg-accent-400/45'
+                        : 'border-white/25 bg-white/15',
+                    )}
+                    style={{ left: card.x, top: card.y, width: card.width, height: card.height }}
+                  />
+                ))}
+                <div
+                  className="absolute rounded-[2px] border border-accent-200/90 bg-accent-200/[0.06]"
+                  style={{
+                    left: minimap.view.x,
+                    top: minimap.view.y,
+                    width: minimap.view.width,
+                    height: minimap.view.height,
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
 
         </div>
       </section>
@@ -1769,6 +2114,80 @@ export function StudioPage(): React.JSX.Element {
         confirmLabel={layoutReset === 'example' ? '替换布局' : '清空区域'}
         onConfirm={() => { if (layoutReset) resetLayout(layoutReset) }}
       />
+
+      <Modal
+        open={previewOutput !== null}
+        onClose={() => setPreviewOutput(null)}
+        title={previewOutput ? `生成结果 · ${previewOutput.canvas.title}` : '生成结果'}
+        description={previewOutput?.path}
+        width="max-w-5xl"
+        footer={previewOutput ? (
+          <>
+            <Button
+              tone="ghost"
+              onClick={() => {
+                void call(Ipc.galleryReveal, { path: previewOutput.path }).catch((error) => toast.push(error instanceof Error ? error.message : String(error), 'error'))
+              }}
+            >在文件夹中打开</Button>
+            <Button
+              tone="secondary"
+              onClick={() => {
+                void call(Ipc.openPath, { path: previewOutput.path }).catch((error) => toast.push(error instanceof Error ? error.message : String(error), 'error'))
+              }}
+            >用默认程序打开</Button>
+            <Button tone="primary" onClick={() => setPreviewOutput(null)}>关闭</Button>
+          </>
+        ) : null}
+      >
+        {previewOutput ? (
+          <div className="space-y-3">
+            <div className="flex justify-center overflow-hidden rounded bg-black/40 p-2">
+              <img
+                src={cloverUrl(previewOutput.path)}
+                alt={previewOutput.canvas.title}
+                className="max-h-[56vh] w-auto object-contain"
+              />
+            </div>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-caption sm:grid-cols-3">
+              <div><dt className="text-[var(--color-text-tertiary)]">尺寸</dt><dd>{previewOutput.canvas.width}×{previewOutput.canvas.height}</dd></div>
+              <div><dt className="text-[var(--color-text-tertiary)]">步数</dt><dd>{previewOutput.canvas.steps}</dd></div>
+              <div><dt className="text-[var(--color-text-tertiary)]">CFG</dt><dd>{previewOutput.canvas.cfg}</dd></div>
+              <div><dt className="text-[var(--color-text-tertiary)]">Seed</dt><dd>{previewOutput.canvas.seed}</dd></div>
+              <div>
+                <dt className="text-[var(--color-text-tertiary)]">模型</dt>
+                <dd>{catalog?.bundles?.find((bundle) => bundle.id === previewOutput.canvas.modelBundleId)?.name ?? previewOutput.canvas.modelBundleId ?? '—'}</dd>
+              </div>
+              <div><dt className="text-[var(--color-text-tertiary)]">设备</dt><dd>{previewOutput.canvas.deviceId ?? '—'}</dd></div>
+              {previewJob ? (
+                <>
+                  <div><dt className="text-[var(--color-text-tertiary)]">任务</dt><dd className="font-mono text-micro">{previewJob.id}</dd></div>
+                  <div><dt className="text-[var(--color-text-tertiary)]">状态</dt><dd>{previewJob.state}</dd></div>
+                  <div>
+                    <dt className="text-[var(--color-text-tertiary)]">耗时</dt>
+                    <dd>
+                      {previewJob.startedAt && previewJob.endedAt
+                        ? `${Math.max(1, Math.round((new Date(previewJob.endedAt).getTime() - new Date(previewJob.startedAt).getTime()) / 1000))} 秒`
+                        : '—'}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
+            </dl>
+            <div>
+              <div className="text-caption text-[var(--color-text-tertiary)]">提示词</div>
+              <p className="mt-0.5 max-h-28 overflow-y-auto whitespace-pre-wrap break-words text-caption leading-5 text-[var(--color-text-secondary)]">
+                {previewOutput.canvas.prompt || '—'}
+              </p>
+            </div>
+            <div>
+              <div className="text-caption text-[var(--color-text-tertiary)]">负面提示词</div>
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-caption leading-5 text-[var(--color-text-secondary)]">
+                {previewOutput.canvas.negative || '—'}
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         open={jsonOpen}

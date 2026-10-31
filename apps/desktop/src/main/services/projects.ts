@@ -16,40 +16,15 @@ function projectFile(id: string): string {
   return join(projectDir(id), 'project.json')
 }
 
+/** Only the current schema is understood; older project files are simply not opened. */
+const SCHEMA_VERSION = 3
+
 function readProject(id: string): ProjectDocument | null {
   try {
-    const raw = JSON.parse(readFileSync(projectFile(id), 'utf8')) as Record<string, unknown>
-    if (!raw || typeof raw['id'] !== 'string') return null
-    if (raw['schemaVersion'] === 2 && Array.isArray(raw['canvases'])) return raw as unknown as ProjectDocument
-    if (raw['schemaVersion'] !== 1) return null
-
-    const projectId = raw['id']
-    const canvas: ProjectCanvas = {
-      id: `${projectId}-canvas-1`,
-      kind: 'layout',
-      title: typeof raw['name'] === 'string' ? raw['name'] : '画布 1',
-      row: 0,
-      column: 0,
-      width: Number(raw['width']),
-      height: Number(raw['height']),
-      summary: raw['summary'] as ProjectDocument['summary'],
-      layers: raw['layers'] as ProjectDocument['layers'],
-      prompt: String(raw['prompt'] ?? ''),
-      negative: String(raw['negative'] ?? ''),
-      seed: Number(raw['seed'] ?? 42),
-      steps: Number(raw['steps'] ?? 8),
-      cfg: Number(raw['cfg'] ?? 3),
-      modelBundleId: typeof raw['modelBundleId'] === 'string' ? raw['modelBundleId'] : undefined,
-      deviceId: typeof raw['deviceId'] === 'string' ? raw['deviceId'] : undefined,
-      backgroundPath: typeof raw['backgroundPath'] === 'string' ? raw['backgroundPath'] : undefined,
-    }
-    return {
-      ...(raw as unknown as Omit<ProjectDocument, 'schemaVersion' | 'canvases' | 'selectedCanvasId' | 'board'>),
-      schemaVersion: 2,
-      canvases: [canvas],
-      selectedCanvasId: canvas.id,
-      board: { columns: 2 },
-    }
+    const raw = JSON.parse(readFileSync(projectFile(id), 'utf8')) as ProjectDocument
+    if (!raw || typeof raw.id !== 'string') return null
+    if (raw.schemaVersion !== SCHEMA_VERSION || !Array.isArray(raw.canvases)) return null
+    return raw
   } catch {
     return null
   }
@@ -68,8 +43,8 @@ function summary(project: ProjectDocument): ProjectSummary {
   return {
     id: project.id,
     name: project.name,
-    width: canvas?.width ?? project.width,
-    height: canvas?.height ?? project.height,
+    width: canvas?.width ?? 1024,
+    height: canvas?.height ?? 1024,
     layerCount: project.canvases.reduce((count, item) => count + item.layers.length, 0),
     seriesId: project.seriesId,
     page: project.page,
@@ -97,24 +72,10 @@ export function getProject(id: string): ProjectDocument | null {
 export interface SaveProjectInput {
   id?: string
   name: string
-  width: number
-  height: number
-  summary: ProjectDocument['summary']
-  layers: ProjectDocument['layers']
-  prompt: string
-  negative: string
-  seed: number
-  steps: number
-  cfg: number
-  instanceId?: string
-  modelBundleId?: string
-  deviceId?: string
-  backgroundPath?: string
+  canvases: ProjectCanvas[]
+  selectedCanvasId?: string
   seriesId?: string
   page?: number
-  canvases?: ProjectCanvas[]
-  selectedCanvasId?: string
-  board?: ProjectDocument['board']
 }
 
 export function saveProject(input: SaveProjectInput): ProjectDocument {
@@ -132,75 +93,19 @@ export function saveProject(input: SaveProjectInput): ProjectDocument {
     if (path !== target && !existsSync(target)) copyFileSync(path, target)
     return target
   }
-  const previous = existing?.canvases ?? []
-  const requestedSelectedCanvasId = input.selectedCanvasId ?? existing?.selectedCanvasId
-  const incomingCanvases = input.canvases ?? (() => {
-    const prior = previous.find((canvas) => canvas.id === requestedSelectedCanvasId && canvas.kind === 'layout')
-    const canvas: ProjectCanvas = {
-      id: prior?.id ?? `${id}-canvas-1`,
-      kind: 'layout',
-      title: input.name.trim() || prior?.title || '画布 1',
-      row: prior?.row ?? 0,
-      column: prior?.column ?? 0,
-      width: input.width,
-      height: input.height,
-      summary: input.summary,
-      layers: input.layers,
-      prompt: input.prompt,
-      negative: input.negative,
-      seed: input.seed,
-      steps: input.steps,
-      cfg: input.cfg,
-      modelBundleId: input.modelBundleId,
-      deviceId: input.deviceId,
-      backgroundPath: input.backgroundPath,
-    }
-    if (prior) return previous.map((item) => item.id === prior.id ? canvas : item)
-    return previous.length ? [...previous, canvas] : [canvas]
-  })()
-  const canvases = incomingCanvases.map((canvas) => ({
+  const canvases = input.canvases.map((canvas) => ({
     ...canvas,
     backgroundPath: persistAsset(canvas.backgroundPath, canvas.id),
   }))
-  const selected = canvases.find((canvas) => canvas.id === requestedSelectedCanvasId && canvas.kind === 'layout')
+  const selected = canvases.find((canvas) => canvas.id === input.selectedCanvasId)
     ?? canvases.find((canvas) => canvas.kind === 'layout')
     ?? canvases[0]
-  const rootSnapshot = selected ?? {
-    width: input.width,
-    height: input.height,
-    summary: input.summary,
-    layers: input.layers,
-    prompt: input.prompt,
-    negative: input.negative,
-    seed: input.seed,
-    steps: input.steps,
-    cfg: input.cfg,
-    modelBundleId: input.modelBundleId,
-    deviceId: input.deviceId,
-    backgroundPath: persistAsset(input.backgroundPath, 'project-background'),
-  }
   const project: ProjectDocument = {
-    schemaVersion: 2,
+    schemaVersion: SCHEMA_VERSION,
     id,
     name: input.name.trim() || '未命名 Project',
     canvases,
-    selectedCanvasId: canvases.some((canvas) => canvas.id === requestedSelectedCanvasId)
-      ? requestedSelectedCanvasId
-      : selected?.id,
-    board: input.board ?? existing?.board ?? { columns: 2 },
-    width: rootSnapshot.width,
-    height: rootSnapshot.height,
-    summary: rootSnapshot.summary,
-    layers: rootSnapshot.layers,
-    prompt: rootSnapshot.prompt,
-    negative: rootSnapshot.negative,
-    seed: rootSnapshot.seed,
-    steps: rootSnapshot.steps,
-    cfg: rootSnapshot.cfg,
-    instanceId: input.instanceId,
-    modelBundleId: rootSnapshot.modelBundleId,
-    deviceId: rootSnapshot.deviceId,
-    backgroundPath: rootSnapshot.backgroundPath,
+    selectedCanvasId: selected?.id,
     seriesId: input.seriesId?.trim() || existing?.seriesId || undefined,
     page: input.page ?? existing?.page ?? 1,
     createdAt: existing?.createdAt ?? now,

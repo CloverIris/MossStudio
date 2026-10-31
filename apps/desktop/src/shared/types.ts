@@ -735,26 +735,11 @@ export interface ProjectLayer {
 }
 
 export interface ProjectDocument {
-  schemaVersion: 2
+  schemaVersion: 3
   id: string
   name: string
   canvases: ProjectCanvas[]
   selectedCanvasId?: string
-  board: { columns: 2 }
-  /** Compatibility snapshot for v1 clients and current Studio editor migration. */
-  width: number
-  height: number
-  summary: { caption: string; meta: string[]; canvas: 'single' | 'multi_panel' | 'collage' }
-  layers: ProjectLayer[]
-  prompt: string
-  negative: string
-  seed: number
-  steps: number
-  cfg: number
-  instanceId?: string
-  modelBundleId?: string
-  deviceId?: string
-  backgroundPath?: string
   seriesId?: string
   page?: number
   createdAt: string
@@ -765,11 +750,12 @@ export interface ProjectCanvas {
   id: string
   kind: 'layout' | 'result'
   title: string
-  row: number
-  column: number
+  /** Position on the free-form board, in unscaled board pixels. */
+  x: number
+  y: number
   width: number
   height: number
-  summary: ProjectDocument['summary']
+  summary: { caption: string; meta: string[]; canvas: 'single' | 'multi_panel' | 'collage' }
   layers: ProjectLayer[]
   prompt: string
   negative: string
