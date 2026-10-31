@@ -1,6 +1,7 @@
 ﻿import { app, clipboard, dialog, ipcMain, shell } from 'electron'
-import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, statSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { appendFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
 import { schemas } from '@shared/schemas'
@@ -564,39 +565,65 @@ export function registerIpc(): void {
   })
 
   handle(Ipc.openPath, schemas.openPath, async ({ path }) => {
-    const allowed = [paths.root(), paths.models(getSettings().modelsRoot), paths.engineRoot(), paths.outputs()]
-    if (!allowed.some((base) => isInside(base, path))) throw new Error('路径不在允许范围内')
-    if (!existsSync(path)) mkdirSync(path, { recursive: true })
-    const stats = statSync(path)
-    if (!stats.isDirectory() && !stats.isFile()) throw new Error('目标路径不可打开')
-    // ShellExecuteW shows a native "Windows cannot access..." dialog before returning
-    // an error, so it is the wrong API for folders. Explorer opens them reliably.
-    if (process.platform === 'win32' && stats.isDirectory()) {
+    const trace = (text: string): void => {
+      try {
+        mkdirSync(join(paths.root(), 'logs'), { recursive: true })
+        appendFileSync(join(paths.root(), 'logs', 'openpath.log'), `${new Date().toISOString()} ${text}\n`)
+      } catch {
+        // diagnostics only
+      }
+    }
+    const elevated = (() => {
+      try {
+        return String((spawnSync('whoami', ['/groups'], { encoding: 'utf8' }).stdout ?? '').includes('S-1-16-12288'))
+      } catch {
+        return 'unknown'
+      }
+    })()
+    trace(`request ${path} cwd=${process.cwd()} cwdExists=${existsSync(process.cwd())} elevated=${elevated}`)
+    try {
+      const allowed = [paths.root(), paths.models(getSettings().modelsRoot), paths.engineRoot(), paths.outputs()]
+      if (!allowed.some((base) => isInside(base, path))) throw new Error('路径不在允许范围内')
+      if (!existsSync(path)) mkdirSync(path, { recursive: true })
+      const stats = statSync(path)
+      if (!stats.isDirectory() && !stats.isFile()) throw new Error('目标路径不可打开')
       // Explorer is the reliable way to open a folder on Windows. A sandboxed or
       // restricted parent process cannot spawn it, so report that instead of
       // swallowing the failure and leaving the button dead.
-      const child = spawn('explorer.exe', [path], { detached: true, stdio: 'ignore' })
-      const failure = await new Promise<NodeJS.ErrnoException | null>((settle) => {
-        child.once('error', (error: NodeJS.ErrnoException) => settle(error))
-        child.once('spawn', () => { child.unref(); settle(null) })
-        setTimeout(() => settle(null), 800)
-      })
-      if (!failure) return true
-      const message = await shell.openPath(path)
-      if (message) throw new Error("无法打开目录：" + message + "（explorer: " + String(failure.code ?? failure.message) + "）")
-      return true
-    }
-    const error = await shell.openPath(path)
-    if (error) {
-      if (stats.isDirectory()) {
-        const child = spawn(process.platform === 'win32' ? 'explorer.exe' : 'xdg-open', [path], { detached: true, stdio: 'ignore' })
-        child.on('error', () => undefined)
-        child.unref()
-      } else {
-        shell.showItemInFolder(path)
+      if (process.platform === 'win32' && stats.isDirectory()) {
+        // `cmd /c start` goes through ShellExecute the same way Explorer's own
+        // "open" does, and it is the one path that reliably opens a folder from
+        // a GUI process. Direct CreateProcess on explorer.exe can start and do
+        // nothing, and shell.openPath can report success without a window.
+        const child = spawn('cmd.exe', ['/c', 'start', '', path], { detached: true, stdio: 'ignore', windowsHide: true })
+        const failure = await new Promise<NodeJS.ErrnoException | null>((settle) => {
+          child.once('error', (error: NodeJS.ErrnoException) => settle(error))
+          child.once('spawn', () => { child.unref(); settle(null) })
+          setTimeout(() => settle(null), 800)
+        })
+        trace(failure ? `cmd start failed ${String(failure.code ?? failure.message)}` : 'cmd start ok')
+        if (!failure) return true
+        const message = await shell.openPath(path)
+        trace(`shell ${message || 'ok'}`)
+        if (message) throw new Error('无法打开目录：' + message)
+        return true
       }
+      const error = await shell.openPath(path)
+      trace(`shell ${error || 'ok'}`)
+      if (error) {
+        if (stats.isDirectory()) {
+          const child = spawn(process.platform === 'win32' ? 'explorer.exe' : 'xdg-open', [path], { detached: true, stdio: 'ignore' })
+          child.on('error', () => undefined)
+          child.unref()
+        } else {
+          shell.showItemInFolder(path)
+        }
+      }
+      return true
+    } catch (error) {
+      trace(`error ${error instanceof Error ? error.message : String(error)}`)
+      throw error
     }
-    return true
   })
 
   handle(Ipc.openExternal, schemas.openExternal, async ({ url }) => {
