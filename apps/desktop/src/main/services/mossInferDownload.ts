@@ -1,7 +1,7 @@
-import { app } from 'electron'
+﻿import { app } from 'electron'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createWriteStream, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, chmodSync } from 'node:fs'
+import { createReadStream, createWriteStream, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, chmodSync } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { rename } from 'node:fs/promises'
 import { once } from 'node:events'
@@ -178,6 +178,17 @@ function archiveBase(version: string, flavour: 'cu12' | 'cu13', variant: Variant
   return `mossinfer-${version}-${osToken()}-${flavour}-x86_64${suffix}`
 }
 
+const DOWNLOAD_ATTEMPTS = 6
+
+/** Transient proxy/undici failures are worth resuming; HTTP 4xx and checksum errors are not. */
+function isRetryable(error: Error): boolean {
+  const message = error.message.toLowerCase()
+  if (message.includes('http 4')) return false
+  if (message.includes('sha256')) return false
+  if (message.includes('已取消')) return false
+  return true
+}
+
 async function downloadTo(
   url: string,
   target: string,
@@ -187,60 +198,96 @@ async function downloadTo(
 ): Promise<string> {
   const part = `${target}.part`
   if (existsSync(part)) rmSync(part, { force: true })
-  const response = await fetchGithubFile(url, settings, {
-    headers: {
-      'user-agent': `MossStudio-Launcher/${app.getVersion()}`,
-      // undici strips this header on the cross-origin redirect to the artifact blob store.
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    signal: controller?.signal,
-    redirect: 'follow',
-  }, 'GitHub Release/Actions 资产下载')
-  if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}（${url.slice(0, 120)}）`)
-  if (!response.body) throw new Error('下载响应没有 body')
-  const length = Number(response.headers.get('content-length') ?? 0)
-  const total = Number.isFinite(length) && length > 0 ? length : totalHint
-  const hash = createHash('sha256')
-  const stream = createWriteStream(part)
   let received = 0
-  let lastEmit = 0
-  let lastBytes = 0
-  let lastTime = Date.now()
-  const reader = response.body.getReader()
-  try {
-    while (true) {
-      // stall watchdog: a silent blob-store connection must not hang forever
-      const { done, value } = await Promise.race([
-        reader.read(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('下载停滞（120 秒无数据），请重试')), 120_000),
-        ),
-      ])
-      if (done) break
-      if (controller?.signal.aborted) throw new Error('已取消下载')
-      const chunk = Buffer.from(value)
-      hash.update(chunk)
-      received += chunk.length
-      if (!stream.write(chunk)) await once(stream, 'drain')
-      const timestamp = Date.now()
-      if (timestamp - lastEmit >= 250) {
-        const elapsed = Math.max(0.001, (timestamp - lastTime) / 1000)
-        publish({
-          phase: 'downloading',
-          bytes: received,
-          totalBytes: total,
-          percent: total > 0 ? Math.min(99.9, (received / total) * 100) : 0,
-          speedBps: Math.max(0, (received - lastBytes) / elapsed),
-        })
-        lastEmit = timestamp
-        lastBytes = received
-        lastTime = timestamp
+  let total = totalHint
+  let attempt = 0
+  let lastError: Error | null = null
+  while (attempt < DOWNLOAD_ATTEMPTS) {
+    attempt += 1
+    try {
+      const response = await fetchGithubFile(url, settings, {
+        headers: {
+          'user-agent': `MossStudio-Launcher/${app.getVersion()}`,
+          // undici strips this header on the cross-origin redirect to the artifact blob store.
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          // Resume where the previous attempt died; the proxy must honour Range.
+          ...(received > 0 ? { range: `bytes=${received}-` } : {}),
+        },
+        signal: controller?.signal,
+        redirect: 'follow',
+      }, 'GitHub Release/Actions 资产下载')
+      if (received > 0 && response.status !== 206) {
+        // Host ignored the Range header: start over rather than corrupt the archive.
+        received = 0
+        rmSync(part, { force: true })
       }
+      if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}（${url.slice(0, 120)}）`)
+      if (!response.body) throw new Error('下载响应没有 body')
+      const length = Number(response.headers.get('content-length') ?? 0)
+      if (length > 0) total = received + length
+      else if (totalHint > 0 && received === 0) total = totalHint
+
+      const host = new URL(response.url || url).host
+      const stream = createWriteStream(part, { flags: received > 0 ? 'a' : 'w' })
+      let lastEmit = 0
+      let lastBytes = received
+      let lastTime = Date.now()
+      const reader = response.body.getReader()
+      try {
+        while (true) {
+          // stall watchdog: a silent blob-store connection must not hang forever
+          const { done, value } = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('下载停滞（120 秒无数据），请重试')), 120_000),
+            ),
+          ])
+          if (done) break
+          if (controller?.signal.aborted) throw new Error('已取消下载')
+          const chunk = Buffer.from(value)
+          received += chunk.length
+          if (!stream.write(chunk)) await once(stream, 'drain')
+          const timestamp = Date.now()
+          if (timestamp - lastEmit >= 250) {
+            const elapsed = Math.max(0.001, (timestamp - lastTime) / 1000)
+            publish({
+              phase: 'downloading',
+              bytes: received,
+              totalBytes: total,
+              percent: total > 0 ? Math.min(99.9, (received / total) * 100) : 0,
+              speedBps: Math.max(0, (received - lastBytes) / elapsed),
+              note: `${host} · 第 ${attempt} 次尝试`,
+            })
+            lastEmit = timestamp
+            lastBytes = received
+            lastTime = timestamp
+          }
+        }
+      } finally {
+        stream.end()
+        await once(stream, 'finish').catch(() => undefined)
+      }
+      if (total > 0 && received < total) {
+        throw new Error(`连接中断（${received}/${total} 字节）`)
+      }
+      break
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      if (controller?.signal.aborted) throw new Error('已取消下载')
+      if (attempt >= DOWNLOAD_ATTEMPTS || !isRetryable(lastError)) throw lastError
+      publish({ phase: 'downloading', bytes: received, totalBytes: total, percent: total > 0 ? (received / total) * 100 : 0, speedBps: 0, note: `${lastError.message}，重试 ${attempt}/${DOWNLOAD_ATTEMPTS}` })
+      await new Promise((resolve) => setTimeout(resolve, Math.min(5000, 800 * attempt)))
     }
-  } finally {
-    stream.end()
-    await once(stream, 'finish').catch(() => undefined)
   }
+  if (!existsSync(part)) throw lastError ?? new Error('下载失败')
+  // Hash the file at the end so resumed downloads still verify correctly.
+  const hash = createHash('sha256')
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    createReadStream(part)
+      .on('data', (chunk: string | Buffer) => hash.update(chunk))
+      .on('end', () => resolvePromise())
+      .on('error', rejectPromise)
+  })
   await rename(part, target)
   return hash.digest('hex')
 }
