@@ -63,7 +63,9 @@ export const Ipc = {
   aiProviderRemove: 'ai:provider-remove',
   aiConversations: 'ai:conversations',
   aiConversationRemove: 'ai:conversation-remove',
+  aiConversationRename: 'ai:conversation-rename',
   aiChat: 'ai:chat',
+  aiToolResult: 'ai:tool-result',
   gbcStatus: 'gbc:status',
   gbcDoctor: 'gbc:doctor',
   gbcInstallEnv: 'gbc:install-env',
@@ -154,6 +156,8 @@ export const Events = {
   engineRemoteProgress: 'event:engine-remote-progress',
   terminalData: 'event:ssh-terminal-data',
   terminalExit: 'event:ssh-terminal-exit',
+  aiStream: 'event:ai-stream',
+  aiToolCall: 'event:ai-tool-call',
 } as const
 
 export type EventChannel = (typeof Events)[keyof typeof Events]

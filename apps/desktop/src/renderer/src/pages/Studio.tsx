@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   Box,
-  GitBranch,
   Minus,
   PanelLeftClose,
   PanelRightClose,
@@ -14,7 +13,6 @@ import {
   GripVertical,
   Play,
   Sparkles,
-  ScanSearch,
   SquareDashedMousePointer,
   Type,
   UserRound,
@@ -30,6 +28,7 @@ import type { GalleryItem, JobRecord, ManagedHost, ProjectCanvas, ProjectDocumen
 import type { BackendInfo } from '@shared/backend'
 import { Events, Ipc } from '@shared/channels'
 import { call, onEvent } from '../lib/api'
+import { installStudioToolBridge, registerStudioTools } from '../lib/agentTools'
 import { electronStudioClient } from '../lib/studioClient'
 import { cloverUrl } from '../lib/clover'
 import {
@@ -46,6 +45,7 @@ import { Button, ConfirmDialog, IconButton, Input, Modal, Pill, Segmented, Selec
 import { PromptSegmentsModal } from '../components/PromptSegmentsModal'
 import { GbcImportModal } from '../components/GbcImportModal'
 import { AgentSidebar } from '../components/AgentSidebar'
+import { AnalysisPanel } from '../components/studio/AnalysisPanel'
 import { StudioSection } from '../components/studio/StudioSection'
 import { StudioSidebar } from '../components/studio/StudioSidebar'
 import type { GbcImageResult, GbcRunResult } from '@shared/gbc'
@@ -362,6 +362,85 @@ export function StudioPage(): React.JSX.Element {
     : undefined
   /** Prompt the footer will send for the selected Canvas, shown as a one-line summary. */
   const pendingPrompt = selectedCanvas ? effectivePromptFor(selectedCanvas) : { prompt: '', source: 'text' as const, regions: 0 }
+
+  // Agent tools: the model drives the workbench through these, not through text alone.
+  useEffect(() => installStudioToolBridge(), [])
+  useEffect(() => {
+    registerStudioTools({
+      readContext: () => ({
+        project: { id: projectId, name: projectName, page },
+        canvases: persistedCanvases.map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          title: item.title,
+          width: item.width,
+          height: item.height,
+          jobState: item.jobState ?? 'idle',
+          outputs: item.outputs?.length ?? 0,
+        })),
+        selected: selectedCanvas
+          ? {
+            id: selectedCanvas.id,
+            kind: selectedCanvas.kind,
+            title: selectedCanvas.title,
+            width: draft.width,
+            height: draft.height,
+            steps,
+            cfg,
+            seed,
+            prompt,
+            negative,
+            layers: draft.items.map((item, index) => ({
+              index: index + 1,
+              label: item.label,
+              caption: item.caption,
+              bbox: item.bbox.map((value) => Math.round(value)),
+              visible: item.visible !== false,
+            })),
+          }
+          : null,
+        notes: 'bbox is [x1,y1,x2,y2] in canvas pixels; studio_add_layer takes normalised 0-1 x/y/w/h.',
+      }),
+      setPrompt: (value: string) => {
+        setPrompt(value)
+        setStudioPrompt(value)
+        return { written: value.length }
+      },
+      setSampler: (patch) => {
+        if (patch.width !== undefined || patch.height !== undefined) {
+          changeSize(Math.round(patch.width ?? draft.width), Math.round(patch.height ?? draft.height))
+        }
+        if (patch.steps !== undefined) setSteps(Math.round(patch.steps))
+        if (patch.cfg !== undefined) setCfg(patch.cfg)
+        if (patch.seed !== undefined) setSeed(Math.round(patch.seed))
+        return { width: patch.width ?? draft.width, height: patch.height ?? draft.height, steps: patch.steps ?? steps, cfg: patch.cfg ?? cfg, seed: patch.seed ?? seed }
+      },
+      addLayer: ({ label, caption, bbox }) => {
+        const width = draft.width
+        const height = draft.height
+        const box: [number, number, number, number] = bbox
+          ? [bbox.x * width, bbox.y * height, (bbox.x + bbox.w) * width, (bbox.y + bbox.h) * height]
+          : [width * 0.2, height * 0.2, width * 0.8, height * 0.8]
+        const item = {
+          id: `layer-${crypto.randomUUID().slice(0, 8)}`,
+          label,
+          caption,
+          bbox: box.map((value) => Math.round(value)) as [number, number, number, number],
+          visible: true,
+          locked: false,
+          opacity: 1,
+        }
+        setDraft((previous) => ({ ...previous, items: [...previous.items, item] }))
+        setTool('select')
+        return { added: item.id, bbox: item.bbox, index: draft.items.length + 1 }
+      },
+      generate: async (value?: string) => {
+        if (value?.trim()) setPrompt(value)
+        await generate(undefined, value)
+        return { queued: true, canvasId: selectedCanvasId }
+      },
+    })
+  })
   const currentCanvasSnapshot = useMemo<ProjectCanvas | null>(() => {
     if (!selectedCanvas || selectedCanvas.kind !== 'layout') return selectedCanvas
     return {
@@ -1206,11 +1285,13 @@ export function StudioPage(): React.JSX.Element {
     applyGbcImport(result, image, 'append')
   }
 
-  async function generate(sourceOverride?: ProjectCanvas): Promise<void> {
+  async function generate(sourceOverride?: ProjectCanvas, promptOverride?: string): Promise<void> {
     if (submittingRef.current) return
-    const source = sourceOverride?.id === selectedCanvasId
+    const resolved = sourceOverride?.id === selectedCanvasId
       ? currentCanvasSnapshot ?? sourceOverride
       : sourceOverride ?? currentCanvasSnapshot
+    // The Agent may hand us a prompt that is not in state yet.
+    const source = resolved && promptOverride !== undefined ? { ...resolved, prompt: promptOverride } : resolved
     if (!source) {
       toast.push('先点击选择一个 Canvas，再开始生成', 'error')
       return
@@ -1339,7 +1420,7 @@ export function StudioPage(): React.JSX.Element {
       setSelectedCanvasId(taskCanvasId)
       const linkedProject = await saveProjectNow(true, { canvases: taskCanvases, selectedCanvasId: taskCanvasId })
       if (linkedProject) {
-        toast.push(`已提交到 MossInfer${effective.source === 'layout' ? `（布局 Prompt · ${effective.regions} 个区域）` : '（手写提示词）'}，进度显示在对应 Canvas 上`, 'success')
+        toast.push(`已提交到 MossInfer${effective.source === 'layout' ? `（布局 Prompt · ${effective.regions} 个图层）` : '（手写提示词）'}，进度显示在对应 Canvas 上`, 'success')
       } else {
         toast.push('任务已提交，但关联记录未能保存；可在终端查看任务', 'error')
       }
@@ -1577,9 +1658,9 @@ export function StudioPage(): React.JSX.Element {
     if (id === 'gallery') return <MiniGallery />
     return (
       <div className="flex flex-col">
-        <div className="flex shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] px-2 py-1.5">
+        <div className="flex h-8 shrink-0 items-center justify-between border-b border-[var(--color-border-subtle)] pl-3 pr-1">
           <span className="text-caption text-[var(--color-text-tertiary)]">{draft.items.length} 个图层</span>
-          <Button tone="ghost" onClick={() => { setTool('draw'); setSelectedId(null) }}><Plus className="size-4" /> 画新框</Button>
+          <Button tone="ghost" onClick={() => { setTool('draw'); setSelectedId(null) }}><Plus className="size-3.5" /> 画新框</Button>
         </div>
         <div className="divide-y divide-[var(--color-border-subtle)]">
           {draft.items.map((item, index) => {
@@ -1624,25 +1705,22 @@ export function StudioPage(): React.JSX.Element {
                   dropLayerId === item.id && 'before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-accent-400',
                 )}
               >
-                <div className="flex items-start gap-1.5 px-2 py-1.5">
-                  <GripVertical className="mt-0.5 size-3.5 shrink-0 cursor-grab text-[var(--color-text-tertiary)]" aria-hidden="true" />
-                  <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-[3px] bg-accent-500/12 font-mono text-micro text-accent-200">{index + 1}</span>
-                  <span className="mt-1 size-1.5 shrink-0 rounded-full" style={{ backgroundColor: item.label === 'text' ? '#f0b45a' : item.label === 'character' ? '#7fb6ff' : '#8bd1c7' }} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-caption font-medium">{meta.name}</span>
-                      {item.visible === false ? <EyeOff className="size-2.5 text-[var(--color-text-tertiary)]" /> : null}
-                      {item.locked ? <Lock className="size-2.5 text-[var(--color-text-tertiary)]" /> : null}
-                    </div>
-                    <p className="mt-0.5 truncate text-caption text-[var(--color-text-tertiary)]">{item.caption || '未填写提示词'}</p>
-                  </div>
+                <div className="flex items-center gap-1.5 px-2 py-1">
+                  <GripVertical className="size-3.5 shrink-0 cursor-grab text-[var(--color-text-tertiary)]" aria-hidden="true" />
+                  <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-[3px] bg-accent-500/12 font-mono text-micro text-accent-200">{index + 1}</span>
+                  <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: item.label === 'text' ? '#f0b45a' : item.label === 'character' ? '#7fb6ff' : '#8bd1c7' }} />
+                  <span className="shrink-0 text-caption font-medium">{meta.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-caption text-[var(--color-text-tertiary)]">
+                    {item.caption || '未填写提示词'}
+                  </span>
+                  {item.locked ? <Lock className="size-3 shrink-0 text-[var(--color-text-tertiary)]" /> : null}
                   <button
                     type="button"
                     onClick={(event) => { event.stopPropagation(); setItem(item.id, { visible: item.visible === false }) }}
-                    className="mt-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]"
+                    className="shrink-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]"
                     title={item.visible === false ? '显示图层' : '隐藏图层'}
                   >
-                    {item.visible === false ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    {item.visible === false ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                   </button>
                 </div>
                 {isSelected ? (
@@ -1712,7 +1790,7 @@ export function StudioPage(): React.JSX.Element {
                 <span className="inline-flex min-w-0 items-center gap-1.5 text-caption text-[var(--color-text-tertiary)]">
                   <span className={cn('size-1.5 shrink-0 rounded-full', pendingPrompt.regions > 0 ? 'bg-accent-400' : 'bg-white/30')} />
                   <span className="truncate">
-                    {pendingPrompt.regions > 0 ? `布局 Prompt · ${pendingPrompt.regions} 个区域` : '手写提示词'}
+                    {pendingPrompt.regions > 0 ? `布局 Prompt · ${pendingPrompt.regions} 个图层` : '手写提示词'}
                   </span>
                 </span>
                 <button type="button" onClick={compile} className="shrink-0 text-caption text-accent-300 hover:underline">预览</button>
@@ -1861,7 +1939,7 @@ export function StudioPage(): React.JSX.Element {
               <span className="truncate text-caption text-[var(--color-text-tertiary)]">
                 <span className="text-[var(--color-text-secondary)]">{selectedCanvas.title}</span>
                 {' · '}{selectedCanvas.width}×{selectedCanvas.height}
-                {' · '}{selectedCanvas.layers.length} 个区域
+                {' · '}{selectedCanvas.layers.length} 个图层
               </span>
             ) : null}
           </div>
@@ -2316,7 +2394,7 @@ export function StudioPage(): React.JSX.Element {
                 id={`studio-tab-${tab.id}`}
                 type="button"
                 role="tab"
-                disabled={!selectedCanvas || selectedCanvas.kind !== 'layout'}
+                disabled={tab.id === 'layout' && selectedCanvas?.kind !== 'layout'}
                 aria-selected={activeTool === tab.id}
                 aria-controls={`studio-tool-${tab.id}`}
                 tabIndex={activeTool === tab.id ? 0 : -1}
@@ -2334,38 +2412,32 @@ export function StudioPage(): React.JSX.Element {
           </div>
           <IconButton label="收起右栏" data-sidebar-collapse aria-expanded={true} onClick={() => setRightCollapsed(true)}><PanelRightClose className="size-4" /></IconButton>
         </header>
-        {selectedCanvas?.kind === 'layout' ? (
-          <>
-            <div id="studio-tool-layout" role="tabpanel" aria-labelledby="studio-tab-layout" hidden={activeTool !== 'layout'} className="min-h-0 flex-1 overflow-y-auto">
-              <StudioSection title="图层">{renderSection('layers')}</StudioSection>
+        {/* The Agent and analysis tabs stay mounted for every selection: unmounting
+            them on a Result Canvas used to wipe the running conversation. */}
+        <div id="studio-tool-layout" role="tabpanel" aria-labelledby="studio-tab-layout" hidden={activeTool !== 'layout'} className="min-h-0 flex-1 overflow-y-auto">
+          {selectedCanvas?.kind === 'layout' ? renderSection('layers') : (
+            <div className="px-5 py-10 text-center text-caption leading-5 text-[var(--color-text-tertiary)]">
+              {selectedCanvas
+                ? '结果 Canvas 没有可编辑图层。选一张布局 Canvas，或用「复制参数」基于它创建可编辑 Canvas。'
+                : '请点击选择一个 Canvas。'}
             </div>
-            <div id="studio-tool-agent" role="tabpanel" aria-labelledby="studio-tab-agent" hidden={activeTool !== 'agent'} className="min-h-0 flex-1 overflow-hidden">
-              <AgentSidebar embedded />
-            </div>
-            <div id="studio-tool-analysis" role="tabpanel" aria-labelledby="studio-tab-analysis" hidden={activeTool !== 'analysis'} className="min-h-0 flex-1 overflow-y-auto">
-              <StudioSection title="图像结构解析">
-                <div className="space-y-3 p-3">
-                  <p className="text-caption leading-5 text-[var(--color-text-secondary)]">从参考图提取区域、文字和层级描述，导入当前画布继续编辑。</p>
-                  <Button tone="primary" className="w-full" onClick={() => { setGbcTab('run'); setGbcOpen(true) }}><ScanSearch className="size-4" />选择图片并解析</Button>
-                  <Button tone="ghost" className="w-full" onClick={() => { setGbcTab('manage'); setGbcOpen(true) }}><GitBranch className="size-4" />管理解析工具</Button>
-                  <p className="text-caption leading-5 text-[var(--color-text-tertiary)]">GBC 是可选工具，可随时在这里配置或打开。</p>
-                </div>
-              </StudioSection>
-            </div>
-          </>
-        ) : (
-          <div className="px-5 py-10 text-center text-caption leading-5 text-[var(--color-text-tertiary)]">
-            {selectedCanvas
-              ? '这是生成结果 Canvas。可在左侧调整参数后重跑，或复制参数创建可编辑 Canvas。'
-              : '请点击选择一个 Canvas，创作工具将在此启用。'}
-          </div>
-        )}
+          )}
+        </div>
+        <div id="studio-tool-agent" role="tabpanel" aria-labelledby="studio-tab-agent" hidden={activeTool !== 'agent'} className="min-h-0 flex-1 overflow-hidden">
+          <AgentSidebar embedded />
+        </div>
+        <div id="studio-tool-analysis" role="tabpanel" aria-labelledby="studio-tab-analysis" hidden={activeTool !== 'analysis'} className="min-h-0 flex-1 overflow-y-auto">
+          <AnalysisPanel
+            onRun={() => { setGbcTab('run'); setGbcOpen(true) }}
+            onManage={() => { setGbcTab('manage'); setGbcOpen(true) }}
+          />
+        </div>
       </StudioSidebar>
       <ConfirmDialog
         open={layoutReset !== null}
         onClose={() => setLayoutReset(null)}
         title={layoutReset === 'example' ? '替换为示例布局？' : '清空画布区域？'}
-        description={`当前 ${draft.items.length} 个区域及区域内文字将被${layoutReset === 'example' ? '示例布局替换' : '清除'}。提示词和底图会保留。`}
+        description={`当前 ${draft.items.length} 个图层及区域内文字将被${layoutReset === 'example' ? '示例布局替换' : '清除'}。提示词和底图会保留。`}
         confirmLabel={layoutReset === 'example' ? '替换布局' : '清空区域'}
         onConfirm={() => { if (layoutReset) resetLayout(layoutReset) }}
       />

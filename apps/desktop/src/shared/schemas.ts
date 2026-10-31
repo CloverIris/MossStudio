@@ -350,11 +350,22 @@ export const schemas = {
   aiChat: z.object({
     providerId: z.string().min(1).max(120),
     conversationId: z.string().max(120).optional(),
-    messages: z.array(z.object({
-      role: z.enum(['system', 'user', 'assistant']),
-      content: z.string().min(1).max(32000),
-    })).min(1).max(40),
-    system: z.string().max(16000).optional(),
+    message: z.string().max(32000).optional(),
+    regenerate: z.boolean().optional(),
+    context: z.string().max(16000).optional(),
+  }).refine((value) => Boolean(value.regenerate || value.message?.trim()), { message: '需要消息或重新生成标记' }),
+
+  aiToolResult: z.object({
+    callId: z.string().min(1).max(200),
+    result: z.object({
+      ok: z.boolean(),
+      content: z.string().max(200_000),
+    }),
+  }),
+
+  aiConversationTitle: z.object({
+    id: z.string().min(1).max(120),
+    title: z.string().min(1).max(120),
   }),
 
   projectId: z.object({ id: z.string().min(1).max(120) }),

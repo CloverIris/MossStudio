@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, statSync } from 'node:fs'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
 import { schemas } from '@shared/schemas'
+import { STUDIO_TOOLS } from '@shared/mcp'
+import type { AiToolCall, AiToolResult } from '@shared/ai'
 import type { IpcResult } from '@shared/types'
 import { emit } from './lib/events'
 import { ensureDirs, paths } from './lib/paths'
@@ -23,7 +25,7 @@ import {
   listMossInferReleases,
 } from './services/mossInferDownload'
 import { getWebAccessInfo, startBackend, stopBackend } from './services/backend'
-import { chat, listConversations, listProviders, removeConversation, removeProvider, saveProvider } from './services/ai'
+import { chat, listConversations, listProviders, removeConversation, removeProvider, renameConversation, saveProvider } from './services/ai'
 import { gbcStatus, installGbcEnv, listGbcImages, runGbc } from './services/gbc'
 import { nativeImage } from 'electron'
 import { createGbcVersion, listGbcBranches, listGbcCommits, listGbcVersions, removeGbcVersion } from './services/gbcGit'
@@ -101,13 +103,37 @@ function toResult<T>(fn: () => Promise<T> | T): Promise<IpcResult<T>> {
     }))
 }
 
-function handle<T>(channel: string, schema: ZodType | null, fn: (input: any) => Promise<T> | T): void {
-  ipcMain.handle(channel, async (_event, payload: unknown) =>
+function handle<T>(channel: string, schema: ZodType | null, fn: (input: any, event: Electron.IpcMainInvokeEvent) => Promise<T> | T): void {
+  ipcMain.handle(channel, async (event, payload: unknown) =>
     toResult(async () => {
       const input = schema ? schema.parse(payload ?? {}) : payload
-      return await fn(input)
+      return await fn(input, event)
     }),
   )
+}
+
+/** Tool calls are executed by the renderer (it owns the Studio state); main only relays. */
+const pendingToolCalls = new Map<string, (result: AiToolResult) => void>()
+
+function runToolInRenderer(event: Electron.IpcMainInvokeEvent, call: AiToolCall): Promise<AiToolResult> {
+  const sender = event.sender
+  return new Promise<AiToolResult>((resolve) => {
+    const callId = call.id
+    const settle = (result: AiToolResult): void => {
+      pendingToolCalls.delete(callId)
+      resolve(result)
+    }
+    const timer = setTimeout(() => settle({ ok: false, content: JSON.stringify({ error: 'tool timed out after 60s' }) }), 60_000)
+    pendingToolCalls.set(callId, (result) => {
+      clearTimeout(timer)
+      settle(result)
+    })
+    if (sender.isDestroyed()) {
+      settle({ ok: false, content: JSON.stringify({ error: 'window closed' }) })
+      return
+    }
+    sender.send(Events.aiToolCall, { callId, name: call.name, arguments: call.arguments })
+  })
 }
 
 export function registerIpc(): void {
@@ -143,7 +169,20 @@ export function registerIpc(): void {
     return true
   })
 
-  handle(Ipc.aiChat, schemas.aiChat, (input) => chat(input))
+  handle(Ipc.aiConversationRename, schemas.aiConversationTitle, ({ id, title }) => renameConversation(id, title))
+
+  handle(Ipc.aiToolResult, schemas.aiToolResult, ({ callId, result }) => {
+    pendingToolCalls.get(callId)?.(result)
+    return true
+  })
+
+  handle(Ipc.aiChat, schemas.aiChat, (input, event) => chat(input, {
+    emit: (payload) => {
+      if (!event.sender.isDestroyed()) event.sender.send(Events.aiStream, payload)
+    },
+    runTool: (call) => runToolInRenderer(event, call),
+    tools: STUDIO_TOOLS,
+  }))
 
   handle(Ipc.gbcStatus, schemas.gbcStatusQuery, ({ versionId }) => gbcStatus(versionId))
 
