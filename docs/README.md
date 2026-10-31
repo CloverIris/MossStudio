@@ -25,6 +25,7 @@
 | 文档 | 作用 |
 | --- | --- |
 | [../README.md](../README.md) | 项目总览、安装、快速开始 |
+| [mossinfer-performance.md](mossinfer-performance.md) | MossInfer 1.0.0 性能报告与 PyTorch 对比 |
 | [status.md](status.md) | 完成度与验证证据 |
 | [architecture.md](architecture.md) | 当前进程/窗口/服务/引擎架构 |
 | [product-design.md](product-design.md) | 工作台信息架构、画布板、交互边界 |

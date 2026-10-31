@@ -1,170 +1,147 @@
-# MossStudio
+<p align="center">
+  <img src="docs/assets/logo.jpg" alt="MossStudio" width="180">
+</p>
 
-**MOSS-Image 的桌面创作工作台。**
+<h1 align="center">MossStudio</h1>
 
-MossStudio 用 Electron + React 把提示词、布局画布、图层、模型、设备与生成任务放进一个工作区；推理通过 **MossInfer sidecar** 执行，桌面端不依赖官方 Gradio、不 clone 官方仓库，也不需要推理侧的 Python 环境。
+<p align="center">
+  开源、原生 CUDA、不需要 Python 的 <b>MOSS-Image 桌面工作台</b><br>
+  一句话出图 · 可视化布局画布 · 自带推理引擎
+</p>
 
-> 当前版本 `0.1.0`，开发阶段。本机（Windows + RTX 2080）已跑通真实出图；安装包、签名和跨机器验收仍未完成，详见 [实现状态](docs/status.md)。
+<p align="center">
+  <img alt="status" src="https://img.shields.io/badge/status-发布前内测-orange">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6">
+  <br>
+  <img alt="Electron" src="https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white">
+  <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=06181f">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white">
+  <img alt="Tailwind" src="https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white">
+  <img alt="pnpm" src="https://img.shields.io/badge/pnpm-9-F69220?logo=pnpm&logoColor=white">
+  <img alt="CUDA" src="https://img.shields.io/badge/CUDA-12.x-76B900?logo=nvidia&logoColor=white">
+  <img alt="C++" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
+</p>
 
-## 核心模型
+---
 
-一个 **Project** 里有多张 **Canvas**，平铺在一块可以自由拖动的**画布板（board）**上：
+## 这是什么
 
-- **布局 Canvas**：可编辑，承载尺寸、提示词、采样参数和一串**区域（bbox 图层）**。点「开始生成」后它自己出图。
-- **结果 Canvas**：只读，承载某次生成的参数快照和图片。重跑不会覆盖它，而是在下方新建一张结果 Canvas。
+MossStudio 是 [MOSS-Image](https://github.com/OpenMOSS/MOSS-Image) 的桌面工作台。它把**模型下载、参数调节、布局画布、AI Agent 和推理引擎**收进同一个窗口，让你不用再和 `git clone`、conda、Gradio 表单打交道。
 
-生成的串行队列由 MossInfer 保证：同一设备同一时间只有一个任务在跑，其余排队。
+> 当前处于**发布前最后一轮内部测试**：核心链路已经在真实 NVIDIA 显卡上跑通，安装包和跨机器验收还在收尾。
 
-## 特性
+- 🔒 **完全本地**：图片不出本机，API Key 只存在你自己的用户目录
+- 🧩 **开箱即用**：内置模型下载器，自动挑最快的加速源
+- 🚀 **自研推理引擎**：[MossInfer](docs/mossinfer-performance.md)，C++/CUDA 原生实现，比 PyTorch 流水线快 1.33–1.45×
+- 🪶 **不吃显存**：6–8 GB 显存就能高性能出 1024² 大图，最低 2.34 GiB 也能跑
+- 🐍 **不需要 Python**：没有 conda、没有 PyTorch、没有虚拟环境
+- 🤖 **一句话出图**：内置 AI Agent（自备 API Key），直接改画布、加图层、发起生成
+- 🩺 **报错看得懂**：错误会被翻译成可操作的诊断卡片，而不是一段堆栈
 
-**画布板**
+## 亮点
 
-- 自由拖拽：卡片位置存在 `project.json` 的 `x/y`，不再是固定网格。
-- 卡片按自身宽高比呈现；`512²` 的面积正好是 `1024²` 的四分之一。
-- 空白处左键拖动平移，滚轮以光标为锚点缩放，`⤢` 一键适配全部卡片，右下角有缩略图导航。
-- 点选卡片自动居中到 125% 工作缩放。
+| | |
+|---|---|
+| **MossInfer 引擎** | 自研 C++/CUDA 推理管线，不依赖 PyTorch。1024² / 50 步只要 27.8 秒（官方 diffusers 流水线 40.2 秒），峰值显存 11.7 GiB |
+| **小显存友好** | 按显存预算自动规划驻留层数，装不下的部分流式加载。INT8 档 7.2 GiB、INT4 档 5.0 GiB 即可跑 1024²；2048² 大图峰值仅 16.3 GiB |
+| **模型管理** | 27 GB 权重拆成 Dit / Text Encoder / VAE 分开下载、共享 HF 缓存、自由组合，先下哪个由你决定 |
+| **自动加速源** | 自动探测并切换 GitHub 代理 / HF 镜像 / 包源，失败了自动回退直连 |
+| **布局画布** | Figma 式的自由画布，多张画布平铺；每块画布可按 1024/768/512 比例出图，区域框直接写提示词 |
+| **AI Agent** | 支持 OpenAI / DeepSeek / Anthropic / Gemini / Ollama；Agent 通过标准 MCP 风格的工具调用直接操作画布并生成 |
+| **诊断** | 环境检查、错误翻译、一键复制诊断信息；同一个错误不会反复弹窗 |
 
-**生成体验**
+## 引擎性能
 
-- 左栏写提示词、改参数，底部固定动作条：`开始生成` 与「实际发送内容」提示。
-- 画布上有区域时**自动编译布局 Prompt**，无需再手动「编译 → 插入」；没有区域时用左栏手写提示词。
-- 进度显示在对应 Canvas 上：底部一条进度绑带 + 卡片呼吸光晕，不再弹出终端窗口。
-- 结果直接在 Canvas 内显示；双击打开预览，含完整参数与「在文件夹中打开」。
+数据来自 [MossInfer 1.0.0 性能报告](docs/mossinfer-performance.md)（RTX 5090 32 GB 实测）。
 
-**编辑**
+**生成一张 1024² 图（50 步）**
 
-- 区域框内直接写提示词；右栏图层列表支持**拖拽排序**，顺序即布局 Prompt 里的区域编号。
-- 图层与画布双向定位，支持隐藏/锁定/不透明度。
-- 每张布局 Canvas 有「完成/允许编辑」「重跑」「删除」「复制参数」入口。
+| 运行方式 | 耗时 | 峰值显存 |
+| --- | ---: | ---: |
+| 官方 diffusers（全量驻留） | 40.2 s | 30.8 GiB |
+| 官方 diffusers（顺序 CPU 卸载） | 188.4 s | 3.5 GiB |
+| **MossInfer（bf16）** | **27.8 s** | **11.7 GiB** |
+| MossInfer（INT8 + 8-bit 注意力） | 13.3 s | 7.2 GiB |
+| MossInfer（INT4 Turbo） | 12.7 s | **5.0 GiB** |
 
-**工程管理**
+**单步推理对比 PyTorch eager**
 
-- 顶部 Project tabs：双击重命名、hover 删除、拖动排序、`Ctrl/Cmd + S` 显式保存（同时保留 1.2s 自动保存与未保存圆点）。
+| 分辨率 | PyTorch | MossInfer | 加速 |
+| --- | ---: | ---: | ---: |
+| 1024² | 0.620 s | 0.466 s | 1.33× |
+| 1456²（长提示词） | 2.016 s | 1.454 s | 1.39× |
+| 2048² | 3.746 s | 2.776 s | 1.35× |
 
-**其它页面**
-
-- MossInfer 引擎：本机 system/bundled 包、CUDA 库预检、Release 通道、远端 Linux SSH。
-- 模型库：组件化 bundle、共享 HF 缓存、推荐组合、本地导入。
-- 设备：启停与别名（可持久化）。
-- 训练（Trainer，独立窗口）、画廊、诊断、设置（8 个分区）。
-- Agent：多 Provider、对话历史、提示词分段/润色/翻译。
-- GBC（可选）：KohakuGBC/Togeari 图像解析桥，把 bbox/描述导入画布；外部 Python 工具，不参与启动。
-
-## 架构
-
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ Electron main                                                 │
-│  window: Studio / Trainer                                     │
-│  services: projects, models, engines, jobs, devices, trainer  │
-│  backend utility process: HTTP/WS + token                     │
-└───────────────┬───────────────────────────────┬──────────────┘
-                │ typed IPC / HTTP              │ stdio JSON-lines
-                ▼                               ▼
-        React Studio workbench           moss-server (MossInfer)
-        board / panels / Agent            ├─ local
-        Project / Gallery / Models        └─ Linux SSH host
-```
-
-- **Studio** 是主窗口，创作页 + 顶部页面导航。
-- **Trainer** 是唯一独立保留的第二窗口。
-- 推理算法全在 `moss-server` 内；MossStudio 只负责 `hello / load / generate / cancel` 与事件。
-- 任务不绑定 Instance：模型、设备、引擎是三个独立选择。
-- Project 持久化为 JSON + 资源文件，不使用数据库。
-
-## 平台与依赖
-
-| 目标 | 状态 |
-| --- | --- |
-| Windows x86_64 + NVIDIA | ✅ 本机真实出图（RTX 2080 / system-cuda） |
-| Linux x86_64 + NVIDIA | 🟡 代码路径已接，实机待验收 |
-| Linux SSH 远端 GPU | 🟡 fake 链路通过，真实主机待验收 |
-| macOS | UI/管理/项目可用；无 MossInfer 本地推理 |
-
-运行要求：
-
-- Node.js / pnpm（开发）。
-- 推理主机需要 NVIDIA GPU、驱动和 `moss-server` 引擎。
-- 远端需要 Linux x86_64、`curl`、`tar` 和 SSH。
-- Trainer 需要自己的 Python 3.10+ / Git；GBC 需要外部 `gbc`。
+其它结论：2048² 大图 143 秒跑完（官方会在 VAE 解码阶段爆显存）；只剩 10.4 GiB 空闲也能跑 2048²，每步只慢 0.3%；重复运行输出**逐位一致**。
 
 ## 快速开始
 
+> 需要 NVIDIA 显卡（Windows x64 / Linux x64）与较新的驱动。
+
 ```bash
+git clone https://github.com/CloverIris/MossStudio.git
+cd MossStudio
 pnpm install
 pnpm dev
 ```
 
-开发数据写入仓库根目录的 `.dev-data/`（`projects/`、`models/`、`outputs/`）。
+启动后三步：
 
-启动后：
+1. **引擎** —— 下载并激活 MossInfer（默认挑最匹配你显卡的构建）
+2. **模型** —— 选择要下载的权重组件（Dit / Text Encoder / VAE 可分开下）
+3. **创作** —— 新建 Project → 写提示词或让 Agent 帮你写 → 开始生成
 
-1. 打开「引擎」页安装或探测本机 MossInfer；无 Release 时用 CI 构件，需要 GitHub Token。
-2. 在「模型」页准备 MOSS-Image 权重组合。
-3. 回到「创作」，新建 Project →「新建内容」创建布局 Canvas → 写提示词/拖区域 → 开始生成。
-4. 远端：先在「设备」添加 Linux SSH 主机，再在「引擎」安装并准备远端模型。
+想用 Agent？在右侧 Agent 面板添加一个 Provider（OpenAI 兼容 / Anthropic / Gemini / Ollama 都行），填上你自己的 API Key。
 
-## 开发验证
+## 它是怎么搭起来的
 
-```bash
-pnpm typecheck          # tsc node + web
-pnpm build              # electron-vite build
-node --test tools/test-onboarding.mjs
-node --test tools/test-download-queue.mjs
+```
+┌──────────────────────────────────────────────────────────┐
+│ Electron 主进程                                           │
+│  Studio / Trainer 窗口 · 项目与任务 · 模型与引擎管理        │
+│  本地 HTTP/WS 服务（局域网 WebUI）                         │
+└───────────────┬──────────────────────────┬───────────────┘
+                │ 类型化 IPC                │ stdio JSON-lines
+                ▼                          ▼
+       React 工作台                  moss-server (MossInfer)
+       画布 / 面板 / Agent             C++/CUDA 推理
 ```
 
-MossInfer 冒烟（fake sidecar，无需真实 GPU）：
-
-```bash
-pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
-pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-queue
-pnpm --filter @clover/desktop exec electron . --scenario=studio-canvas-ui
-```
-
-本机无 GPU 的环境下请注意：`project.json` 只接受 `schemaVersion: 3`，旧工程不会被读取（文件仍在磁盘上）。
-
-## 目录
-
-```text
-apps/desktop/src/
-  main/       Electron 生命周期、双窗口 shell、IPC、领域服务
-  preload/    contextBridge 白名单
-  renderer/   Studio/管理页面、组件、状态
-  backend/    HTTP/WS utility process
-  shared/     类型、IPC channel、Zod schema
-release/      发布清单、模型表、公告
-docs/         架构、状态、设计、迁移、ADR
-tools/        测试与维护脚本
-```
+- 渲染层拿不到 Node 能力，只通过白名单 IPC 与主进程通信
+- 提示词、布局、参数、任务状态都挂在 Canvas 上，项目存成 JSON + 资源文件，不依赖数据库
+- 推理引擎独立进程，协议是 JSON-lines；本机和远程 Linux 主机走同一套协议
 
 ## 文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [文档索引](docs/README.md) | 当前文档、历史文档与阅读顺序 |
-| [实现状态](docs/status.md) | 已实现 / 未验收 / 已知限制 |
-| [架构](docs/architecture.md) | 双窗口、页面、服务、MossInfer、远端、存储 |
-| [产品设计](docs/product-design.md) | 工作台信息架构、画布板交互与边界 |
-| [多 Canvas 画布板](docs/design/multi-canvas-studio.md) | 画布板模型、串行生成与结果呈现 |
-| [后端与 Project](docs/backend-and-project.md) | Project schema v3、Engine Job、输出 |
-| [Layout JSON](docs/layout-schema.md) | 画布坐标与布局编译契约 |
-| [MossInfer 迁移](docs/mossinfer-migration.md) | sidecar、远端、HF、CUDA wheel |
-| [发布与更新](docs/release-and-updates.md) | Release 流程 |
-| [Agent 与提示词](docs/agent-and-prompt.md) | Provider、分段、确认 |
-| [GBC 集成](docs/gbc-integration.md) | 可选图像解析桥 |
-| [决策记录](docs/decisions/) | ADR 历史依据 |
+| [MossInfer 性能报告](docs/mossinfer-performance.md) | 引擎实测数据与对比 |
+| [实现状态](docs/status.md) | 完成度、验证证据、已知限制 |
+| [产品设计](docs/product-design.md) | 工作台信息架构与交互 |
+| [架构](docs/architecture.md) | 进程、服务、引擎协议 |
+| [后端与 Project](docs/backend-and-project.md) | 项目结构、Engine Job |
+| [Layout JSON](docs/layout-schema.md) | 布局编译契约 |
+| [文档索引](docs/README.md) | 全部文档与阅读顺序 |
 
-## 数据与安全
+## 开发
 
-- API Key 与 GitHub Token 只保存在主进程用户数据目录，渲染层只见状态。
-- SSH 密码通过系统安全存储保存，不写入 host JSON。
-- 模型、引擎路径与用户项目都在本机用户数据目录；LAN Web 访问需要 token。
-- 不依赖数据库；持久化为 JSON + 项目/模型/输出文件。
+```bash
+pnpm install
+pnpm dev            # electron-vite 开发模式
 
-### 兼容性说明
+pnpm typecheck      # tsc（主进程 + 渲染层，两个 tsconfig）
+pnpm build          # 生产构建
 
-本项目**不为旧数据保留向前兼容**：`project.json` schemaVersion 从 2 升到 3 时删除了 v1→v2 迁移、顶层兼容快照和 `row/column` 网格字段。旧工程目录仍留在磁盘上，但应用不会读取它们。
+pnpm test:models         # 模型文件 / 硬链接
+pnpm test:model-imports  # 模型导入
+pnpm test:ssh-manager    # SSH 主机管理
+pnpm test:download-queue # 下载队列
+pnpm test:settings-draft # 设置草稿
+pnpm test:ui             # Electron UI 检查（需要显示器）
+```
 
 ## 许可
 
-代码采用 MIT License，见 [LICENSE](LICENSE)。MOSS-Image 权重、KohakuGBC/Togeari、KohakuMossTrainer 遵循各自上游许可；本仓库不分发这些模型或外部项目。
+代码以 [MIT](LICENSE) 发布。MOSS-Image 权重、KohakuGBC/Togeari、KohakuMossTrainer 遵循各自上游许可，本仓库不分发这些模型。
