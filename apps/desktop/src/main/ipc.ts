@@ -1,4 +1,5 @@
 import { app, clipboard, dialog, ipcMain, shell } from 'electron'
+import { mkdirSync, statSync } from 'node:fs'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
 import { schemas } from '@shared/schemas'
@@ -18,6 +19,7 @@ import {
   cancelMossInferDownload,
   downloadMossInfer,
   getMossInferDownloadState,
+  listMossInferReleases,
 } from './services/mossInferDownload'
 import { getWebAccessInfo, startBackend, stopBackend } from './services/backend'
 import { chat, listConversations, listProviders, removeConversation, removeProvider, saveProvider } from './services/ai'
@@ -25,7 +27,14 @@ import { gbcStatus, installGbcEnv, listGbcImages, runGbc } from './services/gbc'
 import { nativeImage } from 'electron'
 import { createGbcVersion, listGbcBranches, listGbcCommits, listGbcVersions, removeGbcVersion } from './services/gbcGit'
 import { closeSshTerminal, inputSshTerminal, listSshTerminals, openSshTerminal } from './services/sshSessions'
-import { localEngineInfo, probeLocalEngine, remoteEngineInfo } from './services/engines'
+import {
+  localEngineInfo,
+  localEngineVersions,
+  probeLocalEngine,
+  remoteEngineInfo,
+  removeLocalEngineVersion,
+  selectLocalEngineVersion,
+} from './services/engines'
 import { detectSystemCuda } from './services/systemCuda'
 import { installMossInferCudaLibs } from './services/cudaWheels'
 import { prepareRemoteDefaultModel, prepareRemoteModel, scanRemoteModels } from './services/remoteModels'
@@ -328,11 +337,17 @@ export function registerIpc(): void {
 
   handle(Ipc.updatesCancel, schemas.updatesCancel, ({ version }) => cancelUpdateDownload(version))
 
-  handle(Ipc.mossInferDownload, schemas.mossInferDownload, ({ channel, flavour, variant, cudaWheels }) =>
-    downloadMossInfer(channel, flavour, variant, cudaWheels),
+  handle(Ipc.mossInferDownload, schemas.mossInferDownload, ({ channel, flavour, variant, cudaWheels, releaseTag }) =>
+    downloadMossInfer(channel, flavour, variant, cudaWheels, releaseTag),
   )
 
   handle(Ipc.engineStatus, null, () => localEngineInfo())
+
+  handle(Ipc.engineVersions, null, () => localEngineVersions())
+
+  handle(Ipc.engineVersionSelect, schemas.engineVersionId, ({ id }) => selectLocalEngineVersion(id))
+
+  handle(Ipc.engineVersionRemove, schemas.engineVersionId, ({ id }) => removeLocalEngineVersion(id))
 
   handle(Ipc.engineProbe, null, () => probeLocalEngine())
 
@@ -366,6 +381,8 @@ export function registerIpc(): void {
   })
 
   handle(Ipc.mossInferDownloadState, null, () => getMossInferDownloadState())
+
+  handle(Ipc.mossInferReleases, null, () => listMossInferReleases())
 
   handle(Ipc.mossInferDownloadCancel, null, () => cancelMossInferDownload())
 
@@ -505,7 +522,11 @@ export function registerIpc(): void {
   handle(Ipc.openPath, schemas.openPath, async ({ path }) => {
     const allowed = [paths.root(), paths.models(getSettings().modelsRoot)]
     if (!allowed.some((base) => isInside(base, path))) throw new Error('路径不在允许范围内')
-    return shell.openPath(path)
+    mkdirSync(path, { recursive: true })
+    if (!statSync(path).isDirectory()) throw new Error('目标路径不是目录')
+    const error = await shell.openPath(path)
+    if (error) throw new Error(`无法打开目录：${error}`)
+    return true
   })
 
   handle(Ipc.openExternal, schemas.openExternal, async ({ url }) => {

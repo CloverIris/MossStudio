@@ -115,6 +115,8 @@ SSH host → spawn ssh → remote moss-server
 ### 引擎包
 
 - 两种包：`system-cuda`（小，依赖系统 cuBLASLt）和 `bundled`（+700MB，自带 CUDA 库）。
+- 本机可选择 GitHub 正式 Release；上游没有 Release 时稳定渠道回退至最新成功 CI artifact。已安装版本可在引擎页切换或删除。
+- Windows `.zip` 由 Node `yauzl` 解压并校验归档路径，不依赖系统 Python；Linux `.tar.gz` 使用系统 `tar`。
 - 默认 `system-cuda`，下载前 `systemCuda.ts` 预检；缺库弹窗。
 - 缺库时的选项：
   - bundled 包
@@ -172,6 +174,5 @@ env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scen
 
 - 旧 Instance/Git/runtime/runner 文件仍在，产品入口已删除。
 - 远端 job 仍是每 job 一个 SSH 进程。
-- 引擎 zip 解压仍保留 Python 兜底。
 - LAN WebUI 仍有 bootstrap `instances: []` 兼容字段。
 - 真实 Windows/Linux NVIDIA 与安装包未验收。

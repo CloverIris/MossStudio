@@ -48,6 +48,19 @@ export function SettingsPage(): React.JSX.Element {
     }
   }
 
+  async function openModelsFolder(): Promise<void> {
+    const path = env?.device.modelsPath
+    if (!path) {
+      toast.push('模型目录路径尚未就绪，请先刷新环境检测', 'info')
+      return
+    }
+    try {
+      await call(Ipc.openPath, { path })
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    }
+  }
+
   const changes = useMemo(
     () => settings ? pendingSettings(settings, edits) : {},
     [settings, edits],
@@ -269,7 +282,8 @@ export function SettingsPage(): React.JSX.Element {
               </div>
               <IconButton
                 label="打开所在目录"
-                onClick={() => env && void call(Ipc.openPath, { path: env.device.modelsPath })}
+                onClick={() => void openModelsFolder()}
+                disabled={!env?.device.modelsPath}
               >
                 <FolderOpen className="size-4" />
               </IconButton>

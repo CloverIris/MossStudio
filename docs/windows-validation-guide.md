@@ -67,7 +67,10 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-remote-job
 | 项目 | 操作 | 通过标准 |
 | --- | --- | --- |
 | 启动 | `pnpm dev` | 只出现 Studio；Trainer 由训练页打开 |
+| 引擎版本 | 引擎页加载 GitHub Release | 可选择多个正式版本；无 Release 时明确提示 CI 回退和 Token 要求 |
+| 本机版本管理 | 下载多个引擎包 | 可查看、切换、删除历史版本；正在使用的版本不可删除 |
 | 引擎预检 | 引擎页选择 system-cuda | 正确识别 `cublasLt64_*.dll` / 缺失 |
+| 引擎解压 | 下载 Windows ZIP 包 | `yauzl` ZIP 流程完成，不要求系统 Python |
 | 缺库回退 | 没有系统库时安装 | 弹窗可选 bundled；下载后 `hello` 成功 |
 | 原生 CUDA wheel | 选择“下载 system + 解压 CUDA 库” | 不调用 Python/uv/pip；lib/bin 出现 DLL |
 | 模型 | 模型库下载/导入 | 组件完整，Project 可选 |
@@ -80,7 +83,7 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-remote-job
 
 - Windows wheel 解压后的 DLL 搜索路径需要实机确认。
 - 系统 CUDA Toolkit 版本必须与引擎 cu12/cu13 匹配。
-- 引擎 zip 解压仍有系统 Python 兜底，尚未改原生。
+- GitHub release/artifact 下载和真实 Windows NVIDIA 安装仍需实机验证。
 - 真实远端 UDP/SSH 网络、路径空格、中文路径、非 ASCII 用户名需实测。
 - 打包/签名/更新未实现。
 

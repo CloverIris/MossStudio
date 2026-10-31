@@ -85,7 +85,7 @@ export function Oobe(): React.JSX.Element {
     window.addEventListener('focus', refresh)
     const offLocal = onEvent<MossInferDownloadState>(Events.mossInferDownload, (next) => {
       setEngineDownload(next)
-      if (next.phase === 'done' || next.phase === 'error') refresh()
+      if (next.phase === 'done' || next.phase === 'error' || next.phase === 'canceled') refresh()
     })
     const offRemote = onEvent<EngineRemoteProgress>(Events.engineRemoteProgress, (next) => {
       if (next.hostId !== hostId) return
@@ -254,10 +254,11 @@ export function Oobe(): React.JSX.Element {
                         const taskTotal = tasks.reduce((sum, task) => sum + task.totalBytes, 0)
                         const engine = step.id === 'engine' && hostId === 'local' ? engineDownload : null
                         const remote = step.id === 'engine' && remoteProgress?.hostId === hostId ? remoteProgress : null
-                        const running = !done && (tasks.some((task) => ['queued', 'running', 'verifying'].includes(task.state)) || engine && !['done', 'error'].includes(engine.phase) || remote && !['done', 'error'].includes(remote.phase))
+                        const canceled = engine?.phase === 'canceled'
+                        const running = !done && (tasks.some((task) => ['queued', 'running', 'verifying'].includes(task.state)) || engine && !['done', 'error', 'canceled'].includes(engine.phase) || remote && !['done', 'error'].includes(remote.phase))
                         const failed = !done && (tasks.some((task) => task.state === 'error') || engine?.phase === 'error' || remote?.phase === 'error')
-                        const label = done ? '已就绪' : failed ? '下载失败，可重试' : running ? queued ? '排队中' : '准备中' : tasks.some((task) => task.state === 'paused') ? '已暂停' : step.status === 'partial' ? '待补齐' : '待准备'
-                        return <li key={step.id} data-oobe-step={step.id} data-status={done ? 'ok' : failed ? 'error' : running ? 'running' : step.status} className="flex items-start gap-2.5 py-3">
+                        const label = done ? '已就绪' : failed ? '下载失败，可重试' : canceled ? '已取消，可重试' : running ? queued ? '排队中' : '准备中' : tasks.some((task) => task.state === 'paused') ? '已暂停' : step.status === 'partial' ? '待补齐' : '待准备'
+                        return <li key={step.id} data-oobe-step={step.id} data-status={done ? 'ok' : failed ? 'error' : canceled ? 'canceled' : running ? 'running' : step.status} className="flex items-start gap-2.5 py-3">
                           <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-caption tabular-nums', done ? 'border-accent-500/25 bg-accent-500/10 text-accent-300' : 'border-[var(--color-border)] text-[var(--color-text-tertiary)]')}>
                             {done ? <Check className="size-4" /> : running ? <Spinner className="size-4" /> : index + 1}
                           </span>

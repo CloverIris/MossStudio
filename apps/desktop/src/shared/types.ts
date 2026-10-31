@@ -167,12 +167,13 @@ export interface EngineRemoteProgress {
 
 export interface MossInferDownloadState {
   channel: 'stable' | 'dev'
-  phase: 'querying' | 'downloading' | 'verifying' | 'extracting' | 'cuda_libs' | 'done' | 'error'
+  phase: 'querying' | 'downloading' | 'verifying' | 'extracting' | 'cuda_libs' | 'done' | 'error' | 'canceled'
   bytes: number
   totalBytes: number
   percent: number
   speedBps: number
   version?: string
+  releaseTag?: string
   serverPath?: string
   recommendedFlavour?: string
   variant?: 'system-cuda' | 'bundled'
@@ -180,6 +181,21 @@ export interface MossInferDownloadState {
   cublaslt?: unknown
   error?: string
   updatedAt: string
+}
+
+export interface MossInferRelease {
+  tag: string
+  name: string
+  publishedAt: string | null
+  body: string
+  assets: Array<{ name: string; size: number }>
+}
+
+export interface LocalEngineVersion {
+  id: string
+  name: string
+  path: string
+  current: boolean
 }
 
 export interface AppNotification {

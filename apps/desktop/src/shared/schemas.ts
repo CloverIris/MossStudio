@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { releaseInstallerSchema } from './release'
 
-const pathLike = z.string().min(1).max(4096)
+const pathLike = z.string().trim().min(1, '目录路径不能为空').max(4096)
 const urlLike = z.string().min(8).max(2048).regex(/^https?:\/\//)
 
 
@@ -62,7 +62,10 @@ export const schemas = {
     flavour: z.enum(['cu12', 'cu13']).optional(),
     variant: z.enum(['system-cuda', 'bundled']).optional(),
     cudaWheels: z.boolean().optional(),
+    releaseTag: z.string().min(1).max(120).optional(),
   }),
+
+  engineVersionId: z.object({ id: z.string().min(1).max(240) }),
 
   onboardingStatus: z.object({ hostId: z.string().min(1).max(80).optional() }).optional(),
 

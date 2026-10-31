@@ -2,13 +2,15 @@ import { app } from 'electron'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createWriteStream, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, chmodSync } from 'node:fs'
+import { pipeline } from 'node:stream/promises'
 import { rename } from 'node:fs/promises'
 import { once } from 'node:events'
-import { join } from 'node:path'
-import type { MossInferDownloadState, Settings } from '@shared/types'
+import { dirname, join, resolve, sep } from 'node:path'
+import * as yauzl from 'yauzl'
+import type { MossInferDownloadState, MossInferRelease, Settings } from '@shared/types'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
-import { paths } from '../lib/paths'
+import { isInside, paths } from '../lib/paths'
 import { run } from '../lib/run'
 import { probeMossInfer, shutdownMossInfer } from './mossInfer'
 import { installCudaWheels } from './cudaWheels'
@@ -28,6 +30,7 @@ const API = `https://api.github.com/repos/${REPO}`
 
 let current: MossInferDownloadState | null = null
 let controller: AbortController | null = null
+let operationInProgress = false
 
 function publish(patch: Partial<MossInferDownloadState> & { phase: MossInferDownloadState['phase'] }): void {
   if (!current) return
@@ -40,7 +43,11 @@ export function getMossInferDownloadState(): MossInferDownloadState | null {
 }
 
 export function cancelMossInferDownload(): MossInferDownloadState | null {
+  if (!controller || !current || current.phase === 'done' || current.phase === 'error' || current.phase === 'canceled') {
+    return current
+  }
   controller?.abort()
+  publish({ phase: 'canceled', error: undefined })
   return current
 }
 
@@ -67,7 +74,9 @@ async function ghJson(path: string, token: string | null): Promise<unknown> {
       'user-agent': `MossStudio-Launcher/${app.getVersion()}`,
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    signal: AbortSignal.timeout(20_000),
+    signal: controller
+      ? AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
+      : AbortSignal.timeout(20_000),
   })
   if (!response.ok) throw new Error(`GitHub API ${path} 返回 HTTP ${response.status}`)
   return response.json()
@@ -177,33 +186,85 @@ function sha256Of(sumsText: string, name: string): string | null {
   return null
 }
 
-async function pythonBin(): Promise<string> {
-  for (const candidate of ['python3', 'python']) {
-    const probe = spawnSync(candidate, ['--version'], { encoding: 'utf8', timeout: 5000 })
-    if (probe.status === 0) return candidate
-  }
-  throw new Error('解压需要系统 Python（python3/python）')
-}
-
 async function extractZip(zip: string, dest: string): Promise<void> {
-  const py = await pythonBin()
   mkdirSync(dest, { recursive: true })
-  const result = await run(py, ['-m', 'zipfile', '-e', zip, dest], { timeoutMs: 120_000 })
-  if (result.code !== 0) throw new Error(`zip 解压失败：${result.stderr.slice(0, 300)}`)
+  const root = resolve(dest)
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    let settled = false
+    const fail = (error: Error): void => {
+      if (settled) return
+      settled = true
+      zipfile?.close()
+      rejectPromise(error)
+    }
+    let zipfile: yauzl.ZipFile | undefined
+    yauzl.open(zip, { lazyEntries: true, autoClose: false, validateEntrySizes: true }, (error, opened) => {
+      if (error || !opened) {
+        fail(new Error(`无法打开 ZIP 引擎包：${error?.message ?? '未知错误'}`))
+        return
+      }
+      zipfile = opened
+      opened.on('error', fail)
+      opened.on('end', () => {
+        if (settled) return
+        settled = true
+        opened.close()
+        resolvePromise()
+      })
+      opened.on('entry', (entry: yauzl.Entry) => {
+        try {
+          const name = entry.fileName.replace(/\\/g, '/')
+          const mode = (entry.externalFileAttributes >>> 16) & 0xffff
+          if (
+            !name ||
+            name.startsWith('/') ||
+            name.split('/').some((part) => part === '..' || part === '.' || part.includes(':')) ||
+            (mode & 0xf000) === 0xa000
+          ) {
+            fail(new Error(`ZIP 引擎包包含不安全路径：${entry.fileName}`))
+            return
+          }
+          const target = resolve(root, ...name.split('/'))
+          const relative = target.slice(root.length)
+          if (target !== root && (!relative.startsWith(sep) || !isInside(root, target))) {
+            fail(new Error(`ZIP 引擎包路径越界：${entry.fileName}`))
+            return
+          }
+          if (entry.fileName.endsWith('/') || (mode & 0xf000) === 0x4000) {
+            mkdirSync(target, { recursive: true })
+            opened.readEntry()
+            return
+          }
+          mkdirSync(dirname(target), { recursive: true })
+          opened.openReadStream(entry, (streamError, stream) => {
+            if (streamError || !stream) {
+              fail(new Error(`无法读取 ZIP 文件 ${entry.fileName}：${streamError?.message ?? '未知错误'}`))
+              return
+            }
+            const output = createWriteStream(target, { flags: 'wx' })
+            void pipeline(stream, output).then(
+              () => opened.readEntry(),
+              (pipelineError: unknown) =>
+                fail(new Error(`ZIP 解压失败 ${entry.fileName}：${pipelineError instanceof Error ? pipelineError.message : String(pipelineError)}`)),
+            )
+          })
+        } catch (error) {
+          fail(error instanceof Error ? error : new Error(String(error)))
+        }
+      })
+      opened.readEntry()
+    })
+  })
 }
 
 async function extractArchive(archive: string, dest: string): Promise<void> {
   mkdirSync(dest, { recursive: true })
-  // Prefer the system tar (bsdtar on Windows also reads zip; GNU tar needs python for zip).
-  const isZip = archive.endsWith('.zip')
-  if (!isZip || process.platform === 'win32') {
-    const result = await run('tar', ['-xf', archive, '-C', dest], { timeoutMs: 300_000 })
-    if (result.code === 0) return
+  if (archive.endsWith('.zip')) {
+    await extractZip(archive, dest)
+    return
   }
-  if (isZip) return extractZip(archive, dest)
-  const py = await pythonBin()
-  const result = await run(py, ['-m', 'tarfile', '-e', archive, dest], { timeoutMs: 300_000 })
-  if (result.code !== 0) throw new Error(`归档解压失败：${result.stderr.slice(0, 300)}`)
+  const result = await run('tar', ['-xf', archive, '-C', dest], { timeoutMs: 300_000 })
+  if (result.code !== 0) throw new Error(`引擎包解压失败：${result.stderr.slice(0, 300) || '系统 tar 执行失败'}`)
 }
 
 function singleTopDir(dir: string): string {
@@ -250,8 +311,33 @@ interface Source {
   fallbackNote?: string
 }
 
-async function queryStable(flavour: 'cu12' | 'cu13', variant: Variant): Promise<Source> {
-  const release = (await ghJson('/releases/latest', null)) as {
+interface GhRelease {
+  tag_name: string
+  name?: string
+  body?: string
+  published_at?: string
+  draft?: boolean
+  prerelease?: boolean
+  assets: GhAsset[]
+}
+
+class MissingReleaseAssetError extends Error {}
+
+export async function listMossInferReleases(): Promise<MossInferRelease[]> {
+  const releases = (await ghJson('/releases?per_page=20', null)) as GhRelease[]
+  return releases
+    .filter((release) => !release.draft && !release.prerelease)
+    .map((release) => ({
+      tag: release.tag_name,
+      name: release.name?.trim() || release.tag_name,
+      publishedAt: release.published_at ?? null,
+      body: release.body ?? '',
+      assets: release.assets.map(({ name, size }) => ({ name, size })),
+    }))
+}
+
+async function queryStable(flavour: 'cu12' | 'cu13', variant: Variant, releaseTag?: string): Promise<Source> {
+  const release = (await ghJson(releaseTag ? `/releases/tags/${encodeURIComponent(releaseTag)}` : '/releases/latest', null)) as {
     tag_name: string
     assets: GhAsset[]
   }
@@ -270,8 +356,8 @@ async function queryStable(flavour: 'cu12' | 'cu13', variant: Variant): Promise<
     }
   }
   if (!asset) {
-    throw new Error(
-      `最新 release ${release.tag_name} 里没有 ${archiveBase(version, flavour, variant)}.${archiveExt()}` +
+    throw new MissingReleaseAssetError(
+      `release ${release.tag_name} 里没有 ${archiveBase(version, flavour, variant)}.${archiveExt()}` +
         (release.assets.length ? `（现有资产：${release.assets.map((a) => a.name).slice(0, 6).join(', ')}…）` : '（该 release 还没有资产）'),
     )
   }
@@ -330,15 +416,18 @@ async function downloadAndInstall(
   variant: Variant,
   settings: Settings,
   cudaWheels = false,
+  releaseTag?: string,
 ): Promise<{ serverPath: string; stamp: string; effectiveVariant: Variant; fallbackNote?: string }> {
   let effectiveChannel: 'stable' | 'dev' = channel
   let source: Source
   if (channel === 'stable') {
     try {
-      source = await queryStable(flavour, variant)
+      source = await queryStable(flavour, variant, releaseTag)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (!/404|没有.*变体|没有 Linux|Not Found/i.test(message)) throw error
+      const noLatestRelease = !releaseTag && /\/releases\/latest 返回 HTTP 404|Not Found/i.test(message)
+      const noMatchingAsset = error instanceof MissingReleaseAssetError
+      if (releaseTag || (!noLatestRelease && !noMatchingAsset)) throw error
       publish({ phase: 'querying', version: '上游没有 Release，回退到最新 CI artifact' })
       effectiveChannel = 'dev'
       source = await queryDev(flavour, variant, settings)
@@ -346,6 +435,7 @@ async function downloadAndInstall(
   } else {
     source = await queryDev(flavour, variant, settings)
   }
+  if (controller?.signal.aborted) throw new Error('已取消下载')
   publish({ phase: 'downloading', version: source.label, bytes: 0, totalBytes: source.totalHint })
   const workDir = join(paths.mossinfer(), 'downloads')
   mkdirSync(workDir, { recursive: true })
@@ -357,6 +447,7 @@ async function downloadAndInstall(
   let effectiveVariant = source.effectiveVariant
   let fallbackNote = source.fallbackNote
   if (effectiveChannel === 'dev') {
+    publish({ phase: 'extracting', percent: 0 })
     // The artifact is an outer zip wrapping the CPack archives + their .sha256 files.
     // Older CI runs predate the system-cuda variant: fall back to the bundled archive
     // from the same artifact (no second download).
@@ -395,7 +486,7 @@ async function downloadAndInstall(
     throw new Error('引擎包 sha256 校验失败（SHA256SUMS 不匹配）')
   }
 
-  publish({ phase: 'extracting' })
+  publish({ phase: 'extracting', percent: 0 })
   const extractDir = join(workDir, `${source.stamp}-extract`)
   rmSync(extractDir, { recursive: true, force: true })
   await extractArchive(archivePath, extractDir)
@@ -414,14 +505,19 @@ export async function downloadMossInfer(
   flavourInput?: 'cu12' | 'cu13',
   variantInput?: Variant,
   cudaWheels = false,
+  releaseTag?: string,
 ): Promise<MossInferDownloadState> {
-  if (current && current.phase !== 'done' && current.phase !== 'error') return current
+  if (operationInProgress && current) return current
+  if (current && !['done', 'error', 'canceled'].includes(current.phase)) return current
   const settings = getSettings()
   const variant: Variant = variantInput ?? settings.mossInferVariant
-  controller = new AbortController()
+  const operationController = new AbortController()
+  controller = operationController
+  operationInProgress = true
   current = {
     channel,
     phase: 'querying',
+    releaseTag,
     bytes: 0,
     totalBytes: 0,
     percent: 0,
@@ -431,14 +527,14 @@ export async function downloadMossInfer(
   publish({ phase: 'querying' })
   try {
     let flavour = flavourInput ?? 'cu13'
-    let installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels)
+    let installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag)
     // Upstream decision procedure: install cu13 by default, probe, fall back to cu12.
     let probe = await probeMossInfer(installed.serverPath)
     let recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
     if (flavour === 'cu13' && recommended === 'cu12') {
       publish({ phase: 'querying', version: '驱动只支持 CUDA 12，改下 cu12 包' })
       flavour = 'cu12'
-      installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels)
+      installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag)
       probe = await probeMossInfer(installed.serverPath)
       recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
     }
@@ -459,7 +555,13 @@ export async function downloadMossInfer(
       cublaslt: (probe['probe'] as Record<string, unknown> | undefined)?.['cublaslt'],
     })
   } catch (error) {
-    publish({ phase: 'error', error: error instanceof Error ? error.message : String(error) })
+    publish({
+      phase: operationController.signal.aborted ? 'canceled' : 'error',
+      error: operationController.signal.aborted ? undefined : error instanceof Error ? error.message : String(error),
+    })
+  } finally {
+    operationInProgress = false
+    if (controller === operationController) controller = null
   }
   return current
 }

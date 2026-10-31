@@ -10,6 +10,7 @@ import type {
   InstanceInfo,
   JobLogLine,
   JobRecord,
+  MossInferDownloadState,
   LaunchCase,
   LaunchDevice,
   LaunchRow,
@@ -45,6 +46,7 @@ interface AppStore {
   updates: UpdateState | null
   updateDialogOpen: boolean
   updateDownload: UpdateDownloadState | null
+  mossInferDownload: MossInferDownloadState | null
   instances: InstanceInfo[]
   catalog: Catalog | null
   downloads: DownloadTask[]
@@ -80,6 +82,7 @@ interface AppStore {
   toggleNotifications: () => void
   setNotificationsOpen: (open: boolean) => void
   pushNotification: (input: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => void
+  setMossInferDownload: (state: MossInferDownloadState | null) => void
   markAllNotificationsRead: () => void
   setStudioPrompt: (prompt: string) => void
   setStudioInstanceId: (instanceId: string | null) => void
@@ -237,6 +240,29 @@ export const useApp = create<AppStore>((set, get) => {
         })
       }
     })
+    onEvent<MossInferDownloadState>(Events.mossInferDownload, (download) => {
+      const previous = get().mossInferDownload
+      set({ mossInferDownload: download })
+      if (download.phase === 'done' && previous?.phase !== 'done') {
+        get().pushNotification({
+          tone: 'success',
+          title: 'MossInfer 引擎已就绪',
+          message: download.version ? `${download.version} 已安装并设为当前版本` : '引擎已安装并设为当前版本',
+        })
+      } else if (download.phase === 'error' && previous?.phase !== 'error') {
+        get().pushNotification({
+          tone: 'error',
+          title: 'MossInfer 引擎安装失败',
+          message: download.error ?? '查看引擎页的安装状态了解详情',
+        })
+      } else if (download.phase === 'canceled' && previous?.phase !== 'canceled') {
+        get().pushNotification({
+          tone: 'warning',
+          title: 'MossInfer 引擎安装已取消',
+          message: download.version ?? '安装任务已停止',
+        })
+      }
+    })
     onEvent<{ section: string }>(Events.envProgress, (event) => {
       set({ scanSection: event.section })
     })
@@ -270,6 +296,7 @@ export const useApp = create<AppStore>((set, get) => {
     updates: null,
     updateDialogOpen: false,
     updateDownload: null,
+    mossInferDownload: null,
     instances: [],
     catalog: null,
     downloads: [],
@@ -303,7 +330,7 @@ export const useApp = create<AppStore>((set, get) => {
         set({ settings })
         subscribe()
 
-        const [env, updates, catalog, downloads, jobs, diagnostics, devices, onboarding, queuedRows] =
+        const [env, updates, catalog, downloads, jobs, diagnostics, devices, onboarding, queuedRows, engineDownload] =
           await Promise.allSettled([
             call<EnvReport>(Ipc.envScan),
             call<UpdateState>(Ipc.updatesCheck),
@@ -314,6 +341,7 @@ export const useApp = create<AppStore>((set, get) => {
             call<LaunchDevice[]>(Ipc.devicesList),
             call<OnboardingStatus>(Ipc.onboardingStatus),
             call<LaunchRow[]>(Ipc.launchQueueList),
+            call<MossInferDownloadState | null>(Ipc.mossInferDownloadState),
           ])
         set({
           env: env.status === 'fulfilled' ? env.value : null,
@@ -325,6 +353,7 @@ export const useApp = create<AppStore>((set, get) => {
           devices: devices.status === 'fulfilled' ? devices.value : [],
           onboarding: onboarding.status === 'fulfilled' ? onboarding.value : null,
           launchRows: queuedRows.status === 'fulfilled' ? queuedRows.value : [],
+          mossInferDownload: engineDownload.status === 'fulfilled' ? engineDownload.value : null,
           activeJobId:
             jobs.status === 'fulfilled'
               ? (jobs.value.find((job) => job.state === 'running' || job.state === 'starting')?.id ?? null)
@@ -440,6 +469,10 @@ export const useApp = create<AppStore>((set, get) => {
 
     setNotificationsOpen(open) {
       set({ notificationsOpen: open })
+    },
+
+    setMossInferDownload(state) {
+      set({ mossInferDownload: state })
     },
 
     pushNotification(input) {

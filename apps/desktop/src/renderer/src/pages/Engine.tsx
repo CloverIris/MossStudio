@@ -1,8 +1,26 @@
-import { Cpu, Download, HardDrive, RefreshCw, ShieldCheck, SlidersHorizontal, SquareTerminal, X } from 'lucide-react'
+import {
+  CheckCircle2,
+  Cpu,
+  Download,
+  HardDrive,
+  PackageCheck,
+  RefreshCw,
+  ShieldCheck,
+  SlidersHorizontal,
+  SquareTerminal,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Events, Ipc } from '@shared/channels'
-import type { EngineRemoteProgress, ManagedHost, MossInferDownloadState } from '@shared/types'
+import type {
+  EngineRemoteProgress,
+  LocalEngineVersion,
+  ManagedHost,
+  MossInferDownloadState,
+  MossInferRelease,
+} from '@shared/types'
 import { call, onEvent } from '../lib/api'
 import { useApp } from '../store'
 import { openWindow } from '../lib/windows'
@@ -16,14 +34,31 @@ interface LocalEngineInfo {
   error?: string
 }
 
+const downloadPhaseLabels: Record<MossInferDownloadState['phase'], string> = {
+  querying: '检查上游版本',
+  downloading: '下载引擎包',
+  verifying: '校验文件',
+  extracting: '解压并安装',
+  cuda_libs: '准备 CUDA 库',
+  done: '安装完成',
+  error: '安装失败',
+  canceled: '已取消',
+}
+
 export function EnginePage(): React.JSX.Element {
   const location = useLocation()
   const toast = useToast()
   const settings = useApp((state) => state.settings)
   const saveSettings = useApp((state) => state.saveSettings)
+  const download = useApp((state) => state.mossInferDownload)
+  const setMossInferDownload = useApp((state) => state.setMossInferDownload)
   const [githubToken, setGithubToken] = useState(settings?.githubToken ?? '')
   const [engine, setEngine] = useState<LocalEngineInfo | null>(null)
-  const [download, setDownload] = useState<MossInferDownloadState | null>(null)
+  const [engineVersions, setEngineVersions] = useState<LocalEngineVersion[]>([])
+  const [releases, setReleases] = useState<MossInferRelease[]>([])
+  const [releaseTag, setReleaseTag] = useState('')
+  const [releaseError, setReleaseError] = useState<string | null>(null)
+  const [loadingReleases, setLoadingReleases] = useState(false)
   const [probe, setProbe] = useState<Record<string, unknown> | null>(null)
   const [hosts, setHosts] = useState<ManagedHost[]>([])
   const [remote, setRemote] = useState<Record<string, {
@@ -47,26 +82,41 @@ export function EnginePage(): React.JSX.Element {
 
   const refresh = useCallback(async () => {
     try {
-      const [next, current, hostList] = await Promise.all([
+      const [next, current, versions, hostList] = await Promise.all([
         call<LocalEngineInfo>(Ipc.engineStatus),
         call<MossInferDownloadState | null>(Ipc.mossInferDownloadState),
+        call<LocalEngineVersion[]>(Ipc.engineVersions),
         call<ManagedHost[]>(Ipc.hostsList),
       ])
       setEngine(next)
-      setDownload(current)
+      setMossInferDownload(current)
+      setEngineVersions(versions)
       setHosts(hostList.filter((host) => host.kind === 'ssh'))
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
     }
-  }, [toast])
+  }, [setMossInferDownload, toast])
 
   useEffect(() => { void refresh() }, [refresh])
+  const refreshReleases = useCallback(async () => {
+    setLoadingReleases(true)
+    setReleaseError(null)
+    try {
+      const next = await call<MossInferRelease[]>(Ipc.mossInferReleases)
+      setReleases(next)
+      setReleaseTag((selected) => next.some((release) => release.tag === selected) ? selected : next[0]?.tag ?? '')
+    } catch (error) {
+      setReleaseError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoadingReleases(false)
+    }
+  }, [])
+  useEffect(() => { void refreshReleases() }, [refreshReleases])
   useEffect(() => {
     const hostId = new URLSearchParams(location.search).get('hostId')
     if (hostId && hostId !== 'local') document.getElementById(`engine-${hostId}`)?.scrollIntoView({ block: 'start' })
   }, [location.key, location.search, hosts])
   useEffect(() => { setGithubToken(settings?.githubToken ?? '') }, [settings?.githubToken])
-  useEffect(() => onEvent<MossInferDownloadState>(Events.mossInferDownload, setDownload), [])
   useEffect(() => onEvent<{ id: string }>(Events.hostsChanged, () => { void refresh() }), [refresh])
   useEffect(() => onEvent<EngineRemoteProgress>(Events.engineRemoteProgress, (progress) => {
     setRemoteProgress((previous) => ({ ...previous, [progress.hostId]: progress }))
@@ -95,8 +145,41 @@ export function EnginePage(): React.JSX.Element {
   async function runDownload(selected: 'bundled' | 'system-cuda', flavour?: 'cu12' | 'cu13', cudaWheels = false): Promise<void> {
     setBusy(true)
     try {
-      const next = await call<MossInferDownloadState>(Ipc.mossInferDownload, { channel, variant: selected, flavour, cudaWheels })
-      setDownload(next)
+      const next = await call<MossInferDownloadState>(Ipc.mossInferDownload, {
+        channel,
+        variant: selected,
+        flavour,
+        cudaWheels,
+        ...(channel === 'stable' && releaseTag ? { releaseTag } : {}),
+      })
+      setMossInferDownload(next)
+      await refresh()
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function selectEngineVersion(id: string): Promise<void> {
+    setBusy(true)
+    try {
+      await call(Ipc.engineVersionSelect, { id })
+      toast.push('已切换当前引擎版本', 'success')
+      await refresh()
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removeEngineVersion(version: LocalEngineVersion): Promise<void> {
+    if (!window.confirm(`删除本机引擎版本？\n${version.name}\n\n此操作会删除该版本的全部文件。`)) return
+    setBusy(true)
+    try {
+      await call(Ipc.engineVersionRemove, { id: version.id })
+      toast.push(`已删除引擎版本 ${version.name}`, 'success')
       await refresh()
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
@@ -251,7 +334,10 @@ export function EnginePage(): React.JSX.Element {
     }
   }
 
-  const downloading = download && !['done', 'error'].includes(download.phase)
+  const downloading = download && !['done', 'error', 'canceled'].includes(download.phase)
+  const selectedRelease = releases.find((release) => release.tag === releaseTag)
+  const progressIndeterminate = Boolean(download && ['querying', 'extracting', 'cuda_libs'].includes(download.phase))
+  const progressPercent = download ? download.phase === 'done' ? 100 : Math.max(0, Math.min(100, download.percent)) : 0
 
   return (
     <div className="space-y-4">
@@ -307,7 +393,7 @@ export function EnginePage(): React.JSX.Element {
           <label className="space-y-1">
             <span className="text-caption text-[var(--color-text-tertiary)]">渠道</span>
             <select value={channel} onChange={(event) => setChannel(event.target.value as 'stable' | 'dev')} className="app-input w-full">
-              <option value="stable">Stable Release</option>
+              <option value="stable">GitHub Release（正式版）</option>
               <option value="dev">Dev artifact（需要 GitHub token）</option>
             </select>
           </label>
@@ -323,6 +409,61 @@ export function EnginePage(): React.JSX.Element {
           </Button>
         </div>
 
+        {channel === 'stable' ? (
+          <div className="mt-3 rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.025] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="min-w-[220px] flex-1 space-y-1">
+                <span className="text-caption text-[var(--color-text-tertiary)]">Release 版本</span>
+                <select
+                  value={releaseTag}
+                  onChange={(event) => setReleaseTag(event.target.value)}
+                  disabled={loadingReleases || releases.length === 0 || Boolean(downloading)}
+                  className="app-input w-full"
+                >
+                  {releases.length === 0 ? <option value="">没有已发布的 Release</option> : null}
+                  {releases.map((release) => (
+                    <option key={release.tag} value={release.tag}>
+                      {release.name} · {release.tag}{release.publishedAt ? ` · ${dateTime(release.publishedAt)}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button tone="ghost" onClick={() => void refreshReleases()} disabled={loadingReleases || Boolean(downloading)}>
+                <RefreshCw className={`size-4 ${loadingReleases ? 'animate-spin' : ''}`} /> 刷新版本
+              </Button>
+            </div>
+            {releaseError ? (
+              <p role="status" className="mt-2 text-caption leading-4 text-amber-200">
+                无法读取 GitHub Release：{releaseError}。仍可尝试下载；上游没有正式版时会回退到最新成功 CI 构件。
+              </p>
+            ) : releases.length === 0 && !loadingReleases ? (
+              <p role="status" className="mt-2 text-caption leading-4 text-amber-200">
+                上游目前没有已发布的 Release。选择正式版下载时会自动回退到最新成功 CI 构件；该构件需要 GitHub Token。
+              </p>
+            ) : selectedRelease ? (
+              <div className="mt-2 space-y-1 text-caption text-[var(--color-text-tertiary)]">
+                <p>{selectedRelease.assets.length} 个上游文件 · {selectedRelease.publishedAt ? dateTime(selectedRelease.publishedAt) : '发布时间未知'}</p>
+                {selectedRelease.assets.length ? (
+                  <p className="break-all font-mono text-micro">{selectedRelease.assets.map((asset) => asset.name).join(' · ')}</p>
+                ) : (
+                    <div className="flex flex-wrap items-center gap-2 text-amber-200">
+                      <span>此 Release 暂无下载文件；不会静默切换版本。</span>
+                      <button type="button" className="text-accent-300 hover:underline" onClick={() => setChannel('dev')}>
+                        改用最新 CI artifact
+                      </button>
+                    </div>
+                  )}
+                {selectedRelease.body.trim() ? (
+                  <details className="pt-1">
+                    <summary className="cursor-pointer text-[var(--color-text-secondary)]">查看上游说明</summary>
+                    <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap font-sans text-caption leading-4">{selectedRelease.body}</pre>
+                  </details>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {preflight ? (
           <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
             预检：{preflight.gpu || preflight.error} · flavour {preflight.preferredFlavour ?? '无'} · cuBLASLt {preflight.cublasLt.length ? preflight.cublasLt.join(', ') : '未找到'}
@@ -336,26 +477,109 @@ export function EnginePage(): React.JSX.Element {
           </label>
           <Button tone="secondary" className="self-end" onClick={() => void saveGithubToken()}>保存 Token</Button>
           <p className="text-caption leading-4 text-[var(--color-text-tertiary)] sm:col-span-2">
-            上游当前没有 GitHub Release，稳定包会回退到最新成功 CI artifact；artifact 下载需要 token，token 只在本地调用 GitHub API，远端只接收带签名的临时 URL。
+            正式 Release 下载不需要 Token；上游没有任何 Release 时，稳定渠道自动回退到最新成功 CI artifact（需要 Token）。选中的 Release 若没有适配包会明确报出缺少的文件，不会静默安装其他版本。Token 仅用于本机 GitHub API 请求，不会发送给远端主机。
           </p>
         </div>
 
         {download ? (
-          <div className="mt-3 rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.025] p-3">
+          <div
+            role="status"
+            aria-live="polite"
+            className={`mt-3 rounded-lg border p-3 ${
+              download.phase === 'error'
+                ? 'border-red-400/25 bg-red-400/[0.05]'
+                : download.phase === 'done'
+                  ? 'border-emerald-400/25 bg-emerald-400/[0.04]'
+                  : 'border-[var(--color-border-subtle)] bg-white/[0.025]'
+            }`}
+          >
             <div className="flex flex-wrap items-center justify-between gap-2 text-caption">
-              <span className="font-medium">{download.phase} {download.version ? `· ${download.version}` : ''}</span>
+              <span className="flex items-center gap-1.5 font-medium">
+                {download.phase === 'done' ? <CheckCircle2 className="size-4 text-emerald-300" /> : null}
+                {download.phase !== 'done' && download.phase !== 'error' && download.phase !== 'canceled' ? <RefreshCw className="size-3.5 animate-spin text-accent-300" /> : null}
+                {downloadPhaseLabels[download.phase]}{download.version ? ` · ${download.version}` : ''}
+              </span>
               <span className="text-[var(--color-text-tertiary)]">
                 {download.phase === 'downloading' ? `${bytes(download.bytes)} / ${bytes(download.totalBytes)} · ${bytes(download.speedBps)}/s` : download.updatedAt ? dateTime(download.updatedAt) : ''}
               </span>
-              {downloading ? <button type="button" className="text-red-300" onClick={() => void call(Ipc.mossInferDownloadCancel)}><X className="size-4" /></button> : null}
+              {download.phase === 'querying' || download.phase === 'downloading' ? (
+                <button
+                  type="button"
+                  aria-label="取消引擎安装"
+                  className="rounded p-1 text-red-300 transition hover:bg-red-400/10"
+                  onClick={() => void call(Ipc.mossInferDownloadCancel).catch((error) => toast.push(error instanceof Error ? error.message : String(error), 'error'))}
+                >
+                  <X className="size-4" />
+                </button>
+              ) : null}
             </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full bg-accent-400 transition-all" style={{ width: `${download.phase === 'done' ? 100 : download.percent}%` }} />
+            <div
+                role="progressbar"
+                aria-label={`${downloadPhaseLabels[download.phase]}进度`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressIndeterminate ? undefined : progressPercent}
+                aria-valuetext={downloadPhaseLabels[download.phase]}
+                className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"
+            >
+                <div
+                  className={`h-full transition-[width] duration-300 ${
+                    download.phase === 'error' ? 'bg-red-400' : download.phase === 'done' ? 'bg-emerald-400' : 'bg-accent-400'
+                  } ${progressIndeterminate ? 'w-1/3 animate-pulse' : ''}`}
+                  style={progressIndeterminate ? undefined : { width: `${progressPercent}%` }}
+                />
             </div>
             {download.note ? <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">{download.note}</p> : null}
-            {download.error ? <p className="mt-1 text-caption text-red-300">{download.error}</p> : null}
+            {download.error ? <p className="mt-1 break-words text-caption text-red-300">{download.error}</p> : null}
+            {download.serverPath ? <p className="mt-1 break-all font-mono text-micro text-[var(--color-text-tertiary)]">{download.serverPath}</p> : null}
           </div>
         ) : null}
+
+        <div className="mt-4 border-t border-[var(--color-border-subtle)] pt-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <h3 className="text-ui font-semibold">本机已安装版本</h3>
+              <p className="mt-0.5 text-caption text-[var(--color-text-tertiary)]">切换版本不会重新下载；当前正在使用的版本不可删除。</p>
+            </div>
+            <Pill tone={engineVersions.length ? 'neutral' : 'amber'}>{engineVersions.length} 个版本</Pill>
+          </div>
+          {engineVersions.length === 0 ? (
+            <div className="flex items-center gap-2 rounded-md border border-dashed border-[var(--color-border-subtle)] px-3 py-3 text-caption text-[var(--color-text-tertiary)]">
+              <PackageCheck className="size-4" /> 尚无受 MossStudio 管理的本机版本。下载成功后会自动登记在这里。
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {engineVersions.map((version) => (
+                <div key={version.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--color-border-subtle)] bg-white/[0.02] px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-mono text-caption font-medium">{version.name}</span>
+                      {version.current ? <Pill tone="accent">当前使用</Pill> : null}
+                    </div>
+                    <p className="mt-0.5 truncate font-mono text-micro text-[var(--color-text-tertiary)]">{version.path}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {!version.current ? (
+                      <Button tone="secondary" onClick={() => void selectEngineVersion(version.id)} disabled={busy || Boolean(downloading)}>
+                        切换到此版本
+                      </Button>
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-label={`删除引擎版本 ${version.name}`}
+                      title={version.current ? '当前使用的版本不能删除' : '删除此版本'}
+                      onClick={() => void removeEngineVersion(version)}
+                      disabled={version.current || busy || Boolean(downloading)}
+                      className="rounded p-2 text-[var(--color-text-tertiary)] transition hover:bg-red-400/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {probe ? (
           <pre className="mt-3 max-h-52 overflow-auto rounded-lg bg-black/25 p-3 font-mono text-caption leading-4 text-[var(--color-text-secondary)]">{JSON.stringify(probe, null, 2)}</pre>

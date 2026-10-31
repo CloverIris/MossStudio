@@ -121,6 +121,7 @@ export function ModelsPage(): React.JSX.Element {
   const pauseDownload = useApp((s) => s.pauseDownload)
   const cancelDownload = useApp((s) => s.cancelDownload)
   const deleteModel = useApp((s) => s.deleteModel)
+  const env = useApp((s) => s.env)
   const toast = useToast()
   const [category, setCategory] = useState<string>('dit')
   const [format, setFormat] = useState('diffusers')
@@ -394,7 +395,12 @@ export function ModelsPage(): React.JSX.Element {
     if (path) setLocalRoot(path)
   }
   async function openLocalRoot(): Promise<void> {
-    try { await call(Ipc.openPath, { path: settings?.modelsRoot ?? '' }) } catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') }
+    const path = settings?.modelsRoot?.trim() || env?.device.modelsPath
+    if (!path) {
+      toast.push('模型目录路径尚未就绪，请先刷新环境检测', 'info')
+      return
+    }
+    try { await call(Ipc.openPath, { path }) } catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') }
   }
 
   return (

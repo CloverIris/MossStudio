@@ -205,7 +205,12 @@ export function GalleryPage(): React.JSX.Element {
         footer={
           detail ? (
             <>
-              <Button tone="ghost" onClick={() => void call(Ipc.galleryReveal, { path: detail.path })}>
+              <Button
+                tone="ghost"
+                onClick={() => void call(Ipc.galleryReveal, { path: detail.path }).catch((error) =>
+                  toast.push(error instanceof Error ? error.message : String(error), 'error'),
+                )}
+              >
                 <span className="inline-flex items-center gap-1.5">
                   <FolderOpen className="size-4" /> 在文件夹中显示
                 </span>
