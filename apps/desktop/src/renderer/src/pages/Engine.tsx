@@ -269,10 +269,10 @@ export function EnginePage(): React.JSX.Element {
         title: '选择第三方 MossInfer 引擎目录',
       })
       if (!directory) return
-      const next = await call<LocalEngineInfo>(Ipc.engineSelectDirectory, { path: directory })
-      setEngine(next)
+      const versions = await call<LocalEngineVersion[]>(Ipc.engineSelectDirectory, { path: directory })
+      setEngineVersions(versions)
       setProbe(null)
-      toast.push('第三方 MossInfer 已接入，并设为本机推理引擎', 'success')
+      toast.push('已登记为外部引擎；点击「激活」后才会用于推理', 'success')
       await refresh()
     } catch (error) {
       toast.push(`接入第三方引擎失败：${error instanceof Error ? error.message : String(error)}`, 'error')

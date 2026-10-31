@@ -14,7 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Ipc } from '@shared/channels'
 import type { AiProviderInfo } from '@shared/ai'
-import type { GbcImageResult, GbcRunResult } from '@shared/gbc'
+import type { GbcImageResult, GbcRunResult, GbcStatus } from '@shared/gbc'
 import type { BranchInfo, CommitInfo, GbcVersion } from '@shared/types'
 import { call } from '../lib/api'
 import { Button, Field, Input, Modal, Select, Spinner, Switch, useToast } from './ui'
@@ -26,14 +26,7 @@ interface Props {
   onImport: (result: GbcRunResult, image?: GbcImageResult) => void
 }
 
-interface GbcStatusView {
-  available: boolean
-  error?: string
-  checks?: Array<{ id: string; label: string; ok: boolean; detail: string }>
-  version?: string
-  python?: string
-  venv?: string
-}
+type GbcStatusView = GbcStatus
 
 export function GbcImportModal({ open, initialTab = 'run', onClose, onImport }: Props): React.JSX.Element {
   const toast = useToast()

@@ -50,3 +50,21 @@ export interface GbcRunResult {
   images: GbcImageResult[]
   sidecarFiles?: string[]
 }
+
+/** One prerequisite check shown to the user; both processes read the same shape. */
+export interface GbcCheck {
+  id: string
+  label: string
+  ok: boolean
+  detail: string
+}
+
+export interface GbcStatus {
+  available: boolean
+  version?: string
+  error?: string
+  python?: string
+  venv?: string
+  checks: GbcCheck[]
+  versionId?: string
+}

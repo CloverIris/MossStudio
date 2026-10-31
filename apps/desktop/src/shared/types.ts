@@ -196,6 +196,8 @@ export interface LocalEngineVersion {
   name: string
   path: string
   current: boolean
+  /** managed: unpacked under <userData>/mossinfer; external: a path the user picked. */
+  source: 'managed' | 'external'
 }
 
 export interface AppNotification {

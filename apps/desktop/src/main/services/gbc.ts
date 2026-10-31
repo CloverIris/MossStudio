@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { GbcGraph, GbcRunInput, GbcRunResult, GbcVertex } from '@shared/gbc'
+import type { GbcCheck, GbcGraph, GbcRunInput, GbcRunResult, GbcStatus, GbcVertex } from '@shared/gbc'
 import { paths } from '../lib/paths'
 import { firstLine, run, tail } from '../lib/run'
 import { getProviderSecret } from './ai'
@@ -35,22 +35,7 @@ export async function listGbcImages(folder: string): Promise<{ path: string; ima
   return { path: folder, images: files.map((path) => ({ path, name: path.split(/[\\/]/).pop() ?? path })) }
 }
 
-export interface GbcCheck {
-  id: string
-  label: string
-  ok: boolean
-  detail: string
-}
-
-export interface GbcStatus {
-  available: boolean
-  version?: string
-  error?: string
-  python?: string
-  venv?: string
-  checks: GbcCheck[]
-  versionId?: string
-}
+export type { GbcCheck, GbcStatus } from '@shared/gbc'
 
 function versionBinary(version: { path: string }): string {
   return process.platform === 'win32' ? join(version.path, '.venv', 'Scripts', 'gbc.exe') : join(version.path, '.venv', 'bin', 'gbc')

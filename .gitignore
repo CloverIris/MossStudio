@@ -1,4 +1,4 @@
-# build / binaries
+﻿# build / binaries
 build/
 dist/
 *.o
@@ -52,6 +52,7 @@ runs/
 # 新增正文引用时，在下面补一条 ! 例外
 # ------------------------------------------------------------------
 docs/assets/*
+!docs/assets/logo.jpg
 !docs/assets/home.webp
 !docs/assets/notifications.webp
 !docs/assets/studio.webp
