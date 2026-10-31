@@ -107,11 +107,8 @@ function StudioShell(): React.JSX.Element {
   return (
     <div className="app-shell flex h-full flex-col text-[var(--color-text)]">
       <TitlebarFrame>
-        <div className="no-drag flex items-center gap-2">
-          <span className="text-ui font-semibold">MossStudio</span>
-          <PageNavigation value={page.to} onChange={navigate} />
-        </div>
-        <div className="no-drag flex items-center gap-0.5">
+        <div className="min-w-0 flex-1" aria-hidden="true" />
+        <div className="no-drag ml-auto flex items-center gap-0.5">
           <Oobe />
           <IconButton label={terminalOpen ? '关闭终端' : '打开终端'} className="size-8" onClick={() => setTerminalOpen((open) => !open)}>
             <SquareTerminal className="size-4" />
@@ -131,6 +128,11 @@ function StudioShell(): React.JSX.Element {
       <main className="content-surface min-h-0 min-w-0 flex-1 overflow-hidden" style={backgroundStyle}>
         <PageHost active={page.to} />
       </main>
+
+      <footer className="app-workspace-nav glass-thin">
+        <span className="app-workspace-brand">Moss Studio</span>
+        <PageNavigation value={page.to} onChange={navigate} />
+      </footer>
 
       {terminalOpen ? (
         <div className="fixed inset-x-0 bottom-0 z-40 h-[42vh] border-t border-[var(--color-border-subtle)] bg-[#14171c] shadow-2xl" data-terminal-drawer>

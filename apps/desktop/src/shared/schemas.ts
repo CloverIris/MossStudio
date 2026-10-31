@@ -270,9 +270,9 @@ export const schemas = {
 
   engineInstallRemote: z.object({ hostId: z.string().min(1).max(80) }),
 
-  engineSystemCuda: z.null(),
+  engineSystemCuda: z.object({}).strict(),
 
-  mossInferCudaLibs: z.null(),
+  mossInferCudaLibs: z.object({}).strict(),
 
   gbcCommits: z.object({ branch: z.string().min(1).max(200), limit: z.number().int().min(1).max(200).optional() }),
   gbcVersionCreate: z.object({ branch: z.string().min(1).max(200), commit: z.string().min(7).max(64), name: z.string().max(120).optional() }),
