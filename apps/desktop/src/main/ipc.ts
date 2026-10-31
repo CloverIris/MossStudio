@@ -572,9 +572,18 @@ export function registerIpc(): void {
     // ShellExecuteW shows a native "Windows cannot access..." dialog before returning
     // an error, so it is the wrong API for folders. Explorer opens them reliably.
     if (process.platform === 'win32' && stats.isDirectory()) {
+      // Explorer is the reliable way to open a folder on Windows. A sandboxed or
+      // restricted parent process cannot spawn it, so report that instead of
+      // swallowing the failure and leaving the button dead.
       const child = spawn('explorer.exe', [path], { detached: true, stdio: 'ignore' })
-      child.on('error', () => undefined)
-      child.unref()
+      const failure = await new Promise<NodeJS.ErrnoException | null>((settle) => {
+        child.once('error', (error: NodeJS.ErrnoException) => settle(error))
+        child.once('spawn', () => { child.unref(); settle(null) })
+        setTimeout(() => settle(null), 800)
+      })
+      if (!failure) return true
+      const message = await shell.openPath(path)
+      if (message) throw new Error("无法打开目录：" + message + "（explorer: " + String(failure.code ?? failure.message) + "）")
       return true
     }
     const error = await shell.openPath(path)
