@@ -348,7 +348,9 @@ export function Oobe(): React.JSX.Element {
                     <ol className="divide-y divide-[var(--color-border-subtle)]">
                       {current.steps.map((step, index) => {
                         const done = step.status === 'ok'
-                        const tasks = hostId === 'local' ? downloads.filter((item) => item.kind === 'model' && step.modelIds?.includes(item.targetId)) : []
+                        const tasks = downloads.filter((item) => item.kind === 'model'
+                          && (hostId === 'local' ? !item.hostId : item.hostId === hostId)
+                          && (step.modelIds?.includes(item.targetId) || hostId !== 'local' && item.targetId === 'default-sft'))
                         const queued = tasks.some((task) => task.state === 'queued') && !tasks.some((task) => task.state === 'running' || task.state === 'verifying')
                         const taskBytes = tasks.reduce((sum, task) => sum + task.bytes, 0)
                         const taskTotal = tasks.reduce((sum, task) => sum + task.totalBytes, 0)

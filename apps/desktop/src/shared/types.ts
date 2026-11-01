@@ -133,6 +133,9 @@ export interface Settings {
   gitMirror: string | null
   pipIndex: string | null
   hfEndpoint: string | null
+  hasHfToken: boolean
+  modelDownloadConcurrency: number
+  hfQueryHostId: string | null
   modelsRoot: string | null
   modelDirectories: ModelDirectories
   pythonPath: string | null
@@ -445,6 +448,11 @@ export interface Catalog {
 export type DownloadState = 'queued' | 'running' | 'verifying' | 'paused' | 'done' | 'error' | 'canceled'
 
 export interface DownloadTask {
+  hostId?: string
+  hostName?: string
+  remotePath?: string
+  revision?: string
+  connectionError?: string
   id: string
   kind: 'model' | 'adapter'
   targetId: string
@@ -484,6 +492,10 @@ export interface TrainingHost {
   instanceRoot?: string
   /** Remote HF-compatible model cache; never auto-uploaded from the local cache. */
   modelsRoot?: string
+  downloadProxy?: string
+  hfEndpoint?: string
+  downloadConcurrency?: number
+  hasHfToken?: boolean
   status: 'unchecked' | 'ok' | 'error'
   lastCheckedAt?: string
   error?: string

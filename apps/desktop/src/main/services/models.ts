@@ -1,3 +1,5 @@
+import { fetchHf } from './hfNetwork'
+import { getHfToken } from './hfCredentials'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import {
@@ -510,7 +512,7 @@ async function resolveRepo(repo: string, revision: string, settings: Settings): 
   const key = `${endpoint(settings)}/${repo}@${revision}`
   let request = repoRequests.get(key)
   if (!request) {
-    request = resolveFiles(endpoint(settings), repo, revision)
+    request = resolveFiles(endpoint(settings), repo, revision, undefined, (url) => fetchHf(url, endpoint(settings), settings))
     repoRequests.set(key, request)
     void request.finally(() => repoRequests.delete(key)).catch(() => undefined)
   }
@@ -650,6 +652,7 @@ async function runModelDownload(
           lastBytes = value
         }
       },
+      { token: getHfToken(), concurrency: settings.modelDownloadConcurrency },
     )
     signal.throwIfAborted()
     const target = safePath(root, file.path)
@@ -722,6 +725,7 @@ async function runAdapterDownload(
       signal,
       (bytes, verifying) =>
         touch(task, { state: verifying ? 'verifying' : 'running', bytes: done + bytes }),
+      { token: getHfToken(), concurrency: settings.modelDownloadConcurrency },
     )
     done += file.size
     touch(task, { filesDone: index + 1 })

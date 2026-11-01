@@ -1,22 +1,18 @@
 import {
   ArrowDownToLine,
   Check,
-  ChevronDown,
   Cpu,
   Download,
   FolderOpen,
   HardDrive,
   Layers,
   Package,
-  Pause,
-  Play,
   RefreshCw,
   Search,
   ShieldCheck,
   Trash2,
-  X,
 } from 'lucide-react'
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Ipc } from '@shared/channels'
 import type { AdapterEntry, DownloadTask, ManagedHost, ModelEntry } from '@shared/types'
@@ -24,6 +20,7 @@ import { Events } from '@shared/channels'
 import { call, onEvent } from '../lib/api'
 import { percent } from '../lib/format'
 import { useApp } from '../store'
+import { DownloadQueue, downloadLabels as labels } from '../components/DownloadQueue'
 import { MotionPanel } from '../components/motion'
 import {
   Button,
@@ -46,15 +43,6 @@ function bytes(value: number): string {
   return `${value} B`
 }
 
-const labels: Record<DownloadTask['state'], string> = {
-  queued: '等待下载',
-  running: '下载中',
-  verifying: '校验中',
-  paused: '已暂停',
-  canceled: '已取消',
-  done: '已完成',
-  error: '下载失败',
-}
 const categories = [
   { id: 'all', name: '全部', icon: Package },
   { id: 'dit', name: 'MOSS 模型', icon: Layers },
@@ -113,7 +101,8 @@ function engineCompat(model: ModelEntry): EngineCompat {
 export function ModelsPage(): React.JSX.Element {
   const location = useLocation()
   const catalog = useApp((s) => s.catalog)
-  const downloads = useApp((s) => s.downloads)
+  const allDownloads = useApp((s) => s.downloads)
+  const downloads = allDownloads.filter((task) => !task.hostId)
   const instances = useApp((s) => s.instances)
   const refreshCatalog = useApp((s) => s.refreshCatalog)
   const downloadModel = useApp((s) => s.downloadModel)
@@ -143,9 +132,11 @@ export function ModelsPage(): React.JSX.Element {
   const [remoteBusy, setRemoteBusy] = useState(false)
   const [remoteScan, setRemoteScan] = useState<{ root: string; files: number; models: Array<{ id: string; installed: boolean; path?: string }>; adapters: Array<{ id: string; installed: boolean; path?: string }> } | null>(null)
   const [remoteScanBusy, setRemoteScanBusy] = useState(false)
+  const remoteScanSequence = useRef(0)
   const [remoteCategory, setRemoteCategory] = useState('all')
   const [remoteModelBusy, setRemoteModelBusy] = useState<string | null>(null)
   const remoteHost = hosts.find((host) => host.id === remoteHostId) ?? null
+  const remoteTasks = allDownloads.filter((task) => task.hostId === remoteHostId && task.state !== 'canceled')
   useEffect(() => {
     const query = new URLSearchParams(location.search)
     const component = query.get('component')
@@ -165,17 +156,23 @@ export function ModelsPage(): React.JSX.Element {
     const load = async (): Promise<void> => {
       const list = (await call<ManagedHost[]>(Ipc.hostsList)).filter((host) => host.kind === 'ssh')
       setHosts(list)
-      setRemoteHostId((current) => current || list[0]?.id || '')
+      setRemoteHostId((current) => list.some((host) => host.id === current) ? current : list[0]?.id || '')
     }
     void load().catch(() => undefined)
     return onEvent(Events.hostsChanged, () => { void load().catch(() => undefined) })
   }, [])
   useEffect(() => {
-    if (!remoteHost) return
-    void scanRemote()
+    remoteScanSequence.current += 1
+    setRemoteScan(null)
+    if (!remoteHost) { setRemoteScanBusy(false); return }
+    void call(Ipc.remoteDownloadsRefresh, { hostId: remoteHost.id }).catch(() => undefined)
     setRemoteRoot(remoteHost.modelsRoot ?? '~/.mossstudio/models')
-    setRemoteModelPath(remoteHost.modelPath ?? '')
-  }, [remoteHost?.id])
+  }, [remoteHost?.id, remoteHost?.modelsRoot])
+  useEffect(() => { setRemoteModelPath(remoteHost?.modelPath ?? '') }, [remoteHost?.id, remoteHost?.modelPath])
+  useEffect(() => {
+    if (!remoteHost) return
+    void scanRemote(remoteHost.modelsRoot ?? '~/.mossstudio/models')
+  }, [remoteHost?.id, remoteHost?.modelsRoot, remoteTasks.filter((task) => task.state === 'done').map((task) => task.id).join(',')])
 
   const bundle = catalog?.bundles?.find((b) => b.id === bundleId) ?? catalog?.bundles?.find((b) => b.recommended) ?? catalog?.bundles?.[0]
   const engineLabel =
@@ -313,13 +310,16 @@ export function ModelsPage(): React.JSX.Element {
       )
     : []
 
-  async function scanRemote(): Promise<void> {
+  async function scanRemote(root = remoteRoot): Promise<void> {
     if (!remoteHost) return
+    const sequence = ++remoteScanSequence.current
     setRemoteScanBusy(true)
     try {
-      const result = await call<{ root: string; files: number; models: Array<{ id: string; installed: boolean; path?: string }>; adapters: Array<{ id: string; installed: boolean; path?: string }> }>(Ipc.modelsRemoteInventory, { hostId: remoteHost.id, modelsRoot: remoteRoot })
-      setRemoteScan(result)
-    } catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') } finally { setRemoteScanBusy(false) }
+      const result = await call<{ root: string; files: number; models: Array<{ id: string; installed: boolean; path?: string }>; adapters: Array<{ id: string; installed: boolean; path?: string }> }>(Ipc.modelsRemoteInventory, { hostId: remoteHost.id, modelsRoot: root })
+      if (sequence === remoteScanSequence.current) setRemoteScan(result)
+    } catch (error) {
+      if (sequence === remoteScanSequence.current) toast.push(error instanceof Error ? error.message : String(error), 'error')
+    } finally { if (sequence === remoteScanSequence.current) setRemoteScanBusy(false) }
   }
 
   async function downloadRemoteModel(model: { id: string; name: string }): Promise<void> {
@@ -328,8 +328,7 @@ export function ModelsPage(): React.JSX.Element {
     try {
       await call(Ipc.hostsUpdatePaths, { id: remoteHost.id, modelsRoot: remoteRoot })
       await call(Ipc.modelsRemoteDownload, { hostId: remoteHost.id, modelId: model.id })
-      toast.push(`远端模型已下载：${model.name}`, 'success')
-      await scanRemote()
+      toast.push(`已加入远端下载队列：${model.name}`, 'success')
     } catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') } finally { setRemoteModelBusy(null) }
   }
   async function deleteRemoteModel(model: { id: string; name: string }, path: string): Promise<void> {
@@ -365,9 +364,8 @@ export function ModelsPage(): React.JSX.Element {
     setRemoteBusy(true)
     try {
       await call(Ipc.hostsUpdatePaths, { id: remoteHost.id, modelsRoot: remoteRoot })
-      const result = await call<{ path: string; files: number }>(Ipc.enginePrepareRemoteModel, { hostId: remoteHost.id })
-      setRemoteModelPath(result.path)
-      toast.push(`远端模型已准备：${result.files} 个文件`, 'success')
+      await call<DownloadTask>(Ipc.enginePrepareRemoteModel, { hostId: remoteHost.id })
+      toast.push('默认 SFT 已加入远端下载队列，完成后自动保存模型路径', 'success')
     } catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') } finally { setRemoteBusy(false) }
   }
   async function removeRemote(): Promise<void> {
@@ -454,6 +452,11 @@ export function ModelsPage(): React.JSX.Element {
         )}
       </Card>
 
+      <DownloadQueue tasks={remoteTasks} title={`远端下载队列 · ${remoteHost?.name ?? ''}`}
+        onPause={(task) => call(Ipc.remoteDownloadControl, { hostId: task.hostId, taskId: task.id, operation: 'pause' })}
+        onResume={(task) => call(Ipc.remoteDownloadControl, { hostId: task.hostId, taskId: task.id, operation: 'resume' })}
+        onCancel={(task) => call(Ipc.remoteDownloadControl, { hostId: task.hostId, taskId: task.id, operation: 'cancel' })}
+        onRefresh={() => call(Ipc.remoteDownloadsRefresh, { hostId: remoteHostId })} />
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -481,7 +484,7 @@ export function ModelsPage(): React.JSX.Element {
             {(catalog?.adapters ?? []).filter((adapter) => !query.trim() || `${adapter.name} ${adapter.repo}`.toLowerCase().includes(query.trim().toLowerCase())).map((adapter) => {
               const scan = remoteScan?.adapters.find((entry) => entry.id === adapter.id)
               const installed = Boolean(scan?.installed)
-              const working = remoteModelBusy === adapter.id
+              const working = remoteModelBusy === adapter.id || remoteTasks.some((task) => task.targetId === adapter.id && ['queued', 'running', 'verifying'].includes(task.state))
               return (
                 <Card key={adapter.id} className="flex min-w-0 flex-col p-4">
                   <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="truncate text-[13px] font-medium">{adapter.name}</span><Pill tone={adapter.provider === 'hf' ? 'blue' : 'neutral'}>{adapter.provider.toUpperCase()}</Pill><Pill tone="neutral">{adapter.kind.toUpperCase()}</Pill></div><p className="mt-2 min-h-10 text-ui leading-5 text-[var(--color-text-secondary)]">{adapter.notes ?? '远端适配器。'}</p></div><Pill tone={installed ? 'accent' : 'neutral'}>{installed ? '已部署' : '未部署'}</Pill></div>
@@ -496,7 +499,7 @@ export function ModelsPage(): React.JSX.Element {
           {(catalog?.models ?? []).filter((model) => (remoteCategory === 'all' || model.role === remoteCategory || (remoteCategory === 'dit' && model.role === 'full')) && (format === 'all' || (model.format ?? 'diffusers') === format) && (!deferredQuery.trim() || `${model.name} ${model.repo}`.toLowerCase().includes(deferredQuery.trim().toLowerCase()))).filter((model) => !installedOnly || remoteScan?.models.find((entry) => entry.id === model.id)?.installed).map((model) => {
             const scan = remoteScan?.models.find((entry) => entry.id === model.id)
             const installed = Boolean(scan?.installed)
-            const working = remoteModelBusy === model.id
+            const working = remoteModelBusy === model.id || remoteTasks.some((task) => task.targetId === model.id && ['queued', 'running', 'verifying'].includes(task.state))
             return (
               <Card key={model.id} className="flex min-w-0 flex-col p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -646,67 +649,7 @@ export function ModelsPage(): React.JSX.Element {
           </div>
         </Card>
 
-      {active.length ? (
-        <Card className="overflow-hidden">
-          <details open>
-            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-ui font-medium">
-              <span className="flex items-center gap-2">
-                <Download className="size-4 text-accent-400" /> 下载队列{' '}
-                <span className="text-[var(--color-text-tertiary)]">{active.length}</span>
-              </span>
-              <ChevronDown className="size-4" />
-            </summary>
-            <div className="max-h-[280px] divide-y divide-[var(--color-border-subtle)] overflow-y-auto border-t border-[var(--color-border-subtle)]">
-              {active.map((task) => (
-                <div key={task.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                      <span className="truncate text-ui font-medium">{task.label}</span>
-                      <span
-                        className={cn(
-                          'text-ui',
-                          task.state === 'error'
-                            ? 'text-red-300'
-                            : 'text-[var(--color-text-secondary)]',
-                        )}
-                      >
-                        {labels[task.state]} · {bytes(task.bytes)} / {bytes(task.totalBytes)}
-                      </span>
-                    </div>
-                    <ProgressBar value={percent(task.bytes, task.totalBytes)} className="mt-2" />
-                    <p
-                      className="mt-1.5 truncate text-caption text-[var(--color-text-tertiary)]"
-                      title={task.error ?? task.currentFile}
-                    >
-                      {task.error ?? task.currentFile ?? '正在获取文件清单'}
-                      {task.speedBps > 0 ? ` · ${bytes(task.speedBps)}/s` : ''}
-                    </p>
-                  </div>
-                  {['running', 'queued', 'verifying'].includes(task.state) ? (
-                    <IconButton
-                      label={`暂停 ${task.label}`}
-                      onClick={() => void pauseDownload(task.id)}
-                    >
-                      <Pause className="size-4" />
-                    </IconButton>
-                  ) : (
-                    <IconButton
-                      label={`继续 ${task.label}`}
-                      disabled={busy === task.targetId}
-                      onClick={() => void resume(task)}
-                    >
-                      <Play className="size-4" />
-                    </IconButton>
-                  )}
-                  <IconButton label={`取消 ${task.label}`} onClick={() => void cancel(task)}>
-                    <X className="size-4" />
-                  </IconButton>
-                </div>
-              ))}
-            </div>
-          </details>
-        </Card>
-      ) : null}
+      <DownloadQueue tasks={active} onPause={(task) => pauseDownload(task.id)} onResume={resume} onCancel={cancel} />
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">

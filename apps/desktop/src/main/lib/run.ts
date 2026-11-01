@@ -59,6 +59,9 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
       resolve({ code: code ?? -1, stdout, stderr, timedOut })
     })
 
+    // SSH can exit before consuming a worker upload/request. Its exit/error
+    // handlers report the failure; a broken stdin must not crash the launcher.
+    child.stdin?.on('error', () => undefined)
     if (options.input) child.stdin?.end(options.input)
     else child.stdin?.end()
   })

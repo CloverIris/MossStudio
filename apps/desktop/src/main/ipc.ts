@@ -41,10 +41,12 @@ import {
 } from './services/engines'
 import { detectSystemCuda } from './services/systemCuda'
 import { installMossInferCudaLibs } from './services/cudaWheels'
+import { saveHfToken } from './services/hfCredentials'
+import { controlRemoteDownload, listRemoteDownloads, refreshRemoteDownloads } from './services/remoteDownloads'
 import { prepareRemoteDefaultModel, prepareRemoteModel, scanRemoteModels } from './services/remoteModels'
 import { installRemoteEngine } from './services/remoteEngineInstall'
 import { inspectRemoteResource, removeRemoteResource } from './services/remoteResources'
-import { getTrainingHost, updateTrainingHostModelPath } from './services/trainingHosts'
+import { getTrainingHost } from './services/trainingHosts'
 import { pushTestNotification } from './services/desktopNotifications'
 import { isInside } from './lib/paths'
 import { openWindow } from './windows'
@@ -371,7 +373,9 @@ export function registerIpc(): void {
 
   handle(Ipc.settingsUpdate, schemas.settingsUpdate, async (patch) => {
     const before = getSettings()
-    const settings = updateSettings(patch)
+    const { hfToken, ...settingsPatch } = patch
+    if (hfToken !== undefined) saveHfToken('local', hfToken)
+    const settings = updateSettings(settingsPatch)
     ensureDirs(settings.modelsRoot, settings.modelDirectories)
     if (before.lanWebEnabled !== settings.lanWebEnabled || before.lanWebPort !== settings.lanWebPort) {
       stopBackend()
@@ -431,7 +435,6 @@ export function registerIpc(): void {
     const host = getTrainingHost(getSettings(), hostId)
     if (!host) throw new Error('主机不存在')
     const result = await prepareRemoteDefaultModel(host, repo)
-    updateTrainingHostModelPath(hostId, result.path)
     emit(Events.hostsChanged, { id: hostId })
     return result
   })
@@ -515,7 +518,10 @@ export function registerIpc(): void {
     return true
   })
 
-  handle(Ipc.downloadsList, null, () => listDownloads())
+  handle(Ipc.downloadsList, null, () => [...listDownloads(), ...listRemoteDownloads()])
+
+  handle(Ipc.remoteDownloadsRefresh, schemas.remoteDownloadsRefresh, ({ hostId }) => refreshRemoteDownloads(hostId))
+  handle(Ipc.remoteDownloadControl, schemas.remoteDownloadControl, ({ hostId, taskId, operation }) => controlRemoteDownload(hostId, taskId, operation))
 
   handle(Ipc.jobCancel, schemas.jobId, ({ id }) => cancelJob(id))
 
