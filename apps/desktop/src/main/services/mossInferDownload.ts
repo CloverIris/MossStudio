@@ -19,7 +19,10 @@ import {
   engineServerPath,
   promoteInstall,
   recoverEngineInstall,
+  setEngineInstallProgress,
+  writeEngineLastAttempt,
 } from '../lib/engineStore'
+import { invalidateEngineReadiness } from './engineReadiness'
 import { installCudaWheels } from './cudaWheels'
 import { getSettings, updateSettings } from './settings'
 import { getLastNetwork, githubMirrorChain } from './network'
@@ -54,6 +57,24 @@ let operationInProgress = false
 function publish(patch: Partial<MossInferDownloadState> & { phase: MossInferDownloadState['phase'] }): void {
   if (!current) return
   current = { ...current, ...patch, updatedAt: new Date().toISOString() }
+  const terminal = ['done', 'error', 'canceled'].includes(current.phase)
+  setEngineInstallProgress(terminal ? null : {
+    phase: current.phase,
+    percent: current.percent,
+    version: current.version,
+  })
+  if (current.phase === 'done' || current.phase === 'error') {
+    try {
+      writeEngineLastAttempt(paths.mossinfer(), {
+        at: current.updatedAt,
+        version: current.version,
+        error: current.phase === 'error' ? current.error ?? '安装失败' : undefined,
+      })
+    } catch (error) {
+      console.error('[engine] persist last attempt', error)
+    }
+  }
+  if (terminal) invalidateEngineReadiness()
   emit(Events.mossInferDownload, current)
 }
 

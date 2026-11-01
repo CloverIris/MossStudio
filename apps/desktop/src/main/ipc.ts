@@ -31,7 +31,6 @@ import { nativeImage } from 'electron'
 import { createGbcVersion, listGbcBranches, listGbcCommits, listGbcVersions, removeGbcVersion } from './services/gbcGit'
 import { closeSshTerminal, inputSshTerminal, listSshTerminals, openSshTerminal } from './services/sshSessions'
 import {
-  localEngineInfo,
   localEngineVersions,
   probeLocalEngine,
   remoteEngineInfo,
@@ -41,6 +40,7 @@ import {
   verifyLocalEngineVersion,
 } from './services/engines'
 import { detectSystemCuda } from './services/systemCuda'
+import { engineReadiness, invalidateEngineReadiness } from './services/engineReadiness'
 import { installMossInferCudaLibs } from './services/cudaWheels'
 import { saveHfToken } from './services/hfCredentials'
 import { controlRemoteDownload, listRemoteDownloads, refreshRemoteDownloads } from './services/remoteDownloads'
@@ -377,6 +377,7 @@ export function registerIpc(): void {
     const { hfToken, ...settingsPatch } = patch
     if (hfToken !== undefined) saveHfToken('local', hfToken)
     const settings = updateSettings(settingsPatch)
+    invalidateEngineReadiness()
     ensureDirs(settings.modelsRoot, settings.modelDirectories)
     if (before.lanWebEnabled !== settings.lanWebEnabled || before.lanWebPort !== settings.lanWebPort) {
       stopBackend()
@@ -400,13 +401,21 @@ export function registerIpc(): void {
     downloadMossInfer(channel, flavour, variant, cudaWheels, releaseTag, architecture),
   )
 
-  handle(Ipc.engineStatus, null, () => localEngineInfo())
+  handle(Ipc.engineStatus, null, () => engineReadiness())
 
   handle(Ipc.engineVersions, null, () => localEngineVersions())
 
-  handle(Ipc.engineVersionSelect, schemas.engineVersionId, ({ id }) => selectLocalEngineVersion(id))
+  handle(Ipc.engineVersionSelect, schemas.engineVersionId, async ({ id }) => {
+    const result = await selectLocalEngineVersion(id)
+    invalidateEngineReadiness()
+    return result
+  })
 
-  handle(Ipc.engineVersionVerify, schemas.engineVersionId, ({ id }) => verifyLocalEngineVersion(id))
+  handle(Ipc.engineVersionVerify, schemas.engineVersionId, async ({ id }) => {
+    const result = await verifyLocalEngineVersion(id)
+    invalidateEngineReadiness()
+    return result
+  })
 
   handle(Ipc.engineVersionRemove, schemas.engineVersionId, ({ id }) => removeLocalEngineVersion(id))
 

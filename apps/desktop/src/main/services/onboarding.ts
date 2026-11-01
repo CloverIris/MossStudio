@@ -4,7 +4,8 @@ import { paths } from '../lib/paths'
 import { listDevices } from './devices'
 import { getCatalog } from './models'
 import { legacyModelReady } from './modelReadiness'
-import { resolveServerPath } from './mossInfer'
+import { engineReadiness } from './engineReadiness'
+import { describeEngineReadiness } from '@shared/engineReadiness'
 import { getTrainingHost } from './trainingHosts'
 import { remoteEngineStatus } from './remoteEngine'
 import { scanRemoteModels } from './remoteModels'
@@ -14,7 +15,7 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
   let installed = new Set(catalog.models.filter((model) => model.installed).map((model) => model.id))
   let deviceReady: boolean
   let deviceDetail: string
-  let engineReady: boolean
+  let engineStepStatus: OnboardingStep['status']
   let engineDetail: string
   let fullModelReady = false
 
@@ -24,8 +25,13 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
     deviceDetail = gpu?.name ?? (process.platform === 'darwin'
       ? 'macOS 请在设备页添加 Linux NVIDIA SSH 主机，并在此切换准备位置'
       : '需要可用的 NVIDIA GPU；也可以添加 Linux NVIDIA SSH 主机')
-    engineReady = resolveServerPath(settings) !== null
-    engineDetail = engineReady ? 'MossInfer 已安装' : '下载 MossInfer；缺少系统 CUDA 库时可选择 bundled 包'
+    const readiness = await engineReadiness()
+    engineStepStatus = readiness.state === 'ready'
+      ? 'ok'
+      : readiness.state === 'missing'
+        ? 'missing'
+        : 'partial'
+    engineDetail = describeEngineReadiness(readiness)
     fullModelReady = catalog.models.some((model) => model.role === 'full' && model.installed && model.format !== 'comfyui')
       || await legacyModelReady(join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'))
   } else {
@@ -34,8 +40,8 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
     const engine = await remoteEngineStatus(host)
     deviceReady = engine.online && Boolean(engine.gpu)
     deviceDetail = engine.online ? engine.gpu || '远端未检测到 NVIDIA GPU' : 'SSH 未连接，请在设备页检查连接'
-    engineReady = engine.online && engine.available
-    engineDetail = engineReady ? `${host.name} · MossInfer 已安装` : '在引擎页为这台 SSH 主机安装 MossInfer'
+    engineStepStatus = engine.online && engine.available ? 'ok' : 'missing'
+    engineDetail = engineStepStatus === 'ok' ? `${host.name} · MossInfer 已安装` : '在引擎页为这台 SSH 主机安装 MossInfer'
     const inventory = engine.online ? await scanRemoteModels(host, catalog) : null
     // A local download must never complete a remote host's checklist.
     installed = new Set(inventory?.models.filter((model) => model.installed).map((model) => model.id) ?? [])
@@ -73,7 +79,7 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
   const partialModel = modelCount > 0 || hostId === 'local' && modelIds.some((id) => catalog.models.find((model) => model.id === id)?.installState === 'partial')
   const steps: OnboardingStep[] = [
     { id: 'device', status: deviceReady ? 'ok' : 'missing', title: '推理设备', detail: deviceDetail, action: 'devices' },
-    { id: 'engine', status: engineReady ? 'ok' : 'missing', title: 'MossInfer 引擎', detail: engineDetail, action: 'engines' },
+    { id: 'engine', status: engineStepStatus, title: 'MossInfer 引擎', detail: engineDetail, action: 'engines' },
     {
       id: 'model', title: '模型', action: 'models', modelIds,
       status: modelReady ? 'ok' : partialModel ? 'partial' : 'missing',

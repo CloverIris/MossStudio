@@ -1,8 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { EngineCublasLt, EngineDevice } from '@shared/engineProtocol'
+import type { EngineInstallAttempt, EngineInstallProgress } from '@shared/types'
 
 export interface EngineManifest {
   schemaVersion: 1
@@ -102,6 +103,33 @@ async function bestEffortRm(path: string | undefined, ops: EngineStoreOps): Prom
   } catch {
     // 清尾失败不覆盖安装结果，启动恢复会再次处理。
   }
+}
+
+let activeInstall: EngineInstallProgress | null = null
+
+export function setEngineInstallProgress(progress: EngineInstallProgress | null): void {
+  activeInstall = progress
+}
+
+export function getEngineInstallProgress(): EngineInstallProgress | null {
+  return activeInstall
+}
+
+export function readEngineLastAttempt(root: string): EngineInstallAttempt | null {
+  try {
+    const raw = JSON.parse(readFileSync(join(root, 'last-attempt.json'), 'utf8')) as Partial<EngineInstallAttempt>
+    return typeof raw.at === 'string' ? raw as EngineInstallAttempt : null
+  } catch {
+    return null
+  }
+}
+
+export function writeEngineLastAttempt(root: string, attempt: EngineInstallAttempt): void {
+  mkdirSync(root, { recursive: true })
+  const file = join(root, 'last-attempt.json')
+  const temporary = `${file}.tmp`
+  writeFileSync(temporary, JSON.stringify(attempt, null, 2), 'utf8')
+  renameSync(temporary, file)
 }
 
 export function readEngineManifest(installDir: string): EngineManifest | null {

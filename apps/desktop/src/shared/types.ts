@@ -1,5 +1,5 @@
 ﻿import type { ReleaseHomeCopy, ReleaseInstaller } from './release'
-import type { EngineComputeCapability } from './engineProtocol'
+import type { EngineComputeCapability, EngineDevice } from './engineProtocol'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'unknown'
 
@@ -318,6 +318,37 @@ export interface LocalEngineVersion {
   variant?: 'system-cuda' | 'bundled'
   architecture?: 'standard' | 'sm75'
   unverifiedReason?: string
+}
+
+export interface EngineInstallAttempt {
+  at: string
+  version?: string
+  error?: string
+}
+
+export interface EngineInstallProgress {
+  phase: MossInferDownloadState['phase']
+  percent: number
+  version?: string
+}
+
+export type EngineReadinessState = 'missing' | 'unverified' | 'stale' | 'unsupported' | 'ready'
+
+export interface EngineReadiness {
+  state: EngineReadinessState
+  path: string | null
+  engineVersion?: string
+  protocol?: number
+  capability?: EngineComputeCapability | null
+  architecture?: 'standard' | 'sm75'
+  flavour?: 'cu12' | 'cu13'
+  variant?: 'system-cuda' | 'bundled'
+  verifiedAt?: string
+  reason?: string
+  device?: EngineDevice
+  gpus: EngineGpuCompatibility[]
+  installing?: EngineInstallProgress
+  lastAttempt?: EngineInstallAttempt
 }
 
 export interface AppNotification {
