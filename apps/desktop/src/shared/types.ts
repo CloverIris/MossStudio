@@ -196,6 +196,22 @@ export interface GpuInventorySnapshot {
   capabilityNotice?: string
 }
 
+export interface EngineGpuCompatibility {
+  uuid: string
+  index: number
+  name: string
+  status: 'supported' | 'unsupported' | 'unknown'
+  reason?: string
+  freeMemoryBytes?: number
+}
+
+export interface EngineGpuProbeSnapshot {
+  enginePath: string
+  engineVersion?: string
+  checkedAt: string
+  devices: EngineGpuCompatibility[]
+}
+
 export interface GpuTelemetryDevice extends GpuInventoryDevice {
   memoryUsedBytes?: number
   runningTasks: number
@@ -665,6 +681,7 @@ export interface JobRecord {
   engine?: 'runner' | 'mossinfer'
   projectId?: string
   canvasId?: string
+  canvasLineage?: string[]
   id: string
   instanceId: string
   instanceName: string

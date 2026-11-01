@@ -17,7 +17,9 @@ const settings = (overrides = {}, mode = 'auto') => ({
 })
 
 test('GPU memory recommendations use total VRAM thresholds', () => {
-  assert.equal(recommendGpuMemoryMode(gpu('small', 8 * 1024 ** 3)), 'min_memory')
+  assert.equal(recommendGpuMemoryMode(gpu('under-six', 6 * 1024 ** 3 - 1)), 'min_memory')
+  assert.equal(recommendGpuMemoryMode(gpu('six', 6 * 1024 ** 3)), 'balanced')
+  assert.equal(recommendGpuMemoryMode(gpu('eight', 8 * 1024 ** 3)), 'balanced')
   assert.equal(recommendGpuMemoryMode(gpu('medium', 16 * 1024 ** 3)), 'balanced')
   assert.equal(recommendGpuMemoryMode(gpu('large', 24 * 1024 ** 3)), 'max_speed')
   assert.equal(recommendGpuMemoryMode(gpu('unknown', undefined)), null)

@@ -1,11 +1,16 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
-import type { LocalEngineVersion } from '@shared/types'
+import type {
+  EngineGpuProbeSnapshot,
+  LocalEngineVersion,
+} from '@shared/types'
+import { mapEngineGpuProbe, type EngineGpuProbeDevice } from '@shared/gpuCompatibility'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
 import { probeMossInfer, resolveServerPath, shutdownMossInfer } from './mossInfer'
 import { getSettings, updateSettings } from './settings'
+import { getGpuInventory } from './devices'
 import { getTrainingHost } from './trainingHosts'
 import { remoteEngineStatus } from './remoteEngine'
 
@@ -50,6 +55,76 @@ function isCurrent(path: string): boolean {
   return currentPath !== null && resolve(currentPath) === resolve(path)
 }
 
+let gpuProbeCache: { fingerprint: string; createdAt: number; snapshot: EngineGpuProbeSnapshot; raw: Record<string, unknown> } | null = null
+let gpuProbePending: { fingerprint: string; promise: Promise<Record<string, unknown>> } | null = null
+
+function probeDevicesFrom(raw: Record<string, unknown>): EngineGpuProbeDevice[] {
+  const probe = raw['probe']
+  const rawDevices = probe && typeof probe === 'object'
+    ? (probe as Record<string, unknown>)['devices']
+    : undefined
+  if (!Array.isArray(rawDevices)) return []
+  return rawDevices.flatMap((candidate): EngineGpuProbeDevice[] => {
+    if (!candidate || typeof candidate !== 'object') return []
+    const item = candidate as Record<string, unknown>
+    const index = typeof item['index'] === 'number' && Number.isInteger(item['index'])
+      ? item['index']
+      : undefined
+    const name = typeof item['name'] === 'string' ? item['name'] : undefined
+    if (index === undefined && name === undefined) return []
+    return [{
+      index,
+      name,
+      supported: typeof item['supported'] === 'boolean' ? item['supported'] : undefined,
+      unsupportedReason: typeof item['unsupported_reason'] === 'string' ? item['unsupported_reason'] : undefined,
+      freeMemoryBytes: typeof item['free_memory_bytes'] === 'number' ? item['free_memory_bytes'] : undefined,
+    }]
+  })
+}
+
+function mapGpuProbe(
+  inventory: Awaited<ReturnType<typeof getGpuInventory>>['devices'],
+  raw: Record<string, unknown>,
+  enginePath: string,
+): EngineGpuProbeSnapshot {
+  return mapEngineGpuProbe(
+    inventory,
+    probeDevicesFrom(raw),
+    enginePath,
+    typeof raw['version'] === 'string' ? raw['version'] : undefined,
+  )
+}
+
+export async function probeLocalEngineGpuCompatibility(
+  force = false,
+): Promise<{ snapshot: EngineGpuProbeSnapshot; raw: Record<string, unknown> }> {
+  const path = resolveServerPath(getSettings())
+  if (!path || !existsSync(path)) throw new Error('未找到 moss-server')
+  const fingerprint = `${resolve(path)}:${statSync(path).mtimeMs}`
+  if (!force && gpuProbeCache?.fingerprint === fingerprint && Date.now() - gpuProbeCache.createdAt < 30_000) {
+    const inventory = await getGpuInventory()
+    const snapshot = mapGpuProbe(inventory.devices, gpuProbeCache.raw, path)
+    gpuProbeCache.snapshot = snapshot
+    return { snapshot, raw: gpuProbeCache.raw }
+  }
+  let raw: Record<string, unknown>
+  if (gpuProbePending?.fingerprint === fingerprint) {
+    raw = await gpuProbePending.promise
+  } else {
+    const pending = { fingerprint, promise: probeMossInfer(path) }
+    gpuProbePending = pending
+    try {
+      raw = await pending.promise
+    } finally {
+      if (gpuProbePending === pending) gpuProbePending = null
+    }
+  }
+  const inventory = await getGpuInventory()
+  const snapshot = mapGpuProbe(inventory.devices, raw, path)
+  gpuProbeCache = { fingerprint, createdAt: Date.now(), snapshot, raw }
+  return { snapshot, raw }
+}
+
 export function localEngineInfo(): LocalEngineInfo {
   const path = resolveServerPath(getSettings())
   if (!path) return { available: false, path: null, error: '未找到 moss-server；请下载引擎或设置路径' }
@@ -86,6 +161,7 @@ export async function selectLocalEngineVersion(id: string): Promise<LocalEngineI
   const version = findLocalEngineVersion(id)
   const updated = updateSettings({ inferenceBackend: 'mossinfer', mossInferServerPath: version.path })
   emit(Events.settingsChanged, updated)
+  gpuProbeCache = null
   await shutdownMossInfer()
   return localEngineInfo()
 }
@@ -127,9 +203,8 @@ export function removeLocalEngineVersion(id: string): boolean {
 }
 
 export async function probeLocalEngine(): Promise<Record<string, unknown>> {
-  const path = resolveServerPath(getSettings())
-  if (!path || !existsSync(path)) throw new Error('未找到 moss-server')
-  return probeMossInfer(path)
+  const { snapshot, raw } = await probeLocalEngineGpuCompatibility(true)
+  return { ...raw, gpuCompatibility: snapshot }
 }
 
 export async function remoteEngineInfo(hostId: string): Promise<{ available: boolean; path: string; error?: string }> {

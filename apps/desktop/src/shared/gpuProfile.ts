@@ -11,7 +11,7 @@ export interface ResolvedGpuProfile {
 export function recommendGpuMemoryMode(device: GpuInventoryDevice): GpuMemoryMode | null {
   const memory = device.memoryTotalBytes
   if (memory === undefined || !Number.isFinite(memory) || memory <= 0) return null
-  if (memory < 10 * 1024 ** 3) return 'min_memory'
+  if (memory < 6 * 1024 ** 3) return 'min_memory'
   if (memory >= 24 * 1024 ** 3) return 'max_speed'
   return 'balanced'
 }

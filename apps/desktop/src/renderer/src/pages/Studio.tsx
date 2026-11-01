@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GalleryItem, GpuInventorySnapshot, JobRecord, ManagedHost, ProjectCanvas, ProjectDocument, ProjectSummary } from '@shared/types'
+import { activeCanvasBranchIds, canvasLineage } from '@shared/canvasJobBranch'
 import type { BackendInfo } from '@shared/backend'
 import { Events, Ipc } from '@shared/channels'
 import { call, onEvent } from '../lib/api'
@@ -352,16 +353,15 @@ export function StudioPage(): React.JSX.Element {
   const jobs = useApp((state) => state.jobs)
   const cancelJob = useApp((state) => state.cancelJob)
   const selectedCanvas = canvases.find((canvas) => canvas.id === selectedCanvasId) ?? null
+  const busyCanvasBranches = useMemo(() => activeCanvasBranchIds(canvases, jobs), [canvases, jobs])
+  const isCanvasBranchBusy = (canvasId: string): boolean => busyCanvasBranches.has(canvasId)
   const isCanvasJobActive = (canvas: ProjectCanvas): boolean => {
     const job = canvas.jobId ? jobs.find((item) => item.id === canvas.jobId) : undefined
     return ['queued', 'starting', 'running'].includes(job?.state ?? canvas.jobState ?? '')
   }
   const selectedCanvasGenerating = Boolean(
     selectedCanvas?.kind === 'layout' &&
-      canvases.some((canvas) =>
-        (canvas.id === selectedCanvas.id || canvas.sourceCanvasId === selectedCanvas.id) &&
-          isCanvasJobActive(canvas),
-      ),
+      isCanvasBranchBusy(selectedCanvas.id),
   )
   // Fit the board once per opened project, as soon as its Canvases are on screen.
   const fitPendingRef = useRef(true)
@@ -1321,11 +1321,8 @@ export function StudioPage(): React.JSX.Element {
       toast.push('先点击选择一个 Canvas，再开始生成', 'error')
       return
     }
-    const activeRelatedCanvas = canvases.find((canvas) =>
-      (canvas.id === source.id || canvas.sourceCanvasId === source.id) && isCanvasJobActive(canvas),
-    )
-    if (activeRelatedCanvas) {
-      toast.push('此 Canvas 已有任务正在运行或排队，请等待完成后再生成', 'info')
+    if (isCanvasBranchBusy(source.id)) {
+      toast.push('此 Canvas 或其派生结果已有任务正在运行或排队，请等待完成后再生成', 'info')
       return
     }
     const selectedBundle = source.modelBundleId
@@ -1417,6 +1414,7 @@ export function StudioPage(): React.JSX.Element {
         body: JSON.stringify({
           projectId: savedBoard.id,
           canvasId: taskCanvasId,
+          canvasLineage: canvasLineage(source, canvases),
           modelBinding: sourceBinding,
           modelName: selectedBundle?.name,
           deviceId: source.deviceId || undefined,
@@ -2179,10 +2177,11 @@ export function StudioPage(): React.JSX.Element {
                         ><Copy className="size-3.5" /></button>
                         <button
                           type="button"
-                          title="重跑并保留旧结果"
                           aria-label={`重跑 ${canvas.title}`}
                           onClick={(event) => { event.stopPropagation(); void generate(canvas) }}
-                          disabled={submitting || projectSaving || !canvas.prompt.trim()}
+                          disabled={submitting || projectSaving || !canvas.prompt.trim() || isCanvasBranchBusy(canvas.id)}
+                          aria-disabled={submitting || projectSaving || !canvas.prompt.trim() || isCanvasBranchBusy(canvas.id)}
+                          title={isCanvasBranchBusy(canvas.id) ? '此 Canvas 或其派生结果已有活动任务' : '重跑并保留旧结果'}
                           className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-accent-400/10 hover:text-accent-200 disabled:opacity-40"
                         ><Play className="size-3.5" /></button>
                         {canvas.jobId && activeTask ? (

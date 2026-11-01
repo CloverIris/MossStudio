@@ -26,7 +26,7 @@
 - 已落地：Project schema v3 Canvas 数据（自由 `x/y`）、原子保存；空 Project Board 与 Canvas 选择/新增/复制/删除/拖动。
 - 已落地：Layout/Result Canvas 与 Job 关联、按 GPU UUID 的 MossInfer FIFO 启动队列及排队取消；Canvas 上显示结构化阶段/去噪进度。
 - 已落地：生成结果节点内预览图片；重跑创建新结果，不覆盖旧节点；无 Canvas 时编辑面板提示并禁用。
-- 已落地：选中 Layout Canvas 有 queued/starting/running 任务时，左侧“开始生成”按钮禁用并显示生成中；Job 进入 failed/canceled 终态后按钮恢复，避免对同一 Canvas 重复提交且不把失败/取消状态锁死。
+- 已落地：Canvas 及其整条派生结果分支存在 queued/starting/running 任务时，左侧“开始生成”和卡片“重跑”入口禁用；Renderer 与主进程均携带/检查 Canvas lineage，Job 进入终态后恢复，不会只检查直接子节点。
 - 已覆盖：Project v3 多 Canvas/Job/输出持久化、多个同名背景资源隔离、空 Board 保存、旧 schema 文件如实返回不可读。
 - 已覆盖：fake MossInfer FIFO、Canvas/Project 关联、排队取消与串行完成场景；Result 预览包含文件缺失与 Job 记录失联提示。
 - 已覆盖：Studio 窗口级创建 Canvas、独立 Prompt 自动保存、刷新后重新打开 Project 的交互测试。

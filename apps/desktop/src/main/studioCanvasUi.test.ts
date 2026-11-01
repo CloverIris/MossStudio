@@ -159,17 +159,29 @@ export async function runStudioCanvasUiTests(): Promise<void> {
       name: project!.name,
       canvases: project!.canvases.map((canvas) =>
         canvas.id === sourceCanvas!.id ? { ...canvas, jobState: 'succeeded' as const } : canvas,
-      ).concat({
-        ...sourceCanvas!,
-        id: rerunCanvasId,
-        kind: 'result',
-        title: 'E2E rerun',
-        sourceCanvasId: sourceCanvas!.id,
-        jobId: rerunJobId,
-        jobState: 'running',
-        outputs: [],
-        error: undefined,
-      }),
+      ).concat(
+        {
+          ...sourceCanvas!,
+          id: 'e2e-canvas-rerun-middle',
+          kind: 'result',
+          title: 'E2E rerun middle',
+          sourceCanvasId: sourceCanvas!.id,
+          jobState: 'succeeded',
+          outputs: [],
+          error: undefined,
+        },
+        {
+          ...sourceCanvas!,
+          id: rerunCanvasId,
+          kind: 'result',
+          title: 'E2E rerun',
+          sourceCanvasId: 'e2e-canvas-rerun-middle',
+          jobId: rerunJobId,
+          jobState: 'running',
+          outputs: [],
+          error: undefined,
+        },
+      ),
       selectedCanvasId: sourceCanvas!.id,
     })
     await new Promise<void>((resolve) => {
@@ -179,6 +191,11 @@ export async function runStudioCanvasUiTests(): Promise<void> {
     await waitFor("[...document.querySelectorAll('button')].some((button) => button.textContent.includes('未命名 Project'))")
     await evaluate("[...document.querySelectorAll('button')].find((button) => button.textContent.includes('未命名 Project'))?.click()")
     await waitFor("document.querySelector('[data-studio-generate]')?.disabled === true")
+    assert.equal(
+      await evaluate("[...document.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === '重跑 Canvas 1')?.disabled"),
+      true,
+      'source Canvas rerun action should be disabled while a nested result job is active',
+    )
     sendJob('canceled', rerunJobId, rerunCanvasId)
     await waitFor("document.querySelector('[data-studio-generate]')?.disabled === false")
     assert.equal(await generateDisabled(), false, 'source Canvas action should restore when a rerun is canceled')
@@ -194,6 +211,7 @@ export async function runStudioCanvasUiTests(): Promise<void> {
         restoredAfterFailure: true,
         restoredAfterCancel: true,
         sourceDisabledDuringRerun: true,
+        sourceRerunButtonDisabledForNestedJob: true,
         sourceRestoredAfterRerunCancel: true,
       },
     }))

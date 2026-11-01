@@ -23,7 +23,10 @@ import { cancelMossInferJob, resolveServerPath, restartMossInfer, runMossInferJo
 import { getSettings } from './settings'
 import { refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
+import { selectAutomaticGpu } from '@shared/gpuScheduling'
+import { canvasBranchesConflict } from '@shared/canvasJobBranch'
 import { resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
+import { probeLocalEngineGpuCompatibility } from './engines'
 import { getTrainingHost } from './trainingHosts'
 import { runRemoteEngineJob } from './remoteEngine'
 import {
@@ -442,6 +445,7 @@ function handleLine(job: JobRecord, runningJob: RunningJob, stream: 'stdout' | '
 export interface StartEngineJobInput {
   projectId?: string
   canvasId?: string
+  canvasLineage?: string[]
   modelBinding?: ModelBinding
   modelName?: string
   prompt: string
@@ -465,7 +469,8 @@ interface QueuedEngineJob {
 
 const engineQueues = new Map<string, QueuedEngineJob[]>()
 const activeEngineSlots = new Set<string>()
-const canvasReservations = new Set<string>()
+const canvasReservations = new Map<string, { sourceId: string; path: Set<string> }>()
+const pendingAutoGpuAssignments = new Map<string, number>()
 
 function engineSlotKey(job: { deviceUuid?: string; hostId?: string }): string | null {
   if (job.hostId) return `host:${job.hostId}`
@@ -503,6 +508,52 @@ async function resolveLocalGpu(
 ): Promise<GpuInventoryDevice> {
   const settings = getSettings()
   const inventory = await refreshGpuInventory()
+  if (!deviceUuid && settings.gpuSelection === 'auto') {
+    let probe
+    try {
+      probe = await probeLocalEngineGpuCompatibility()
+    } catch (error) {
+      throw new Error(`自动分配无法验证引擎与 GPU 的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备，或手动指定 GPU。`)
+    }
+    const compatibleUuids = new Set(
+      probe.snapshot.devices
+        .filter((device) => device.status === 'supported')
+        .map((device) => device.uuid),
+    )
+    const loads: Record<string, { runningTasks: number; queuedTasks: number }> = {}
+    for (const job of jobs.values()) {
+      if (!job.deviceUuid || job.hostId || job.engine !== 'mossinfer') continue
+      if (job.state !== 'queued' && job.state !== 'starting' && job.state !== 'running') continue
+      const current = loads[job.deviceUuid] ?? { runningTasks: 0, queuedTasks: 0 }
+      if (job.state === 'queued') current.queuedTasks += 1
+      else current.runningTasks += 1
+      loads[job.deviceUuid] = current
+    }
+    for (const slot of activeEngineSlots) {
+      if (!slot.startsWith('gpu:')) continue
+      const uuid = slot.slice(4)
+      const current = loads[uuid] ?? { runningTasks: 0, queuedTasks: 0 }
+      current.runningTasks = Math.max(current.runningTasks, 1)
+      loads[uuid] = current
+    }
+    for (const [uuid, count] of pendingAutoGpuAssignments) {
+      const current = loads[uuid] ?? { runningTasks: 0, queuedTasks: 0 }
+      current.queuedTasks += count
+      loads[uuid] = current
+    }
+    const automatic = selectAutomaticGpu(inventory.devices, compatibleUuids, loads)
+    if (automatic) {
+      pendingAutoGpuAssignments.set(
+        automatic.uuid,
+        (pendingAutoGpuAssignments.get(automatic.uuid) ?? 0) + 1,
+      )
+      return automatic
+    }
+    if (inventory.devices.length && !compatibleUuids.size) {
+      throw new Error('当前引擎未报告支持的 GPU；请在引擎页运行设备兼容性测试，或安装兼容的引擎版本。')
+    }
+    throw new Error(inventory.error ?? '没有可供自动分配的兼容 NVIDIA GPU；请在引擎页检查设备或手动选择 GPU。')
+  }
   const device = resolveGpuSelection(inventory.devices, settings.gpuSelection, deviceUuid)
   if (!device) {
     if (deviceUuid) {
@@ -512,6 +563,18 @@ async function resolveLocalGpu(
       throw new Error('设置中选择的默认 GPU 当前不可用；请在引擎页重新扫描或选择其他设备。')
     }
     throw new Error(inventory.error ?? '没有可用的 NVIDIA GPU；请在引擎页检查设备或选择远端推理引擎。')
+  }
+  if (settings.gpuSelection !== 'auto' || deviceUuid) {
+    let probe
+    try {
+      probe = await probeLocalEngineGpuCompatibility()
+    } catch (error) {
+      throw new Error(`无法确认所选 GPU 与当前引擎的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备后重试。`)
+    }
+    const compatibility = probe.snapshot.devices.find((candidate) => candidate.uuid === device.uuid)
+    if (compatibility?.status === 'unsupported') {
+      throw new Error(`当前引擎不支持 ${device.name}：${compatibility.reason ?? 'probe 未提供原因'}。请选择其他 GPU 或切换兼容引擎。`)
+    }
   }
   return device
 }
@@ -528,23 +591,43 @@ function gpuSnapshot(device: GpuInventoryDevice): NonNullable<JobRecord['gpuSnap
 export async function startEngineJob(input: StartEngineJobInput): Promise<JobRecord> {
   await loadJobs()
   if (!input.prompt.trim()) throw new Error('提示词不能为空')
+  if (
+    input.canvasLineage !== undefined &&
+    (!Array.isArray(input.canvasLineage) ||
+      input.canvasLineage.some((id) => typeof id !== 'string' || id.trim().length === 0))
+  ) {
+    throw new Error('Canvas 来源链无效，请重新加载 Project 后重试。')
+  }
 
   if (input.projectId && input.canvasId) {
-    const reservationKey = `${input.projectId}:${input.canvasId}`
+    const lineage = [...new Set([input.canvasId, ...(input.canvasLineage ?? [])])]
+    const sourceId = input.canvasLineage?.[0] ?? input.canvasId
+    const branch = { sourceId, path: new Set(lineage) }
     const activeCanvasJob = [...jobs.values()].find((job) =>
       job.projectId === input.projectId &&
-      job.canvasId === input.canvasId &&
+      job.canvasId !== undefined &&
+      canvasBranchesConflict(
+        branch,
+        {
+          sourceId: job.canvasLineage?.[0] ?? job.canvasId,
+          path: new Set([job.canvasId, ...(job.canvasLineage ?? [])]),
+        },
+      ) &&
       (job.state === 'queued' || job.state === 'starting' || job.state === 'running'),
     )
-    if (activeCanvasJob || canvasReservations.has(reservationKey)) {
+    const hasConflictingReservation = [...canvasReservations.values()].some((reservation) =>
+      canvasBranchesConflict(branch, reservation),
+    )
+    if (activeCanvasJob || hasConflictingReservation) {
       const state = activeCanvasJob?.state
       throw new Error(`此 Canvas 已有任务${state === 'queued' ? '排队' : '正在运行'}，请等待完成或先取消该任务。`)
     }
-    canvasReservations.add(reservationKey)
+    const reservationId = randomUUID()
+    canvasReservations.set(reservationId, branch)
     try {
       return await scheduleEngineJob(input)
     } finally {
-      canvasReservations.delete(reservationKey)
+      canvasReservations.delete(reservationId)
     }
   }
 
@@ -553,72 +636,89 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
 
 async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord> {
   let assignedGpu: GpuInventoryDevice | undefined
-  let assignedInput: StartEngineJobInput
+  let assignedInput: StartEngineJobInput | undefined
+  let pendingAutoUuid: string | undefined
+  let acquiredSlot: string | undefined
+  const releaseAutoReservation = (): void => {
+    if (!pendingAutoUuid) return
+    const remaining = (pendingAutoGpuAssignments.get(pendingAutoUuid) ?? 1) - 1
+    if (remaining > 0) pendingAutoGpuAssignments.set(pendingAutoUuid, remaining)
+    else pendingAutoGpuAssignments.delete(pendingAutoUuid)
+    pendingAutoUuid = undefined
+  }
   const settings = getSettings()
-  if (input.hostId) {
-    assignedInput = { ...input, deviceUuid: undefined }
-  } else {
-    assignedGpu = await resolveLocalGpu(input.deviceUuid)
-    assignedInput = { ...input, deviceUuid: assignedGpu.uuid, deviceId: `cuda:${assignedGpu.index}` }
-  }
-
-  const slot = engineSlotKey(assignedInput)
-  if (!slot) throw new Error('无法确定推理设备资源槽；请重新选择 GPU 后重试。')
-  const gpuProfile = assignedGpu ? resolveGpuProfile(settings, assignedGpu) : undefined
-  const queue = engineQueues.get(slot) ?? []
-  if (activeEngineSlots.has(slot) || queue.length > 0) {
-    const params: JobParams = {
-      prompt: input.prompt,
-      negativePrompt: input.negativePrompt ?? '',
-      width: input.width,
-      height: input.height,
-      steps: input.steps,
-      cfg: input.cfg,
-      seed: input.seed,
-      profile: input.profile ?? 'base',
-    }
-    const job: JobRecord = {
-      id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
-      instanceId: 'engine',
-      instanceName: input.modelName ?? 'MossInfer',
-      workspace: 'clover',
-      projectId: assignedInput.projectId,
-      canvasId: assignedInput.canvasId,
-      deviceId: assignedInput.deviceId,
-      deviceUuid: assignedInput.deviceUuid,
-      gpuSnapshot: assignedGpu ? gpuSnapshot(assignedGpu) : undefined,
-      gpuProfile,
-      hostId: assignedInput.hostId,
-      kind: 'inference',
-      mode: 'runner',
-      engine: 'mossinfer',
-      state: 'queued',
-      stage: 'idle',
-      params,
-      progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
-      startedAt: new Date().toISOString(),
-    }
-    job.logPath = logPath(job.id)
-    jobs.set(job.id, job)
-    logs.set(job.id, [])
-    seqs.set(job.id, 0)
-    update(job, {})
-    queue.push({ input: assignedInput, job })
-    engineQueues.set(slot, queue)
-    return snapshot(job)
-  }
-
-  activeEngineSlots.add(slot)
   try {
+    if (input.hostId) {
+      assignedInput = { ...input, deviceUuid: undefined }
+    } else {
+      assignedGpu = await resolveLocalGpu(input.deviceUuid)
+      if (!input.deviceUuid && settings.gpuSelection === 'auto') pendingAutoUuid = assignedGpu.uuid
+      assignedInput = { ...input, deviceUuid: assignedGpu.uuid, deviceId: `cuda:${assignedGpu.index}` }
+    }
+
+    if (!assignedInput) throw new Error('推理任务设备解析失败。')
+    const slot = engineSlotKey(assignedInput)
+    if (!slot) throw new Error('无法确定推理设备资源槽；请重新选择 GPU 后重试。')
+    const gpuProfile = assignedGpu ? resolveGpuProfile(settings, assignedGpu) : undefined
+    const queue = engineQueues.get(slot) ?? []
+    if (activeEngineSlots.has(slot) || queue.length > 0) {
+      const params: JobParams = {
+        prompt: input.prompt,
+        negativePrompt: input.negativePrompt ?? '',
+        width: input.width,
+        height: input.height,
+        steps: input.steps,
+        cfg: input.cfg,
+        seed: input.seed,
+        profile: input.profile ?? 'base',
+      }
+      const job: JobRecord = {
+        id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
+        instanceId: 'engine',
+        instanceName: input.modelName ?? 'MossInfer',
+        workspace: 'clover',
+        projectId: assignedInput.projectId,
+        canvasId: assignedInput.canvasId,
+        canvasLineage: assignedInput.canvasLineage,
+        deviceId: assignedInput.deviceId,
+        deviceUuid: assignedInput.deviceUuid,
+        gpuSnapshot: assignedGpu ? gpuSnapshot(assignedGpu) : undefined,
+        gpuProfile,
+        hostId: assignedInput.hostId,
+        kind: 'inference',
+        mode: 'runner',
+        engine: 'mossinfer',
+        state: 'queued',
+        stage: 'idle',
+        params,
+        progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
+        startedAt: new Date().toISOString(),
+      }
+      job.logPath = logPath(job.id)
+      jobs.set(job.id, job)
+      logs.set(job.id, [])
+      seqs.set(job.id, 0)
+      update(job, {})
+      queue.push({ input: assignedInput, job })
+      engineQueues.set(slot, queue)
+      if (!activeEngineSlots.has(slot)) scheduleEngineQueue(slot)
+      return snapshot(job)
+    }
+
+    activeEngineSlots.add(slot)
+    acquiredSlot = slot
     return await startEngineJobNow(assignedInput)
   } finally {
-    const slotHasRunningJob = [...running.keys()].some((id) => {
-      const job = jobs.get(id)
-      return job !== undefined && engineSlotKey(job) === slot
-    })
-    if (!slotHasRunningJob) {
-      activeEngineSlots.delete(slot)
-      if (engineQueues.get(slot)?.length) scheduleEngineQueue(slot)
+    releaseAutoReservation()
+    if (acquiredSlot) {
+      const slotHasRunningJob = [...running.keys()].some((id) => {
+        const job = jobs.get(id)
+        return job !== undefined && engineSlotKey(job) === acquiredSlot
+      })
+      if (!slotHasRunningJob) activeEngineSlots.delete(acquiredSlot)
+      if (!activeEngineSlots.has(acquiredSlot) && engineQueues.get(acquiredSlot)?.length) {
+        scheduleEngineQueue(acquiredSlot)
+      }
     }
   }
 }
@@ -677,6 +777,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       workspace: 'clover',
       projectId: input.projectId,
       canvasId: input.canvasId,
+      canvasLineage: input.canvasLineage,
       deviceId: input.deviceId,
       hostId: host.id,
       kind: 'inference',
@@ -692,6 +793,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       instanceName: input.modelName ?? host.name,
       projectId: input.projectId,
       canvasId: input.canvasId,
+      canvasLineage: input.canvasLineage,
       deviceId: input.deviceId,
       hostId: host.id,
       state: 'starting' as const,
@@ -753,6 +855,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     workspace: 'clover',
     projectId: input.projectId,
     canvasId: input.canvasId,
+    canvasLineage: input.canvasLineage,
     modelSnapshot,
     deviceId: resolvedDeviceId,
     deviceUuid: localGpu?.uuid,
@@ -771,6 +874,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     instanceName: input.modelName ?? 'MossInfer',
     projectId: input.projectId,
     canvasId: input.canvasId,
+    canvasLineage: input.canvasLineage,
     deviceId: resolvedDeviceId,
     deviceUuid: localGpu?.uuid,
     gpuSnapshot: localGpu ? gpuSnapshot(localGpu) : undefined,

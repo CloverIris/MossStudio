@@ -11,12 +11,13 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Events, Ipc } from '@shared/channels'
 import type {
   Catalog,
   EngineRemoteProgress,
+  EngineGpuProbeSnapshot,
   GpuInventorySnapshot,
   GpuProfileOverride,
   JobRecord,
@@ -29,6 +30,7 @@ import type {
 } from '@shared/types'
 import type { BackendInfo } from '@shared/backend'
 import { recommendGpuMemoryMode } from '@shared/gpuProfile'
+import { selectAutomaticGpu } from '@shared/gpuScheduling'
 import { call, onEvent } from '../lib/api'
 import { useApp } from '../store'
 import { openWindow } from '../lib/windows'
@@ -82,6 +84,9 @@ export function EnginePage(): React.JSX.Element {
   const [releaseError, setReleaseError] = useState<string | null>(null)
   const [loadingReleases, setLoadingReleases] = useState(false)
   const [probe, setProbe] = useState<Record<string, unknown> | null>(null)
+  const [gpuProbe, setGpuProbe] = useState<EngineGpuProbeSnapshot | null>(null)
+  const [gpuProbeError, setGpuProbeError] = useState<string | null>(null)
+  const lastAutoProbeKey = useRef<string | null>(null)
   const [hosts, setHosts] = useState<ManagedHost[]>([])
   const [remote, setRemote] = useState<Record<string, {
     online: boolean
@@ -126,10 +131,30 @@ export function EnginePage(): React.JSX.Element {
   }, [setMossInferDownload, toast])
 
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    if (!engine?.available || !engine.path) return
+    const key = `${engine.path}:${gpuInventory?.scannedAt ?? 'not-scanned'}`
+    if (lastAutoProbeKey.current === key) return
+    lastAutoProbeKey.current = key
+    let canceled = false
+    void call<Record<string, unknown> & { gpuCompatibility?: EngineGpuProbeSnapshot }>(Ipc.engineProbe)
+      .then((result) => {
+        if (canceled) return
+        setProbe(result)
+        setGpuProbe(result.gpuCompatibility ?? null)
+        setGpuProbeError(null)
+      })
+      .catch((error: unknown) => {
+        if (!canceled) setGpuProbeError(error instanceof Error ? error.message : String(error))
+      })
+    return () => { canceled = true }
+  }, [engine?.available, engine?.path, gpuInventory?.scannedAt])
   const refreshGpuInventory = useCallback(async () => {
     setRefreshingGpu(true)
     try {
       setGpuInventory(await call<GpuInventorySnapshot>(Ipc.gpuInventoryRefresh))
+      setGpuProbe(null)
+      setGpuProbeError(null)
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
     } finally {
@@ -143,7 +168,11 @@ export function EnginePage(): React.JSX.Element {
     }).catch((error: unknown) => {
       if (!canceled) toast.push(error instanceof Error ? error.message : String(error), 'error')
     })
-    const off = onEvent<GpuInventorySnapshot>(Events.gpuInventory, setGpuInventory)
+    const off = onEvent<GpuInventorySnapshot>(Events.gpuInventory, (snapshot) => {
+      setGpuInventory(snapshot)
+      setGpuProbe(null)
+      setGpuProbeError(null)
+    })
     return () => { canceled = true; off() }
   }, [toast])
   const refreshReleases = useCallback(async () => {
@@ -193,6 +222,8 @@ export function EnginePage(): React.JSX.Element {
 
   async function runDownload(selected: 'bundled' | 'system-cuda', flavour?: 'cu12' | 'cu13', cudaWheels = false): Promise<void> {
     setBusy(true)
+    setGpuProbe(null)
+    setGpuProbeError(null)
     try {
       const next = await call<MossInferDownloadState>(Ipc.mossInferDownload, {
         channel,
@@ -215,6 +246,9 @@ export function EnginePage(): React.JSX.Element {
     setBusy(true)
     try {
       await call(Ipc.engineVersionSelect, { id })
+      setProbe(null)
+      setGpuProbe(null)
+      setGpuProbeError(null)
       toast.push('已切换当前引擎版本', 'success')
       await refresh()
     } catch (error) {
@@ -309,10 +343,13 @@ export function EnginePage(): React.JSX.Element {
   async function probeEngine(): Promise<void> {
     setBusy(true)
     try {
-      const result = await call<Record<string, unknown>>(Ipc.engineProbe)
+      const result = await call<Record<string, unknown> & { gpuCompatibility?: EngineGpuProbeSnapshot }>(Ipc.engineProbe)
       setProbe(result)
+      setGpuProbe(result.gpuCompatibility ?? null)
+      setGpuProbeError(null)
       toast.push('引擎 hello 成功', 'success')
     } catch (error) {
+      setGpuProbeError(error instanceof Error ? error.message : String(error))
       toast.push(error instanceof Error ? error.message : String(error), 'error')
     } finally {
       setBusy(false)
@@ -330,6 +367,8 @@ export function EnginePage(): React.JSX.Element {
       const versions = await call<LocalEngineVersion[]>(Ipc.engineSelectDirectory, { path: directory })
       setEngineVersions(versions)
       setProbe(null)
+      setGpuProbe(null)
+      setGpuProbeError(null)
       toast.push('已登记为外部引擎；点击「激活」后才会用于推理', 'success')
       await refresh()
     } catch (error) {
@@ -558,7 +597,13 @@ export function EnginePage(): React.JSX.Element {
   const selectedRelease = releases.find((release) => release.tag === releaseTag)
   const progressIndeterminate = Boolean(download && ['querying', 'extracting', 'cuda_libs'].includes(download.phase))
   const progressPercent = download ? download.phase === 'done' ? 100 : Math.max(0, Math.min(100, download.percent)) : 0
-  const recommendedGpu = gpuInventory?.devices.find((device) => device.uuid === gpuInventory.recommendedGpuUuid)
+  const systemRecommendedGpu = gpuInventory?.devices.find((device) => device.uuid === gpuInventory.recommendedGpuUuid)
+  const compatibleGpuUuids = new Set(
+    gpuProbe?.devices.filter((device) => device.status === 'supported').map((device) => device.uuid) ?? [],
+  )
+  const recommendedGpu = gpuProbe && gpuInventory
+    ? selectAutomaticGpu(gpuInventory.devices, compatibleGpuUuids, {})
+    : systemRecommendedGpu
   const gpuSelection = settings?.gpuSelection
   const configuredGpuUuid = gpuSelection && typeof gpuSelection === 'object' ? gpuSelection.uuid : undefined
   const selectedGpuUuid = configuredGpuUuid ?? recommendedGpu?.uuid
@@ -595,7 +640,7 @@ export function EnginePage(): React.JSX.Element {
               </Pill>
             </div>
             <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">
-              默认推荐依据 SM 能力、显存和稳定的 CUDA 序号；GPU UUID 用于持久化，不会因序号变化而改绑。Canvas 任务会固定到提交时解析的 GPU UUID。
+              自动模式会在引擎确认兼容的设备中优先分配空闲且性能更强的 GPU；繁忙时排入负载较低的兼容卡。Canvas 提交后固定到该卡 UUID，不会在队列中漂移。
             </p>
             {gpuInventory?.error ? <p role="status" className="mt-2 text-caption text-amber-200">{gpuInventory.error}</p> : null}
             {gpuInventory?.capabilityNotice ? <p role="status" className="mt-1 text-caption text-amber-200">{gpuInventory.capabilityNotice}</p> : null}
@@ -619,7 +664,11 @@ export function EnginePage(): React.JSX.Element {
               className="app-input w-full"
             >
               <option value="auto">
-                {recommendedGpu ? `自动推荐 · ${recommendedGpu.name}（GPU ${recommendedGpu.index}）` : '自动推荐 · 等待可识别的 GPU'}
+                {recommendedGpu
+                  ? `自动分配 · 优先 ${recommendedGpu.name}（GPU ${recommendedGpu.index}）`
+                  : gpuProbe
+                    ? '自动分配 · 没有已确认兼容的 GPU'
+                    : '自动分配 · 正在检测引擎兼容性'}
               </option>
               {savedGpuMissing && settings && typeof settings.gpuSelection === 'object' ? (
                 <option value={settings.gpuSelection.uuid} disabled>已保存设备未连接 · {settings.gpuSelection.uuid.slice(0, 16)}</option>
@@ -631,7 +680,7 @@ export function EnginePage(): React.JSX.Element {
             {savedGpuMissing ? <p role="status" className="text-caption text-amber-200">保存的 GPU 当前未连接；偏好已保留，请重新扫描或改选设备。</p> : null}
             {selectedGpu ? (
               <p className="text-caption text-[var(--color-text-tertiary)]">
-                当前目标：SM{selectedGpu.computeCapability ? `${selectedGpu.computeCapability.major}${selectedGpu.computeCapability.minor}` : '未知'}
+                {gpuSelection === 'auto' ? '推荐参考：' : '当前目标：'}SM{selectedGpu.computeCapability ? `${selectedGpu.computeCapability.major}${selectedGpu.computeCapability.minor}` : '未知'}
                 {' · '}{selectedGpu.memoryTotalBytes ? bytes(selectedGpu.memoryTotalBytes) : '显存未知'}
               </p>
             ) : null}
@@ -658,7 +707,7 @@ export function EnginePage(): React.JSX.Element {
               <div key={device.uuid} className="rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-ui font-medium">{device.name}</span>
-                  {device.uuid === selectedGpuUuid ? <Pill tone="accent">{settings?.gpuSelection === 'auto' ? '推荐' : '默认'}</Pill> : null}
+                  {device.uuid === selectedGpuUuid ? <Pill tone="accent">{settings?.gpuSelection === 'auto' ? '性能推荐' : '默认'}</Pill> : null}
                   {settings?.gpuProfileOverrides[device.uuid] ? <Pill tone="amber">自定义策略</Pill> : null}
                 </div>
                 <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">
@@ -669,6 +718,44 @@ export function EnginePage(): React.JSX.Element {
                   {' · '}GPU {telemetry?.utilizationPercent === undefined ? '—' : `${telemetry.utilizationPercent}%`}
                   {' · '}{telemetry?.runningTasks ?? 0} 运行 / {telemetry?.queuedTasks ?? 0} 排队
                 </p>
+                {(() => {
+                  const compatibility = gpuProbe?.devices.find((candidate) => candidate.uuid === device.uuid)
+                  return (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <Pill tone={
+                          compatibility?.status === 'supported'
+                            ? 'accent'
+                            : compatibility?.status === 'unsupported'
+                              ? 'red'
+                              : 'amber'
+                        }>
+                          {compatibility?.status === 'supported'
+                            ? '引擎兼容'
+                            : compatibility?.status === 'unsupported'
+                              ? '引擎不兼容'
+                              : '兼容性待测'}
+                        </Pill>
+                        {gpuProbe ? (
+                          <p className="mt-1 text-micro text-[var(--color-text-tertiary)]">
+                            Probe {dateTime(gpuProbe.checkedAt)}
+                          </p>
+                        ) : null}
+                        {compatibility?.reason ?? gpuProbeError ? (
+                          <p
+                            className="mt-1 truncate text-micro text-amber-200"
+                            title={compatibility?.reason ?? gpuProbeError ?? undefined}
+                          >
+                            {compatibility?.reason ?? gpuProbeError}
+                          </p>
+                        ) : null}
+                      </div>
+                      <Button tone="ghost" disabled={busy || !engine?.available} onClick={() => void probeEngine()}>
+                        <ShieldCheck className="size-3.5" /> 测试兼容性
+                      </Button>
+                    </div>
+                  )
+                })()}
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <label className="space-y-1">
                     <span className="text-micro text-[var(--color-text-tertiary)]">显存模式</span>
