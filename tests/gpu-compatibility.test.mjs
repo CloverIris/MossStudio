@@ -3,8 +3,8 @@ import test from 'node:test'
 import { mapEngineGpuProbe } from '../apps/desktop/src/shared/gpuCompatibility.ts'
 
 const inventory = [
-  { uuid: 'a', index: 0, name: 'GPU A' },
-  { uuid: 'b', index: 1, name: 'GPU B' },
+  { uuid: 'a', index: 0, name: 'GPU A', driverVersion: '581.15' },
+  { uuid: 'b', index: 1, name: 'GPU B', driverVersion: '560.10' },
   { uuid: 'c', index: 2, name: 'GPU C' },
 ]
 
@@ -38,4 +38,20 @@ test('duplicate GPU names require a unique match instead of guessing', () => {
     'moss-server',
   )
   assert.deepEqual(result.devices.map((device) => device.status), ['unknown', 'unknown'])
+})
+
+test('driver initialization errors explain the CUDA 13 driver requirement', () => {
+  const result = mapEngineGpuProbe(
+    [inventory[1]],
+    [{
+      index: 1,
+      name: 'GPU B',
+      supported: false,
+      unsupportedReason: 'no Nvidia driver is loader',
+    }],
+    'moss-server',
+  )
+  assert.match(result.devices[0].reason ?? '', /560\.10/)
+  assert.match(result.devices[0].reason ?? '', /R580/)
+  assert.doesNotMatch(result.devices[0].reason ?? '', /CUDA 12/)
 })

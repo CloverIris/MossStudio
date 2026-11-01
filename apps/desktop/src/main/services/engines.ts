@@ -11,6 +11,7 @@ import { isInside, paths } from '../lib/paths'
 import { probeMossInfer, resolveServerPath, shutdownMossInfer } from './mossInfer'
 import { getSettings, updateSettings } from './settings'
 import { getGpuInventory } from './devices'
+import { resolveGpuSelection } from '../lib/gpuInventory'
 import { getTrainingHost } from './trainingHosts'
 import { remoteEngineStatus } from './remoteEngine'
 
@@ -159,6 +160,19 @@ function findLocalEngineVersion(id: string): LocalEngineVersion {
 /** Activation: make an already-known engine the one jobs use. */
 export async function selectLocalEngineVersion(id: string): Promise<LocalEngineInfo> {
   const version = findLocalEngineVersion(id)
+  const settings = getSettings()
+  const inventory = await getGpuInventory()
+  const targetGpu = resolveGpuSelection(inventory.devices, settings.gpuSelection)
+  if (targetGpu) {
+    const raw = await probeMossInfer(version.path)
+    const compatibility = mapGpuProbe(inventory.devices, raw, version.path)
+      .devices.find((device) => device.uuid === targetGpu.uuid)
+    if (compatibility?.status === 'unsupported') {
+      throw new Error(
+        `无法切换到此引擎：${targetGpu.name} 不兼容。${compatibility.reason ?? '引擎 probe 判定此设备不受支持。'}`,
+      )
+    }
+  }
   const updated = updateSettings({ inferenceBackend: 'mossinfer', mossInferServerPath: version.path })
   emit(Events.settingsChanged, updated)
   gpuProbeCache = null

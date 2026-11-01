@@ -22,6 +22,10 @@
 - 模型/引擎/输出目录；
 - 磁盘剩余空间。
 
+MossInfer 的默认引擎包（包括约 700 MB 的 bundled 包）统一使用 CUDA 13；
+bundled 只包含 CUDA 用户态运行库，不包含显卡驱动。CUDA 13 要求 NVIDIA R580 或更新驱动。
+system-cuda 还需要 CUDA 13 的 cuBLASLt；CUDA 12 库不会自动让默认引擎降级到 CUDA 12。
+
 ## 3. 构建与测试
 
 ```powershell
@@ -69,7 +73,7 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-remote-job
 | 启动 | `pnpm dev` | 只出现 Studio；Trainer 由训练页打开 |
 | 引擎版本 | 引擎页加载 GitHub Release | 可选择多个正式版本；无 Release 时明确提示 CI 回退和 Token 要求 |
 | 本机版本管理 | 下载多个引擎包 | 可查看、切换、删除历史版本；正在使用的版本不可删除 |
-| 引擎预检 | 引擎页选择 system-cuda | 正确识别 `cublasLt64_*.dll` / 缺失 |
+| 引擎预检 | 引擎页选择 system-cuda | 检查 CUDA 13 `cublasLt64_*.dll` 与 R580+ 驱动；缺失时给出明确提示 |
 | 引擎解压 | 下载 Windows ZIP 包 | `yauzl` ZIP 流程完成，不要求系统 Python |
 | 缺库回退 | 没有系统库时安装 | 弹窗可选 bundled；下载后 `hello` 成功 |
 | 原生 CUDA wheel | 选择“下载 system + 解压 CUDA 库” | 不调用 Python/uv/pip；lib/bin 出现 DLL |
@@ -82,7 +86,7 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-remote-job
 ## 5. 已知风险
 
 - Windows wheel 解压后的 DLL 搜索路径需要实机确认。
-- 系统 CUDA Toolkit 版本必须与引擎 cu12/cu13 匹配。
+- 默认 MossInfer 构建为 CUDA 13；旧于 R580 的驱动需要先更新。bundled 包不会携带或升级 NVIDIA 驱动。
 - GitHub release/artifact 下载和真实 Windows NVIDIA 安装仍需实机验证。
 - 真实远端 UDP/SSH 网络、路径空格、中文路径、非 ASCII 用户名需实测。
 - 打包/签名/更新未实现。

@@ -1,6 +1,6 @@
 # 发布源、模型目录与更新
 
-- 状态：`0.0.0` Windows x64 基线此前已验证，构建产物现已清理；`0.1.0` 尚未重新构建或上传，GitHub 当前没有 Release
+- 状态：`0.0.0` Windows x64 基线此前已验证；`0.1.0` Windows x64 ZIP 已按当前代码重新构建至 `release/artifacts/`，尚未上传，GitHub 当前没有 Release
 - 决策：[ADR-0005](decisions/0005-release-channel-and-updates.md)
 - 待发布版本：`0.1.0`（严格版本）；更新测试基线：`0.0.0`
 
@@ -32,9 +32,9 @@ Beta 通道先读 `releases/download/beta/release.md`，不存在时回退 lates
 > 读取到仓库中的 `release/release.md`。因此界面显示 `source: remote` 不代表 GitHub
 > Release/安装资产已存在；线上更新验收必须使用已发布的 Release 资产和可下载 ZIP。
 >
-> 当前 `release/manifest.json` 中的 ZIP 大小和 SHA-256 来自已清理的旧构建，不能用于下载校验。
-> 必须在上传前重新运行 `pnpm release:build`；该命令会重建 ZIP 并更新 manifest 与 `release.md`。
-> 在新资产准备好之前，不要把这份待发布元数据当成已上线版本。
+> 当前 `release/manifest.json` 的 ZIP 大小和 SHA-256 已由本次构建更新，并与
+> `release/artifacts/MossStudio-0.1.0-win32-x64.zip` 一致。GitHub Release 尚未创建；
+> 上传前不要将本地待发布材料视为线上版本。
 
 ## 2. 文件职责
 

@@ -12,6 +12,14 @@ export interface EngineGpuProbeDevice {
   freeMemoryBytes?: number
 }
 
+function compatibilityReason(reason: string | undefined, driverVersion: string | undefined): string | undefined {
+  if (!reason || !/no\s+nvidia\s+driver|nvidia\s+driver.{0,30}(?:not|unavailable|load)|(?:driver|cuda).{0,30}(?:insufficient|too old|not loaded)/i.test(reason)) {
+    return reason
+  }
+  const detectedDriver = driverVersion ? `系统检测到 NVIDIA 驱动 ${driverVersion}` : '系统能枚举到这张 NVIDIA GPU'
+  return `${reason}。${detectedDriver}，但引擎未能初始化 CUDA 驱动接口。MossInfer CUDA 13 构建需要 R580 或更新版本；请更新 NVIDIA 显卡驱动后重新测试。`
+}
+
 function normalizedName(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 }
@@ -56,7 +64,7 @@ export function mapEngineGpuProbe(
         : candidate.supported === false
           ? 'unsupported'
           : 'unknown',
-      reason: candidate.unsupportedReason,
+      reason: compatibilityReason(candidate.unsupportedReason, device.driverVersion),
       freeMemoryBytes: candidate.freeMemoryBytes,
     }
   })

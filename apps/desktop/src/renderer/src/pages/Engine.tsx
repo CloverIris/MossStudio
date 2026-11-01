@@ -109,7 +109,7 @@ export function EnginePage(): React.JSX.Element {
     settings?.mossInferArchitecture ?? 'auto',
   )
   const [fallbackOpen, setFallbackOpen] = useState(false)
-  const [preflight, setPreflight] = useState<{ supported: boolean; gpu: string; cublasLt: string[]; preferredFlavour?: 'cu12' | 'cu13'; error?: string } | null>(null)
+  const [preflight, setPreflight] = useState<{ supported: boolean; gpu: string; cublasLt: string[]; driverVersion?: string; driverCompatible?: boolean; error?: string } | null>(null)
   const [activeTab, setActiveTab] = useState<EngineTab>('inference')
   const [chainTest, setChainTest] = useState<EngineChainTest | null>(null)
   const [chainTesting, setChainTesting] = useState(false)
@@ -324,13 +324,13 @@ export function EnginePage(): React.JSX.Element {
     if (variant === 'system-cuda') {
       setBusy(true)
       try {
-        const status = await call<{ supported: boolean; gpu: string; cublasLt: string[]; preferredFlavour?: 'cu12' | 'cu13'; error?: string }>(Ipc.engineSystemCuda)
+        const status = await call<{ supported: boolean; gpu: string; cublasLt: string[]; driverVersion?: string; driverCompatible?: boolean; error?: string }>(Ipc.engineSystemCuda)
         setPreflight(status)
-        if (!status.supported || !status.preferredFlavour) {
+        if (!status.supported) {
           setFallbackOpen(true)
           return
         }
-        await runDownload('system-cuda', status.preferredFlavour)
+        await runDownload('system-cuda', 'cu13')
       } catch (error) {
         toast.push(error instanceof Error ? error.message : String(error), 'error')
       } finally {
@@ -744,7 +744,7 @@ export function EnginePage(): React.JSX.Element {
                         ) : null}
                         {compatibility?.reason ?? gpuProbeError ? (
                           <p
-                            className="mt-1 truncate text-micro text-amber-200"
+                            className="mt-1 break-words text-micro leading-4 text-amber-200"
                             title={compatibility?.reason ?? gpuProbeError ?? undefined}
                           >
                             {compatibility?.reason ?? gpuProbeError}
@@ -935,7 +935,7 @@ export function EnginePage(): React.JSX.Element {
               <option value="sm75">SM75（RTX 20 / Turing）</option>
             </select>
           </label>
-          <Button data-oobe="engine" data-oobe-hint="自动模式会按目标 GPU 选择架构，探测实际引擎后再验证兼容性；如果 CUDA 13 构建不适合当前驱动，会自动尝试 CUDA 12 构建。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || Boolean(downloading)}>
+          <Button data-oobe="engine" data-oobe-hint="自动模式会按目标 GPU 选择架构；所有默认引擎均使用 CUDA 13，并检查当前 GPU 与驱动兼容性。旧驱动需要先更新到 R580 或更新版本。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || Boolean(downloading)}>
             <Download className="size-4" /> 下载/更新引擎
           </Button>
         </div>
@@ -997,7 +997,7 @@ export function EnginePage(): React.JSX.Element {
 
         {preflight ? (
           <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
-            预检：{preflight.gpu || preflight.error} · flavour {preflight.preferredFlavour ?? '无'} · cuBLASLt {preflight.cublasLt.length ? preflight.cublasLt.join(', ') : '未找到'}
+            预检：{preflight.gpu || preflight.error} · 驱动 {preflight.driverVersion ?? '未知'} · CUDA 13 cuBLASLt {preflight.cublasLt.length ? preflight.cublasLt.join(', ') : '未找到'}
           </p>
         ) : null}
 
@@ -1269,19 +1269,25 @@ export function EnginePage(): React.JSX.Element {
       <Modal
         open={fallbackOpen}
         onClose={() => setFallbackOpen(false)}
-        title="没有可用的系统 cuBLASLt"
+        title={preflight?.driverCompatible === false ? '需要更新 NVIDIA 显卡驱动' : '没有可用的 CUDA 13 cuBLASLt'}
         description={preflight?.error ?? '系统 CUDA 库缺失或版本不匹配。'}
         width="max-w-lg"
         footer={
           <>
             <Button tone="ghost" onClick={() => setFallbackOpen(false)}>取消</Button>
-            <Button data-oobe="engine" data-oobe-hint="选择一种方式补齐 CUDA 库：自动解压系统库，或下载包含 CUDA 的 bundled 包。" tone="primary" onClick={() => { setFallbackOpen(false); void runDownload('system-cuda', preflight?.preferredFlavour ?? 'cu13', true) }}>下载 system + 解压 CUDA 库</Button>
-            <Button data-oobe="engine" tone="secondary" onClick={() => { setFallbackOpen(false); void runDownload('bundled') }}>下载 bundled（+700MB）</Button>
+            {preflight?.driverCompatible === false ? (
+              <Button tone="secondary" onClick={() => setFallbackOpen(false)}>知道了</Button>
+            ) : (
+              <>
+                <Button data-oobe="engine" data-oobe-hint="下载并解压 CUDA 13 运行库；不需要 Python、uv 或 pip。" tone="primary" onClick={() => { setFallbackOpen(false); void runDownload('system-cuda', 'cu13', true) }}>准备 CUDA 13 库</Button>
+                <Button data-oobe="engine" tone="secondary" onClick={() => { setFallbackOpen(false); void runDownload('bundled', 'cu13') }}>下载 bundled CUDA 13（约 700MB）</Button>
+              </>
+            )}
           </>
         }
       >
         <div className="p-4 text-ui leading-5 text-[var(--color-text-secondary)]">
-          system-cuda 包需要系统提供 libcublasLt。可以直接下载 system 引擎并由 MossStudio 原生解压 NVIDIA wheels（不需要 Python/uv/pip），或下载完整 bundled 包。
+          MossInfer 当前统一使用 CUDA 13。bundled 包内置 CUDA 13 运行库；system-cuda 可由 MossStudio 原生准备 CUDA 13 库（不需要 Python/uv/pip）。CUDA 13 需要 NVIDIA R580 或更新驱动；CUDA 运行库不会替代或升级显卡驱动。
         </div>
       </Modal>
     </div>

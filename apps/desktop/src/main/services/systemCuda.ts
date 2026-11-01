@@ -1,13 +1,15 @@
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { run } from '../lib/run'
+import { DEFAULT_MOSSINFER_FLAVOUR, mossInferDriverCompatibilityError } from '../lib/engineAssets'
 
 export interface SystemCudaStatus {
   supported: boolean
   gpu: string
   cublasLt: string[]
   flavours: Array<'cu12' | 'cu13'>
-  preferredFlavour?: 'cu12' | 'cu13'
+  driverVersion?: string
+  driverCompatible?: boolean
   error?: string
 }
 
@@ -31,6 +33,7 @@ export async function detectSystemCuda(): Promise<SystemCudaStatus> {
     return { supported: false, gpu: '', cublasLt: [], flavours: [], error: 'macOS 没有 NVIDIA CUDA / cuBLASLt' }
   }
   const gpu = await run('nvidia-smi', ['--query-gpu=name,driver_version', '--format=csv,noheader'], { timeoutMs: 6000 })
+  const driverVersion = gpu.stdout.split(/\r?\n/).map((row) => row.split(',').at(-1)?.trim()).find(Boolean)
   const libs: string[] = []
   if (process.platform === 'win32') {
     for (const root of windowsCudaRoots()) {
@@ -57,12 +60,24 @@ export async function detectSystemCuda(): Promise<SystemCudaStatus> {
   const flavours: Array<'cu12' | 'cu13'> = []
   if (libs.some((path) => /(?:so\.12|64_12\.dll|cuda-12|v12\.)/i.test(path))) flavours.push('cu12')
   if (libs.some((path) => /(?:so\.13|64_13\.dll|cuda-13|v13\.)/i.test(path))) flavours.push('cu13')
+  const driverError = mossInferDriverCompatibilityError(DEFAULT_MOSSINFER_FLAVOUR, driverVersion)
+  const driverCompatible = driverVersion
+    ? driverError === null
+    : undefined
+  const hasCuda13Libraries = flavours.includes(DEFAULT_MOSSINFER_FLAVOUR)
   return {
-    supported: gpu.code === 0 && libs.length > 0,
+    supported: gpu.code === 0 && hasCuda13Libraries && driverCompatible !== false,
     gpu: gpu.stdout.trim(),
     cublasLt: [...new Set(libs)].slice(0, 8),
     flavours,
-    preferredFlavour: flavours.includes('cu13') ? 'cu13' : flavours.includes('cu12') ? 'cu12' : undefined,
-    error: gpu.code !== 0 ? '未检测到 NVIDIA GPU / nvidia-smi' : libs.length ? undefined : '系统未找到 libcublasLt',
+    driverVersion,
+    driverCompatible,
+    error: gpu.code !== 0
+      ? '未检测到 NVIDIA GPU / nvidia-smi'
+      : driverError ?? (!hasCuda13Libraries
+          ? flavours.includes('cu12')
+            ? '系统只检测到 CUDA 12 cuBLASLt；MossInfer 默认需要 CUDA 13。可更新 CUDA，或让 MossStudio 随引擎准备 CUDA 13 库。'
+            : '系统未找到 CUDA 13 cuBLASLt。可让 MossStudio 随引擎准备 CUDA 13 库。'
+          : undefined),
   }
 }

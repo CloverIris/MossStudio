@@ -18,13 +18,14 @@ import { getSettings, updateSettings } from './settings'
 import { getLastNetwork, githubMirrorChain } from './network'
 import { assertFreeSpace } from '../lib/disk'
 import {
+  DEFAULT_MOSSINFER_FLAVOUR,
   mossInferArchitectureForComputeCapability,
   mossInferArchiveBase,
-  mossInferFlavourAfterProbe,
+  mossInferDriverCompatibilityError,
   type MossInferArchitecture,
 } from '../lib/engineAssets'
 import { getGpuInventory, refreshGpuInventory } from './devices'
-import { recommendedGpu } from '../lib/gpuInventory'
+import { resolveGpuSelection } from '../lib/gpuInventory'
 
 /**
  * Downloads the MossInfer engine package from the upstream repo xycld/owoinfer:
@@ -760,7 +761,7 @@ export async function downloadMossInfer(
   publish({ phase: 'querying' })
   let architectureNote: string | undefined
   let flavourNote: string | undefined
-  let automaticGpuUuid: string | undefined
+  let selectedGpuUuid: string | undefined
   try {
     let architecture: Architecture = architectureChoice === 'auto' ? 'standard' : architectureChoice
     if (architectureChoice === 'auto') {
@@ -769,7 +770,7 @@ export async function downloadMossInfer(
       const gpuSelection = settings.gpuSelection
       const target = typeof gpuSelection === 'object'
         ? inventory.devices.find((device) => device.uuid === gpuSelection.uuid)
-        : recommendedGpu(inventory.devices)
+        : resolveGpuSelection(inventory.devices, 'auto')
       if (!target) {
         throw new Error(
           inventory.error ??
@@ -781,7 +782,7 @@ export async function downloadMossInfer(
       if (!target.computeCapability) {
         throw new Error(`${target.name} 的 SM 计算能力未知；自动模式不会猜测标准架构，请手动选择架构或修复 NVIDIA 驱动。`)
       }
-      automaticGpuUuid = target.uuid
+      selectedGpuUuid = target.uuid
       const recommendedArchitecture = mossInferArchitectureForComputeCapability(
         target.computeCapability.major,
         target.computeCapability.minor,
@@ -794,28 +795,26 @@ export async function downloadMossInfer(
       architecture = recommendedArchitecture
       architectureNote = `按 ${target.name}（GPU ${target.index}，SM${target.computeCapability.major}${target.computeCapability.minor}）选择 ${architecture === 'sm75' ? 'SM75' : '标准'} 包`
     }
+    const inventory = await getGpuInventory()
+    const targetGpu = resolveGpuSelection(inventory.devices, settings.gpuSelection)
+    if (targetGpu) selectedGpuUuid = targetGpu.uuid
     if (architecture === 'sm75' && process.platform !== 'win32') {
       throw new Error('上游目前仅提供 Windows CUDA 13 的 SM75 Release，请选择标准架构或自定义引擎目录')
     }
-    let flavour = flavourInput ?? 'cu13'
+    let flavour = flavourInput ?? DEFAULT_MOSSINFER_FLAVOUR
     if (architecture === 'sm75') {
       if (variant === 'system-cuda' && flavourInput === 'cu12') {
         throw new Error('SM75 官方包仅提供 CUDA 13；请安装 CUDA 13 cuBLASLt，或改选 bundled CUDA 包')
       }
       flavour = 'cu13'
     }
+    const driverError = mossInferDriverCompatibilityError(flavour, targetGpu?.driverVersion)
+    if (driverError) throw new Error(driverError)
     let installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
-    // Upstream decision procedure: install cu13 by default, probe, fall back to cu12.
     let probe = await probeMossInfer(installed.serverPath)
     let recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
-    const compatibleFlavour = mossInferFlavourAfterProbe(architecture, flavour, recommended)
-    if (compatibleFlavour !== flavour) {
-      publish({ phase: 'querying', version: '当前驱动需要 CUDA 12，正在切换到兼容构建' })
-      flavourNote = '已按引擎探测结果切换到 CUDA 12 构建'
-      flavour = compatibleFlavour
-      installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
-      probe = await probeMossInfer(installed.serverPath)
-      recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
+    if (recommended && recommended !== flavour) {
+      flavourNote = `引擎建议 CUDA ${recommended.slice(2)}，当前仍保留默认 CUDA ${flavour.slice(2)}；请按 GPU 兼容性结果更新驱动`
     }
     const verifiedDevices = (probe['probe'] as { devices?: Array<{
       index?: number
@@ -823,6 +822,7 @@ export async function downloadMossInfer(
       compute_minor?: number
       supported?: boolean
       name?: string
+      unsupported_reason?: string
     }> } | undefined)?.devices ?? []
     const sm75Device = verifiedDevices.find((device) =>
       device.compute_major === 7 && device.compute_minor === 5,
@@ -830,9 +830,9 @@ export async function downloadMossInfer(
     if (architecture === 'sm75' && sm75Device?.supported === false) {
       throw new Error(`下载的 SM75 引擎仍将 ${sm75Device.name ?? 'GPU'} 判定为不兼容；请勿切换到该构建`)
     }
-    if (automaticGpuUuid !== undefined) {
+    if (selectedGpuUuid !== undefined) {
       const currentInventory = await refreshGpuInventory()
-      const currentGpu = currentInventory.devices.find((device) => device.uuid === automaticGpuUuid)
+      const currentGpu = currentInventory.devices.find((device) => device.uuid === selectedGpuUuid)
       const target = currentGpu
         ? verifiedDevices.find((device) => device.index === currentGpu.index)
         : undefined
@@ -840,8 +840,14 @@ export async function downloadMossInfer(
         ? target?.compute_major === 7 && target.compute_minor === 5
         : (target?.compute_major ?? 0) >= 8
       if (!target || target.supported !== true || !expectedCapability) {
+        const driverError = mossInferDriverCompatibilityError(flavour, currentGpu?.driverVersion)
+        const probeReason = target?.unsupported_reason
         throw new Error(
-          `新引擎未能验证所选 GPU 对 ${architecture} 构建的支持；已保留当前引擎，请勿切换到未验证的包。`,
+          [
+            driverError,
+            probeReason,
+            `新引擎未能验证所选 GPU 对 ${architecture} / CUDA ${flavour.slice(2)} 构建的支持；已保留当前引擎。`,
+          ].filter(Boolean).join(' '),
         )
       }
     }

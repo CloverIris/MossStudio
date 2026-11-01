@@ -30,6 +30,11 @@ async function writeManifest(manifest) {
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 }
 
+async function publicReleaseReadme() {
+  const readme = await readFile(join(releaseDir, 'README.md'), 'utf8')
+  return `${readme.replace(/\r?\n## 发布与更新（维护者）[\s\S]*$/, '').trimEnd()}\n`
+}
+
 function generateReleaseMarkdown() {
   const result = spawnSync(process.execPath, [join(root, 'tools', 'release-md.mjs')], {
     cwd: root,
@@ -171,9 +176,10 @@ try {
   }
   await writeManifest(embeddedManifest)
   generateReleaseMarkdown()
-  for (const name of ['manifest.json', 'models.json', 'README.md', 'release.md', 'rules.json', 'updater.ps1']) {
+  for (const name of ['manifest.json', 'models.json', 'release.md', 'rules.json', 'updater.ps1']) {
     await copyFile(join(releaseDir, name), join(packagedReleaseDir, name))
   }
+  await writeFile(join(packagedReleaseDir, 'README.md'), await publicReleaseReadme(), 'utf8')
 
   const packagedAppSourceDir = await preparePackagerApp(stagingWorkspaceDir, desktopPackage)
   const appDirs = await packager({
@@ -223,7 +229,7 @@ try {
   await writeManifest(finalManifest)
   generateReleaseMarkdown()
   await copyFile(join(releaseDir, 'release.md'), join(artifactsDir, 'release.md'))
-  await copyFile(join(releaseDir, 'README.md'), join(artifactsDir, 'README.md'))
+  await writeFile(join(artifactsDir, 'README.md'), await publicReleaseReadme(), 'utf8')
   finalized = true
 
   console.log(`Release package: ${artifactPath}`)

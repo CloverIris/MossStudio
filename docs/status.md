@@ -63,7 +63,7 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 
 ## 4. 已知限制
 
-- RTX 2080 是 Turing（CC 7.5）；在引擎页选择 SM75 架构包（上游 v2.1.1+，Windows CUDA 13）而非默认 SM80+ 构建。
+- RTX 2080 是 Turing（CC 7.5）；在引擎页选择 SM75 架构包（上游 v2.1.1+，Windows CUDA 13）而非默认 SM80+ 构建。默认 bundled 与 system-cuda 均为 CUDA 13；CUDA 13 需要 NVIDIA R580+ 驱动，不会静默降级到 CUDA 12。
 - 架构自动选择改为依赖独立 GPU 清单；若驱动无法报告 SM，必须手动选择，禁止静默回退到标准包。多卡并发已有 fake-server 验证，真实双卡硬件验收仍待完成。
 - 真实引擎下载、CUDA 库修补只在单台 Windows 机器上验证过；Linux 远端未验收。
 - 远端 HF 仅默认 SFT 全量；组件 bundle、断点续传、失败恢复未完成。
