@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @import "@openai/apps-sdk-ui/css";
 @import "./styles/dropdowns.css";
 @import "./styles/studio.css";
@@ -634,4 +634,44 @@ html[data-ui-animation="off"] *::backdrop {
     transition-duration: 0s !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* The page navigation must be clickable across its whole box: decorative children and
+   any inherited window-drag region otherwise leave dead zones inside a tab. */
+.app-workspace-nav,
+.page-navigation,
+.page-navigation-item,
+.page-navigation-item > * {
+  -webkit-app-region: no-drag;
+}
+
+.page-navigation-item {
+  cursor: pointer;
+}
+
+.page-navigation-item > * {
+  pointer-events: none;
+}
+
+/* The middle band of a nav tab was landing on a sibling overlay, so only its top and
+   bottom thirds responded. Lift the navigation above every footer sibling and keep the
+   whole tab area hit-testable. */
+.app-workspace-nav {
+  isolation: isolate;
+}
+
+.page-navigation {
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.page-navigation-item {
+  z-index: 4;
+  pointer-events: auto;
+}
+
+.app-workspace-nav .app-workspace-meta,
+.app-workspace-nav .app-workspace-qq {
+  position: relative;
+  z-index: 1;
 }

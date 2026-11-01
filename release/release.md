@@ -11,7 +11,7 @@
 
 ## 安装包
 
-- `win32/x64` · zip · 204 MB · `fd0ab9bc3a77…`
+- `win32/x64` · zip · 204 MB · `f62dcfddc7fa…`
 
 ## 模型目录
 
@@ -103,8 +103,8 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
       "arch": "x64",
       "kind": "zip",
       "url": "https://github.com/CloverIris/MossStudio/releases/download/v1.0.1/MossStudio-1.0.1-win32-x64.zip",
-      "sha256": "fd0ab9bc3a773d76d9b776617fbd098e8f512b2a15cbe76fda15dad5362627eb",
-      "size_bytes": 213773738
+      "sha256": "f62dcfddc7fa21718137ecdd86657ae2f9c898f46b6a41736ee0b22d33959915",
+      "size_bytes": 213773811
     }
   ],
   "home": {
