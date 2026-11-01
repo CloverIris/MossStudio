@@ -15,6 +15,7 @@ import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
 import { probeEngine } from '../lib/probeEngine'
+import { isManagedEngineDirectory } from '../lib/engineStore'
 import { resolveServerPath, shutdownMossInfer } from './mossInfer'
 import { getSettings, updateSettings } from './settings'
 import { getGpuInventory } from './devices'
@@ -120,7 +121,7 @@ export function localEngineVersions(): LocalEngineVersion[] {
   const root = paths.mossinfer()
   const managed: LocalEngineVersion[] = existsSync(root)
     ? readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() && isManagedEngineDirectory(entry.name))
       .map((entry): LocalEngineVersion | null => {
         const path = binaryIn(join(root, entry.name))
         if (!path) return null

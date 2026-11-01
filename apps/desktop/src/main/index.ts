@@ -24,6 +24,7 @@ import { installDeps, readRuntime, resolveTorchIndex, writeRemoteRuntime } from 
 import { cancelJob, getJob, getJobLogs, onJobCompleted, purgeLegacySimulationJobs, startEngineJob, startTrainingJob } from './services/supervisor'
 import { resolveServerPath, runMossInferJob, shutdownMossInfer } from './services/mossInfer'
 import { probeEngine } from './lib/probeEngine'
+import { recoverEngineInstall } from './lib/engineStore'
 import { protocolCompatible } from '@shared/engineProtocol'
 import { closeAllSshTerminals } from './services/sshSessions'
 import { createTrainerVersion, listTrainerVersions, startTrainerRun } from './services/trainers'
@@ -134,6 +135,7 @@ async function runSmoke(): Promise<void> {
 
 app.whenReady().then(async () => {
   ensureDirs(getSettings().modelsRoot, getSettings().modelDirectories)
+  try { await recoverEngineInstall(paths.mossinfer()) } catch (error) { console.error('[engine] install recovery', error) }
   try { archiveLegacyInferenceData() } catch (error) { console.error('[migration]', error) }
   try { await purgeLegacySimulationJobs() } catch (error) { console.error('[migration] simulation jobs', error) }
   onJobCompleted((job) => {

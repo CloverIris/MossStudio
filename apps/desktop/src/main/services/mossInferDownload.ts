@@ -14,6 +14,12 @@ import { isInside, paths } from '../lib/paths'
 import { run } from '../lib/run'
 import { resolveServerPath, shutdownMossInfer } from './mossInfer'
 import { probeEngine } from '../lib/probeEngine'
+import {
+  cleanupPromotedInstall,
+  engineServerPath,
+  promoteInstall,
+  recoverEngineInstall,
+} from '../lib/engineStore'
 import { installCudaWheels } from './cudaWheels'
 import { getSettings, updateSettings } from './settings'
 import { getLastNetwork, githubMirrorChain } from './network'
@@ -473,23 +479,24 @@ function singleTopDir(dir: string): string {
   return join(dir, entries[0]!.name)
 }
 
-async function installTree(
+async function stageTree(
   extractedRoot: string,
   stamp: string,
-): Promise<{ serverPath: string; installDir: string }> {
+): Promise<{ serverPath: string; stagingDir: string }> {
   const top = singleTopDir(extractedRoot)
-  const installDir = join(paths.mossinfer(), stamp)
-  rmSync(installDir, { recursive: true, force: true })
-  mkdirSync(paths.mossinfer(), { recursive: true })
-  await rename(top, installDir)
-  const serverPath = join(
-    installDir,
-    'bin',
-    process.platform === 'win32' ? 'moss-server.exe' : 'moss-server',
-  )
-  if (!existsSync(serverPath)) throw new Error(`引擎包里没有 ${serverPath}`)
-  if (process.platform !== 'win32') chmodSync(serverPath, 0o755)
-  return { serverPath, installDir }
+  const stagingRoot = join(paths.mossinfer(), '.staging')
+  const stagingDir = join(stagingRoot, `${stamp}-${Date.now()}`)
+  mkdirSync(stagingRoot, { recursive: true })
+  try {
+    await rename(top, stagingDir)
+    const serverPath = engineServerPath(stagingDir)
+    if (!existsSync(serverPath)) throw new Error(`引擎包里没有 ${serverPath}`)
+    if (process.platform !== 'win32') chmodSync(serverPath, 0o755)
+    return { serverPath, stagingDir }
+  } catch (error) {
+    rmSync(stagingDir, { recursive: true, force: true })
+    throw error
+  }
 }
 
 /**
@@ -650,7 +657,8 @@ async function downloadAndInstall(
   cudaWheels = false,
   releaseTag?: string,
   architecture: Architecture = 'standard',
-): Promise<{ serverPath: string; installDir: string; stamp: string; effectiveVariant: Variant; fallbackNote?: string }> {
+): Promise<{ serverPath: string; stagingDir: string; stamp: string; effectiveVariant: Variant; fallbackNote?: string }> {
+  await recoverEngineInstall(paths.mossinfer())
   let effectiveChannel: 'stable' | 'dev' = channel
   let source: Source
   if (channel === 'stable') {
@@ -724,30 +732,18 @@ async function downloadAndInstall(
   const extractDir = join(workDir, `${source.stamp}-extract`)
   rmSync(extractDir, { recursive: true, force: true })
   await extractArchive(archivePath, extractDir)
-  const { serverPath, installDir } = await installTree(extractDir, source.stamp)
-  rmSync(archivePath, { force: true })
-  if (effectiveVariant === 'system-cuda' && cudaWheels) {
-    publish({ phase: 'cuda_libs' })
-    await installCudaWheels(installDir, flavour)
-  } // free the archive before the CUDA-libs download
-  rmSync(workDir, { recursive: true, force: true })
-  return { serverPath, installDir, stamp: source.stamp, effectiveVariant, fallbackNote }
-}
-
-/**
- * A build that failed post-install validation must not stay on disk: `localEngineVersions()`
- * lists every directory under mossinfer/, so a leftover shows up as an installable version and
- * "switch to this version" contradicts the failure that was just reported.
- */
-function rollbackUnverifiedInstall(installDir: string): void {
-  const currentServer = resolveServerPath(getSettings())
-  // Never remove the directory backing the engine in use: re-installing the same stamp replaces
-  // it in place, and deleting it would leave the app with no engine at all.
-  if (currentServer && isInside(installDir, currentServer)) return
+  const { serverPath, stagingDir } = await stageTree(extractDir, source.stamp)
   try {
-    rmSync(installDir, { recursive: true, force: true })
-  } catch {
-    // best effort: an orphan directory is less bad than losing the install report
+    rmSync(archivePath, { force: true })
+    if (effectiveVariant === 'system-cuda' && cudaWheels) {
+      publish({ phase: 'cuda_libs' })
+      await installCudaWheels(stagingDir, flavour)
+    } // free the archive before the CUDA-libs download
+    rmSync(workDir, { recursive: true, force: true })
+    return { serverPath, stagingDir, stamp: source.stamp, effectiveVariant, fallbackNote }
+  } catch (error) {
+    rmSync(stagingDir, { recursive: true, force: true })
+    throw error
   }
 }
 
@@ -781,6 +777,7 @@ export async function downloadMossInfer(
   let architectureNote: string | undefined
   let flavourNote: string | undefined
   let selectedGpuUuid: string | undefined
+  let pendingStagingDir: string | undefined
   try {
     let architecture: Architecture = architectureChoice === 'auto' ? 'standard' : architectureChoice
     if (architectureChoice === 'auto') {
@@ -829,14 +826,14 @@ export async function downloadMossInfer(
     }
     const driverError = mossInferDriverCompatibilityError(flavour, targetGpu?.driverVersion)
     if (driverError) throw new Error(driverError)
-    let installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
-    let probe = await probeEngine(installed.serverPath)
-    let recommended = probe.probe?.recommendedFlavour ?? ''
+    const installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
+    pendingStagingDir = installed.stagingDir
+    const probe = await probeEngine(installed.serverPath)
+    const recommended = probe.probe?.recommendedFlavour ?? ''
     if (recommended && recommended !== flavour) {
       flavourNote = `引擎建议 CUDA ${recommended.slice(2)}，当前仍保留默认 CUDA ${flavour.slice(2)}；请按 GPU 兼容性结果更新驱动`
     }
     if (!protocolCompatible(probe)) {
-      rollbackUnverifiedInstall(installed.installDir)
       throw new Error(`新引擎协议为 ${probe.protocol}，需要 protocol 2；未激活该构建`)
     }
     const validationWarnings: string[] = []
@@ -846,7 +843,6 @@ export async function downloadMossInfer(
       verificationGpu = currentInventory.devices.find((device) => device.uuid === selectedGpuUuid) ?? targetGpu
     }
     if (!verificationGpu) {
-      rollbackUnverifiedInstall(installed.installDir)
       throw new Error('没有可用于验证新引擎的 NVIDIA GPU；未激活该构建')
     }
     const verdict = judgeEngineSupport(
@@ -859,7 +855,6 @@ export async function downloadMossInfer(
     )
     validationWarnings.push(...verdict.warnings)
     if (!verdict.ok) {
-      rollbackUnverifiedInstall(installed.installDir)
       const driverError = mossInferDriverCompatibilityError(flavour, verificationGpu.driverVersion)
       throw new Error(
         [
@@ -869,18 +864,41 @@ export async function downloadMossInfer(
         ].filter(Boolean).join(' '),
       )
     }
+    const promotion = await promoteInstall({
+      root: paths.mossinfer(),
+      stagingDir: installed.stagingDir,
+      stamp: installed.stamp,
+      currentServerPath: resolveServerPath(getSettings()),
+      manifest: {
+        schemaVersion: 1,
+        stamp: installed.stamp,
+        engineVersion: probe.version,
+        protocol: probe.protocol,
+        verifiedAt: new Date().toISOString(),
+        architecture,
+        flavour,
+        variant: installed.effectiveVariant,
+        device: verdict.device,
+        devices: probe.probe?.devices ?? [],
+        cublasLt: probe.probe?.cublasLt,
+      },
+      beforeReplace: shutdownMossInfer,
+    })
+    pendingStagingDir = undefined
+    const serverPath = engineServerPath(promotion.installDir)
     const update = updateSettings({
-      mossInferServerPath: installed.serverPath,
+      mossInferServerPath: serverPath,
       mossInferChannel: channel,
       mossInferVariant: installed.effectiveVariant,
       mossInferArchitecture: architectureChoice,
     })
     emit(Events.settingsChanged, update)
-    await shutdownMossInfer() // next job spawns the freshly installed binary
+    await shutdownMossInfer() // 激活其他版本后，下一次任务也不能复用旧二进制 runtime。
+    await cleanupPromotedInstall(promotion)
     publish({
       phase: 'done',
       percent: 100,
-      serverPath: installed.serverPath,
+      serverPath,
       recommendedFlavour: recommended,
       variant: installed.effectiveVariant,
       architecture,
@@ -888,6 +906,10 @@ export async function downloadMossInfer(
       cublaslt: probe.probe?.cublasLt,
     })
   } catch (error) {
+    if (pendingStagingDir) {
+      rmSync(pendingStagingDir, { recursive: true, force: true })
+      pendingStagingDir = undefined
+    }
     publish({
       phase: operationController.signal.aborted ? 'canceled' : 'error',
       error: operationController.signal.aborted ? undefined : error instanceof Error ? error.message : String(error),
