@@ -47,7 +47,9 @@ function onboarding(hostId = 'local'): OnboardingStatus {
 
 let savedSettings: Settings = {
   theme: 'system', uiAnimation: 'system', language: 'zh-CN', networkMode: 'auto', gitMirror: null,
-  pipIndex: null, hfEndpoint: null, modelsRoot: null, pythonPath: null,
+  pipIndex: null, hfEndpoint: null, modelsRoot: null,
+  modelDirectories: { dit: null, textEncoder: null, vae: null, support: null, adapters: null },
+  pythonPath: null,
   autoCheckUpdates: false, desktopNotifications: false, updateChannel: 'stable',
   dismissedAnnouncements: [], dismissedUpdateVersion: null, sidebarCollapsed: false,
   onboardingState: 'dismissed', onboardingHostId: 'local',
