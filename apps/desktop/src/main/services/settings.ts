@@ -11,6 +11,13 @@ export const DEFAULT_SETTINGS: Settings = {
   pipIndex: null,
   hfEndpoint: null,
   modelsRoot: null,
+  modelDirectories: {
+    dit: null,
+    textEncoder: null,
+    vae: null,
+    support: null,
+    adapters: null,
+  },
   pythonPath: null,
   torchBackend: 'auto',
   torchIndex: null,
@@ -36,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mossInferTier: 'high',
   mossInferChannel: 'stable',
   mossInferVariant: 'system-cuda',
+  mossInferArchitecture: 'auto',
   githubToken: null,
   disabledDevices: [],
   deviceLabels: {},
@@ -48,9 +56,16 @@ export function getSettings(): Settings {
   try {
     const raw = readFileSync(paths.settings(), 'utf8')
     const parsed = JSON.parse(raw) as Partial<Settings>
-    cache = { ...DEFAULT_SETTINGS, ...parsed }
+    cache = {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      modelDirectories: { ...DEFAULT_SETTINGS.modelDirectories, ...parsed.modelDirectories },
+    }
     if (!Array.isArray(cache.dismissedAnnouncements)) cache.dismissedAnnouncements = []
-    if ((cache.mossInferVariant as string) === 'sm75') cache.mossInferVariant = 'system-cuda'
+    if ((cache.mossInferVariant as string) === 'sm75') {
+      cache.mossInferVariant = 'system-cuda'
+      cache.mossInferArchitecture = 'sm75'
+    }
     // MossInfer 2.0 (server protocol 2) removed the auto tier: load requires
     // reference | high | turbo. Map legacy configs to the recommended default.
     if ((cache.mossInferTier as string) === 'auto') cache.mossInferTier = 'high'
@@ -62,7 +77,12 @@ export function getSettings(): Settings {
 }
 
 export function updateSettings(patch: Partial<Settings>): Settings {
-  const next: Settings = { ...getSettings(), ...patch }
+  const current = getSettings()
+  const next: Settings = {
+    ...current,
+    ...patch,
+    modelDirectories: { ...current.modelDirectories, ...patch.modelDirectories },
+  }
   if (patch.dismissedAnnouncements) {
     next.dismissedAnnouncements = Array.from(new Set(patch.dismissedAnnouncements)).slice(-200)
   }

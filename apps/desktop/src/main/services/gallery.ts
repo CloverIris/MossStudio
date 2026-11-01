@@ -4,6 +4,7 @@ import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { protocol } from 'electron'
 import type { GalleryDetail, GalleryItem, GalleryPage, Settings } from '@shared/types'
+import { revealInFileManager } from '../lib/fileManager'
 import { isInside, paths } from '../lib/paths'
 import { getSettings } from './settings'
 
@@ -229,8 +230,7 @@ export async function readGalleryFile(file: string): Promise<{ base64: string; m
 export async function revealInFolder(file: string): Promise<void> {
   const roots = await galleryRoots()
   if (!roots.some((root) => isInside(root, file))) throw new Error('文件不在画廊目录中')
-  const { shell } = await import('electron')
-  shell.showItemInFolder(file)
+  await revealInFileManager(file)
 }
 
 export function registerGalleryProtocol(): void {

@@ -1,6 +1,20 @@
 @echo off
 setlocal
 
+REM Explorer access on this Windows setup requires MossStudio's elevated token.
+powershell -NoProfile -Command "$identity = [Security.Principal.WindowsIdentity]::GetCurrent(); $principal = [Security.Principal.WindowsPrincipal]::new($identity); if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 0 } else { exit 1 }"
+if errorlevel 1 (
+  set "MOSSSTUDIO_START_SCRIPT=%~f0"
+  set "MOSSSTUDIO_START_DIR=%~dp0"
+  powershell -NoProfile -Command "$arguments = @('/c', ('""' + $env:MOSSSTUDIO_START_SCRIPT + '""')); Start-Process -FilePath $env:ComSpec -ArgumentList $arguments -WorkingDirectory $env:MOSSSTUDIO_START_DIR -Verb RunAs"
+  if errorlevel 1 (
+    echo MossStudio needs administrator permission to open Windows Explorer.
+    pause
+    exit /b 1
+  )
+  exit /b 0
+)
+
 set "APP=%~dp0apps\desktop"
 set "EXE=%APP%\node_modules\electron\dist\electron.exe"
 set "LOG=%~dp0.tools\start.log"

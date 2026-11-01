@@ -8,7 +8,6 @@ import {
   rename,
   rm,
   stat,
-  statfs,
   unlink,
   writeFile,
 } from 'node:fs/promises'
@@ -24,6 +23,7 @@ import type {
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
+import { assertFreeSpace } from '../lib/disk'
 import { getLastNetwork } from './network'
 import { localReleaseDir } from './updates'
 import { listJobs } from './supervisor'
@@ -113,7 +113,7 @@ let catalogRoot = ''
 let catalogCache: Catalog | null = null
 
 function localAdapterFile(settings: Settings): string {
-  return join(paths.adapters(settings.modelsRoot), 'index.json')
+  return join(paths.adapters(settings.modelsRoot, settings.modelDirectories), 'index.json')
 }
 
 async function readLocalAdapters(settings: Settings): Promise<LocalAdapterRecord[]> {
@@ -137,7 +137,7 @@ export async function registerTrainedAdapter(
   },
 ): Promise<AdapterEntry> {
   const id = input.id.replace(/[^A-Za-z0-9._-]/g, '-')
-  const destDir = join(paths.adapters(settings.modelsRoot), id)
+  const destDir = join(paths.adapters(settings.modelsRoot, settings.modelDirectories), id)
   await mkdir(destDir, { recursive: true })
   const file = basename(input.sourcePath)
   await copyFile(input.sourcePath, join(destDir, file))
@@ -180,7 +180,7 @@ export async function registerTrainedAdapter(
 
 /** Resolve an installed adapter's weight file (LoRA safetensors) on disk; null when missing. */
 export async function resolveAdapterFile(settings: Settings, id: string): Promise<string | null> {
-  const dir = join(paths.adapters(settings.modelsRoot), id)
+  const dir = join(paths.adapters(settings.modelsRoot, settings.modelDirectories), id)
   try {
     const raw = JSON.parse(await readFile(join(dir, 'adapter.json'), 'utf8')) as { files?: string[] }
     const file = (raw.files ?? []).find((item) => item.endsWith('.safetensors'))
@@ -222,7 +222,15 @@ function blobKey(file: ModelFile): string {
   return file.oid ?? createHash('sha1').update(file.path).digest('hex')
 }
 
-function cacheDir(settings: Settings, repo: string): string {
+function cacheDir(settings: Settings, repo: string, role: ModelEntry['role'] = 'full'): string {
+  if (
+    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) ||
+    repo.split('/').some((part) => part === '.' || part === '..')
+  )
+    throw new Error('无效的模型仓库 ID')
+  return join(paths.roleHub(role, settings.modelsRoot, settings.modelDirectories), `models--${repo.replace('/', '--')}`)
+}
+function legacyCacheDir(settings: Settings, repo: string): string {
   if (
     !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) ||
     repo.split('/').some((part) => part === '.' || part === '..')
@@ -230,55 +238,72 @@ function cacheDir(settings: Settings, repo: string): string {
     throw new Error('无效的模型仓库 ID')
   return join(paths.hub(settings.modelsRoot), `models--${repo.replace('/', '--')}`)
 }
-function marker(settings: Settings, id: string, repo: string): string {
-  return join(cacheDir(settings, repo), `.clover-${id.replace(/[^A-Za-z0-9._-]/g, '-')}.json`)
+function cacheLocations(settings: Settings, repo: string, role: ModelEntry['role']): string[] {
+  return [...new Set([cacheDir(settings, repo, role), legacyCacheDir(settings, repo)])]
+}
+function markerAt(dir: string, id: string): string {
+  return join(dir, `.clover-${id.replace(/[^A-Za-z0-9._-]/g, '-')}.json`)
+}
+function marker(settings: Settings, id: string, repo: string, role: ModelEntry['role'] = 'full'): string {
+  return markerAt(cacheDir(settings, repo, role), id)
 }
 const installing = new Set<string>()
 const deleting = new Set<string>()
-async function readInstall(
+interface InstallLocation {
+  record: InstallRecord
+  dir: string
+}
+
+async function findInstall(
   settings: Settings,
   model: Pick<ModelEntry, 'id' | 'repo' | 'revision' | 'role' | 'format' | 'subfolder'>,
-): Promise<InstallRecord | null> {
-  try {
-    const record = JSON.parse(
-      await readFile(marker(settings, model.id, model.repo), 'utf8'),
-    ) as InstallRecord
-    if (
-      record.version !== 2 ||
-      record.id !== model.id ||
-      record.repo !== model.repo ||
-      record.revision !== model.revision ||
-      !/^[a-f0-9]{40,64}$/.test(record.sha)
-    )
-      return null
-    const root = join(cacheDir(settings, model.repo), 'snapshots', record.sha)
-    if (
-      !(await validateSnapshot(
-        root,
-        record.entries,
-        model.format === 'comfyui' ? 'comfyui' : model.role,
-        model.subfolder,
-      ))
-    )
-      return null
-    if (model.role === 'full') {
-      for (const [role, folder] of [
-        ['dit', 'transformer'],
-        ['text_encoder', 'text_encoder'],
-        ['vae', 'vae'],
-        ['support', ''],
-      ]) {
-        if (!(await validateSnapshot(root, record.entries, role!, folder))) return null
+): Promise<InstallLocation | null> {
+  for (const dir of cacheLocations(settings, model.repo, model.role)) {
+    try {
+      const record = JSON.parse(await readFile(markerAt(dir, model.id), 'utf8')) as InstallRecord
+      if (
+        record.version !== 2 ||
+        record.id !== model.id ||
+        record.repo !== model.repo ||
+        record.revision !== model.revision ||
+        !/^[a-f0-9]{40,64}$/.test(record.sha)
+      )
+        continue
+      const root = join(dir, 'snapshots', record.sha)
+      if (
+        !(await validateSnapshot(
+          root,
+          record.entries,
+          model.format === 'comfyui' ? 'comfyui' : model.role,
+          model.subfolder,
+        ))
+      )
+        continue
+      if (model.role === 'full') {
+        let valid = true
+        for (const [role, folder] of [
+          ['dit', 'transformer'],
+          ['text_encoder', 'text_encoder'],
+          ['vae', 'vae'],
+          ['support', ''],
+        ]) {
+          if (!(await validateSnapshot(root, record.entries, role!, folder))) {
+            valid = false
+            break
+          }
+        }
+        if (!valid) continue
       }
+      return { record, dir }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') continue
     }
-    return record
-  } catch {
-    return null
   }
+  return null
 }
 
 export async function getCatalog(settings: Settings, force = false): Promise<Catalog> {
-  const key = paths.models(settings.modelsRoot)
+  const key = JSON.stringify([paths.models(settings.modelsRoot), settings.modelDirectories])
   if (catalogCache && catalogRoot === key && !force) return catalogCache
   let raw = BUILTIN
   let source: Catalog['source'] = 'builtin'
@@ -339,36 +364,39 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
         installed: false,
         installedBytes: 0,
       }
-      const record = await readInstall(settings, entry)
+      const location = await findInstall(settings, entry)
+      const record = location?.record
       entry.installed = Boolean(record)
       entry.installedBytes = record?.entries.reduce((n, f) => n + f.size, 0) ?? 0
       const task = tasks.get(`model:${entry.id}`)
-      let partial =
-        existsSync(`${marker(settings, entry.id, entry.repo)}.pending`) ||
-        existsSync(marker(settings, entry.id, entry.repo))
-      try {
-        const sha = (
-          await readFile(join(cacheDir(settings, entry.repo), 'refs', entry.revision), 'utf8')
-        ).trim()
-        if (/^[a-f0-9]{40,64}$/.test(sha)) {
-          const snapshot = join(cacheDir(settings, entry.repo), 'snapshots', sha)
-          partial ||= (
-            await Promise.all(
-              (entry.files ?? []).map((pattern) =>
-                fileSize(
-                  safePath(
-                    snapshot,
-                    pattern.includes('*')
-                      ? pattern.slice(0, pattern.indexOf('*')).replace(/\/$/, '')
-                      : pattern,
+      const locations = cacheLocations(settings, entry.repo, entry.role)
+      let partial = locations.some((dir) =>
+        existsSync(`${markerAt(dir, entry.id)}.pending`) || existsSync(markerAt(dir, entry.id)),
+      )
+      for (const dir of locations) {
+        try {
+          const sha = (await readFile(join(dir, 'refs', entry.revision), 'utf8')).trim()
+          if (/^[a-f0-9]{40,64}$/.test(sha)) {
+            const snapshot = join(dir, 'snapshots', sha)
+            partial ||= (
+              await Promise.all(
+                (entry.files ?? []).map((pattern) =>
+                  fileSize(
+                    safePath(
+                      snapshot,
+                      pattern.includes('*')
+                        ? pattern.slice(0, pattern.indexOf('*')).replace(/\/$/, '')
+                        : pattern,
+                    ),
                   ),
                 ),
-              ),
-            )
-          ).some((size) => size >= 0)
+              )
+            ).some((size) => size >= 0)
+          }
+        } catch {
+          /* No cached snapshot in this storage root. */
         }
-      } catch {
-        /* No cached snapshot for this component. */
+        if (partial) break
       }
       entry.installState = entry.installed
         ? 'ready'
@@ -412,7 +440,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
   }
   const adapters: AdapterEntry[] = await Promise.all(
     (raw.adapters ?? []).map(async (adapter) => {
-      const dir = join(paths.adapters(settings.modelsRoot), adapter.id)
+      const dir = join(paths.adapters(settings.modelsRoot, settings.modelDirectories), adapter.id)
       const ready = await Promise.all(adapter.files.map((f) => fileSize(safePath(dir, f))))
       const installed = existsSync(join(dir, 'adapter.json')) && ready.every((n) => n > 0)
       return {
@@ -477,14 +505,6 @@ function endpoint(settings: Settings): string {
     '',
   )
 }
-async function freeSpace(target: string): Promise<number> {
-  try {
-    const info = await statfs(target)
-    return Number(info.bavail) * Number(info.bsize)
-  } catch {
-    return 0
-  }
-}
 const repoRequests = new Map<string, Promise<Snapshot>>()
 async function resolveRepo(repo: string, revision: string, settings: Settings): Promise<Snapshot> {
   const key = `${endpoint(settings)}/${repo}@${revision}`
@@ -507,19 +527,34 @@ async function runModelDownload(
   signal.throwIfAborted()
   const selected = selectFiles(files, entry.files)
   if (!selected.length) throw new Error('模型文件不在仓库中')
-  const dir = cacheDir(settings, entry.repo)
+  const dir = cacheDir(settings, entry.repo, entry.role)
   const root = join(dir, 'snapshots', sha)
   const total = selected.reduce((n, file) => n + file.size, 0)
-  const oldRecord = await readInstall(settings, entry)
+  const oldLocation = await findInstall(settings, entry)
+  const oldRecord = oldLocation?.dir === dir ? oldLocation.record : null
   let pendingOwned: string[] = []
-  const pendingFile = `${marker(settings, entry.id, entry.repo)}.pending`
+  const pendingFile = `${marker(settings, entry.id, entry.repo, entry.role)}.pending`
   try {
     pendingOwned = JSON.parse(await readFile(pendingFile, 'utf8')).owned ?? []
   } catch {
     /* No partial installation. */
   }
   const owned = new Set([...(oldRecord?.owned ?? []), ...pendingOwned])
-  const repos = await readdir(paths.hub(settings.modelsRoot)).catch(() => [] as string[])
+  const hubs = [...new Set([
+    paths.hub(settings.modelsRoot),
+    ...(['dit', 'text_encoder', 'vae', 'support'] as const).map((role) =>
+      paths.roleHub(role, settings.modelsRoot, settings.modelDirectories),
+    ),
+  ])]
+  const repos = (
+    await Promise.all(
+      hubs.map(async (hub) =>
+        (await readdir(hub).catch(() => [] as string[]))
+          .filter((name) => name.startsWith('models--'))
+          .map((name) => join(hub, name)),
+      ),
+    )
+  ).flat()
   const importedModels = await readImportedModels(importedModelsIndex(settings))
   // Reuse matching HF blobs from older full Base/SFT installations before requesting bytes.
   for (const file of selected) {
@@ -548,8 +583,8 @@ async function runModelDownload(
         }
       }
     }
-    for (const repo of repos.filter((name) => name.startsWith('models--'))) {
-      const candidate = join(paths.hub(settings.modelsRoot), repo, 'blobs', file.oid)
+    for (const repo of repos) {
+      const candidate = join(repo, 'blobs', file.oid)
       if (candidate === blob || (await fileSize(candidate)) !== file.size) continue
       if (file.oid.length === 64 && (await hashFile(candidate)) !== file.oid) continue
       await materialize(candidate, blob)
@@ -563,11 +598,11 @@ async function runModelDownload(
     if ((await fileSize(blob)) !== file.size)
       missing += Math.max(0, file.size - Math.max(0, await fileSize(`${blob}.part`)))
   }
-  const free = await freeSpace(paths.models(settings.modelsRoot))
-  if (missing > 0 && free > 0 && free < missing * 1.05 + 1024 ** 3)
-    throw new Error(
-      `磁盘空间不足：还需约 ${(missing / 1024 ** 3).toFixed(1)} GB，剩余 ${(free / 1024 ** 3).toFixed(1)} GB`,
-    )
+  await assertFreeSpace(
+    paths.roleRoot(entry.role, settings.modelsRoot, settings.modelDirectories),
+    missing + (missing > 0 ? 1024 ** 3 : 0),
+    `模型组件 ${entry.name}`,
+  )
   touch(task, { filesTotal: selected.length, totalBytes: total, state: 'running' })
   let done = 0
   let last = Date.now()
@@ -657,7 +692,7 @@ async function runModelDownload(
     entries: selected,
     owned: [...owned],
   }
-  const dest = marker(settings, entry.id, entry.repo)
+  const dest = marker(settings, entry.id, entry.repo, entry.role)
   await writeFile(`${dest}.tmp`, JSON.stringify(record, null, 2))
   await rename(`${dest}.tmp`, dest)
   await unlink(pendingFile).catch(() => undefined)
@@ -671,8 +706,10 @@ async function runAdapterDownload(
 ): Promise<void> {
   const { sha, files } = await resolveRepo(entry.repo, entry.revision, settings)
   const selected = selectFiles(files, entry.files)
+  if (!selected.length) throw new Error('适配器文件不在仓库中')
   const total = selected.reduce((n, file) => n + file.size, 0)
-  const dir = join(paths.adapters(settings.modelsRoot), entry.id)
+  const dir = join(paths.adapters(settings.modelsRoot, settings.modelDirectories), entry.id)
+  await assertFreeSpace(paths.adapters(settings.modelsRoot, settings.modelDirectories), total, `适配器 ${entry.name}`)
   touch(task, { filesTotal: selected.length, totalBytes: total, state: 'running' })
   let done = 0
   for (const [index, file] of selected.entries()) {
@@ -830,9 +867,13 @@ export async function componentSnapshot(
 ): Promise<{ model: ModelEntry; record: InstallRecord; root: string }> {
   const model = (await getCatalog(settings)).models.find((m) => m.id === id)
   if (!model) throw new Error(`组件不存在：${id}`)
-  const record = await readInstall(settings, model)
-  if (!record) throw new Error(`组件未就绪：${model.name}。请在模型库补齐组件。`)
-  return { model, record, root: join(cacheDir(settings, model.repo), 'snapshots', record.sha) }
+  const location = await findInstall(settings, model)
+  if (!location) throw new Error(`组件未就绪：${model.name}。请在模型库补齐组件。`)
+  return {
+    model,
+    record: location.record,
+    root: join(location.dir, 'snapshots', location.record.sha),
+  }
 }
 
 export async function deleteModel(
@@ -852,7 +893,7 @@ export async function deleteModel(
     if ((await listJobs()).some((job) => ['starting', 'running', 'canceling'].includes(job.state)))
       throw new Error('有任务正在运行，请结束任务后再删除模型文件')
     if (kind === 'adapter') {
-      await rm(join(paths.adapters(settings.modelsRoot), id), { recursive: true, force: true })
+      await rm(join(paths.adapters(settings.modelsRoot, settings.modelDirectories), id), { recursive: true, force: true })
       const adapters = (await readLocalAdapters(settings)).filter((a) => a.id !== id)
       await writeFile(
         localAdapterFile(settings),
@@ -867,19 +908,24 @@ export async function deleteModel(
       invalidateCatalog()
       return
     }
-    let record: InstallRecord
-    try {
-      record = JSON.parse(await readFile(marker(settings, id, model.repo), 'utf8')) as InstallRecord
-    } catch {
-      try {
-        record = JSON.parse(
-          await readFile(`${marker(settings, id, model.repo)}.pending`, 'utf8'),
-        ) as InstallRecord
-      } catch {
-        throw new Error('此缓存没有受管安装记录，未删除外部文件')
+    let record: InstallRecord | null = null
+    let dir = ''
+    let markerFile = ''
+    for (const candidate of cacheLocations(settings, model.repo, model.role)) {
+      for (const path of [markerAt(candidate, id), `${markerAt(candidate, id)}.pending`]) {
+        try {
+          record = JSON.parse(await readFile(path, 'utf8')) as InstallRecord
+          dir = candidate
+          markerFile = markerAt(candidate, id)
+          break
+        } catch {
+          continue
+        }
       }
+      if (record) break
     }
     if (
+      !record ||
       record.version !== 2 ||
       record.id !== id ||
       record.repo !== model.repo ||
@@ -903,14 +949,14 @@ export async function deleteModel(
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
     }
-    const dir = cacheDir(settings, model.repo)
     const otherRecords: InstallRecord[] = []
+    const ownMarker = basename(markerFile)
     for (const name of await readdir(dir)) {
       if (
         !name.startsWith('.clover-') ||
         (!name.endsWith('.json') && !name.endsWith('.json.pending')) ||
-        name === basename(marker(settings, id, model.repo)) ||
-        name === `${basename(marker(settings, id, model.repo))}.pending`
+        name === ownMarker ||
+        name === `${ownMarker}.pending`
       )
         continue
       try {
@@ -940,8 +986,8 @@ export async function deleteModel(
       await unlink(`${blob}.part`).catch(() => undefined)
       await unlink(ownership).catch(() => undefined)
     }
-    await unlink(marker(settings, id, model.repo)).catch(() => undefined)
-    await unlink(`${marker(settings, id, model.repo)}.pending`).catch(() => undefined)
+    await unlink(markerFile).catch(() => undefined)
+    await unlink(`${markerFile}.pending`).catch(() => undefined)
     invalidateCatalog()
   } finally {
     deleting.delete(id)

@@ -140,7 +140,7 @@ function mapErr(code: string): string {
 function engineFailureMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   if (/cudaErrorNoKernelImageForDevice|no kernel image is available/i.test(message)) {
-    return `E_DEVICE: 当前引擎构建没有适配此 GPU 的 CUDA kernel image。RTX 20 系列需要在引擎页选择本地 SM75/第三方引擎目录；更换性能档不能绕过硬件兼容限制。原始错误：${message}`
+    return `E_DEVICE: 当前引擎构建没有适配此 GPU 的 CUDA kernel image。RTX 20/Turing 请在引擎页选择 SM75 架构包或兼容的本地引擎；更换性能档不能绕过硬件兼容限制。原始错误：${message}`
   }
   return message
 }
@@ -434,7 +434,7 @@ async function ensureEngine(config: EngineConfig, settings: Settings): Promise<n
   if (!selected) {
     throw new Error(
       config.device < 0
-        ? 'E_DEVICE: 未检测到当前 MossInfer 构建支持的 NVIDIA GPU；RTX 20 系列需要选择本地 SM75/第三方引擎目录。'
+        ? 'E_DEVICE: 未检测到当前 MossInfer 构建支持的 NVIDIA GPU；RTX 20/Turing 请下载 SM75 架构包或选择兼容的本地引擎。'
         : `E_DEVICE: MossInfer 未检测到 CUDA 设备 ${config.device}`,
     )
   }

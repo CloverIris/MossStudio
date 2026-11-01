@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { getSettings } from './services/settings'
@@ -148,6 +148,27 @@ export async function runModelManagementTests(): Promise<void> {
       oldRequests,
     )
     assert((await componentSnapshot('qwen35-encoder', imported)).record.entries.length > 0)
+    const encoder = (await getCatalog(imported, true)).models.find((model) => model.id === 'qwen35-encoder')!
+    const encoderCacheName = `models--${encoder.repo.replace('/', '--')}`
+    const legacyEncoderCache = join(paths.hub(imported.modelsRoot), encoderCacheName)
+    await cp(
+      join(paths.roleHub('text_encoder', imported.modelsRoot, imported.modelDirectories), encoderCacheName),
+      legacyEncoderCache,
+      { recursive: true },
+    )
+    const relocated = {
+      ...imported,
+      modelDirectories: {
+        ...imported.modelDirectories,
+        textEncoder: join(app.getPath('userData'), 'custom-text-encoder'),
+      },
+    }
+    ensureDirs(relocated.modelsRoot, relocated.modelDirectories)
+    assert.equal(
+      (await getCatalog(relocated, true)).models.find((model) => model.id === 'qwen35-encoder')?.installed,
+      true,
+    )
+    assert((await componentSnapshot('qwen35-encoder', relocated)).root.startsWith(legacyEncoderCache))
     const external = {
       ...settings,
       modelsRoot: join(app.getPath('userData'), 'external-model-import'),

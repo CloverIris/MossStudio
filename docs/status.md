@@ -60,7 +60,7 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 
 ## 4. 已知限制
 
-- RTX 2080 是 Turing（CC 7.5），默认引擎构建面向 Ampere 8.0+，需配置 tier/attention 才能跑。
+- RTX 2080 是 Turing（CC 7.5）；在引擎页选择 SM75 架构包（上游 v2.1.1+，Windows CUDA 13）而非默认 SM80+ 构建。
 - 真实引擎下载、CUDA 库修补只在单台 Windows 机器上验证过；Linux 远端未验收。
 - 远端 HF 仅默认 SFT 全量；组件 bundle、断点续传、失败恢复未完成。
 - Trainer 仍依赖 Python/Git；GBC 依赖外部 Python 工具。

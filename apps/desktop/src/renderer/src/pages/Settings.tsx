@@ -21,12 +21,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Ipc } from '@shared/channels'
-import type { AppInfo, Settings } from '@shared/types'
+import type { AppInfo, ModelDirectoryId, Settings } from '@shared/types'
 import type { WebAccessInfo } from '@shared/backend'
 import defaultHomeBackground from '../assets/home-background.png'
 import { call } from '../lib/api'
 import { cloverUrl } from '../lib/clover'
-import { bytes } from '../lib/format'
 import { t } from '../lib/i18n'
 import { clearSavedSettings, pendingSettings } from '../lib/settingsDraft'
 import { useApp } from '../store'
@@ -88,6 +87,14 @@ export function SettingsPage(): React.JSX.Element {
     }
   }
 
+  async function refreshAppInfo(): Promise<void> {
+    try {
+      setAppInfo(await call<AppInfo>(Ipc.appInfo))
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    }
+  }
+
   async function openPath(path: string | undefined, label: string): Promise<void> {
     if (!path) {
       toast.push(`${label}尚未就绪，请先刷新环境检测`, 'info')
@@ -124,6 +131,7 @@ export function SettingsPage(): React.JSX.Element {
     try {
       await saveSettings(changes)
       setEdits((previous) => clearSavedSettings(previous, changes))
+      await refreshAppInfo()
       toast.push('设置已保存', 'success')
       await Promise.all([refreshEnv(), refreshDevices(), refreshWebAccess()])
     } catch (error) {
@@ -137,6 +145,7 @@ export function SettingsPage(): React.JSX.Element {
     try {
       await saveSettings(patch)
       setEdits((previous) => clearSavedSettings(previous, patch))
+      await refreshAppInfo()
       toast.push('已保存', 'success')
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
@@ -165,6 +174,18 @@ export function SettingsPage(): React.JSX.Element {
     const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: '选择训练器根目录' })
     if (!path) return
     await persist({ trainerRoot: path })
+  }
+
+  async function pickModelDirectory(key: ModelDirectoryId, label: string): Promise<void> {
+    const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: `选择${label}目录` })
+    if (!path || !draft) return
+    await persist({ modelDirectories: { ...draft.modelDirectories, [key]: path } })
+  }
+
+  async function pickModelsRoot(): Promise<void> {
+    const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: '选择模型默认根目录' })
+    if (!path) return
+    await persist({ modelsRoot: path })
   }
 
   async function pickBackground(): Promise<void> {
@@ -348,27 +369,60 @@ export function SettingsPage(): React.JSX.Element {
                     </IconButton>
                   </div>
                 </Row>
-<Row title="模型根目录" hint="留空使用默认；修改后模型库会重新扫描。">
+<Row title="模型默认根目录" hint="留空时默认位于软件安装目录旁的 data/models；按组件自定义的目录优先。">
                   <div className="flex items-center gap-1">
-                    <IconButton label="打开模型目录" onClick={() => void openPath(env?.device.modelsPath, '模型目录')} disabled={!env?.device.modelsPath}>
+    <IconButton label="打开模型目录" onClick={() => void openPath(draft.modelsRoot ?? appInfo?.modelsPath, '模型目录')} disabled={!appInfo?.modelsPath}>
                       <FolderOpen className="size-4" />
                     </IconButton>
                   </div>
                 </Row>
                 <Row stacked title="自定义路径">
-                  <Input
-                    value={draft.modelsRoot ?? ''}
-                    placeholder="留空使用默认目录"
-                    onChange={(event) => patch({ modelsRoot: event.target.value || null })}
-                    className="w-full font-mono text-caption"
-                  />
+                  <div className="flex items-center gap-1">
+    <Input
+      value={draft.modelsRoot ?? ''}
+      placeholder={appInfo?.modelsPath ?? '留空使用默认目录'}
+      onChange={(event) => patch({ modelsRoot: event.target.value || null })}
+      className="min-w-0 flex-1 font-mono text-caption"
+    />
+    <Button tone="ghost" onClick={() => void pickModelsRoot()}>选择</Button>
+    <Button tone="ghost" disabled={!draft.modelsRoot} onClick={() => void persist({ modelsRoot: null })}>默认</Button>
+                  </div>
                   <p className="mt-1 break-all font-mono text-caption text-[var(--color-text-tertiary)]">
-                    {env?.device.modelsPath ?? '—'}
+    默认路径：{appInfo?.modelsPath ?? '—'}
                   </p>
                 </Row>
-                <Row title="磁盘剩余" hint="模型目录所在分区。">
-                  <span className="font-mono text-ui">{bytes(env?.device.diskFree)}</span>
-                </Row>
+{([
+  ['dit', 'MOSS / DiT'],
+  ['textEncoder', '文本编码器'],
+  ['vae', 'VAE'],
+  ['support', '辅助组件'],
+  ['adapters', 'Adapters'],
+] as const).map(([key, label]) => {
+  const path = draft.modelDirectories[key] ?? appInfo?.modelDirectories[key] ?? '—'
+  return (
+    <Row key={key} stacked title={`${label}目录`} hint="留空则使用模型默认根目录下的分类子目录。">
+      <div className="flex items-center gap-1">
+        <span className="min-w-0 flex-1 break-all font-mono text-caption text-[var(--color-text-secondary)]">
+          {path}
+        </span>
+        <Button tone="ghost" onClick={() => void pickModelDirectory(key, label)}>选择</Button>
+        <Button
+          tone="ghost"
+          disabled={!draft.modelDirectories[key]}
+          onClick={() => void persist({ modelDirectories: { ...draft.modelDirectories, [key]: null } })}
+        >
+          默认
+        </Button>
+        <IconButton label={`打开${label}目录`} onClick={() => void openPath(path === '—' ? undefined : path, `${label}目录`)} disabled={path === '—'}>
+          <FolderOpen className="size-4" />
+        </IconButton>
+      </div>
+    </Row>
+  )
+})}
+<Row title="磁盘空间预检" hint="模型、Adapter 和推理引擎下载前会按各自目标目录所在磁盘检查可用空间。">
+  <span className="text-ui text-[var(--color-text-tertiary)]">自动检查</span>
+</Row>
               </div>
             </Card>
 

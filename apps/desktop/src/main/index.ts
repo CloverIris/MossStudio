@@ -128,7 +128,7 @@ async function runSmoke(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  ensureDirs(getSettings().modelsRoot)
+  ensureDirs(getSettings().modelsRoot, getSettings().modelDirectories)
   try { archiveLegacyInferenceData() } catch (error) { console.error('[migration]', error) }
   try { await purgeLegacySimulationJobs() } catch (error) { console.error('[migration] simulation jobs', error) }
   onJobCompleted((job) => {

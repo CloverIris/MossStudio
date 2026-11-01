@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import type { ModelDirectories, ModelEntry } from '@shared/types'
 
 let dataRootOverride: string | null = null
 let engineRootOverride: string | null = null
@@ -36,6 +37,32 @@ export function modelsRoot(custom?: string | null): string {
   return custom ? resolve(custom) : join(root(), 'models')
 }
 
+export function modelStorageRoot(
+  role: ModelEntry['role'],
+  customModelsRoot?: string | null,
+  directories?: Partial<ModelDirectories>,
+): string {
+  const key = role === 'text_encoder' ? 'textEncoder' : role === 'full' ? null : role
+  const custom = key ? directories?.[key]?.trim() : null
+  if (custom) return resolve(custom)
+  const folder: Record<ModelEntry['role'], string> = {
+    full: '',
+    dit: 'moss',
+    text_encoder: 'text-encoder',
+    vae: 'vae',
+    support: 'support',
+  }
+  return join(modelsRoot(customModelsRoot), folder[role])
+}
+
+export function adapterStorageRoot(
+  customModelsRoot?: string | null,
+  directories?: Partial<ModelDirectories>,
+): string {
+  const custom = directories?.adapters?.trim()
+  return custom ? resolve(custom) : join(modelsRoot(customModelsRoot), 'adapters')
+}
+
 export const paths = {
   root,
   engineRoot,
@@ -52,7 +79,12 @@ export const paths = {
   managedPython: () => join(root(), 'runtimes', 'python'),
   models: (custom?: string | null) => modelsRoot(custom),
   hub: (custom?: string | null) => join(modelsRoot(custom), 'hf', 'hub'),
-  adapters: (custom?: string | null) => join(modelsRoot(custom), 'adapters'),
+  roleRoot: (role: ModelEntry['role'], custom?: string | null, directories?: Partial<ModelDirectories>) =>
+    modelStorageRoot(role, custom, directories),
+  roleHub: (role: ModelEntry['role'], custom?: string | null, directories?: Partial<ModelDirectories>) =>
+    join(modelStorageRoot(role, custom, directories), 'hf', 'hub'),
+  adapters: (custom?: string | null, directories?: Partial<ModelDirectories>) =>
+    adapterStorageRoot(custom, directories),
   modelImports: (custom?: string | null) => join(modelsRoot(custom), 'imports'),
   downloads: () => join(root(), 'downloads'),
   outputs: () => join(root(), 'outputs'),
@@ -68,7 +100,10 @@ export const paths = {
   trainerRuntime: (id: string) => join(root(), 'trainer', 'runtimes', id),
 }
 
-export function ensureDirs(customModelsRoot?: string | null): void {
+export function ensureDirs(
+  customModelsRoot?: string | null,
+  modelDirectories?: Partial<ModelDirectories>,
+): void {
   const dirs = [
     paths.root(),
     paths.git(),
@@ -77,7 +112,10 @@ export function ensureDirs(customModelsRoot?: string | null): void {
     paths.managedPython(),
     paths.models(customModelsRoot),
     paths.hub(customModelsRoot),
-    paths.adapters(customModelsRoot),
+    ...(['dit', 'text_encoder', 'vae', 'support', 'full'] as const).map((role) =>
+      paths.roleHub(role, customModelsRoot, modelDirectories),
+    ),
+    paths.adapters(customModelsRoot, modelDirectories),
     paths.modelImports(customModelsRoot),
     paths.downloads(),
     paths.cache(),

@@ -121,6 +121,10 @@ export interface EnvReport {
   recommendation: Recommendation
 }
 
+export type ModelDirectoryId = 'dit' | 'textEncoder' | 'vae' | 'support' | 'adapters'
+
+export type ModelDirectories = Record<ModelDirectoryId, string | null>
+
 export interface Settings {
   theme: 'system' | 'light' | 'dark'
   uiAnimation: 'system' | 'on' | 'off'
@@ -130,6 +134,7 @@ export interface Settings {
   pipIndex: string | null
   hfEndpoint: string | null
   modelsRoot: string | null
+  modelDirectories: ModelDirectories
   pythonPath: string | null
   torchBackend: 'auto' | 'cpu' | 'cuda'
   torchIndex: string | null
@@ -155,6 +160,7 @@ export interface Settings {
   mossInferTier: 'reference' | 'high' | 'turbo'
   mossInferChannel: 'stable' | 'dev'
   mossInferVariant: 'system-cuda' | 'bundled'
+  mossInferArchitecture: 'auto' | 'standard' | 'sm75'
   githubToken: string | null
   disabledDevices: string[]
   deviceLabels: Record<string, string>
@@ -179,6 +185,7 @@ export interface MossInferDownloadState {
   serverPath?: string
   recommendedFlavour?: string
   variant?: 'system-cuda' | 'bundled'
+  architecture?: 'standard' | 'sm75'
   note?: string
   cublaslt?: unknown
   error?: string
@@ -715,6 +722,7 @@ export interface AppInfo {
   dataPath: string
     enginePath?: string
   modelsPath: string
+    modelDirectories: Record<ModelDirectoryId, string>
   acrylic: boolean
   backend?: BackendInfo
 }

@@ -1,7 +1,5 @@
-﻿import { app, clipboard, dialog, ipcMain, shell } from 'electron'
-import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { app, clipboard, dialog, ipcMain, shell } from 'electron'
+import { existsSync, mkdirSync, statSync } from 'node:fs'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
 import { schemas } from '@shared/schemas'
@@ -10,6 +8,7 @@ import type { AiToolCall, AiToolResult } from '@shared/ai'
 import type { IpcResult } from '@shared/types'
 import { emit } from './lib/events'
 import { ensureDirs, paths } from './lib/paths'
+import { openDirectoryInFileManager, revealInFileManager } from './lib/fileManager'
 import { scanEnvironment } from './services/env'
 import { getPythonInstallState, installManagedPython } from './services/managedPython'
 import { cancelDownload, getCatalog, deleteModel, importModelFolder, listDownloads, pauseDownload, startDownload, installBundle } from './services/models'
@@ -138,7 +137,9 @@ function runToolInRenderer(event: Electron.IpcMainInvokeEvent, call: AiToolCall)
 }
 
 export function registerIpc(): void {
-  handle(Ipc.appInfo, null, () => ({
+  handle(Ipc.appInfo, null, () => {
+    const settings = getSettings()
+    return {
     name: 'MossStudio',
     version: app.getVersion(),
     electron: process.versions.electron ?? '',
@@ -148,10 +149,18 @@ export function registerIpc(): void {
     arch: process.arch,
     dataPath: paths.root(),
     enginePath: paths.engineRoot(),
-    modelsPath: paths.models(getSettings().modelsRoot),
+    modelsPath: paths.models(settings.modelsRoot),
+    modelDirectories: {
+      dit: paths.roleRoot('dit', settings.modelsRoot, settings.modelDirectories),
+      textEncoder: paths.roleRoot('text_encoder', settings.modelsRoot, settings.modelDirectories),
+      vae: paths.roleRoot('vae', settings.modelsRoot, settings.modelDirectories),
+      support: paths.roleRoot('support', settings.modelsRoot, settings.modelDirectories),
+      adapters: paths.adapters(settings.modelsRoot, settings.modelDirectories),
+    },
     acrylic: false,
     backend: getBackendInfo(),
-  }))
+    }
+  })
 
   handle(Ipc.backendInfo, null, () => getBackendInfo())
 
@@ -361,7 +370,7 @@ export function registerIpc(): void {
   handle(Ipc.settingsUpdate, schemas.settingsUpdate, async (patch) => {
     const before = getSettings()
     const settings = updateSettings(patch)
-    ensureDirs(settings.modelsRoot)
+    ensureDirs(settings.modelsRoot, settings.modelDirectories)
     if (before.lanWebEnabled !== settings.lanWebEnabled || before.lanWebPort !== settings.lanWebPort) {
       stopBackend()
       await startBackend()
@@ -380,8 +389,8 @@ export function registerIpc(): void {
 
   handle(Ipc.updatesCancel, schemas.updatesCancel, ({ version }) => cancelUpdateDownload(version))
 
-  handle(Ipc.mossInferDownload, schemas.mossInferDownload, ({ channel, flavour, variant, cudaWheels, releaseTag }) =>
-    downloadMossInfer(channel, flavour, variant, cudaWheels, releaseTag),
+  handle(Ipc.mossInferDownload, schemas.mossInferDownload, ({ channel, flavour, variant, cudaWheels, releaseTag, architecture }) =>
+    downloadMossInfer(channel, flavour, variant, cudaWheels, releaseTag, architecture),
   )
 
   handle(Ipc.engineStatus, null, () => localEngineInfo())
@@ -521,7 +530,7 @@ export function registerIpc(): void {
 
   handle(Ipc.jobOpenLog, schemas.jobId, async ({ id }) => {
     const job = await getJob(id)
-    if (job?.logPath) shell.showItemInFolder(job.logPath)
+    if (job?.logPath) await revealInFileManager(job.logPath)
     return true
   })
 
@@ -565,65 +574,28 @@ export function registerIpc(): void {
   })
 
   handle(Ipc.openPath, schemas.openPath, async ({ path }) => {
-    const trace = (text: string): void => {
-      try {
-        mkdirSync(join(paths.root(), 'logs'), { recursive: true })
-        appendFileSync(join(paths.root(), 'logs', 'openpath.log'), `${new Date().toISOString()} ${text}\n`)
-      } catch {
-        // diagnostics only
-      }
-    }
-    const elevated = (() => {
-      try {
-        return String((spawnSync('whoami', ['/groups'], { encoding: 'utf8' }).stdout ?? '').includes('S-1-16-12288'))
-      } catch {
-        return 'unknown'
-      }
-    })()
-    trace(`request ${path} cwd=${process.cwd()} cwdExists=${existsSync(process.cwd())} elevated=${elevated}`)
-    try {
-      const allowed = [paths.root(), paths.models(getSettings().modelsRoot), paths.engineRoot(), paths.outputs()]
-      if (!allowed.some((base) => isInside(base, path))) throw new Error('路径不在允许范围内')
-      if (!existsSync(path)) mkdirSync(path, { recursive: true })
-      const stats = statSync(path)
-      if (!stats.isDirectory() && !stats.isFile()) throw new Error('目标路径不可打开')
-      // Explorer is the reliable way to open a folder on Windows. A sandboxed or
-      // restricted parent process cannot spawn it, so report that instead of
-      // swallowing the failure and leaving the button dead.
-      if (process.platform === 'win32' && stats.isDirectory()) {
-        // `cmd /c start` goes through ShellExecute the same way Explorer's own
-        // "open" does, and it is the one path that reliably opens a folder from
-        // a GUI process. Direct CreateProcess on explorer.exe can start and do
-        // nothing, and shell.openPath can report success without a window.
-        const child = spawn('cmd.exe', ['/c', 'start', '', path], { detached: true, stdio: 'ignore', windowsHide: true })
-        const failure = await new Promise<NodeJS.ErrnoException | null>((settle) => {
-          child.once('error', (error: NodeJS.ErrnoException) => settle(error))
-          child.once('spawn', () => { child.unref(); settle(null) })
-          setTimeout(() => settle(null), 800)
-        })
-        trace(failure ? `cmd start failed ${String(failure.code ?? failure.message)}` : 'cmd start ok')
-        if (!failure) return true
-        const message = await shell.openPath(path)
-        trace(`shell ${message || 'ok'}`)
-        if (message) throw new Error('无法打开目录：' + message)
-        return true
-      }
-      const error = await shell.openPath(path)
-      trace(`shell ${error || 'ok'}`)
-      if (error) {
-        if (stats.isDirectory()) {
-          const child = spawn(process.platform === 'win32' ? 'explorer.exe' : 'xdg-open', [path], { detached: true, stdio: 'ignore' })
-          child.on('error', () => undefined)
-          child.unref()
-        } else {
-          shell.showItemInFolder(path)
-        }
-      }
+    const settings = getSettings()
+    const allowed = [
+      paths.root(),
+      paths.models(settings.modelsRoot),
+      paths.engineRoot(),
+      paths.outputs(),
+      ...(['dit', 'text_encoder', 'vae', 'support'] as const).map((role) =>
+        paths.roleRoot(role, settings.modelsRoot, settings.modelDirectories),
+      ),
+      paths.adapters(settings.modelsRoot, settings.modelDirectories),
+    ]
+    if (!allowed.some((base) => isInside(base, path))) throw new Error('路径不在允许范围内')
+    if (!existsSync(path)) mkdirSync(path, { recursive: true })
+    const stats = statSync(path)
+    if (stats.isDirectory()) {
+      await openDirectoryInFileManager(path)
       return true
-    } catch (error) {
-      trace(`error ${error instanceof Error ? error.message : String(error)}`)
-      throw error
     }
+    if (!stats.isFile()) throw new Error('目标路径不可打开')
+    const error = await shell.openPath(path)
+    if (error) throw new Error(`无法打开文件：${error}`)
+    return true
   })
 
   handle(Ipc.openExternal, schemas.openExternal, async ({ url }) => {

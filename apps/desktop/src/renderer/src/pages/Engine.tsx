@@ -93,6 +93,9 @@ export function EnginePage(): React.JSX.Element {
   const [installingRemote, setInstallingRemote] = useState<string | null>(null)
   const [channel, setChannel] = useState<'stable' | 'dev'>('stable')
   const [variant, setVariant] = useState<'bundled' | 'system-cuda'>('system-cuda')
+  const [architecture, setArchitecture] = useState<'auto' | 'standard' | 'sm75'>(
+    settings?.mossInferArchitecture ?? 'auto',
+  )
   const [fallbackOpen, setFallbackOpen] = useState(false)
   const [preflight, setPreflight] = useState<{ supported: boolean; gpu: string; cublasLt: string[]; preferredFlavour?: 'cu12' | 'cu13'; error?: string } | null>(null)
   const [activeTab, setActiveTab] = useState<EngineTab>('inference')
@@ -136,6 +139,7 @@ export function EnginePage(): React.JSX.Element {
     if (hostId && hostId !== 'local') document.getElementById(`engine-${hostId}`)?.scrollIntoView({ block: 'start' })
   }, [location.key, location.search, hosts])
   useEffect(() => { setGithubToken(settings?.githubToken ?? '') }, [settings?.githubToken])
+  useEffect(() => { setArchitecture(settings?.mossInferArchitecture ?? 'auto') }, [settings?.mossInferArchitecture])
   useEffect(() => onEvent<{ id: string }>(Events.hostsChanged, () => { void refresh() }), [refresh])
   useEffect(() => onEvent<EngineRemoteProgress>(Events.engineRemoteProgress, (progress) => {
     setRemoteProgress((previous) => ({ ...previous, [progress.hostId]: progress }))
@@ -167,6 +171,7 @@ export function EnginePage(): React.JSX.Element {
       const next = await call<MossInferDownloadState>(Ipc.mossInferDownload, {
         channel,
         variant: selected,
+        architecture,
         flavour,
         cudaWheels,
         ...(channel === 'stable' && releaseTag ? { releaseTag } : {}),
@@ -564,7 +569,7 @@ export function EnginePage(): React.JSX.Element {
       <nav role="tablist" aria-label="引擎管理模式" className="flex w-fit max-w-full gap-1 rounded-lg border border-[var(--color-border-subtle)] bg-black/15 p-1">
         {([
           ['inference', '推理引擎'],
-          ['developer', '开发模式'],
+          ['developer', '自定义推理器'],
         ] as const).map(([id, label]) => (
           <button
             key={id}
@@ -619,7 +624,7 @@ export function EnginePage(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 border-t border-[var(--color-border-subtle)] pt-3 sm:grid-cols-[1fr_1fr_auto]">
+        <div className="mt-4 grid gap-2 border-t border-[var(--color-border-subtle)] pt-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
           <label className="space-y-1">
             <span className="text-caption text-[var(--color-text-tertiary)]">渠道</span>
             <select value={channel} onChange={(event) => setChannel(event.target.value as 'stable' | 'dev')} className="app-input w-full">
@@ -634,7 +639,15 @@ export function EnginePage(): React.JSX.Element {
               <option value="bundled">bundled CUDA（+700MB，免系统库）</option>
             </select>
           </label>
-          <Button data-oobe="engine" data-oobe-hint="选择渠道和包类型后下载引擎。缺少系统 CUDA 库时，可在弹窗中选择 bundled 包。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || Boolean(downloading)}>
+          <label className="space-y-1">
+            <span className="text-caption text-[var(--color-text-tertiary)]">GPU 架构</span>
+            <select value={architecture} onChange={(event) => setArchitecture(event.target.value as 'auto' | 'standard' | 'sm75')} className="app-input w-full">
+              <option value="auto">自动（从当前引擎检测）</option>
+              <option value="standard">标准架构（SM80+）</option>
+              <option value="sm75">SM75（RTX 20 / Turing）</option>
+            </select>
+          </label>
+          <Button data-oobe="engine" data-oobe-hint="选择渠道、包类型和 GPU 架构后下载。RTX 20/Turing GPU 选择 SM75；自动模式从当前引擎探测，首次安装时建议手动选择。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || Boolean(downloading)}>
             <Download className="size-4" /> 下载/更新引擎
           </Button>
         </div>
@@ -897,7 +910,7 @@ export function EnginePage(): React.JSX.Element {
             <div>
               <h2 className="text-[14px] font-semibold">第三方 / 本地开发引擎</h2>
               <p className="mt-1 max-w-[760px] text-caption leading-4 text-[var(--color-text-tertiary)]">
-                用于 SM75、定制编译或本地调试。选择包含 moss-server 的安装根目录或 bin 目录；接入前会验证 protocol 2，成功后会设为首页使用的 MossInfer 引擎。
+                用于自定义编译、未覆盖的 GPU 架构或本地调试。RTX 20/Turing 可优先下载上游 SM75 架构包。选择包含 moss-server 的安装根目录或 bin 目录；接入前会验证 protocol 2。
               </p>
             </div>
             <Pill tone={settings?.inferenceBackend === 'mossinfer' && engine?.available ? 'accent' : 'neutral'}>

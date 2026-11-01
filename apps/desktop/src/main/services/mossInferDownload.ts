@@ -12,11 +12,12 @@ import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
 import { run } from '../lib/run'
-import { probeMossInfer, shutdownMossInfer } from './mossInfer'
+import { probeMossInfer, resolveServerPath, shutdownMossInfer } from './mossInfer'
 import { installCudaWheels } from './cudaWheels'
 import { getSettings, updateSettings } from './settings'
 import { getLastNetwork, githubMirrorChain } from './network'
 import { assertFreeSpace } from '../lib/disk'
+import { mossInferArchiveBase, type MossInferArchitecture } from '../lib/engineAssets'
 
 /**
  * Downloads the MossInfer engine package from the upstream repo xycld/owoinfer:
@@ -173,11 +174,8 @@ function archiveExt(): 'tar.gz' | 'zip' {
 }
 
 type Variant = 'system-cuda' | 'bundled'
-
-function archiveBase(version: string, flavour: 'cu12' | 'cu13', variant: Variant): string {
-  const suffix = variant === 'system-cuda' ? '-system-cuda' : ''
-  return `mossinfer-${version}-${osToken()}-${flavour}-x86_64${suffix}`
-}
+type Architecture = MossInferArchitecture
+type ArchitectureChoice = 'auto' | Architecture
 
 const DOWNLOAD_ATTEMPTS = 6
 
@@ -279,7 +277,8 @@ async function downloadTo(
     if (size > 0) total = size
   }
   if (!(total > 0)) throw new Error('无法确定引擎包大小；请稍后重试')
-  await assertFreeSpace(part, total, '引擎包')
+  const partialBytes = existsSync(part) ? Math.min(statSync(part).size, total) : 0
+  await assertFreeSpace(part, total - partialBytes + total, '引擎下载及解压')
 
   const meta = readMeta(part, url, total) ?? { url, total, chunk: MIRROR_CHUNK, done: [] as number[] }
   const chunks = Math.ceil(total / MIRROR_CHUNK)
@@ -497,6 +496,7 @@ interface Source {
   stamp: string
   label: string
   effectiveVariant: Variant
+  architecture: Architecture
   fallbackNote?: string
 }
 
@@ -531,7 +531,11 @@ async function queryStable(
   variant: Variant,
   settings: Settings,
   releaseTag?: string,
+  architecture: Architecture = 'standard',
 ): Promise<Source> {
+  if (architecture === 'sm75' && (process.platform !== 'win32' || flavour !== 'cu13')) {
+    throw new Error('上游 SM75 Release 仅提供 Windows CUDA 13 构建')
+  }
   const release = (await ghJson(
     releaseTag ? `/releases/tags/${encodeURIComponent(releaseTag)}` : '/releases/latest',
     resolveGithubToken(settings),
@@ -541,7 +545,9 @@ async function queryStable(
   }
   const version = release.tag_name.replace(/^v/, '')
   const pick = (v: Variant): GhAsset | undefined =>
-    release.assets.find((item) => item.name === `${archiveBase(version, flavour, v)}.${archiveExt()}`)
+    release.assets.find((item) =>
+      item.name === `${mossInferArchiveBase(version, osToken(), flavour, v, architecture)}.${archiveExt()}`,
+    )
   let effectiveVariant = variant
   let asset = pick(variant)
   let fallbackNote: string | undefined
@@ -555,7 +561,7 @@ async function queryStable(
   }
   if (!asset) {
     throw new MissingReleaseAssetError(
-      `release ${release.tag_name} 里没有 ${archiveBase(version, flavour, variant)}.${archiveExt()}` +
+      `release ${release.tag_name} 里没有 ${mossInferArchiveBase(version, osToken(), flavour, variant, architecture)}.${archiveExt()}` +
         (release.assets.length ? `（现有资产：${release.assets.map((a) => a.name).slice(0, 6).join(', ')}…）` : '（该 release 还没有资产）'),
     )
   }
@@ -579,14 +585,23 @@ async function queryStable(
     token: null,
     totalHint: asset.size,
     expectedSha: expected,
-    stamp: `stable-${release.tag_name}-${flavour}${effectiveVariant === 'system-cuda' ? '-system-cuda' : ''}`,
+    stamp: `stable-${release.tag_name}-${flavour}${architecture === 'sm75' ? '-sm75' : ''}${effectiveVariant === 'system-cuda' ? '-system-cuda' : ''}`,
     label: `release ${release.tag_name}`,
     effectiveVariant,
+    architecture,
     fallbackNote,
   }
 }
 
-async function queryDev(flavour: 'cu12' | 'cu13', variant: Variant, settings: Settings): Promise<Source> {
+async function queryDev(
+  flavour: 'cu12' | 'cu13',
+  variant: Variant,
+  settings: Settings,
+  architecture: Architecture = 'standard',
+): Promise<Source> {
+  if (architecture === 'sm75' && (process.platform !== 'win32' || flavour !== 'cu13')) {
+    throw new Error('上游 SM75 CI 构建仅提供 Windows CUDA 13')
+  }
   const token = resolveGithubToken(settings)
   if (!token) {
     throw new Error(
@@ -601,7 +616,7 @@ async function queryDev(flavour: 'cu12' | 'cu13', variant: Variant, settings: Se
   const artifacts = (await ghJson(`/actions/runs/${runInfo.id}/artifacts`, token)) as {
     artifacts: GhArtifact[]
   }
-  const name = `mossinfer-${process.platform === 'win32' ? 'windows-msvc' : 'linux'}-${flavour === 'cu13' ? 'cuda13' : 'cuda12'}`
+  const name = `mossinfer-${process.platform === 'win32' ? 'windows-msvc' : 'linux'}-${flavour === 'cu13' ? 'cuda13' : 'cuda12'}${architecture === 'sm75' ? '-sm75' : ''}`
   const artifact = artifacts.artifacts.find((item) => item.name === name)
   if (!artifact) throw new Error(`ci 运行 ${runInfo.id} 里没有构件 ${name}`)
   if (artifact.expired) throw new Error(`构件 ${name} 已过期（CI 保留 7 天）`)
@@ -610,9 +625,10 @@ async function queryDev(flavour: 'cu12' | 'cu13', variant: Variant, settings: Se
     token,
     totalHint: artifact.size_in_bytes,
     expectedSha: null,
-    stamp: `dev-run${runInfo.id}-${runInfo.head_sha.slice(0, 8)}-${flavour}${variant === 'system-cuda' ? '-system-cuda' : ''}`,
+    stamp: `dev-run${runInfo.id}-${runInfo.head_sha.slice(0, 8)}-${flavour}${architecture === 'sm75' ? '-sm75' : ''}${variant === 'system-cuda' ? '-system-cuda' : ''}`,
     label: `ci run ${runInfo.id}（${runInfo.head_sha.slice(0, 8)}）`,
     effectiveVariant: variant, // final choice made after the outer zip is extracted
+    architecture,
   }
 }
 
@@ -623,12 +639,13 @@ async function downloadAndInstall(
   settings: Settings,
   cudaWheels = false,
   releaseTag?: string,
+  architecture: Architecture = 'standard',
 ): Promise<{ serverPath: string; stamp: string; effectiveVariant: Variant; fallbackNote?: string }> {
   let effectiveChannel: 'stable' | 'dev' = channel
   let source: Source
   if (channel === 'stable') {
     try {
-      source = await queryStable(flavour, variant, settings, releaseTag)
+      source = await queryStable(flavour, variant, settings, releaseTag, architecture)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const noLatestRelease = !releaseTag && /\/releases\/latest 返回 HTTP 404|Not Found/i.test(message)
@@ -636,10 +653,10 @@ async function downloadAndInstall(
       if (releaseTag || (!noLatestRelease && !noMatchingAsset)) throw error
       publish({ phase: 'querying', version: '上游没有 Release，回退到最新 CI artifact' })
       effectiveChannel = 'dev'
-      source = await queryDev(flavour, variant, settings)
+      source = await queryDev(flavour, variant, settings, architecture)
     }
   } else {
-    source = await queryDev(flavour, variant, settings)
+    source = await queryDev(flavour, variant, settings, architecture)
   }
   if (controller?.signal.aborted) throw new Error('已取消下载')
   publish({ phase: 'downloading', version: source.label, bytes: 0, totalBytes: source.totalHint })
@@ -667,6 +684,7 @@ async function downloadAndInstall(
           name.endsWith(`.${archiveExt()}`) &&
           name.startsWith('mossinfer-') &&
           name.includes(`-${flavour}-`) &&
+          (architecture === 'sm75' ? name.includes('-sm75') : !name.includes('-sm75')) &&
           (wantSystemCuda ? name.includes('-system-cuda') : !name.includes('-system-cuda')),
       )
     const wanted =
@@ -679,7 +697,7 @@ async function downloadAndInstall(
       fallbackNote = '该 CI 构件没有 system-cuda 变体（上游 workflow 更新前的运行），已回退到完整包'
     }
     // keep the install dir name honest about what actually landed
-    source.stamp = `${source.stamp.replace(/-system-cuda$/, '')}${effectiveVariant === 'system-cuda' ? '-system-cuda' : ''}`
+    source.stamp = `${source.stamp.replace(/-(?:sm75-)?system-cuda$/, '').replace(/-sm75$/, '')}${architecture === 'sm75' ? '-sm75' : ''}${effectiveVariant === 'system-cuda' ? '-system-cuda' : ''}`
     archivePath = join(outerDir, wanted)
     const shaFile = readdirSync(outerDir).find((name) => name === `${wanted}.sha256`)
     if (shaFile) {
@@ -712,11 +730,13 @@ export async function downloadMossInfer(
   variantInput?: Variant,
   cudaWheels = false,
   releaseTag?: string,
+  architectureInput?: ArchitectureChoice,
 ): Promise<MossInferDownloadState> {
   if (operationInProgress && current) return current
   if (current && !['done', 'error', 'canceled'].includes(current.phase)) return current
   const settings = getSettings()
   const variant: Variant = variantInput ?? settings.mossInferVariant
+  const architectureChoice = architectureInput ?? settings.mossInferArchitecture
   const operationController = new AbortController()
   controller = operationController
   operationInProgress = true
@@ -731,16 +751,54 @@ export async function downloadMossInfer(
     updatedAt: new Date().toISOString(),
   }
   publish({ phase: 'querying' })
+  let architectureNote: string | undefined
   try {
+    let architecture: Architecture = architectureChoice === 'auto' ? 'standard' : architectureChoice
+    if (architectureChoice === 'auto') {
+      const currentPath = resolveServerPath(settings)
+      if (currentPath) {
+        publish({ phase: 'querying', version: '正在探测当前 GPU 架构' })
+        try {
+          const probe = await probeMossInfer(currentPath)
+          const devices = (probe['probe'] as { devices?: Array<{ compute_major?: number; compute_minor?: number }> } | undefined)?.devices ?? []
+          if (devices.some((device) => device.compute_major === 7 && device.compute_minor === 5)) {
+            architecture = 'sm75'
+          }
+        } catch (error) {
+          architectureNote = `无法从当前引擎自动识别 GPU 架构：${error instanceof Error ? error.message : String(error)}；如使用 RTX 20/Turing，请在“GPU 架构”选择 SM75 后重试。`
+        }
+      }
+    }
+    if (architecture === 'sm75' && process.platform !== 'win32') {
+      throw new Error('上游目前仅提供 Windows CUDA 13 的 SM75 Release，请选择标准架构或自定义引擎目录')
+    }
     let flavour = flavourInput ?? 'cu13'
-    let installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag)
+    if (architecture === 'sm75') {
+      if (variant === 'system-cuda' && flavourInput === 'cu12') {
+        throw new Error('SM75 官方包仅提供 CUDA 13；请安装 CUDA 13 cuBLASLt，或改选 bundled CUDA 包')
+      }
+      flavour = 'cu13'
+    }
+    let installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
     // Upstream decision procedure: install cu13 by default, probe, fall back to cu12.
     let probe = await probeMossInfer(installed.serverPath)
     let recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
-    if (flavour === 'cu13' && recommended === 'cu12') {
+    const devices = (probe['probe'] as { devices?: Array<{
+      compute_major?: number
+      compute_minor?: number
+      supported?: boolean
+      name?: string
+    }> } | undefined)?.devices ?? []
+    const sm75Device = devices.find((device) =>
+      device.compute_major === 7 && device.compute_minor === 5,
+    )
+    if (architecture === 'sm75' && sm75Device?.supported === false) {
+      throw new Error(`下载的 SM75 引擎仍将 ${sm75Device.name ?? 'GPU'} 判定为不兼容；请勿切换到该构建`)
+    }
+    if (architecture === 'standard' && flavour === 'cu13' && recommended === 'cu12') {
       publish({ phase: 'querying', version: '驱动只支持 CUDA 12，改下 cu12 包' })
       flavour = 'cu12'
-      installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag)
+      installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
       probe = await probeMossInfer(installed.serverPath)
       recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
     }
@@ -748,6 +806,7 @@ export async function downloadMossInfer(
       mossInferServerPath: installed.serverPath,
       mossInferChannel: channel,
       mossInferVariant: installed.effectiveVariant,
+      mossInferArchitecture: architectureChoice,
     })
     emit(Events.settingsChanged, update)
     await shutdownMossInfer() // next job spawns the freshly installed binary
@@ -757,7 +816,8 @@ export async function downloadMossInfer(
       serverPath: installed.serverPath,
       recommendedFlavour: recommended,
       variant: installed.effectiveVariant,
-      note: installed.fallbackNote,
+      architecture,
+      note: [installed.fallbackNote, architectureNote].filter(Boolean).join('；') || undefined,
       cublaslt: (probe['probe'] as Record<string, unknown> | undefined)?.['cublaslt'],
     })
   } catch (error) {
