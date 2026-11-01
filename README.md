@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="docs/assets/mossstudio-logo.svg" alt="MossStudio" width="180">
 </p>
 
@@ -25,6 +25,8 @@
 </p>
 
 ---
+
+![MossStudio 创作工作台](docs/assets/screenshot-studio.png)
 
 ## 这是什么
 
