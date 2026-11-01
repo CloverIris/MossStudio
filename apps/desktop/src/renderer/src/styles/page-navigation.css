@@ -12,12 +12,55 @@
 }
 
 .app-workspace-brand {
-  z-index: 1;
   flex: none;
-  color: var(--color-text-secondary);
+  color: var(--color-text);
   font-size: var(--text-ui);
   font-weight: 600;
   letter-spacing: 0.01em;
+}
+
+.app-workspace-meta {
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 9px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+.app-workspace-version {
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-workspace-divider {
+  width: 1px;
+  height: 14px;
+  flex: none;
+  background: var(--color-border-subtle);
+}
+
+.app-workspace-free {
+  color: var(--color-text-secondary);
+}
+
+.app-workspace-github {
+  min-height: 28px;
+  gap: 5px;
+  padding: 0 7px;
+  font-size: var(--text-caption);
+}
+
+.app-workspace-qq {
+  z-index: 1;
+  flex: 1 1 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  text-align: right;
+  white-space: nowrap;
 }
 
 .page-navigation {
@@ -77,14 +120,33 @@
   outline-offset: -2px;
 }
 
+@media (max-width: 1100px) {
+  .page-navigation-item {
+    min-width: 48px;
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+}
+
+@media (max-width: 1000px) {
+  .app-workspace-free,
+  .app-workspace-divider {
+    display: none;
+  }
+}
+
 @media (max-width: 859px) {
   .page-navigation {
     position: static;
-    min-width: 0;
-    margin-left: auto;
+    flex: 0 1 auto;
     overflow-x: auto;
     transform: none;
     scrollbar-width: none;
+  }
+
+  .app-workspace-meta,
+  .app-workspace-qq {
+    flex: 0 1 auto;
   }
 
   .page-navigation::-webkit-scrollbar {
@@ -94,12 +156,37 @@
 
 @media (max-width: 639px) {
   .app-workspace-nav {
+    gap: 8px;
     padding: 0 8px;
   }
 
   .app-workspace-brand {
-    max-width: 92px;
     font-size: var(--text-caption);
+  }
+
+  .app-workspace-meta {
+    gap: 5px;
+  }
+
+  .app-workspace-free,
+  .app-workspace-divider {
+    display: none;
+  }
+
+  .app-workspace-github {
+    gap: 0;
+    padding: 0 5px;
+  }
+
+  .app-workspace-github span {
+    display: none;
+  }
+
+  .app-workspace-qq {
+    max-width: 78px;
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
   }
 
   .page-navigation-item {

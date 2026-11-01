@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import defaultHomeBackground from './assets/home-background.png'
-import { Events } from '@shared/channels'
+import { Events, Ipc } from '@shared/channels'
 import type { Diagnostic } from '@shared/types'
-import { onEvent } from './lib/api'
+import { call, onEvent } from './lib/api'
 import { useToast } from './components/ui'
 import { HashRouter, useLocation, useNavigate } from 'react-router-dom'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -26,8 +26,8 @@ import { MotionPanel } from './components/motion'
 import { AppTitlebar, GpuTitlebarStatus, TitlebarFrame } from './components/AppTitlebar'
 import { APP_PAGES as PAGES, PageNavigation } from './components/PageNavigation'
 import type { WindowIntent } from './lib/windows'
-import { Bell, SquareTerminal, X } from 'lucide-react'
-import { IconButton, cn } from './components/ui'
+import { Bell, ExternalLink, SquareTerminal, X } from 'lucide-react'
+import { Button, IconButton, cn } from './components/ui'
 
 function useAppBackground(): React.CSSProperties {
   const settings = useApp((state) => state.settings)
@@ -80,6 +80,7 @@ function StudioShell(): React.JSX.Element {
   const navigate = useNavigate()
   const toast = useToast()
   const backgroundStyle = useAppBackground()
+  const env = useApp((state) => state.env)
   const notificationsOpen = useApp((state) => state.notificationsOpen)
   const setNotificationsOpen = useApp((state) => state.setNotificationsOpen)
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -131,8 +132,27 @@ function StudioShell(): React.JSX.Element {
       </main>
 
       <footer className="app-workspace-nav glass-thin">
-        <span className="app-workspace-brand">Moss Studio</span>
+        <div className="app-workspace-meta no-drag">
+          <span className="app-workspace-brand">MossStudio</span>
+          <span className="app-workspace-version">v{env?.appVersion ?? '…'}</span>
+          <span className="app-workspace-divider" aria-hidden="true" />
+          <span className="app-workspace-free">本软件永久开源免费</span>
+          <Button
+            tone="ghost"
+            className="app-workspace-github"
+            aria-label="打开 MossStudio GitHub 开源仓库"
+            title="打开 GitHub 开源仓库"
+            onClick={() => {
+              void call(Ipc.openExternal, { url: 'https://github.com/CloverIris/MossStudio' })
+                .catch((error: unknown) => toast.push(error instanceof Error ? error.message : String(error), 'error'))
+            }}
+          >
+            <ExternalLink className="size-3.5" />
+            <span>GitHub</span>
+          </Button>
+        </div>
         <PageNavigation value={page.to} onChange={navigate} />
+        <span className="app-workspace-qq">交流群：1044887698</span>
       </footer>
 
       {terminalOpen ? (
