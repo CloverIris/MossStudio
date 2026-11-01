@@ -54,7 +54,7 @@ export function Oobe(): React.JSX.Element {
     && ['done', 'error', 'canceled'].includes(task.state))
     .map((task) => `${task.id}:${task.state}:${task.updatedAt}`).join(',')
   const engineReadinessKey = engineReadiness
-    ? [engineReadiness.state, engineReadiness.path, engineReadiness.verifiedAt, engineReadiness.lastAttempt?.at, engineReadiness.lastAttempt?.error].join(':')
+    ? [engineReadiness.state, engineReadiness.path, engineReadiness.lastAttempt?.at, engineReadiness.lastAttempt?.error].join(':')
     : 'pending'
   const refresh = (): void => setRevision((value) => value + 1)
 
@@ -380,9 +380,7 @@ export function Oobe(): React.JSX.Element {
                                 : canceled ? '已取消，可重试'
                                   : running ? queued ? '排队中' : '准备中'
                                     : tasks.some((task) => task.state === 'paused') ? '已暂停'
-                                      : readiness?.state === 'unverified' || readiness?.state === 'stale' ? '待验证'
-                                        : readiness?.state === 'unsupported' ? '引擎不兼容'
-                                          : step.status === 'partial' ? '待补齐' : '待准备'
+                                      : step.status === 'partial' ? '待补齐' : '待准备'
                         return <li key={step.id} data-oobe-step={step.id} data-status={done ? 'ok' : failed ? 'error' : canceled ? 'canceled' : running ? 'running' : step.status} className="flex items-start gap-2.5 py-3">
                           <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-caption tabular-nums', done ? 'border-accent-500/25 bg-accent-500/10 text-accent-300' : 'border-[var(--color-border)] text-[var(--color-text-tertiary)]')}>
                             {done ? <Check className="size-4" /> : running ? <Spinner className="size-4" /> : index + 1}

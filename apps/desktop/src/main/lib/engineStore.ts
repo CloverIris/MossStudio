@@ -2,22 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import type { EngineCublasLt, EngineDevice } from '@shared/engineProtocol'
 import type { EngineInstallAttempt, EngineInstallProgress } from '@shared/types'
-
-export interface EngineManifest {
-  schemaVersion: 1
-  stamp: string
-  engineVersion?: string
-  protocol: number
-  verifiedAt: string
-  architecture?: 'standard' | 'sm75'
-  flavour?: 'cu12' | 'cu13'
-  variant?: 'system-cuda' | 'bundled'
-  device?: EngineDevice
-  devices: EngineDevice[]
-  cublasLt?: EngineCublasLt
-}
 
 export interface EngineInstallPromotion {
   installDir: string
@@ -132,21 +117,6 @@ export function writeEngineLastAttempt(root: string, attempt: EngineInstallAttem
   renameSync(temporary, file)
 }
 
-export function readEngineManifest(installDir: string): EngineManifest | null {
-  try {
-    const raw = JSON.parse(readFileSync(join(installDir, '.engine.json'), 'utf8')) as Partial<EngineManifest>
-    if (raw.schemaVersion !== 1 || typeof raw.stamp !== 'string' || typeof raw.protocol !== 'number' ||
-        typeof raw.verifiedAt !== 'string' || !Array.isArray(raw.devices)) return null
-    return raw as EngineManifest
-  } catch {
-    return null
-  }
-}
-
-export async function writeEngineManifest(installDir: string, manifest: EngineManifest): Promise<void> {
-  await atomicWriteJson(join(installDir, '.engine.json'), manifest, defaultOps, 200)
-}
-
 export function isManagedEngineDirectory(name: string): boolean {
   return !name.startsWith('.')
 }
@@ -155,14 +125,13 @@ export function engineServerPath(installDir: string): string {
   return join(installDir, 'bin', process.platform === 'win32' ? 'moss-server.exe' : 'moss-server')
 }
 
-/** 只有已验证的 staging 才能晋升；settings 由调用方在成功后更新。 */
+/** 只有完成安装检查的 staging 才能晋升；settings 由调用方在成功后更新。 */
 export async function promoteInstall(
   input: {
     root: string
     stagingDir: string
     stamp: string
     currentServerPath: string | null
-    manifest: EngineManifest
     beforeReplace?: () => Promise<void>
   },
   options: EngineStoreOptions = {},
@@ -199,7 +168,6 @@ export async function promoteInstall(
   try {
     await ops.mkdir(stagingRoot)
     if (previousDir) await ops.mkdir(join(previousDir, '..'))
-    await atomicWriteJson(join(stagingDir, '.engine.json'), input.manifest, ops, retryDelayMs)
     await atomicWriteJson(journalPath, journal, ops, retryDelayMs)
     if (replacingCurrent && previousDir && input.beforeReplace) await input.beforeReplace()
     if (previousDir) {

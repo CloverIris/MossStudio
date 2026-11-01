@@ -28,9 +28,7 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
     const readiness = await engineReadiness()
     engineStepStatus = readiness.state === 'ready'
       ? 'ok'
-      : readiness.state === 'missing'
-        ? 'missing'
-        : 'partial'
+      : 'missing'
     engineDetail = describeEngineReadiness(readiness)
     fullModelReady = catalog.models.some((model) => model.role === 'full' && model.installed && model.format !== 'comfyui')
       || await legacyModelReady(join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'))

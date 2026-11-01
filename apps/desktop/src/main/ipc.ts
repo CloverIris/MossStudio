@@ -37,7 +37,6 @@ import {
   removeLocalEngineVersion,
   selectLocalEngineDirectory,
   selectLocalEngineVersion,
-  verifyLocalEngineVersion,
 } from './services/engines'
 import { detectSystemCuda } from './services/systemCuda'
 import { engineReadiness, invalidateEngineReadiness } from './services/engineReadiness'
@@ -407,12 +406,6 @@ export function registerIpc(): void {
 
   handle(Ipc.engineVersionSelect, schemas.engineVersionId, async ({ id }) => {
     const result = await selectLocalEngineVersion(id)
-    invalidateEngineReadiness()
-    return result
-  })
-
-  handle(Ipc.engineVersionVerify, schemas.engineVersionId, async ({ id }) => {
-    const result = await verifyLocalEngineVersion(id)
     invalidateEngineReadiness()
     return result
   })

@@ -309,15 +309,6 @@ export interface LocalEngineVersion {
   current: boolean
   /** managed: unpacked under <userData>/mossinfer; external: a path the user picked. */
   source: 'managed' | 'external'
-  verified: boolean
-  verifiedAt?: string
-  engineVersion?: string
-  protocol?: number
-  capability?: EngineComputeCapability | null
-  flavour?: 'cu12' | 'cu13'
-  variant?: 'system-cuda' | 'bundled'
-  architecture?: 'standard' | 'sm75'
-  unverifiedReason?: string
 }
 
 export interface EngineInstallAttempt {
@@ -332,21 +323,12 @@ export interface EngineInstallProgress {
   version?: string
 }
 
-export type EngineReadinessState = 'missing' | 'unverified' | 'stale' | 'unsupported' | 'ready'
+export type EngineReadinessState = 'missing' | 'ready'
 
 export interface EngineReadiness {
   state: EngineReadinessState
   path: string | null
-  engineVersion?: string
-  protocol?: number
-  capability?: EngineComputeCapability | null
-  architecture?: 'standard' | 'sm75'
-  flavour?: 'cu12' | 'cu13'
-  variant?: 'system-cuda' | 'bundled'
-  verifiedAt?: string
   reason?: string
-  device?: EngineDevice
-  gpus: EngineGpuCompatibility[]
   installing?: EngineInstallProgress
   lastAttempt?: EngineInstallAttempt
 }

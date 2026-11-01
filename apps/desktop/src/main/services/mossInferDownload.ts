@@ -890,19 +890,6 @@ export async function downloadMossInfer(
       stagingDir: installed.stagingDir,
       stamp: installed.stamp,
       currentServerPath: resolveServerPath(getSettings()),
-      manifest: {
-        schemaVersion: 1,
-        stamp: installed.stamp,
-        engineVersion: probe.version,
-        protocol: probe.protocol,
-        verifiedAt: new Date().toISOString(),
-        architecture,
-        flavour,
-        variant: installed.effectiveVariant,
-        device: verdict.device,
-        devices: probe.probe?.devices ?? [],
-        cublasLt: probe.probe?.cublasLt,
-      },
       beforeReplace: shutdownMossInfer,
     })
     pendingStagingDir = undefined

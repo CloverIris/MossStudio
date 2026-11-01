@@ -15,12 +15,7 @@ import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
 import { probeEngine } from '../lib/probeEngine'
-import {
-  isManagedEngineDirectory,
-  readEngineManifest,
-  writeEngineManifest,
-  type EngineManifest,
-} from '../lib/engineStore'
+import { isManagedEngineDirectory } from '../lib/engineStore'
 import { resolveServerPath, shutdownMossInfer } from './mossInfer'
 import { getSettings, updateSettings } from './settings'
 import { getGpuInventory } from './devices'
@@ -31,14 +26,13 @@ import { remoteEngineStatus } from './remoteEngine'
 interface ExternalEngineEntry {
   path: string
   name: string
-  manifest?: EngineManifest
 }
 
 function serverName(): string {
   return process.platform === 'win32' ? 'moss-server.exe' : 'moss-server'
 }
 
-/** 用户只登记外部二进制；验证信息保存在应用自己的 registry 中。 */
+/** 用户只登记外部二进制，不修改用户选择的引擎目录。 */
 function registryFile(): string {
   return join(paths.mossinfer(), 'external.json')
 }
@@ -53,7 +47,6 @@ function readExternal(): ExternalEngineEntry[] {
       return [{
         path: entry.path,
         name: typeof entry.name === 'string' ? entry.name : basename(entry.path),
-        manifest: entry.manifest,
       }]
     })
   } catch {
@@ -118,49 +111,21 @@ export async function probeLocalEngineGpuCompatibility(
   return { snapshot, hello }
 }
 
-function withVerification(
-  base: Omit<LocalEngineVersion, 'verified'>,
-  manifest: EngineManifest | null,
-  unverifiedReason: string,
-): LocalEngineVersion {
-  return {
-    ...base,
-    verified: manifest !== null,
-    verifiedAt: manifest?.verifiedAt,
-    engineVersion: manifest?.engineVersion,
-    protocol: manifest?.protocol,
-    capability: manifest ? manifest.device?.compute ?? null : undefined,
-    flavour: manifest?.flavour,
-    variant: manifest?.variant,
-    architecture: manifest?.architecture,
-    unverifiedReason: manifest ? undefined : unverifiedReason,
-  }
-}
-
 export function localEngineVersions(): LocalEngineVersion[] {
   const root = paths.mossinfer()
   const managed: LocalEngineVersion[] = existsSync(root)
     ? readdirSync(root, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && isManagedEngineDirectory(entry.name))
       .map((entry): LocalEngineVersion | null => {
-        const installDir = join(root, entry.name)
-        const path = binaryIn(installDir)
+        const path = binaryIn(join(root, entry.name))
         if (!path) return null
-        return withVerification(
-          { id: entry.name, name: entry.name, path, current: isCurrent(path), source: 'managed' },
-          readEngineManifest(installDir),
-          '旧安装目录没有验证记录；请验证后再切换',
-        )
+        return { id: entry.name, name: entry.name, path, current: isCurrent(path), source: 'managed' }
       })
       .filter((item): item is LocalEngineVersion => item !== null)
     : []
   const external: LocalEngineVersion[] = readExternal()
     .filter((item) => existsSync(item.path))
-    .map((item) => withVerification(
-      { id: `external:${item.path}`, name: `${item.name} · 外部`, path: item.path, current: isCurrent(item.path), source: 'external' as const },
-      item.manifest ?? null,
-      '外部引擎尚未验证；请验证后再切换',
-    ))
+    .map((item) => ({ id: `external:${item.path}`, name: `${item.name} · 外部`, path: item.path, current: isCurrent(item.path), source: 'external' as const }))
   return [...managed, ...external].sort((a, b) => b.name.localeCompare(a.name))
 }
 
@@ -170,43 +135,23 @@ function findLocalEngineVersion(id: string): LocalEngineVersion {
   return version
 }
 
-export function manifestForLocalEngineVersion(version: LocalEngineVersion): EngineManifest | null {
-  if (version.source === 'managed') return readEngineManifest(join(paths.mossinfer(), basename(version.id)))
-  return readExternal().find((item) => resolve(item.path) === resolve(version.path))?.manifest ?? null
-}
+type TargetGpu = NonNullable<ReturnType<typeof resolveGpuSelection>>
 
-async function verifyProbe(version: LocalEngineVersion): Promise<EngineManifest> {
-  const settings = getSettings()
-  const inventory = await getGpuInventory()
-  const targetGpu = resolveGpuSelection(inventory.devices, settings.gpuSelection)
-  if (!targetGpu) throw new Error('没有可用于验证引擎的 NVIDIA GPU；请先检查设备或 GPU 选择')
+async function probeVersionCompatibility(version: LocalEngineVersion, targetGpu: TargetGpu): Promise<void> {
   const hello = await probeEngine(version.path)
   if (!protocolCompatible(hello)) {
     throw new Error(`引擎协议不兼容（protocol ${hello.protocol}），需要 protocol 2（MossInfer ≥ 2.0）`)
   }
-  const expectedArchitecture = version.architecture ??
-    (/(?:^|-)sm75(?:-|$)/.test(version.id) ? 'sm75' : version.source === 'managed' ? 'standard' : undefined)
+  const expectedArchitecture = /(?:^|-)sm75(?:-|$)/.test(version.id)
+    ? 'sm75'
+    : version.source === 'managed' ? 'standard' : undefined
   const verdict = judgeEngineSupport(
     hello,
     { index: targetGpu.index, name: targetGpu.name },
     { expectedArchitecture, inventoryCapability: targetGpu.computeCapability },
   )
   if (!verdict.ok) {
-    throw new Error(`无法验证此引擎：${targetGpu.name} 未通过兼容性校验。${verdict.reason ?? ''}`.trim())
-  }
-  const buildFlavour = hello.probe?.buildFlavour
-  return {
-    schemaVersion: 1,
-    stamp: version.id,
-    engineVersion: hello.version,
-    protocol: hello.protocol,
-    verifiedAt: new Date().toISOString(),
-    architecture: expectedArchitecture,
-    flavour: buildFlavour === 'cu12' || buildFlavour === 'cu13' ? buildFlavour : undefined,
-    variant: version.variant,
-    device: verdict.device,
-    devices: hello.probe?.devices ?? [],
-    cublasLt: hello.probe?.cublasLt,
+    throw new Error(`无法切换到此引擎：${targetGpu.name} 不兼容。${verdict.reason ?? ''}`.trim())
   }
 }
 
@@ -217,34 +162,17 @@ async function activateLocalEngineVersion(version: LocalEngineVersion): Promise<
   await shutdownMossInfer()
 }
 
-async function persistVerification(version: LocalEngineVersion, manifest: EngineManifest): Promise<void> {
-  if (version.source === 'managed') {
-    await writeEngineManifest(join(paths.mossinfer(), basename(version.id)), manifest)
-  } else {
-    writeExternal(readExternal().map((item) =>
-      resolve(item.path) === resolve(version.path) ? { ...item, manifest } : item,
-    ))
-  }
-  gpuProbeCache = null
-}
-
-/** 已验证版本在切换前仍会确认当前 GPU；未验证版本必须走验证并切换。 */
+/** 沿用原有切换行为：有目标 GPU 时先检查兼容性。 */
 export async function selectLocalEngineVersion(id: string): Promise<void> {
   const version = findLocalEngineVersion(id)
-  if (!version.verified) throw new Error('此引擎尚未验证，请使用「验证并切换」')
-  const manifest = await verifyProbe(version)
-  await persistVerification(version, manifest)
+  const settings = getSettings()
+  const inventory = await getGpuInventory()
+  const targetGpu = resolveGpuSelection(inventory.devices, settings.gpuSelection)
+  if (targetGpu) await probeVersionCompatibility(version, targetGpu)
   return activateLocalEngineVersion(version)
 }
 
-export async function verifyLocalEngineVersion(id: string): Promise<void> {
-  const version = findLocalEngineVersion(id)
-  const manifest = await verifyProbe(version)
-  await persistVerification(version, manifest)
-  return activateLocalEngineVersion(version)
-}
-
-/** 外部目录登记只验证协议；GPU 验证与激活由「验证并切换」完成。 */
+/** 外部目录登记只检查 protocol 2；切换时再检查目标 GPU。 */
 export async function selectLocalEngineDirectory(directory: string): Promise<LocalEngineVersion[]> {
   const root = resolve(directory)
   if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error('所选路径不是有效的引擎目录')

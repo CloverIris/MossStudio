@@ -125,9 +125,9 @@ SSH host → spawn ssh → remote moss-server
 
 - 两种包：`system-cuda`（小，依赖系统 cuBLASLt）和 `bundled`（+700MB，自带 CUDA 库）。
 - 本机可选择 GitHub 正式 Release；上游没有 Release 时稳定渠道回退至最新成功 CI artifact。已安装版本可在引擎页切换或删除。
-- 本机安装是目录事务：下载、CUDA 库、probe、兼容判定和 manifest 都在 `.staging` 完成，验证通过后才晋升；current 先 shutdown 再进入 `.backup`，失败回滚，启动时按 `.pending.json` 恢复。settings 只在晋升成功后指向新 binary。
-- 版本列表保留无 manifest 的旧目录并标记「未验证」。managed 验证记录在安装目录 `.engine.json`；external 验证记录只在应用自己的 `external.json`，不写用户引擎目录。
-- `EngineReadiness = missing | unverified | stale | unsupported | ready` 是 store、Engine、Oobe、Settings 的唯一本机状态来源；binary 存在不等于 ready。活跃安装进度与持久化的最近尝试分开，`ready` 可以同时显示「上次更新失败」。
+- 本机安装是目录事务：下载、CUDA 库、probe 和兼容判定都在 `.staging` 完成，安装检查通过后才晋升；current 先 shutdown 再进入 `.backup`，失败回滚，启动时按 `.pending.json` 恢复。settings 只在晋升成功后指向新 binary。
+- 已存在的版本目录都可直接切换，不增加独立的版本验证步骤或验证记录。外部引擎只登记路径，不写用户引擎目录。
+- `EngineReadiness = missing | ready` 是 store、Engine、Oobe、Settings 的唯一本机状态来源。活跃安装进度与持久化的最近尝试分开，`ready` 可以同时显示「上次更新失败」。
 - Windows `.zip` 由 Node `yauzl` 解压并校验归档路径，不依赖系统 Python；Linux `.tar.gz` 使用系统 `tar`。
 - 默认 `system-cuda`，下载前 `systemCuda.ts` 预检；缺库弹窗。
 - 缺库时的选项：

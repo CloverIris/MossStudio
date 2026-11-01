@@ -22,7 +22,7 @@ import { AgentSidebar } from '../../apps/desktop/src/renderer/src/components/Age
 
 let fixtureHosts: ManagedHost[] = []
 const fixtureEnginePath = 'C:\\fixture\\mossinfer\\v2.1.1\\bin\\moss-server.exe'
-let fixtureEngineReadiness: EngineReadiness = { state: 'missing', path: null, gpus: [] }
+let fixtureEngineReadiness: EngineReadiness = { state: 'missing', path: null }
 let fixtureEngineVersions: LocalEngineVersion[] = []
 let fixtureEngineDownload: MossInferDownloadState | null = null
 let failOobeSave = false
@@ -86,8 +86,11 @@ window.clover = {
     if (channel === Ipc.mossInferDownloadState) return { ok: true, data: fixtureEngineDownload } as T
     if (channel === Ipc.engineStatus) return { ok: true, data: fixtureEngineReadiness } as T
     if (channel === Ipc.engineVersions) return { ok: true, data: fixtureEngineVersions } as T
-    if (channel === Ipc.engineVersionVerify) {
-      setEngineScenario('ready')
+    if (channel === Ipc.engineVersionSelect) {
+      const { id } = payload as { id: string }
+      const selected = fixtureEngineVersions.find((version) => version.id === id)
+      fixtureEngineVersions = fixtureEngineVersions.map((version) => ({ ...version, current: version.id === id }))
+      if (selected) fixtureEngineReadiness = { ...fixtureEngineReadiness, state: 'ready', path: selected.path }
       return { ok: true, data: null } as T
     }
     if (channel === Ipc.engineRemoteStatus) return { ok: true, data: { online: true, available: false, path: '/fixture/engine/bin/moss-server', root: '/fixture/engine', gpu: 'Fixture GPU', checkedAt: '' } } as T
@@ -178,32 +181,36 @@ window.fetch = async (_url, init) => {
   return new Response(JSON.stringify({ id: 'fixture-job' }), { status: 200 })
 }
 
-type EngineScenario = 'empty' | 'install-error' | 'unverified' | 'ready' | 'update-failed'
+type EngineScenario = 'empty' | 'install-error' | 'legacy' | 'ready' | 'update-failed'
 
 function setEngineScenario(scenario: EngineScenario): void {
-  const verifiedAt = '2026-11-01T00:00:00.000Z'
+  const attemptedAt = '2026-11-01T00:00:00.000Z'
   const version: LocalEngineVersion = {
     id: 'v2.1.1', name: 'v2.1.1', path: fixtureEnginePath, current: true, source: 'managed',
-    verified: scenario === 'ready' || scenario === 'update-failed', verifiedAt,
-    engineVersion: 'v2.1.1', protocol: 2,
-    unverifiedReason: scenario === 'unverified' ? '旧安装目录没有验证记录；请验证后再切换' : undefined,
   }
   fixtureEngineDownload = null
-  fixtureEngineVersions = scenario === 'empty' || scenario === 'install-error' ? [] : [version]
+  const previousVersion: LocalEngineVersion = {
+    ...version,
+    id: 'v2.1.0',
+    name: 'v2.1.0',
+    path: 'C:\\fixture\\mossinfer\\v2.1.0\\bin\\moss-server.exe',
+    current: false,
+  }
+  fixtureEngineVersions = scenario === 'empty' || scenario === 'install-error'
+    ? []
+    : scenario === 'legacy' ? [version, previousVersion] : [version]
   fixtureEngineReadiness = scenario === 'empty' || scenario === 'install-error'
-    ? { state: 'missing', path: null, gpus: [] }
-    : scenario === 'unverified'
-      ? { state: 'unverified', path: fixtureEnginePath, reason: version.unverifiedReason, gpus: [] }
-      : { state: 'ready', path: fixtureEnginePath, engineVersion: 'v2.1.1', protocol: 2, verifiedAt, gpus: [] }
+    ? { state: 'missing', path: null }
+    : { state: 'ready', path: fixtureEnginePath }
   if (scenario === 'install-error' || scenario === 'update-failed') {
     const error = scenario === 'update-failed' ? '新构建校验失败，已保留当前版本' : '下载连接中断'
-    fixtureEngineReadiness.lastAttempt = { at: verifiedAt, version: 'v2.1.1', error }
+    fixtureEngineReadiness.lastAttempt = { at: attemptedAt, version: 'v2.1.1', error }
     fixtureEngineDownload = {
       channel: 'stable', phase: 'error', bytes: 0, totalBytes: 0, speedBps: 0, percent: 100,
-      version: 'v2.1.1', updatedAt: verifiedAt, error,
+      version: 'v2.1.1', updatedAt: attemptedAt, error,
     }
   }
-  oobeComplete = scenario === 'ready' || scenario === 'update-failed'
+  oobeComplete = scenario === 'legacy' || scenario === 'ready' || scenario === 'update-failed'
   useApp.setState({
     engineReadiness: fixtureEngineReadiness,
     mossInferDownload: fixtureEngineDownload,
@@ -264,7 +271,7 @@ function Fixture(): React.JSX.Element {
         <button id="oobe-download" onClick={() => useApp.setState({ downloads: [{ id: 'test-download', kind: 'model', targetId: 'dit', state: 'running', bytes: 5, totalBytes: 10 } as never] })}>Download</button>
         <button id="oobe-fail-save" onClick={() => { failOobeSave = true }}>Fail save</button>
         <button id="engine-install-failed" onClick={() => setEngineScenario('install-error')}>Engine install error</button>
-        <button id="engine-unverified" onClick={() => setEngineScenario('unverified')}>Unverified engine</button>
+        <button id="engine-legacy" onClick={() => setEngineScenario('legacy')}>Legacy engine versions</button>
         <button id="engine-update-failed" onClick={() => setEngineScenario('update-failed')}>Engine update error</button>
         <button id="view-studio" onClick={() => {
           useApp.setState({ studioPrompt: 'Fixture prompt', catalog: fixtureCatalog as never, devices: fixtureDevices as never })

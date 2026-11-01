@@ -11,25 +11,13 @@ import {
   recoverEngineInstall,
 } from '../apps/desktop/src/main/lib/engineStore.ts'
 
-const manifest = {
-  schemaVersion: 1,
-  stamp: 'stable-v2.1.1-cu13',
-  engineVersion: '2.1.1',
-  protocol: 2,
-  verifiedAt: '2026-11-01T00:00:00.000Z',
-  architecture: 'standard',
-  flavour: 'cu13',
-  variant: 'bundled',
-  devices: [],
-}
-
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'moss-engine-store-'))
   t.after(async () => {
     const { rm } = await import('node:fs/promises')
     await rm(root, { recursive: true, force: true })
   })
-  const stamp = manifest.stamp
+  const stamp = 'stable-v2.1.1-cu13'
   const stagingDir = join(root, '.staging', `${stamp}-new`)
   await mkdir(join(stagingDir, 'bin'), { recursive: true })
   await writeFile(join(stagingDir, 'bin', 'moss-server'), 'new')
@@ -41,20 +29,19 @@ async function addOldInstall(installDir) {
   await writeFile(join(installDir, 'bin', 'moss-server'), 'old')
 }
 
-test('无旧目录时直接晋升并写入验证 manifest', async (t) => {
+test('无旧目录时直接晋升', async (t) => {
   const { root, stamp, stagingDir, installDir } = await fixture(t)
-  const result = await promoteInstall({ root, stagingDir, stamp, currentServerPath: null, manifest })
+  const result = await promoteInstall({ root, stagingDir, stamp, currentServerPath: null })
   assert.equal(result.installDir, installDir)
   assert.equal(await readFile(join(installDir, 'bin', 'moss-server'), 'utf8'), 'new')
   assert.equal(existsSync(stagingDir), false)
-  assert.equal(JSON.parse(await readFile(join(installDir, '.engine.json'), 'utf8')).engineVersion, '2.1.1')
   assert.equal(existsSync(join(root, '.pending.json')), false)
 })
 
 test('替换非 current 版本时旧目录进入 trash，设置更新后再清理', async (t) => {
   const { root, stamp, stagingDir, installDir } = await fixture(t)
   await addOldInstall(installDir)
-  const result = await promoteInstall({ root, stagingDir, stamp, currentServerPath: null, manifest })
+  const result = await promoteInstall({ root, stagingDir, stamp, currentServerPath: null })
   assert.equal(await readFile(join(result.trashDir, 'bin', 'moss-server'), 'utf8'), 'old')
   assert.equal(await readFile(join(installDir, 'bin', 'moss-server'), 'utf8'), 'new')
   await cleanupPromotedInstall(result)
@@ -71,7 +58,6 @@ test('替换 current 失败时自动从 backup 回滚', async (t) => {
       stagingDir,
       stamp,
       currentServerPath: join(installDir, 'bin', 'moss-server'),
-      manifest,
       beforeReplace: async () => { shutdownCalled = true },
     }, {
       retryDelayMs: 0,
@@ -105,7 +91,6 @@ test('旧目录连续 EPERM 时 staging 被清理且 installDir 原样保留', a
       stagingDir,
       stamp,
       currentServerPath: join(installDir, 'bin', 'moss-server'),
-      manifest,
     }, {
       retryDelayMs: 0,
       ops: {

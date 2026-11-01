@@ -14,18 +14,17 @@
 - 引擎返回的目标设备 `supported: true` 是兼容性唯一权威。缺失或为 `false` 都拒绝；不再由客户端用 `compute_major >= 8` 或 SM75 名称自行推断。算力、驱动和构建架构差异只用于选包、展示与 warning。
 - 长驻本机 runtime 已设置 `CUDA_VISIBLE_DEVICES`，目标卡在 hello 中重映射为序号 0，因此只用序号匹配，不能再按系统序号或名称猜测。
 
-## 原子安装与版本验证
+## 原子安装与版本切换
 
-- 下载、CUDA wheels、probe、兼容性判定和 `.engine.json` manifest 全部在 `.staging` 完成；只有验证通过才执行目录晋升。校验失败的目录不会进入版本列表。
+- 下载、CUDA wheels、probe 和兼容性判定全部在 `.staging` 完成；只有安装检查通过才执行目录晋升。检查失败的目录不会进入版本列表，也不增加独立的版本验证步骤或验证记录。
 - 替换当前版本时先 shutdown，再把旧目录移到 `.backup`；rename 失败自动回滚，settings 只在晋升成功后更新。启动时根据 `.pending.json` 恢复中断事务。
-- 无 manifest 的旧目录继续显示为「未验证」，不隐藏也不删除；通过「验证并切换」重新探测并写入验证记录后才可激活。切换已验证版本也会刷新当前 GPU 的验证记录。
-- managed 验证记录写入安装目录的 `.engine.json`；external 验证记录只写应用数据目录下的 `external.json`，绝不修改用户选择的外部引擎目录。
+- 已存在的版本目录照常显示并可直接切换，不隐藏也不删除；普通切换在有目标 GPU 时仍做兼容性检查。外部引擎只登记路径，不修改用户选择的引擎目录。
 - 活跃安装进度仅保存在内存；最近一次成功或失败写入 `last-attempt.json`，取消不会覆盖这条历史。
 
 ## 单一就绪状态
 
-- `EngineReadiness` 统一为 `missing | unverified | stale | unsupported | ready`，由 `main/services/engineReadiness.ts` 计算和缓存；store、Engine、Oobe、Settings 不再各自用 binary 是否存在推断可用性。
-- readiness 按引擎路径、mtime 和 GPU 选择失效；只有未验证或验证过期的条目允许强制重新 probe，不会仅凭一次探测伪造验证记录。
+- `EngineReadiness` 统一为 `missing | ready`，由 `main/services/engineReadiness.ts` 计算和缓存；store、Engine、Oobe、Settings 不再各自维护互相矛盾的状态快照。
+- readiness 按引擎路径和 mtime 失效；已有引擎直接沿用原产品的可用行为，不需要额外验证。
 - `ready` 与 `lastAttempt.error` 可以同时存在，统一表达「当前引擎仍可用，上次更新失败」，不能一边显示就绪、一边把当前引擎标成缺失。
 
 ## 已完成

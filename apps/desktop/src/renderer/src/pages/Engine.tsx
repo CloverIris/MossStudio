@@ -256,13 +256,12 @@ export function EnginePage(): React.JSX.Element {
 
   async function selectEngineVersion(version: LocalEngineVersion): Promise<void> {
     setBusy(true)
-    const requiresVerification = !version.verified || version.current && engine?.state === 'stale'
     try {
-      await call(requiresVerification ? Ipc.engineVersionVerify : Ipc.engineVersionSelect, { id: version.id })
+      await call(Ipc.engineVersionSelect, { id: version.id })
       setHello(null)
       setGpuProbe(null)
       setGpuProbeError(null)
-      toast.push(requiresVerification ? '引擎已验证并切换' : '已切换当前引擎版本', 'success')
+      toast.push('已切换当前引擎版本', 'success')
       await refresh()
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
@@ -383,7 +382,7 @@ export function EnginePage(): React.JSX.Element {
       setHello(null)
       setGpuProbe(null)
       setGpuProbeError(null)
-      toast.push('已登记为外部引擎；点击「验证并切换」后才会用于推理', 'success')
+      toast.push('已登记为外部引擎，可直接切换使用', 'success')
       await refresh()
     } catch (error) {
       toast.push(`接入第三方引擎失败：${error instanceof Error ? error.message : String(error)}`, 'error')
@@ -615,17 +614,15 @@ export function EnginePage(): React.JSX.Element {
   const selectedAvailable = isRemote ? selectedRemote?.available : localReady
   const selectedPath = isRemote ? selectedRemote?.path : engine?.path
   const selectedError = isRemote ? selectedRemote?.error : engine?.reason
-  const selectedVersion = isRemote ? selectedRemote?.version : engine?.engineVersion
+  const selectedVersion = isRemote ? selectedRemote?.version : undefined
   const deviceLabel = isRemote ? selectedHost?.name ?? '远端设备' : '本机'
   const localStateLabel = !engine ? '检测中'
     : engine.state === 'ready' ? engine.lastAttempt?.error ? '已就绪 · 上次更新失败' : 'ready'
-      : engine.state === 'unverified' ? '未验证'
-        : engine.state === 'stale' ? '待重新验证'
-          : engine.state === 'unsupported' ? '不兼容' : 'missing'
+      : 'missing'
   const selectedStateLabel = isRemote
     ? selectedRemote?.available ? 'ready' : 'missing'
     : localStateLabel
-  const selectedTone = selectedAvailable ? 'accent' : !isRemote && engine?.state === 'unsupported' ? 'red' : 'amber'
+  const selectedTone = selectedAvailable ? 'accent' : 'amber'
   const selectedProgress = remoteProgress[engineHostId]
   const installation: MossInferDownloadState | null = isRemote ? selectedProgress ? {
     channel, phase: selectedProgress.phase === 'checking' ? 'querying' : selectedProgress.phase === 'installing' ? 'extracting' : selectedProgress.phase,
@@ -863,9 +860,8 @@ export function EnginePage(): React.JSX.Element {
                 ? engine?.path ?? engine?.reason ?? 'MossInfer 引擎路径未配置'
                 : '首页当前使用 Runner 后端；下方性能参数仅在 MossInfer 后端生效。'}
             </p>
-            {engine?.engineVersion ? <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">{engine.engineVersion}</p> : null}
           </div>
-          <Pill tone={localReady ? 'accent' : engine?.state === 'unsupported' ? 'red' : 'amber'}>本机引擎{localStateLabel}</Pill>
+          <Pill tone={localReady ? 'accent' : 'amber'}>本机引擎{localStateLabel}</Pill>
         </div>
         <div className="mt-3 grid gap-3 border-t border-[var(--color-border-subtle)] pt-3 sm:grid-cols-2">
           <Segmented
@@ -954,7 +950,7 @@ export function EnginePage(): React.JSX.Element {
               const probed = hello?.probe?.cublasLt
               const probeOk = Boolean(probed && !probed.error && probed.source)
               const preflightOk = Boolean(preflight && preflight.cublasLt.length > 0)
-              const needsCudaLibs = Boolean(engine?.path) && (engine?.variant === 'system-cuda' || (engine?.path?.includes('system-cuda') ?? false)) && !probeOk && !preflightOk
+              const needsCudaLibs = Boolean(engine?.path) && (engine?.path?.includes('system-cuda') ?? false) && !probeOk && !preflightOk
               return needsCudaLibs ? (
                 <Button tone="ghost" onClick={() => void installCudaWheels()} disabled={busy || !engine?.path}>
                   <ShieldCheck className="size-4" /> 补 CUDA 库
@@ -1184,15 +1180,13 @@ export function EnginePage(): React.JSX.Element {
                     <div className="flex items-center gap-2">
                       <span className="truncate font-mono text-caption font-medium">{version.name}</span>
                       {version.current ? <Pill tone="accent">当前使用</Pill> : null}
-                      {!version.verified ? <Pill tone="amber">未验证</Pill> : null}
                     </div>
                     <p className="mt-0.5 truncate font-mono text-micro text-[var(--color-text-tertiary)]">{version.path}</p>
-                    {version.unverifiedReason ? <p className="mt-1 text-caption text-amber-200">{version.unverifiedReason}</p> : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    {!version.current || !version.verified || engine?.state === 'stale' ? (
+                    {!version.current ? (
                       <Button tone="secondary" onClick={() => void selectEngineVersion(version)} disabled={busy || installationInProgress || isRemote && installingRemote !== null}>
-                        {!version.verified || version.current && engine?.state === 'stale' ? '验证并切换' : '切换到此版本'}
+                        切换到此版本
                       </Button>
                     ) : null}
                     <button
