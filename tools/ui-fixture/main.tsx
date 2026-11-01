@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { Ipc } from '../../apps/desktop/src/shared/channels'
 import { schemas } from '../../apps/desktop/src/shared/schemas'
-import type { InstanceInfo, ManagedHost, OnboardingStatus, Settings } from '../../apps/desktop/src/shared/types'
+import type { EngineReadiness, InstanceInfo, LocalEngineVersion, ManagedHost, MossInferDownloadState, OnboardingStatus, Settings } from '../../apps/desktop/src/shared/types'
 import { Card, Field, Input, Modal, Select, Sheet, Spinner, Switch, Textarea, ToastProvider, useToast } from '../../apps/desktop/src/renderer/src/components/ui'
 import { SettingsPage } from '../../apps/desktop/src/renderer/src/pages/Settings'
 import { StudioPage } from '../../apps/desktop/src/renderer/src/pages/Studio'
@@ -19,6 +19,10 @@ import { App } from '../../apps/desktop/src/renderer/src/App'
 import { AgentSidebar } from '../../apps/desktop/src/renderer/src/components/AgentSidebar'
 
 let fixtureHosts: ManagedHost[] = []
+const fixtureEnginePath = 'C:\\fixture\\mossinfer\\v2.1.1\\bin\\moss-server.exe'
+let fixtureEngineReadiness: EngineReadiness = { state: 'missing', path: null, gpus: [] }
+let fixtureEngineVersions: LocalEngineVersion[] = []
+let fixtureEngineDownload: MossInferDownloadState | null = null
 let failOobeSave = false
 let oobeComplete = false
 let oobeNeedsDevice = false
@@ -72,10 +76,16 @@ window.clover = {
       })
     }
     if (channel === Ipc.onboardingStatus) return { ok: true, data: onboarding((payload as { hostId?: string })?.hostId) } as T
-    if (channel === Ipc.mossInferDownloadState) return { ok: true, data: null } as T
-    if (channel === Ipc.engineStatus) return { ok: true, data: { state: 'missing', path: null, gpus: [] } } as T
+    if (channel === Ipc.mossInferDownloadState) return { ok: true, data: fixtureEngineDownload } as T
+    if (channel === Ipc.engineStatus) return { ok: true, data: fixtureEngineReadiness } as T
+    if (channel === Ipc.engineVersions) return { ok: true, data: fixtureEngineVersions } as T
+    if (channel === Ipc.engineVersionVerify) {
+      setEngineScenario('ready')
+      return { ok: true, data: null } as T
+    }
     if (channel === Ipc.engineRemoteStatus) return { ok: true, data: { online: true, available: false, path: '/fixture/engine/bin/moss-server', root: '/fixture/engine', gpu: 'Fixture GPU', checkedAt: '' } } as T
     if (channel === Ipc.engineSystemCuda) return { ok: true, data: { supported: false, gpu: 'Fixture GPU', cublasLt: [], preferredFlavour: 'cu13', error: 'Fixture missing CUDA' } } as T
+    if (channel === Ipc.gpuInventory || channel === Ipc.gpuInventoryRefresh) return { ok: true, data: { scannedAt: '2026-11-01T00:00:00.000Z', status: 'ok', devices: [], recommendedGpuUuid: null } } as T
     if (channel === Ipc.modelsCatalog) return { ok: true, data: fixtureOobeCatalog } as T
     if (channel === Ipc.modelsRemoteInventory) return { ok: true, data: { root: '/fixture/models', files: 0, models: [], adapters: [] } } as T
     if (channel === Ipc.hostsList) return { ok: true, data: fixtureHosts } as T
@@ -155,6 +165,39 @@ window.fetch = async (_url, init) => {
   return new Response(JSON.stringify({ id: 'fixture-job' }), { status: 200 })
 }
 
+type EngineScenario = 'empty' | 'install-error' | 'unverified' | 'ready' | 'update-failed'
+
+function setEngineScenario(scenario: EngineScenario): void {
+  const verifiedAt = '2026-11-01T00:00:00.000Z'
+  const version: LocalEngineVersion = {
+    id: 'v2.1.1', name: 'v2.1.1', path: fixtureEnginePath, current: true, source: 'managed',
+    verified: scenario === 'ready' || scenario === 'update-failed', verifiedAt,
+    engineVersion: 'v2.1.1', protocol: 2,
+    unverifiedReason: scenario === 'unverified' ? '旧安装目录没有验证记录；请验证后再切换' : undefined,
+  }
+  fixtureEngineDownload = null
+  fixtureEngineVersions = scenario === 'empty' || scenario === 'install-error' ? [] : [version]
+  fixtureEngineReadiness = scenario === 'empty' || scenario === 'install-error'
+    ? { state: 'missing', path: null, gpus: [] }
+    : scenario === 'unverified'
+      ? { state: 'unverified', path: fixtureEnginePath, reason: version.unverifiedReason, gpus: [] }
+      : { state: 'ready', path: fixtureEnginePath, engineVersion: 'v2.1.1', protocol: 2, verifiedAt, gpus: [] }
+  if (scenario === 'install-error' || scenario === 'update-failed') {
+    const error = scenario === 'update-failed' ? '新构建校验失败，已保留当前版本' : '下载连接中断'
+    fixtureEngineReadiness.lastAttempt = { at: verifiedAt, version: 'v2.1.1', error }
+    fixtureEngineDownload = {
+      channel: 'stable', phase: 'error', bytes: 0, totalBytes: 0, speedBps: 0, percent: 100,
+      version: 'v2.1.1', updatedAt: verifiedAt, error,
+    }
+  }
+  oobeComplete = scenario === 'ready' || scenario === 'update-failed'
+  useApp.setState({
+    engineReadiness: fixtureEngineReadiness,
+    mossInferDownload: fixtureEngineDownload,
+    catalog: { ...fixtureOobeCatalog } as never,
+  })
+}
+
 function Fixture(): React.JSX.Element {
   const navigate = useNavigate()
   const [modal, setModal] = useState(false)
@@ -183,6 +226,7 @@ function Fixture(): React.JSX.Element {
         <button id="view-settings" onClick={() => setView('settings')}>Settings</button>
         <button id="view-devices" onClick={() => setView('devices')}>Devices</button>
         <button id="view-oobe" onClick={() => {
+          setEngineScenario('empty')
           oobeComplete = false
           oobeNeedsDevice = false
           savedSettings = { ...savedSettings, onboardingState: 'pending', onboardingHostId: 'local', uiAnimation: 'on' }
@@ -195,16 +239,20 @@ function Fixture(): React.JSX.Element {
         }}>OOBE</button>
         <button id="remount-oobe" onClick={() => setOobeKey((value) => value + 1)}>Reopen app</button>
         <button id="oobe-ready" onClick={() => {
-          oobeComplete = true
+          setEngineScenario('ready')
           useApp.setState({ catalog: { ...fixtureCatalog } as never })
         }}>Ready</button>
         <button id="oobe-needs-device" onClick={() => {
+          setEngineScenario('empty')
           oobeNeedsDevice = true
           useApp.setState({ catalog: { ...fixtureOobeCatalog } as never })
           navigate('/devices')
         }}>Device setup</button>
         <button id="oobe-download" onClick={() => useApp.setState({ downloads: [{ id: 'test-download', kind: 'model', targetId: 'dit', state: 'running', bytes: 5, totalBytes: 10 } as never] })}>Download</button>
         <button id="oobe-fail-save" onClick={() => { failOobeSave = true }}>Fail save</button>
+        <button id="engine-install-failed" onClick={() => setEngineScenario('install-error')}>Engine install error</button>
+        <button id="engine-unverified" onClick={() => setEngineScenario('unverified')}>Unverified engine</button>
+        <button id="engine-update-failed" onClick={() => setEngineScenario('update-failed')}>Engine update error</button>
         <button id="view-studio" onClick={() => {
           useApp.setState({ studioPrompt: 'Fixture prompt', catalog: fixtureCatalog as never, devices: fixtureDevices as never })
           setView('studio')
