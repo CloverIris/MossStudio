@@ -64,7 +64,7 @@ function modelMatches(entry: ModelEntry, files: string[]): string | undefined {
 
 export async function scanRemoteModels(host: TrainingHost, catalog: Catalog, modelsRoot?: string): Promise<RemoteModelInventory> {
   const root = await remoteAbsolute(host, modelsRoot || host.modelsRoot || '~/.mossstudio/models')
-  const command = `test -d ${posixQuote(root)} && find ${posixQuote(root)} -maxdepth 8 -type f -size +0c \\( -name '*.safetensors' -o -name '*.json' -o -name '*.py' -o -name '*.txt' \\) -printf '%p\\n' 2>/dev/null | head -n 20000 || true`
+  const command = `test -d ${posixQuote(root)} && find ${posixQuote(root)} -maxdepth 8 -type f -size +0c \\( -name '*.safetensors' -o -name '*.json' -o -name '*.py' -o -name '*.txt' -o -name '*.jinja' \\) -printf '%p\\n' 2>/dev/null | head -n 20000 || true`
   const result = await sshExec(host, command, 120_000)
   const files = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
   const models = catalog.models.map((entry) => {

@@ -3,6 +3,7 @@ import { basename, join, resolve } from 'node:path'
 import type {
   EngineGpuProbeSnapshot,
   LocalEngineVersion,
+  RemoteEngineInfo,
 } from '@shared/types'
 import { mapEngineGpuProbe, type EngineGpuProbeDevice } from '@shared/gpuCompatibility'
 import { Events } from '@shared/channels'
@@ -221,9 +222,9 @@ export async function probeLocalEngine(): Promise<Record<string, unknown>> {
   return { ...raw, gpuCompatibility: snapshot }
 }
 
-export async function remoteEngineInfo(hostId: string): Promise<{ available: boolean; path: string; error?: string }> {
+export async function remoteEngineInfo(hostId: string, refreshCuda = false): Promise<RemoteEngineInfo> {
   const host = getTrainingHost(getSettings(), hostId)
   if (!host) throw new Error('主机不存在')
   if (host.kind !== 'ssh') throw new Error('不是 SSH 主机')
-  return remoteEngineStatus(host)
+  return remoteEngineStatus(host, refreshCuda)
 }

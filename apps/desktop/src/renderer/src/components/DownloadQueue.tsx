@@ -30,12 +30,13 @@ export function DownloadQueue({ tasks, title = '下载队列', onPause, onResume
     catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') }
     finally { inFlight.current.delete(id); setPending((current) => current.filter((item) => item !== id)) }
   }
-  if (!tasks.length) return null
+  const visibleTasks = tasks.filter((task) => task.state !== 'done')
+  if (!visibleTasks.length) return null
   return (
     <Card className="overflow-hidden">
       <details open>
         <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-ui font-medium">
-          <span className="flex items-center gap-2"><Download className="size-4 text-accent-400" />{title}<span className="text-[var(--color-text-tertiary)]">{tasks.length}</span></span>
+          <span className="flex items-center gap-2"><Download className="size-4 text-accent-400" />{title}<span className="text-[var(--color-text-tertiary)]">{visibleTasks.length}</span></span>
           <ChevronDown className="size-4" />
         </summary>
         {onRefresh ? <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border-subtle)] px-4 py-2 text-caption text-[var(--color-text-tertiary)]">
@@ -43,7 +44,7 @@ export function DownloadQueue({ tasks, title = '下载队列', onPause, onResume
           <IconButton label="刷新远端下载状态" disabled={pending.includes('refresh')} onClick={() => void act('refresh', onRefresh)}><RefreshCw className="size-4" /></IconButton>
         </div> : null}
         <div className="max-h-[320px] divide-y divide-[var(--color-border-subtle)] overflow-y-auto border-t border-[var(--color-border-subtle)]">
-          {tasks.map((task) => {
+          {visibleTasks.map((task) => {
             const active = ['running', 'queued', 'verifying'].includes(task.state)
             const disabled = pending.includes(task.id) || Boolean(task.connectionError)
             const progress = percent(task.bytes, task.totalBytes)

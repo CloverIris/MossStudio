@@ -47,6 +47,10 @@ export function Oobe(): React.JSX.Element {
   const current = status?.hostId === hostId ? status : null
   const completed = current?.steps.filter((step) => step.status === 'ok').length ?? 0
   const total = current?.steps.length ?? 3
+  const modelDownloadRevision = downloads.filter((task) => task.kind === 'model'
+    && (hostId === 'local' ? !task.hostId : task.hostId === hostId)
+    && ['done', 'error', 'canceled'].includes(task.state))
+    .map((task) => `${task.id}:${task.state}:${task.updatedAt}`).join(',')
   const refresh = (): void => setRevision((value) => value + 1)
 
   useEffect(() => {
@@ -98,7 +102,7 @@ export function Oobe(): React.JSX.Element {
       }).finally(() => { if (!canceled) setChecking(false) })
     }, 120)
     return () => { canceled = true; window.clearTimeout(timer) }
-  }, [visible, hostId, location.pathname, catalog, settings?.modelsRoot, settings?.mossInferServerPath, revision])
+  }, [visible, hostId, location.pathname, catalog, settings?.modelsRoot, settings?.mossInferServerPath, modelDownloadRevision, revision])
 
   useEffect(() => {
     if (!visible) return
@@ -349,6 +353,7 @@ export function Oobe(): React.JSX.Element {
                       {current.steps.map((step, index) => {
                         const done = step.status === 'ok'
                         const tasks = downloads.filter((item) => item.kind === 'model'
+                          && step.id === 'model'
                           && (hostId === 'local' ? !item.hostId : item.hostId === hostId)
                           && (step.modelIds?.includes(item.targetId) || hostId !== 'local' && item.targetId === 'default-sft'))
                         const queued = tasks.some((task) => task.state === 'queued') && !tasks.some((task) => task.state === 'running' || task.state === 'verifying')

@@ -48,6 +48,7 @@ const categories = [
   { id: 'dit', name: 'MOSS 模型', icon: Layers },
   { id: 'text_encoder', name: 'Qwen 编码器', icon: Cpu },
   { id: 'vae', name: 'VAE', icon: Package },
+  { id: 'support', name: '运行配置', icon: ShieldCheck },
   { id: 'adapter', name: '适配器', icon: ShieldCheck },
 ] as const
 type Entry = { kind: 'model'; value: ModelEntry } | { kind: 'adapter'; value: AdapterEntry }
@@ -145,8 +146,8 @@ export function ModelsPage(): React.JSX.Element {
     setMode(hostId === 'local' ? 'local' : 'remote')
     if (hostId !== 'local') setRemoteHostId(hostId)
     if (query.get('bundle')) setBundleId(query.get('bundle')!)
-    setCategory(component === 'support' ? 'all' : component)
-    setRemoteCategory(component === 'support' ? 'all' : component)
+    setCategory(component)
+    setRemoteCategory(component)
     setFormat('diffusers')
     setInstalledOnly(false)
     setQuery('')
@@ -175,6 +176,7 @@ export function ModelsPage(): React.JSX.Element {
   }, [remoteHost?.id, remoteHost?.modelsRoot, remoteTasks.filter((task) => task.state === 'done').map((task) => task.id).join(',')])
 
   const bundle = catalog?.bundles?.find((b) => b.id === bundleId) ?? catalog?.bundles?.find((b) => b.recommended) ?? catalog?.bundles?.[0]
+  const runtimeConfig = catalog?.models.find((model) => model.id === 'moss-runtime-config')
   const engineLabel =
     settings?.inferenceBackend === 'mossinfer'
       ? `MossInfer · ${settings?.mossInferTier ?? 'high'} 档`
@@ -401,6 +403,30 @@ export function ModelsPage(): React.JSX.Element {
     try { await call(Ipc.openPath, { path }) } catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') }
   }
 
+  function runtimeConfigCard(remote: boolean): React.JSX.Element | null {
+    if (!runtimeConfig) return null
+    const tasks = remote ? remoteTasks : downloads
+    const task = tasks.find((item) => item.targetId === runtimeConfig.id)
+    const installed = remote
+      ? Boolean(remoteScan?.models.find((model) => model.id === runtimeConfig.id)?.installed)
+      : runtimeConfig.installed
+    const working = (remote ? remoteModelBusy : busy) === runtimeConfig.id
+      || Boolean(task && ['queued', 'running', 'verifying'].includes(task.state))
+    return (
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div>
+          <div className="flex items-center gap-2 text-ui font-medium"><ShieldCheck className="size-4 text-accent-300" />运行配置与分词器<Pill tone={installed ? 'accent' : 'neutral'}>{installed ? '已就绪' : '待补齐'}</Pill></div>
+          <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">补齐单文件权重所需的模型结构、分词器、pipeline 与采样器配置；已有文件会校验复用。</p>
+        </div>
+        <Button tone={installed ? 'secondary' : 'primary'} disabled={working || remote && !remoteHost}
+          onClick={() => void (remote ? downloadRemoteModel(runtimeConfig) : start({ kind: 'model', value: runtimeConfig }))}>
+          {working ? <Spinner className="size-4" /> : <RefreshCw className="size-4" />}
+          {working ? '正在补齐配置' : installed ? '检查并修复配置' : '补齐配置文件'}
+        </Button>
+      </Card>
+    )
+  }
+
   return (
     <div className="model-management space-y-5 pb-4">
       <header className="flex items-start justify-between gap-4">
@@ -451,6 +477,8 @@ export function ModelsPage(): React.JSX.Element {
           </div>
         )}
       </Card>
+
+      {runtimeConfigCard(true)}
 
       <DownloadQueue tasks={remoteTasks} title={`远端下载队列 · ${remoteHost?.name ?? ''}`}
         onPause={(task) => call(Ipc.remoteDownloadControl, { hostId: task.hostId, taskId: task.id, operation: 'pause' })}
@@ -526,6 +554,7 @@ export function ModelsPage(): React.JSX.Element {
       </div>
 
       <div data-oobe-host="local" className={mode === 'local' ? 'space-y-5' : 'hidden'}>
+      {runtimeConfigCard(false)}
       {bundle ? (
         <Card data-oobe="model" data-oobe-hint-title="推荐组合" data-oobe-hint-position="bottom" data-oobe-hint="首次使用建议选择推荐组合，点击「补齐组件」即可下载主模型、Qwen 编码器、VAE 与运行配置，已有组件会复用。" className="overflow-hidden">
           <div data-oobe-hint-target className="flex flex-wrap items-start justify-between gap-4 px-5 pt-4">

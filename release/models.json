@@ -225,6 +225,33 @@
       "notes": "推荐组合所需的 pipeline 与采样器配置。"
     },
     {
+      "id": "moss-runtime-config",
+      "name": "MossInfer 运行配置与分词器",
+      "provider": "hf",
+      "repo": "OpenMOSS-Team/MOSS-Image-SFT",
+      "revision": "main",
+      "role": "support",
+      "precision": "mixed",
+      "size_bytes": 20053121,
+      "files": [
+        "model_index.json",
+        "pipeline_moss_image.py",
+        "scheduler/*",
+        "transformer/config.json",
+        "text_encoder/config.json",
+        "vae/config.json",
+        "tokenizer/tokenizer.json",
+        "tokenizer/tokenizer_config.json",
+        "tokenizer/chat_template.jinja"
+      ],
+      "subfolder": "",
+      "format": "diffusers",
+      "family": "moss-image",
+      "license": "Apache-2.0",
+      "tags": ["shared"],
+      "notes": "单文件主模型、文本编码器所需的结构配置、分词器、pipeline 与采样器配置。"
+    },
+    {
       "id": "moss-base-comfy-bf16",
       "name": "MOSS BASE · BF16",
       "provider": "hf",

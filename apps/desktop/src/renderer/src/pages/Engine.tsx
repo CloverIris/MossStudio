@@ -16,6 +16,9 @@ import { useLocation } from 'react-router-dom'
 import { Events, Ipc } from '@shared/channels'
 import type {
   Catalog,
+  DownloadTask,
+  RemoteEngineInstallOptions,
+  RemoteEngineInfo,
   EngineRemoteProgress,
   EngineGpuProbeSnapshot,
   GpuInventorySnapshot,
@@ -47,6 +50,7 @@ interface LocalEngineInfo {
 }
 
 type EngineTab = 'inference' | 'developer'
+type InstallPreferences = Required<Pick<RemoteEngineInstallOptions, 'channel' | 'flavour' | 'variant' | 'architecture'>> & { releaseTag: string }
 
 interface EngineChainTest {
   phase: 'running' | 'succeeded' | 'failed'
@@ -81,33 +85,39 @@ export function EnginePage(): React.JSX.Element {
   const [refreshingGpu, setRefreshingGpu] = useState(false)
   const [engineVersions, setEngineVersions] = useState<LocalEngineVersion[]>([])
   const [releases, setReleases] = useState<MossInferRelease[]>([])
-  const [releaseTag, setReleaseTag] = useState('')
   const [releaseError, setReleaseError] = useState<string | null>(null)
-  const [loadingReleases, setLoadingReleases] = useState(false)
+  const [loadingReleases, setLoadingReleases] = useState(true)
   const [probe, setProbe] = useState<Record<string, unknown> | null>(null)
   const [gpuProbe, setGpuProbe] = useState<EngineGpuProbeSnapshot | null>(null)
   const [gpuProbeError, setGpuProbeError] = useState<string | null>(null)
   const lastAutoProbeKey = useRef<string | null>(null)
   const [hosts, setHosts] = useState<ManagedHost[]>([])
-  const [remote, setRemote] = useState<Record<string, {
-    online: boolean
-    available: boolean
-    path: string
-    root: string
-    gpu: string
-    error?: string
-    checkedAt: string
-  }>>({})
+  const [remote, setRemote] = useState<Record<string, RemoteEngineInfo>>({})
   const [remoteProgress, setRemoteProgress] = useState<Record<string, EngineRemoteProgress>>({})
   const [enginePaths, setEnginePaths] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [preparing, setPreparing] = useState<string | null>(null)
   const [installingRemote, setInstallingRemote] = useState<string | null>(null)
-  const [channel, setChannel] = useState<'stable' | 'dev'>('stable')
-  const [variant, setVariant] = useState<'bundled' | 'system-cuda'>('system-cuda')
-  const [architecture, setArchitecture] = useState<'auto' | 'standard' | 'sm75'>(
-    settings?.mossInferArchitecture ?? 'auto',
-  )
+  const [engineHostId, setEngineHostId] = useState('local')
+  const [installPreferences, setInstallPreferences] = useState<Record<string, Partial<InstallPreferences>>>({})
+  const discoveredCuda = remote[engineHostId]?.cuda
+  const detectedFlavour = engineHostId === 'local' ? 'cu13' : discoveredCuda?.recommendedFlavour ?? 'cu13'
+  const preferredFlavour = installPreferences[engineHostId]?.flavour ?? detectedFlavour
+  const defaults: InstallPreferences = {
+    channel: 'stable', flavour: detectedFlavour,
+    variant: engineHostId === 'local' || discoveredCuda?.flavours.includes(preferredFlavour) ? 'system-cuda' : 'bundled',
+    architecture: engineHostId === 'local' ? settings?.mossInferArchitecture ?? 'auto' : 'auto',
+    releaseTag: releases[0]?.tag ?? '',
+  }
+  const { channel, flavour, variant, architecture, releaseTag } = { ...defaults, ...installPreferences[engineHostId] }
+  function changeInstallPreferences(patch: Partial<InstallPreferences>): void {
+    setInstallPreferences((previous) => ({ ...previous, [engineHostId]: { ...previous[engineHostId], ...patch } }))
+  }
+  const setChannel = (value: InstallPreferences['channel']): void => changeInstallPreferences({ channel: value })
+  const setFlavour = (value: InstallPreferences['flavour']): void => changeInstallPreferences({ flavour: value })
+  const setVariant = (value: InstallPreferences['variant']): void => changeInstallPreferences({ variant: value })
+  const setArchitecture = (value: InstallPreferences['architecture']): void => changeInstallPreferences({ architecture: value })
+  const setReleaseTag = (value: string): void => changeInstallPreferences({ releaseTag: value })
   const [fallbackOpen, setFallbackOpen] = useState(false)
   const [preflight, setPreflight] = useState<{ supported: boolean; gpu: string; cublasLt: string[]; driverVersion?: string; driverCompatible?: boolean; error?: string } | null>(null)
   const [activeTab, setActiveTab] = useState<EngineTab>('inference')
@@ -182,7 +192,9 @@ export function EnginePage(): React.JSX.Element {
     try {
       const next = await call<MossInferRelease[]>(Ipc.mossInferReleases)
       setReleases(next)
-      setReleaseTag((selected) => next.some((release) => release.tag === selected) ? selected : next[0]?.tag ?? '')
+      setInstallPreferences((previous) => Object.fromEntries(Object.entries(previous).map(([id, options]) => [id, {
+        ...options, releaseTag: next.some((release) => release.tag === options.releaseTag) ? options.releaseTag : next[0]?.tag ?? '',
+      }])))
     } catch (error) {
       setReleaseError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -192,10 +204,17 @@ export function EnginePage(): React.JSX.Element {
   useEffect(() => { void refreshReleases() }, [refreshReleases])
   useEffect(() => {
     const hostId = new URLSearchParams(location.search).get('hostId')
-    if (hostId && hostId !== 'local') document.getElementById(`engine-${hostId}`)?.scrollIntoView({ block: 'start' })
-  }, [location.key, location.search, hosts])
+    if (hostId) { setEngineHostId(hostId); setActiveTab('inference') }
+  }, [location.key, location.search])
+  useEffect(() => {
+    if (engine && engineHostId !== 'local' && !hosts.some((host) => host.id === engineHostId)) setEngineHostId('local')
+  }, [engine, hosts, engineHostId])
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('hostId') === engineHostId) {
+      document.getElementById(`engine-${engineHostId}`)?.scrollIntoView({ block: 'start' })
+    }
+  }, [engineHostId, location.key, location.search])
   useEffect(() => { setGithubToken(settings?.githubToken ?? '') }, [settings?.githubToken])
-  useEffect(() => { setArchitecture(settings?.mossInferArchitecture ?? 'auto') }, [settings?.mossInferArchitecture])
   useEffect(() => onEvent<{ id: string }>(Events.hostsChanged, () => { void refresh() }), [refresh])
   useEffect(() => onEvent<EngineRemoteProgress>(Events.engineRemoteProgress, (progress) => {
     setRemoteProgress((previous) => ({ ...previous, [progress.hostId]: progress }))
@@ -212,7 +231,7 @@ export function EnginePage(): React.JSX.Element {
     let cancelled = false
     void Promise.all(hosts.map(async (host) => {
       try {
-        const result = await call<{ online: boolean; available: boolean; path: string; root: string; gpu: string; error?: string; checkedAt: string }>(Ipc.engineRemoteStatus, { hostId: host.id })
+        const result = await call<RemoteEngineInfo>(Ipc.engineRemoteStatus, { hostId: host.id })
         if (!cancelled) setRemote((previous) => ({ ...previous, [host.id]: result }))
       } catch (error) {
         if (!cancelled) setRemote((previous) => ({ ...previous, [host.id]: { online: false, available: false, path: host.engineRoot ?? '~/.mossstudio/engine', root: host.engineRoot ?? '~/.mossstudio/engine', gpu: '', error: error instanceof Error ? error.message : String(error), checkedAt: new Date().toISOString() } }))
@@ -321,6 +340,7 @@ export function EnginePage(): React.JSX.Element {
   }
 
   async function install(): Promise<void> {
+    if (engineHostId !== 'local') { await installRemote(engineHostId); return }
     if (variant === 'system-cuda') {
       setBusy(true)
       try {
@@ -494,8 +514,8 @@ export function EnginePage(): React.JSX.Element {
   async function prepareModel(hostId: string): Promise<void> {
     setPreparing(hostId)
     try {
-      const result = await call<{ path: string; revision: string; files: number }>(Ipc.enginePrepareRemoteModel, { hostId })
-      toast.push(`远端模型已准备：${result.files} 个文件`, 'success')
+      const result = await call<DownloadTask>(Ipc.enginePrepareRemoteModel, { hostId })
+      toast.push(`已加入远端下载队列：${result.label}`, 'success')
       await refresh()
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
@@ -540,7 +560,7 @@ export function EnginePage(): React.JSX.Element {
   }
 
   async function deleteEngine(hostId: string): Promise<void> {
-    const path = enginePaths[hostId] ?? '~/.mossstudio/engine'
+    const path = hosts.find((host) => host.id === hostId)?.engineRoot ?? '~/.mossstudio/engine'
     if (!window.confirm(`删除远端引擎目录？\n${path}`)) return
     try {
       await call(Ipc.remoteResourceRemove, { hostId, path })
@@ -561,13 +581,19 @@ export function EnginePage(): React.JSX.Element {
 
   async function installRemote(hostId: string): Promise<void> {
     setInstallingRemote(hostId)
+    setRemoteProgress((previous) => ({ ...previous, [hostId]: { hostId, phase: 'checking', message: '正在检查目标设备…', percent: 0 } }))
     try {
       await call(Ipc.hostsUpdatePaths, { id: hostId, engineRoot: enginePaths[hostId] })
-      const result = await call<{ version: string; path: string; asset: string }>(Ipc.engineInstallRemote, { hostId })
+      const result = await call<{ version: string; path: string; asset: string }>(Ipc.engineInstallRemote, {
+        hostId, channel, flavour, variant, architecture,
+        ...(channel === 'stable' && releaseTag ? { releaseTag } : {}),
+      })
       toast.push(`远端引擎 ${result.version} 已安装`, 'success')
       await refresh()
     } catch (error) {
-      toast.push(error instanceof Error ? error.message : String(error), 'error')
+      const message = error instanceof Error ? error.message : String(error)
+      setRemoteProgress((previous) => ({ ...previous, [hostId]: { hostId, phase: 'error', message, percent: 100 } }))
+      toast.push(message, 'error')
     } finally {
       setInstallingRemote(null)
     }
@@ -576,17 +602,10 @@ export function EnginePage(): React.JSX.Element {
   async function checkRemote(hostId: string): Promise<void> {
     setBusy(true)
     try {
-      const result = await call<{
-        online: boolean
-        available: boolean
-        path: string
-        root: string
-        gpu: string
-        error?: string
-        checkedAt: string
-      }>(Ipc.engineRemoteStatus, { hostId })
+      const result = await call<RemoteEngineInfo>(Ipc.engineRemoteStatus, { hostId, refreshCuda: true })
       setRemote((previous) => ({ ...previous, [hostId]: result }))
-      toast.push(!result.online ? 'SSH 连接失败' : result.available ? 'SSH 在线，引擎就绪' : 'SSH 在线，引擎未安装', !result.online ? 'error' : result.available ? 'success' : 'info')
+      const cudaSummary = result.cuda?.flavours.length ? `系统库依赖检查通过：${result.cuda.flavours.join(' / ')}` : result.cuda?.error ?? '未发现已通过依赖检查的 CUDA 系统库'
+      toast.push(!result.online ? 'SSH 连接失败' : `${result.available ? '引擎已安装' : '引擎未安装'} · ${cudaSummary}`, !result.online ? 'error' : 'info')
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
     } finally {
@@ -596,8 +615,20 @@ export function EnginePage(): React.JSX.Element {
 
   const downloading = download && !['done', 'error', 'canceled'].includes(download.phase)
   const selectedRelease = releases.find((release) => release.tag === releaseTag)
-  const progressIndeterminate = Boolean(download && ['querying', 'extracting', 'cuda_libs'].includes(download.phase))
-  const progressPercent = download ? download.phase === 'done' ? 100 : Math.max(0, Math.min(100, download.percent)) : 0
+  const isRemote = engineHostId !== 'local'
+  const selectedHost = hosts.find((host) => host.id === engineHostId)
+  const selectedRemote = remote[engineHostId]
+  const selectedEngine = isRemote ? selectedRemote : engine
+  const deviceLabel = isRemote ? selectedHost?.name ?? '远端设备' : '本机'
+  const selectedProgress = remoteProgress[engineHostId]
+  const installation: MossInferDownloadState | null = isRemote ? selectedProgress ? {
+    channel, phase: selectedProgress.phase === 'checking' ? 'querying' : selectedProgress.phase === 'installing' ? 'extracting' : selectedProgress.phase,
+    bytes: selectedProgress.bytes ?? 0, totalBytes: selectedProgress.totalBytes ?? 0, speedBps: selectedProgress.speedBps ?? 0, percent: selectedProgress.percent ?? 0, updatedAt: '',
+    note: selectedProgress.message, error: selectedProgress.phase === 'error' ? selectedProgress.message : undefined,
+  } : null : download
+  const installationInProgress = isRemote ? installingRemote === engineHostId : Boolean(downloading)
+  const progressIndeterminate = Boolean(installation && ['querying', 'extracting', 'cuda_libs'].includes(installation.phase))
+  const progressPercent = installation ? installation.phase === 'done' ? 100 : Math.max(0, Math.min(100, installation.percent)) : 0
   const systemRecommendedGpu = gpuInventory?.devices.find((device) => device.uuid === gpuInventory.recommendedGpuUuid)
   const compatibleGpuUuids = new Set(
     gpuProbe?.devices.filter((device) => device.status === 'supported').map((device) => device.uuid) ?? [],
@@ -626,7 +657,7 @@ export function EnginePage(): React.JSX.Element {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Pill tone={engine?.available ? 'accent' : 'amber'}>{engine?.available ? '本机引擎就绪' : '本机引擎缺失'}</Pill>
+          <Pill tone={selectedEngine?.available ? 'accent' : 'amber'}>{deviceLabel}引擎{selectedEngine?.available ? '就绪' : '缺失'}</Pill>
           <IconButton label="刷新" onClick={() => void refresh()} disabled={busy}><RefreshCw className="size-4" /></IconButton>
         </div>
       </header>
@@ -880,31 +911,40 @@ export function EnginePage(): React.JSX.Element {
 
       {activeTab === 'inference' ? (
       <div role="tabpanel" id="engine-panel-inference" aria-labelledby="engine-tab-inference" className="space-y-4">
-      <Card className="p-4" data-oobe-host="local">
+      <Card className="p-4" data-oobe-host={engineHostId} id={`engine-${engineHostId}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-accent-500/10 p-2 text-accent-300"><Cpu className="size-5" /></div>
+            <div className="rounded-lg bg-accent-500/10 p-2 text-accent-300">{isRemote ? <HardDrive className="size-5" /> : <Cpu className="size-5" />}</div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-[14px] font-semibold">本机 MossInfer</h2>
-                <Pill tone={engine?.available ? 'accent' : 'red'}>{engine?.available ? 'ready' : 'missing'}</Pill>
+                <h2 className="text-[14px] font-semibold">{deviceLabel} MossInfer</h2>
+                <Pill tone={selectedEngine?.available ? 'accent' : 'red'}>{selectedEngine?.available ? 'ready' : 'missing'}</Pill>
               </div>
               <p className="mt-1 max-w-[720px] break-all font-mono text-caption text-[var(--color-text-tertiary)]">
-                {engine?.path ?? engine?.error ?? '未检测到 moss-server'}
+                {selectedEngine?.path ?? selectedEngine?.error ?? '未检测到 moss-server'}
               </p>
-              {engine?.version ? <p className="mt-1 text-caption text-[var(--color-text-secondary)]">{engine.version}</p> : null}
+              {selectedEngine?.version ? <p className="mt-1 text-caption text-[var(--color-text-secondary)]">{selectedEngine.version}</p> : null}
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="space-y-1">
+              <span className="text-caption text-[var(--color-text-tertiary)]">设备</span>
+              <select aria-label="引擎设备" value={engineHostId} onChange={(event) => setEngineHostId(event.target.value)} className="app-input min-w-48">
+                <option value="local">本机</option>
+                {hosts.map((host) => <option key={host.id} value={host.id}>{host.name} · SSH</option>)}
+              </select>
+            </label>
+            {isRemote ? <Pill tone={selectedRemote?.online ? 'accent' : 'amber'}>{selectedRemote ? selectedRemote.online ? 'SSH 在线' : 'SSH 离线' : '检测中'}</Pill> : null}
             {(() => {
+              if (isRemote) return null
               // Only offer the repair when the installed engine is the system-cuda variant
               // AND no usable cuBLASLt is in sight (probe result wins over the preflight list).
               const probed = (probe?.['probe'] as { cublaslt?: { source?: string; error?: string } } | undefined)?.cublaslt
               const probeOk = Boolean(probed && !probed.error && probed.source)
               const preflightOk = Boolean(preflight && preflight.cublasLt.length > 0)
-              const needsCudaLibs = Boolean(engine?.available) && (engine?.path?.includes('system-cuda') ?? false) && !probeOk && !preflightOk
+              const needsCudaLibs = Boolean(selectedEngine?.available) && (selectedEngine?.path?.includes('system-cuda') ?? false) && !probeOk && !preflightOk
               return needsCudaLibs ? (
-                <Button tone="ghost" onClick={() => void installCudaWheels()} disabled={busy || !engine?.available}>
+                <Button tone="ghost" onClick={() => void installCudaWheels()} disabled={busy || !selectedEngine?.available}>
                   <ShieldCheck className="size-4" /> 补 CUDA 库
                 </Button>
               ) : null
@@ -912,7 +952,23 @@ export function EnginePage(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 border-t border-[var(--color-border-subtle)] pt-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
+        {isRemote && selectedRemote?.cuda ? <div data-remote-cuda className="mt-3 rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.025] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2 text-ui font-medium">
+              <ShieldCheck className="size-4 text-accent-300" />系统 CUDA 库
+              <Pill tone={selectedRemote.cuda.flavours.length ? 'accent' : 'amber'}>{selectedRemote.cuda.flavours.length ? selectedRemote.cuda.flavours.map((value) => `CUDA ${value.slice(2)}`).join(' / ') : '未发现已通过依赖检查的库'}</Pill>
+            </div>
+            <Button tone="ghost" onClick={() => void checkRemote(engineHostId)} disabled={busy || installationInProgress}><RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />重新检测 CUDA</Button>
+          </div>
+          <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">驱动 {selectedRemote.cuda.driverVersion ?? '未知'} · 扫描 {selectedRemote.cuda.durationMs} ms · {dateTime(selectedRemote.cuda.checkedAt)} · 结果缓存 60 秒</p>
+          {selectedRemote.cuda.recommendedFlavour ? <p className="mt-1 text-caption text-[var(--color-text-secondary)]">库与驱动匹配建议：CUDA {selectedRemote.cuda.recommendedFlavour.slice(2)} · {selectedRemote.cuda.recommendedVariant}；手动选择会保留。</p> : null}
+          {selectedRemote.cuda.error ? <p className="mt-1 text-caption text-amber-200">{selectedRemote.cuda.error}</p> : null}
+          {variant === 'system-cuda' && !selectedRemote.cuda.flavours.includes(flavour) ? <p className="mt-1 text-caption text-amber-200">尚未发现已通过依赖检查的 CUDA {flavour.slice(2)} cuBLASLt，可重新检测或改用 bundled 包。</p> : null}
+          {selectedRemote.cuda.gpuReason ? <p role="status" className="mt-1 text-caption text-amber-200">{selectedRemote.cuda.gpuReason}</p> : null}
+          {selectedRemote.cuda.libraries.length ? <details className="mt-2 text-caption text-[var(--color-text-tertiary)]"><summary className="cursor-pointer">查看 cuBLASLt 路径与依赖检查</summary><ul className="mt-1 space-y-1">{selectedRemote.cuda.libraries.map((library) => <li key={library.path} className="break-all font-mono">{library.path}{library.versionText ? ` · 文件版本 ${library.versionText}` : ''} · {library.dependencyCheck === 'passed' ? '依赖检查通过' : library.dependencyCheck === 'failed' ? '依赖检查失败' : '依赖未验证'}</li>)}</ul></details> : null}
+        </div> : null}
+
+        <div className={`mt-4 grid gap-2 border-t border-[var(--color-border-subtle)] pt-3 ${isRemote ? 'sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_auto]' : 'sm:grid-cols-[1fr_1fr_1fr_auto]'}`}>
           <label className="space-y-1">
             <span className="text-caption text-[var(--color-text-tertiary)]">渠道</span>
             <select value={channel} onChange={(event) => setChannel(event.target.value as 'stable' | 'dev')} className="app-input w-full">
@@ -920,22 +976,29 @@ export function EnginePage(): React.JSX.Element {
               <option value="dev">Dev artifact（需要 GitHub token）</option>
             </select>
           </label>
+          {isRemote ? <label className="space-y-1">
+            <span className="text-caption text-[var(--color-text-tertiary)]">CUDA 版本</span>
+            <select value={flavour} onChange={(event) => setFlavour(event.target.value as 'cu12' | 'cu13')} className="app-input w-full">
+              <option value="cu13">CUDA 13</option>
+              <option value="cu12">CUDA 12</option>
+            </select>
+          </label> : null}
           <label className="space-y-1">
             <span className="text-caption text-[var(--color-text-tertiary)]">包类型</span>
             <select value={variant} onChange={(event) => setVariant(event.target.value as 'bundled' | 'system-cuda')} className="app-input w-full">
               <option value="system-cuda">system CUDA（默认，需系统 cuBLASLt）</option>
-              <option value="bundled">bundled CUDA（+700MB，免系统库）</option>
+              <option value="bundled">bundled CUDA（内置 CUDA 库）</option>
             </select>
           </label>
           <label className="space-y-1">
             <span className="text-caption text-[var(--color-text-tertiary)]">GPU 架构</span>
             <select value={architecture} onChange={(event) => setArchitecture(event.target.value as 'auto' | 'standard' | 'sm75')} className="app-input w-full">
-              <option value="auto">自动（架构与 CUDA 兼容性）</option>
+              <option value="auto">{isRemote ? '自动（Linux 标准架构）' : '自动（架构与 CUDA 兼容性）'}</option>
               <option value="standard">标准架构（SM80+）</option>
-              <option value="sm75">SM75（RTX 20 / Turing）</option>
+              <option value="sm75" disabled={isRemote}>SM75（RTX 20 / Turing）</option>
             </select>
           </label>
-          <Button data-oobe="engine" data-oobe-hint="自动模式会按目标 GPU 选择架构；所有默认引擎均使用 CUDA 13，并检查当前 GPU 与驱动兼容性。旧驱动需要先更新到 R580 或更新版本。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || Boolean(downloading)}>
+          <Button data-oobe="engine" data-oobe-hint="为选中的设备安装所选版本与包类型。Linux 远端使用标准架构；SM75 架构包仅支持 Windows。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || installationInProgress || isRemote && installingRemote !== null}>
             <Download className="size-4" /> 下载/更新引擎
           </Button>
         </div>
@@ -948,7 +1011,7 @@ export function EnginePage(): React.JSX.Element {
                 <select
                   value={releaseTag}
                   onChange={(event) => setReleaseTag(event.target.value)}
-                  disabled={loadingReleases || releases.length === 0 || Boolean(downloading)}
+                  disabled={loadingReleases || releases.length === 0 || Boolean(installationInProgress)}
                   className="app-input w-full"
                 >
                   {releases.length === 0 ? <option value="">没有已发布的 Release</option> : null}
@@ -959,7 +1022,7 @@ export function EnginePage(): React.JSX.Element {
                   ))}
                 </select>
               </label>
-              <Button tone="ghost" onClick={() => void refreshReleases()} disabled={loadingReleases || Boolean(downloading)}>
+              <Button tone="ghost" onClick={() => void refreshReleases()} disabled={loadingReleases || Boolean(installationInProgress)}>
                 <RefreshCw className={`size-4 ${loadingReleases ? 'animate-spin' : ''}`} /> 刷新版本
               </Button>
             </div>
@@ -995,7 +1058,7 @@ export function EnginePage(): React.JSX.Element {
           </div>
         ) : null}
 
-        {preflight ? (
+        {!isRemote && preflight ? (
           <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
             预检：{preflight.gpu || preflight.error} · 驱动 {preflight.driverVersion ?? '未知'} · CUDA 13 cuBLASLt {preflight.cublasLt.length ? preflight.cublasLt.join(', ') : '未找到'}
           </p>
@@ -1012,28 +1075,28 @@ export function EnginePage(): React.JSX.Element {
           </p>
         </div>
 
-        {download ? (
+        {installation ? (
           <div
             role="status"
             aria-live="polite"
             className={`mt-3 rounded-lg border p-3 ${
-              download.phase === 'error'
+              installation.phase === 'error'
                 ? 'border-red-400/25 bg-red-400/[0.05]'
-                : download.phase === 'done'
+                : installation.phase === 'done'
                   ? 'border-emerald-400/25 bg-emerald-400/[0.04]'
                   : 'border-[var(--color-border-subtle)] bg-white/[0.025]'
             }`}
           >
             <div className="flex flex-wrap items-center justify-between gap-2 text-caption">
               <span className="flex items-center gap-1.5 font-medium">
-                {download.phase === 'done' ? <CheckCircle2 className="size-4 text-emerald-300" /> : null}
-                {download.phase !== 'done' && download.phase !== 'error' && download.phase !== 'canceled' ? <RefreshCw className="size-3.5 animate-spin text-accent-300" /> : null}
-                {downloadPhaseLabels[download.phase]}{download.version ? ` · ${download.version}` : ''}
+                {installation.phase === 'done' ? <CheckCircle2 className="size-4 text-emerald-300" /> : null}
+                {installation.phase !== 'done' && installation.phase !== 'error' && installation.phase !== 'canceled' ? <RefreshCw className="size-3.5 animate-spin text-accent-300" /> : null}
+                {downloadPhaseLabels[installation.phase]}{installation.version ? ` · ${installation.version}` : ''}
               </span>
               <span className="text-[var(--color-text-tertiary)]">
-                {download.phase === 'downloading' ? `${bytes(download.bytes)} / ${bytes(download.totalBytes)} · ${bytes(download.speedBps)}/s` : download.updatedAt ? dateTime(download.updatedAt) : ''}
+                {installation.phase === 'downloading' ? `${installation.bytes ? bytes(installation.bytes) : '0 B'} / ${installation.totalBytes ? bytes(installation.totalBytes) : '待查询'} · ${installation.speedBps ? bytes(installation.speedBps) : '0 B'}/s` : installation.updatedAt ? dateTime(installation.updatedAt) : ''}
               </span>
-              {download.phase === 'querying' || download.phase === 'downloading' ? (
+              {!isRemote && (installation.phase === 'querying' || installation.phase === 'downloading') ? (
                 <button
                   type="button"
                   aria-label="取消引擎安装"
@@ -1046,26 +1109,49 @@ export function EnginePage(): React.JSX.Element {
             </div>
             <div
                 role="progressbar"
-                aria-label={`${downloadPhaseLabels[download.phase]}进度`}
+                aria-label={`${downloadPhaseLabels[installation.phase]}进度`}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={progressIndeterminate ? undefined : progressPercent}
-                aria-valuetext={downloadPhaseLabels[download.phase]}
+                aria-valuetext={downloadPhaseLabels[installation.phase]}
                 className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"
             >
                 <div
                   className={`h-full transition-[width] duration-300 ${
-                    download.phase === 'error' ? 'bg-red-400' : download.phase === 'done' ? 'bg-emerald-400' : 'bg-accent-400'
+                    installation.phase === 'error' ? 'bg-red-400' : installation.phase === 'done' ? 'bg-emerald-400' : 'bg-accent-400'
                   } ${progressIndeterminate ? 'w-1/3 animate-pulse' : ''}`}
                   style={progressIndeterminate ? undefined : { width: `${progressPercent}%` }}
                 />
             </div>
-            {download.note ? <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">{download.note}</p> : null}
-            {download.error ? <p className="mt-1 break-words text-caption text-red-300">{download.error}</p> : null}
-            {download.serverPath ? <p className="mt-1 break-all font-mono text-micro text-[var(--color-text-tertiary)]">{download.serverPath}</p> : null}
+            {installation.note ? <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">{installation.note}</p> : null}
+            {installation.error ? <p className="mt-1 break-words text-caption text-red-300">{installation.error}</p> : null}
+            {installation.serverPath ? <p className="mt-1 break-all font-mono text-micro text-[var(--color-text-tertiary)]">{installation.serverPath}</p> : null}
           </div>
         ) : null}
 
+        {isRemote ? (
+        <div className="mt-4 space-y-3 border-t border-[var(--color-border-subtle)] pt-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-ui font-semibold">已安装引擎</h3>
+            <Pill tone={selectedEngine?.available ? 'accent' : 'amber'}>{selectedEngine?.available ? '当前使用' : '未安装'}</Pill>
+          </div>
+          {selectedEngine?.available ? <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border-subtle)] bg-white/[0.02] px-3 py-2">
+            <div className="min-w-0"><p className="text-ui font-medium">{selectedRemote?.version ?? '现有远端引擎'}</p><p className="mt-0.5 break-all font-mono text-micro text-[var(--color-text-tertiary)]">{selectedEngine.path}</p></div>
+            <IconButton label="删除远端引擎" onClick={() => void deleteEngine(engineHostId)} disabled={busy || installationInProgress}><Trash2 className="size-4" /></IconButton>
+          </div> : <p className="rounded-md border border-dashed border-[var(--color-border-subtle)] px-3 py-3 text-caption text-[var(--color-text-tertiary)]">{selectedRemote?.error ?? '尚未发现可用引擎，可安装或自动查找已有目录。'}</p>}
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-60 flex-1 space-y-1"><span className="text-caption text-[var(--color-text-tertiary)]">引擎目录</span><Input aria-label="远端引擎目录" value={enginePaths[engineHostId] ?? ''} onChange={(event) => setEnginePaths((previous) => ({ ...previous, [engineHostId]: event.target.value }))} className="font-mono text-caption" /></label>
+            <Button tone="secondary" onClick={() => void saveEnginePath(engineHostId)} disabled={busy || installationInProgress}>保存路径</Button>
+            <Button tone="ghost" onClick={() => void autoFindEngine(engineHostId)} disabled={busy || installationInProgress}>自动查找</Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button tone="ghost" onClick={() => void checkRemote(engineHostId)} disabled={busy || installationInProgress}><RefreshCw className="size-4" />检测引擎</Button>
+            <Button tone="ghost" onClick={() => void openSshTerminal(engineHostId)}><SquareTerminal className="size-4" />SSH 终端</Button>
+            <Button tone="ghost" onClick={() => void prepareModel(engineHostId)} disabled={busy || preparing !== null}>{preparing === engineHostId ? <Spinner className="size-4" /> : <PackageCheck className="size-4" />}准备模型</Button>
+            <span className="text-caption text-[var(--color-text-tertiary)]">{selectedRemote?.gpu}{selectedRemote?.checkedAt ? ` · ${dateTime(selectedRemote.checkedAt)}` : ''}</span>
+          </div>
+        </div>
+        ) : (
         <div className="mt-4 border-t border-[var(--color-border-subtle)] pt-3">
           <div className="mb-2 flex items-center justify-between">
             <div>
@@ -1091,7 +1177,7 @@ export function EnginePage(): React.JSX.Element {
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {!version.current ? (
-                      <Button tone="secondary" onClick={() => void selectEngineVersion(version.id)} disabled={busy || Boolean(downloading)}>
+                      <Button tone="secondary" onClick={() => void selectEngineVersion(version.id)} disabled={busy || installationInProgress || isRemote && installingRemote !== null}>
                         切换到此版本
                       </Button>
                     ) : null}
@@ -1100,7 +1186,7 @@ export function EnginePage(): React.JSX.Element {
                       aria-label={`删除引擎版本 ${version.name}`}
                       title={version.current ? '当前使用的版本不能删除' : '删除此版本'}
                       onClick={() => void removeEngineVersion(version)}
-                      disabled={version.current || busy || Boolean(downloading)}
+                      disabled={version.current || busy || Boolean(installationInProgress)}
                       className="rounded p-2 text-[var(--color-text-tertiary)] transition hover:bg-red-400/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Trash2 className="size-4" />
@@ -1111,85 +1197,11 @@ export function EnginePage(): React.JSX.Element {
             </div>
           )}
         </div>
+        )}
 
       </Card>
 
-      <Card className="p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-[14px] font-semibold">远端引擎</h2>
-            <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">Linux x86_64 + NVIDIA，SSH 启动同一 sidecar 协议。</p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Pill tone={hosts.some((host) => remote[host.id]?.online) ? 'accent' : 'neutral'}>
-              {hosts.filter((host) => remote[host.id]?.online).length}/{hosts.length} SSH 在线
-            </Pill>
-            <Pill tone={hosts.some((host) => remote[host.id]?.available) ? 'accent' : 'amber'}>
-              {hosts.filter((host) => remote[host.id]?.available).length} 引擎就绪
-            </Pill>
-          </div>
-        </div>
-        {!githubToken.trim() ? (
-          <div className="mt-3 rounded border border-amber-500/25 bg-amber-500/[0.05] px-2.5 py-2 text-caption leading-4 text-amber-200">
-            上游目前没有 GitHub Release，远端安装需要 GitHub Token；Token 只在本地调用 GitHub API，不会发到远端。
-          </div>
-        ) : null}
-        <div className="mt-3 space-y-1.5">
-          {hosts.length === 0 ? <p className="text-caption text-[var(--color-text-tertiary)]">还没有 SSH 主机。先在设备页添加 Linux NVIDIA 主机。</p> : null}
-          {hosts.map((host) => {
-            const status = remote[host.id]
-            const progress = remoteProgress[host.id]
-            return (
-              <div key={host.id} id={`engine-${host.id}`} data-oobe-host={host.id} className="scroll-mt-4 rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.02] p-2.5">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <HardDrive className="size-4 text-[var(--color-text-tertiary)]" />
-                      <span className="text-ui font-medium">{host.name}</span>
-                      <span className="font-mono text-micro text-[var(--color-text-tertiary)]">{host.user}@{host.host}</span>
-                      <Pill tone={status?.online ? 'accent' : 'red'}>{status ? (status.online ? 'SSH 在线' : 'SSH 离线') : '检测中'}</Pill>
-                      <Pill tone={status?.available ? 'accent' : status?.online ? 'amber' : 'neutral'}>
-                        {status?.available ? '引擎 ready' : status?.online ? '引擎 missing' : '未知'}
-                      </Pill>
-                    </div>
-                    <p className="mt-1 truncate text-caption text-[var(--color-text-secondary)]">{status?.gpu || '等待 GPU 探测'}</p>
-                    <p className="mt-0.5 truncate font-mono text-micro text-[var(--color-text-tertiary)]">
-                      {status?.path ?? host.engineRoot ?? '~/.mossstudio/engine/bin/moss-server'}
-                      {status?.checkedAt ? ` · ${dateTime(status.checkedAt)}` : ''}
-                      {status?.error ? ` · ${status.error}` : ''}
-                    </p>
-                    {host.modelPath ? <p className="mt-0.5 truncate font-mono text-micro text-[var(--color-text-tertiary)]">模型：{host.modelPath}</p> : null}
-                    <div className="mt-1.5 flex items-center gap-1">
-                      <span className="shrink-0 text-micro text-[var(--color-text-tertiary)]">引擎目录</span>
-                      <Input value={enginePaths[host.id] ?? ''} onChange={(event) => setEnginePaths((previous) => ({ ...previous, [host.id]: event.target.value }))} className="h-6 min-w-0 flex-1 font-mono text-micro" />
-                      <Button tone="ghost" onClick={() => void saveEnginePath(host.id)}>保存路径</Button>
-                      <Button tone="ghost" onClick={() => void autoFindEngine(host.id)}>自动查找</Button>
-                      <Button tone="ghost" onClick={() => void deleteEngine(host.id)}>删除</Button>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                    <Button tone="ghost" onClick={() => void checkRemote(host.id)} disabled={busy}>检测</Button>
-                    <Button tone="ghost" onClick={() => void openSshTerminal(host.id)}>SSH 终端</Button>
-                    {installingRemote === host.id ? <span className="px-1 text-micro text-amber-300">安装中…</span> : <Button data-oobe="engine" data-oobe-hint="为清单选中的 SSH 主机安装引擎；已有引擎可先自动查找并检测。" tone="ghost" onClick={() => void installRemote(host.id)} disabled={busy || installingRemote !== null}>安装/更新</Button>}
-                    <Button tone="ghost" onClick={() => void prepareModel(host.id)} disabled={busy || preparing !== null}>{preparing === host.id ? <Spinner className="size-4" /> : '准备模型'}</Button>
-                  </div>
-                </div>
-                {progress ? (
-                  <div className="mt-2">
-                    <div className="flex justify-between text-micro">
-                      <span className={progress.phase === 'error' ? 'text-red-300' : 'text-[var(--color-text-secondary)]'}>{progress.message}</span>
-                      <span className="text-[var(--color-text-tertiary)]">{progress.percent ?? 0}%</span>
-                    </div>
-                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-                      <div className={`h-full rounded-full ${progress.phase === 'error' ? 'bg-red-400' : 'bg-accent-400'} transition-all`} style={{ width: `${progress.percent ?? 0}%` }} />
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
-      </Card>
+
       </div>
       ) : (
       <div role="tabpanel" id="engine-panel-developer" aria-labelledby="engine-tab-developer" className="space-y-4">
@@ -1280,14 +1292,14 @@ export function EnginePage(): React.JSX.Element {
             ) : (
               <>
                 <Button data-oobe="engine" data-oobe-hint="下载并解压 CUDA 13 运行库；不需要 Python、uv 或 pip。" tone="primary" onClick={() => { setFallbackOpen(false); void runDownload('system-cuda', 'cu13', true) }}>准备 CUDA 13 库</Button>
-                <Button data-oobe="engine" tone="secondary" onClick={() => { setFallbackOpen(false); void runDownload('bundled', 'cu13') }}>下载 bundled CUDA 13（约 700MB）</Button>
+                <Button data-oobe="engine" tone="secondary" onClick={() => { setFallbackOpen(false); void runDownload('bundled', 'cu13') }}>下载 bundled CUDA 13（内置 CUDA 库）</Button>
               </>
             )}
           </>
         }
       >
         <div className="p-4 text-ui leading-5 text-[var(--color-text-secondary)]">
-          MossInfer 当前统一使用 CUDA 13。bundled 包内置 CUDA 13 运行库；system-cuda 可由 MossStudio 原生准备 CUDA 13 库（不需要 Python/uv/pip）。CUDA 13 需要 NVIDIA R580 或更新驱动；CUDA 运行库不会替代或升级显卡驱动。
+          MossInfer 提供 CUDA 12 和 CUDA 13 构建，远端可选择 CUDA 版本。system-cuda 需要同主版本且兼容的 cuBLASLt；bundled 内置对应计算库。CUDA 13 需要 NVIDIA R580 或更新驱动。
         </div>
       </Modal>
     </div>

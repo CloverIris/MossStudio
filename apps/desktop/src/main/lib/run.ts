@@ -77,7 +77,7 @@ export function runStream(
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       windowsHide: true,
     })
     let stdout = ''
@@ -107,6 +107,9 @@ export function runStream(
     }
     pipe('stdout', child.stdout)
     pipe('stderr', child.stderr)
+
+    child.stdin?.on('error', () => undefined)
+    child.stdin?.end(options.input)
 
     child.on('error', (error) => {
       clearTimeout(timer)

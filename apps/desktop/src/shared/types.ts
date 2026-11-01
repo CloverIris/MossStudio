@@ -229,11 +229,49 @@ export interface GpuTelemetrySnapshot {
   error?: string
 }
 
+export interface RemoteCudaProbe {
+  checkedAt: string
+  durationMs: number
+  driverVersion?: string
+  computeCapabilities: string[]
+  libraries: Array<{ path: string; major: 12 | 13; versionText?: string; dependencyCheck: 'passed' | 'failed' | 'unavailable'; error?: string }>
+  flavours: Array<'cu12' | 'cu13'>
+  foundFlavours?: Array<'cu12' | 'cu13'>
+  recommendedFlavour?: 'cu12' | 'cu13'
+  recommendedVariant?: 'system-cuda' | 'bundled'
+  standardArchitectureSupported?: boolean
+  gpuReason?: string
+  error?: string
+}
+
+export interface RemoteEngineInfo {
+  online: boolean
+  available: boolean
+  path: string
+  root: string
+  gpu: string
+  version?: string
+  cuda?: RemoteCudaProbe
+  error?: string
+  checkedAt: string
+}
+
+export interface RemoteEngineInstallOptions {
+  channel?: 'stable' | 'dev'
+  flavour?: 'cu12' | 'cu13'
+  variant?: 'system-cuda' | 'bundled'
+  architecture?: 'auto' | 'standard' | 'sm75'
+  releaseTag?: string
+}
+
 export interface EngineRemoteProgress {
   hostId: string
   phase: 'checking' | 'querying' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error'
   message: string
   percent?: number
+  bytes?: number
+  totalBytes?: number
+  speedBps?: number
 }
 
 export interface MossInferDownloadState {

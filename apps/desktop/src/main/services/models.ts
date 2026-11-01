@@ -344,6 +344,11 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       adapters: raw.adapters ?? BUILTIN.adapters,
     }
   }
+  // Keep the config-only repair available with an older remote catalog too.
+  const runtimeConfig = BUILTIN.models.find((model) => model.id === 'moss-runtime-config')
+  if (runtimeConfig && !raw.models.some((model) => model.id === runtimeConfig.id)) {
+    raw = { ...raw, models: [...raw.models, runtimeConfig] }
+  }
   const models: ModelEntry[] = await Promise.all(
     raw.models.map(async (model) => {
       const entry: ModelEntry = {

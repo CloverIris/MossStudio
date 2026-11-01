@@ -357,11 +357,18 @@ export const schemas = {
     temperature: z.number().min(0).max(2).optional(),
   }),
 
-  engineRemoteStatus: z.object({ hostId: z.string().min(1).max(80) }),
+  engineRemoteStatus: z.object({ hostId: z.string().min(1).max(80), refreshCuda: z.boolean().optional() }),
 
   enginePrepareRemoteModel: z.object({ hostId: z.string().min(1).max(80), repo: z.string().min(1).max(200).optional() }),
 
-  engineInstallRemote: z.object({ hostId: z.string().min(1).max(80) }),
+  engineInstallRemote: z.object({
+    hostId: z.string().min(1).max(80),
+    channel: z.enum(['stable', 'dev']).optional(),
+    flavour: z.enum(['cu12', 'cu13']).optional(),
+    variant: z.enum(['system-cuda', 'bundled']).optional(),
+    architecture: z.enum(['auto', 'standard', 'sm75']).optional(),
+    releaseTag: z.string().min(1).max(120).optional(),
+  }),
 
   engineSystemCuda: z.object({}).strict(),
 

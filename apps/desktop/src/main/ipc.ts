@@ -411,7 +411,7 @@ export function registerIpc(): void {
 
   handle(Ipc.engineProbe, null, () => probeLocalEngine())
 
-  handle(Ipc.engineRemoteStatus, schemas.engineRemoteStatus, ({ hostId }) => remoteEngineInfo(hostId))
+  handle(Ipc.engineRemoteStatus, schemas.engineRemoteStatus, ({ hostId, refreshCuda }) => remoteEngineInfo(hostId, refreshCuda))
 
   handle(Ipc.engineSystemCuda, schemas.engineSystemCuda, () => detectSystemCuda())
 
@@ -425,10 +425,10 @@ export function registerIpc(): void {
 
   handle(Ipc.mossInferCudaLibs, schemas.mossInferCudaLibs, () => installMossInferCudaLibs())
 
-  handle(Ipc.engineInstallRemote, schemas.engineInstallRemote, async ({ hostId }) => {
+  handle(Ipc.engineInstallRemote, schemas.engineInstallRemote, async ({ hostId, ...options }) => {
     const host = getTrainingHost(getSettings(), hostId)
     if (!host) throw new Error('主机不存在')
-    return installRemoteEngine(host, (phase, message, percent) => emit(Events.engineRemoteProgress, { hostId, phase, message, percent }))
+    return installRemoteEngine(host, (phase, message, percent, transfer) => emit(Events.engineRemoteProgress, { hostId, phase, message, percent, ...transfer }), options)
   })
 
   handle(Ipc.enginePrepareRemoteModel, schemas.enginePrepareRemoteModel, async ({ hostId, repo }) => {
