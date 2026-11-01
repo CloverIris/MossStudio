@@ -73,7 +73,7 @@ window.clover = {
     }
     if (channel === Ipc.onboardingStatus) return { ok: true, data: onboarding((payload as { hostId?: string })?.hostId) } as T
     if (channel === Ipc.mossInferDownloadState) return { ok: true, data: null } as T
-    if (channel === Ipc.engineStatus) return { ok: true, data: { available: false, path: null } } as T
+    if (channel === Ipc.engineStatus) return { ok: true, data: { state: 'missing', path: null, gpus: [] } } as T
     if (channel === Ipc.engineRemoteStatus) return { ok: true, data: { online: true, available: false, path: '/fixture/engine/bin/moss-server', root: '/fixture/engine', gpu: 'Fixture GPU', checkedAt: '' } } as T
     if (channel === Ipc.engineSystemCuda) return { ok: true, data: { supported: false, gpu: 'Fixture GPU', cublasLt: [], preferredFlavour: 'cu13', error: 'Fixture missing CUDA' } } as T
     if (channel === Ipc.modelsCatalog) return { ok: true, data: fixtureOobeCatalog } as T

@@ -23,6 +23,7 @@ import { useNavigate } from 'react-router-dom'
 import { Ipc } from '@shared/channels'
 import type { AppInfo, ManagedHost, ModelDirectoryId, Settings } from '@shared/types'
 import type { WebAccessInfo } from '@shared/backend'
+import { describeEngineReadiness } from '@shared/engineReadiness'
 import defaultHomeBackground from '../assets/home-background.png'
 import { call } from '../lib/api'
 import { cloverUrl } from '../lib/clover'
@@ -67,7 +68,7 @@ export function SettingsPage(): React.JSX.Element {
   const toast = useToast()
   const copyText = useCopyText()
   const navigate = useNavigate()
-  const { settings, env, devices, updates, saveSettings, refreshEnv, refreshDevices, checkForUpdates } = useApp()
+  const { settings, env, devices, updates, engineReadiness, saveSettings, refreshEnv, refreshDevices, checkForUpdates } = useApp()
   const [edits, setEdits] = useState<Partial<Settings>>({})
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [saving, setSaving] = useState(false)
@@ -237,7 +238,7 @@ export function SettingsPage(): React.JSX.Element {
       `GPU ${env?.gpu.name ?? '—'}${env?.gpu.cuda ? ` · CUDA ${env.gpu.cuda}` : ''}`,
       `数据目录 ${appInfo?.dataPath ?? '—'}`,
       `模型目录 ${env?.device.modelsPath ?? '—'}`,
-      `引擎 ${settings?.mossInferServerPath ?? '未配置'} · tier ${settings?.mossInferTier ?? '—'} · ${settings?.mossInferVariant ?? '—'}`,
+      `引擎 ${settings?.mossInferServerPath ?? '未配置'} · ${engineReadiness ? describeEngineReadiness(engineReadiness) : '状态检测中'} · tier ${settings?.mossInferTier ?? '—'} · ${settings?.mossInferVariant ?? '—'}`,
     ]
     await copyText(lines.join('\n'), '诊断信息已复制')
   }

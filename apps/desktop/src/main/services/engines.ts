@@ -232,17 +232,7 @@ async function activateLocalEngineVersion(version: LocalEngineVersion): Promise<
   return localEngineInfo()
 }
 
-/** 已验证版本在切换前仍会确认当前 GPU；未验证版本必须走验证并切换。 */
-export async function selectLocalEngineVersion(id: string): Promise<LocalEngineInfo> {
-  const version = findLocalEngineVersion(id)
-  if (!version.verified) throw new Error('此引擎尚未验证，请使用「验证并切换」')
-  await verifyProbe(version)
-  return activateLocalEngineVersion(version)
-}
-
-export async function verifyLocalEngineVersion(id: string): Promise<LocalEngineInfo> {
-  const version = findLocalEngineVersion(id)
-  const manifest = await verifyProbe(version)
+async function persistVerification(version: LocalEngineVersion, manifest: EngineManifest): Promise<void> {
   if (version.source === 'managed') {
     await writeEngineManifest(join(paths.mossinfer(), basename(version.id)), manifest)
   } else {
@@ -251,6 +241,21 @@ export async function verifyLocalEngineVersion(id: string): Promise<LocalEngineI
     ))
   }
   gpuProbeCache = null
+}
+
+/** 已验证版本在切换前仍会确认当前 GPU；未验证版本必须走验证并切换。 */
+export async function selectLocalEngineVersion(id: string): Promise<LocalEngineInfo> {
+  const version = findLocalEngineVersion(id)
+  if (!version.verified) throw new Error('此引擎尚未验证，请使用「验证并切换」')
+  const manifest = await verifyProbe(version)
+  await persistVerification(version, manifest)
+  return activateLocalEngineVersion(version)
+}
+
+export async function verifyLocalEngineVersion(id: string): Promise<LocalEngineInfo> {
+  const version = findLocalEngineVersion(id)
+  const manifest = await verifyProbe(version)
+  await persistVerification(version, manifest)
   return activateLocalEngineVersion(version)
 }
 
@@ -287,9 +292,12 @@ export function removeLocalEngineVersion(id: string): boolean {
   return true
 }
 
-export async function probeLocalEngine(): Promise<Record<string, unknown>> {
+export async function probeLocalEngine(): Promise<{
+  hello: EngineHello
+  gpuCompatibility: EngineGpuProbeSnapshot
+}> {
   const { snapshot, hello } = await probeLocalEngineGpuCompatibility(true)
-  return { ...hello.raw, gpuCompatibility: snapshot }
+  return { hello, gpuCompatibility: snapshot }
 }
 
 export async function remoteEngineInfo(hostId: string, refreshCuda = false): Promise<RemoteEngineInfo> {

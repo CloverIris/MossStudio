@@ -32,6 +32,7 @@ import type {
   Settings,
 } from '@shared/types'
 import type { BackendInfo } from '@shared/backend'
+import type { EngineHello } from '@shared/engineProtocol'
 import { recommendGpuMemoryMode } from '@shared/gpuProfile'
 import { selectAutomaticGpu } from '@shared/gpuScheduling'
 import { gpuRequiresBf16Tier } from '@shared/gpuProfile'
@@ -41,13 +42,6 @@ import { openWindow } from '../lib/windows'
 import { bytes, dateTime } from '../lib/format'
 import { electronStudioClient } from '../lib/studioClient'
 import { Button, Card, IconButton, Input, Modal, Pill, Segmented, Spinner, useToast } from '../components/ui'
-
-interface LocalEngineInfo {
-  available: boolean
-  path: string | null
-  version?: string
-  error?: string
-}
 
 type EngineTab = 'inference' | 'developer'
 type InstallPreferences = Required<Pick<RemoteEngineInstallOptions, 'channel' | 'flavour' | 'variant' | 'architecture'>> & { releaseTag: string }
@@ -78,16 +72,17 @@ export function EnginePage(): React.JSX.Element {
   const saveSettings = useApp((state) => state.saveSettings)
   const gpuTelemetry = useApp((state) => state.gpuTelemetry)
   const download = useApp((state) => state.mossInferDownload)
+  const engine = useApp((state) => state.engineReadiness)
   const setMossInferDownload = useApp((state) => state.setMossInferDownload)
+  const refreshEngineReadiness = useApp((state) => state.refreshEngineReadiness)
   const [githubToken, setGithubToken] = useState(settings?.githubToken ?? '')
-  const [engine, setEngine] = useState<LocalEngineInfo | null>(null)
   const [gpuInventory, setGpuInventory] = useState<GpuInventorySnapshot | null>(null)
   const [refreshingGpu, setRefreshingGpu] = useState(false)
   const [engineVersions, setEngineVersions] = useState<LocalEngineVersion[]>([])
   const [releases, setReleases] = useState<MossInferRelease[]>([])
   const [releaseError, setReleaseError] = useState<string | null>(null)
   const [loadingReleases, setLoadingReleases] = useState(true)
-  const [probe, setProbe] = useState<Record<string, unknown> | null>(null)
+  const [hello, setHello] = useState<EngineHello | null>(null)
   const [gpuProbe, setGpuProbe] = useState<EngineGpuProbeSnapshot | null>(null)
   const [gpuProbeError, setGpuProbeError] = useState<string | null>(null)
   const lastAutoProbeKey = useRef<string | null>(null)
@@ -126,40 +121,37 @@ export function EnginePage(): React.JSX.Element {
 
   const refresh = useCallback(async () => {
     try {
-      const [next, current, versions, hostList] = await Promise.all([
-        call<LocalEngineInfo>(Ipc.engineStatus),
-        call<MossInferDownloadState | null>(Ipc.mossInferDownloadState),
+      const [, versions, hostList] = await Promise.all([
+        refreshEngineReadiness(),
         call<LocalEngineVersion[]>(Ipc.engineVersions),
         call<ManagedHost[]>(Ipc.hostsList),
       ])
-      setEngine(next)
-      setMossInferDownload(current)
       setEngineVersions(versions)
       setHosts(hostList.filter((host) => host.kind === 'ssh'))
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
     }
-  }, [setMossInferDownload, toast])
+  }, [refreshEngineReadiness, toast])
 
   useEffect(() => { void refresh() }, [refresh])
   useEffect(() => {
-    if (!engine?.available || !engine.path) return
+    if (!engine?.path) return
     const key = `${engine.path}:${gpuInventory?.scannedAt ?? 'not-scanned'}`
     if (lastAutoProbeKey.current === key) return
     lastAutoProbeKey.current = key
     let canceled = false
-    void call<Record<string, unknown> & { gpuCompatibility?: EngineGpuProbeSnapshot }>(Ipc.engineProbe)
+    void call<{ hello: EngineHello; gpuCompatibility: EngineGpuProbeSnapshot }>(Ipc.engineProbe)
       .then((result) => {
         if (canceled) return
-        setProbe(result)
-        setGpuProbe(result.gpuCompatibility ?? null)
+        setHello(result.hello)
+        setGpuProbe(result.gpuCompatibility)
         setGpuProbeError(null)
       })
       .catch((error: unknown) => {
         if (!canceled) setGpuProbeError(error instanceof Error ? error.message : String(error))
       })
     return () => { canceled = true }
-  }, [engine?.available, engine?.path, gpuInventory?.scannedAt])
+  }, [engine?.path, gpuInventory?.scannedAt])
   const refreshGpuInventory = useCallback(async () => {
     setRefreshingGpu(true)
     try {
@@ -262,14 +254,15 @@ export function EnginePage(): React.JSX.Element {
     }
   }
 
-  async function selectEngineVersion(id: string): Promise<void> {
+  async function selectEngineVersion(version: LocalEngineVersion): Promise<void> {
     setBusy(true)
+    const requiresVerification = !version.verified || version.current && engine?.state === 'stale'
     try {
-      await call(Ipc.engineVersionSelect, { id })
-      setProbe(null)
+      await call(requiresVerification ? Ipc.engineVersionVerify : Ipc.engineVersionSelect, { id: version.id })
+      setHello(null)
       setGpuProbe(null)
       setGpuProbeError(null)
-      toast.push('已切换当前引擎版本', 'success')
+      toast.push(requiresVerification ? '引擎已验证并切换' : '已切换当前引擎版本', 'success')
       await refresh()
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
@@ -364,9 +357,9 @@ export function EnginePage(): React.JSX.Element {
   async function probeEngine(): Promise<void> {
     setBusy(true)
     try {
-      const result = await call<Record<string, unknown> & { gpuCompatibility?: EngineGpuProbeSnapshot }>(Ipc.engineProbe)
-      setProbe(result)
-      setGpuProbe(result.gpuCompatibility ?? null)
+      const result = await call<{ hello: EngineHello; gpuCompatibility: EngineGpuProbeSnapshot }>(Ipc.engineProbe)
+      setHello(result.hello)
+      setGpuProbe(result.gpuCompatibility)
       setGpuProbeError(null)
       toast.push('引擎 hello 成功', 'success')
     } catch (error) {
@@ -387,10 +380,10 @@ export function EnginePage(): React.JSX.Element {
       if (!directory) return
       const versions = await call<LocalEngineVersion[]>(Ipc.engineSelectDirectory, { path: directory })
       setEngineVersions(versions)
-      setProbe(null)
+      setHello(null)
       setGpuProbe(null)
       setGpuProbeError(null)
-      toast.push('已登记为外部引擎；点击「激活」后才会用于推理', 'success')
+      toast.push('已登记为外部引擎；点击「验证并切换」后才会用于推理', 'success')
       await refresh()
     } catch (error) {
       toast.push(`接入第三方引擎失败：${error instanceof Error ? error.message : String(error)}`, 'error')
@@ -403,7 +396,7 @@ export function EnginePage(): React.JSX.Element {
     setChainTesting(true)
     setChainTest({ phase: 'running', message: '检查模型、后端和当前引擎…' })
     try {
-      if (!engine?.available) throw new Error(engine?.error ?? '当前引擎不可用')
+      if (engine?.state !== 'ready') throw new Error(engine?.reason ?? '当前引擎不可用')
       const catalog = await call<Catalog>(Ipc.modelsCatalog)
       const isReady = (candidate: Catalog['bundles'][number]): boolean =>
         [candidate.components.dit, candidate.components.textEncoder, candidate.components.vae, candidate.support]
@@ -618,8 +611,21 @@ export function EnginePage(): React.JSX.Element {
   const isRemote = engineHostId !== 'local'
   const selectedHost = hosts.find((host) => host.id === engineHostId)
   const selectedRemote = remote[engineHostId]
-  const selectedEngine = isRemote ? selectedRemote : engine
+  const localReady = engine?.state === 'ready'
+  const selectedAvailable = isRemote ? selectedRemote?.available : localReady
+  const selectedPath = isRemote ? selectedRemote?.path : engine?.path
+  const selectedError = isRemote ? selectedRemote?.error : engine?.reason
+  const selectedVersion = isRemote ? selectedRemote?.version : engine?.engineVersion
   const deviceLabel = isRemote ? selectedHost?.name ?? '远端设备' : '本机'
+  const localStateLabel = !engine ? '检测中'
+    : engine.state === 'ready' ? engine.lastAttempt?.error ? '已就绪 · 上次更新失败' : 'ready'
+      : engine.state === 'unverified' ? '未验证'
+        : engine.state === 'stale' ? '待重新验证'
+          : engine.state === 'unsupported' ? '不兼容' : 'missing'
+  const selectedStateLabel = isRemote
+    ? selectedRemote?.available ? 'ready' : 'missing'
+    : localStateLabel
+  const selectedTone = selectedAvailable ? 'accent' : !isRemote && engine?.state === 'unsupported' ? 'red' : 'amber'
   const selectedProgress = remoteProgress[engineHostId]
   const installation: MossInferDownloadState | null = isRemote ? selectedProgress ? {
     channel, phase: selectedProgress.phase === 'checking' ? 'querying' : selectedProgress.phase === 'installing' ? 'extracting' : selectedProgress.phase,
@@ -629,6 +635,12 @@ export function EnginePage(): React.JSX.Element {
   const installationInProgress = isRemote ? installingRemote === engineHostId : Boolean(downloading)
   const progressIndeterminate = Boolean(installation && ['querying', 'extracting', 'cuda_libs'].includes(installation.phase))
   const progressPercent = installation ? installation.phase === 'done' ? 100 : Math.max(0, Math.min(100, installation.percent)) : 0
+  // A failed update must not read as "the engine is broken" when the previous build still runs.
+  const phaseLabel = installation
+    ? installation.phase === 'error' && !isRemote && localReady
+      ? '更新失败 · 当前引擎仍可用'
+      : downloadPhaseLabels[installation.phase]
+    : ''
   const systemRecommendedGpu = gpuInventory?.devices.find((device) => device.uuid === gpuInventory.recommendedGpuUuid)
   const compatibleGpuUuids = new Set(
     gpuProbe?.devices.filter((device) => device.status === 'supported').map((device) => device.uuid) ?? [],
@@ -657,7 +669,7 @@ export function EnginePage(): React.JSX.Element {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Pill tone={selectedEngine?.available ? 'accent' : 'amber'}>{deviceLabel}引擎{selectedEngine?.available ? '就绪' : '缺失'}</Pill>
+          <Pill tone={selectedTone}>{deviceLabel}引擎{selectedStateLabel}</Pill>
           <IconButton label="刷新" onClick={() => void refresh()} disabled={busy}><RefreshCw className="size-4" /></IconButton>
         </div>
       </header>
@@ -782,7 +794,7 @@ export function EnginePage(): React.JSX.Element {
                           </p>
                         ) : null}
                       </div>
-                      <Button tone="ghost" disabled={busy || !engine?.available} onClick={() => void probeEngine()}>
+                      <Button tone="ghost" disabled={busy || !engine?.path} onClick={() => void probeEngine()}>
                         <ShieldCheck className="size-3.5" /> 测试兼容性
                       </Button>
                     </div>
@@ -842,18 +854,18 @@ export function EnginePage(): React.JSX.Element {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-[14px] font-semibold">当前推理配置</h2>
-              <Pill tone={settings?.inferenceBackend === 'mossinfer' && engine?.available ? 'accent' : 'amber'}>
-                {settings?.inferenceBackend === 'mossinfer' && engine?.available ? '首页使用 MossInfer' : '首页未使用 MossInfer'}
+              <Pill tone={settings?.inferenceBackend === 'mossinfer' && localReady ? 'accent' : 'amber'}>
+                {settings?.inferenceBackend === 'mossinfer' && localReady ? '首页使用 MossInfer' : '首页未使用 MossInfer'}
               </Pill>
             </div>
             <p className="mt-1 break-all font-mono text-caption text-[var(--color-text-secondary)]">
               {settings?.inferenceBackend === 'mossinfer'
-                ? engine?.path ?? engine?.error ?? 'MossInfer 引擎路径未配置'
+                ? engine?.path ?? engine?.reason ?? 'MossInfer 引擎路径未配置'
                 : '首页当前使用 Runner 后端；下方性能参数仅在 MossInfer 后端生效。'}
             </p>
-            {engine?.version ? <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">{engine.version}</p> : null}
+            {engine?.engineVersion ? <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">{engine.engineVersion}</p> : null}
           </div>
-          <Pill tone={engine?.available ? 'accent' : 'amber'}>{engine?.available ? '本机引擎 ready' : '本机引擎缺失'}</Pill>
+          <Pill tone={localReady ? 'accent' : engine?.state === 'unsupported' ? 'red' : 'amber'}>本机引擎{localStateLabel}</Pill>
         </div>
         <div className="mt-3 grid gap-3 border-t border-[var(--color-border-subtle)] pt-3 sm:grid-cols-2">
           <Segmented
@@ -918,12 +930,12 @@ export function EnginePage(): React.JSX.Element {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-[14px] font-semibold">{deviceLabel} MossInfer</h2>
-                <Pill tone={selectedEngine?.available ? 'accent' : 'red'}>{selectedEngine?.available ? 'ready' : 'missing'}</Pill>
+                <Pill tone={selectedTone}>{selectedStateLabel}</Pill>
               </div>
               <p className="mt-1 max-w-[720px] break-all font-mono text-caption text-[var(--color-text-tertiary)]">
-                {selectedEngine?.path ?? selectedEngine?.error ?? '未检测到 moss-server'}
+                {selectedPath ?? selectedError ?? '未检测到 moss-server'}
               </p>
-              {selectedEngine?.version ? <p className="mt-1 text-caption text-[var(--color-text-secondary)]">{selectedEngine.version}</p> : null}
+              {selectedVersion ? <p className="mt-1 text-caption text-[var(--color-text-secondary)]">{selectedVersion}</p> : null}
             </div>
           </div>
           <div className="flex flex-wrap items-end gap-2">
@@ -939,12 +951,12 @@ export function EnginePage(): React.JSX.Element {
               if (isRemote) return null
               // Only offer the repair when the installed engine is the system-cuda variant
               // AND no usable cuBLASLt is in sight (probe result wins over the preflight list).
-              const probed = (probe?.['probe'] as { cublaslt?: { source?: string; error?: string } } | undefined)?.cublaslt
+              const probed = hello?.probe?.cublasLt
               const probeOk = Boolean(probed && !probed.error && probed.source)
               const preflightOk = Boolean(preflight && preflight.cublasLt.length > 0)
-              const needsCudaLibs = Boolean(selectedEngine?.available) && (selectedEngine?.path?.includes('system-cuda') ?? false) && !probeOk && !preflightOk
+              const needsCudaLibs = Boolean(engine?.path) && (engine?.variant === 'system-cuda' || (engine?.path?.includes('system-cuda') ?? false)) && !probeOk && !preflightOk
               return needsCudaLibs ? (
-                <Button tone="ghost" onClick={() => void installCudaWheels()} disabled={busy || !selectedEngine?.available}>
+                <Button tone="ghost" onClick={() => void installCudaWheels()} disabled={busy || !engine?.path}>
                   <ShieldCheck className="size-4" /> 补 CUDA 库
                 </Button>
               ) : null
@@ -1091,7 +1103,7 @@ export function EnginePage(): React.JSX.Element {
               <span className="flex items-center gap-1.5 font-medium">
                 {installation.phase === 'done' ? <CheckCircle2 className="size-4 text-emerald-300" /> : null}
                 {installation.phase !== 'done' && installation.phase !== 'error' && installation.phase !== 'canceled' ? <RefreshCw className="size-3.5 animate-spin text-accent-300" /> : null}
-                {downloadPhaseLabels[installation.phase]}{installation.version ? ` · ${installation.version}` : ''}
+                {phaseLabel}{installation.version ? ` · ${installation.version}` : ''}
               </span>
               <span className="text-[var(--color-text-tertiary)]">
                 {installation.phase === 'downloading' ? `${installation.bytes ? bytes(installation.bytes) : '0 B'} / ${installation.totalBytes ? bytes(installation.totalBytes) : '待查询'} · ${installation.speedBps ? bytes(installation.speedBps) : '0 B'}/s` : installation.updatedAt ? dateTime(installation.updatedAt) : ''}
@@ -1133,10 +1145,10 @@ export function EnginePage(): React.JSX.Element {
         <div className="mt-4 space-y-3 border-t border-[var(--color-border-subtle)] pt-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-ui font-semibold">已安装引擎</h3>
-            <Pill tone={selectedEngine?.available ? 'accent' : 'amber'}>{selectedEngine?.available ? '当前使用' : '未安装'}</Pill>
+            <Pill tone={selectedAvailable ? 'accent' : 'amber'}>{selectedAvailable ? '当前使用' : '未安装'}</Pill>
           </div>
-          {selectedEngine?.available ? <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border-subtle)] bg-white/[0.02] px-3 py-2">
-            <div className="min-w-0"><p className="text-ui font-medium">{selectedRemote?.version ?? '现有远端引擎'}</p><p className="mt-0.5 break-all font-mono text-micro text-[var(--color-text-tertiary)]">{selectedEngine.path}</p></div>
+          {selectedAvailable ? <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border-subtle)] bg-white/[0.02] px-3 py-2">
+            <div className="min-w-0"><p className="text-ui font-medium">{selectedRemote?.version ?? '现有远端引擎'}</p><p className="mt-0.5 break-all font-mono text-micro text-[var(--color-text-tertiary)]">{selectedPath}</p></div>
             <IconButton label="删除远端引擎" onClick={() => void deleteEngine(engineHostId)} disabled={busy || installationInProgress}><Trash2 className="size-4" /></IconButton>
           </div> : <p className="rounded-md border border-dashed border-[var(--color-border-subtle)] px-3 py-3 text-caption text-[var(--color-text-tertiary)]">{selectedRemote?.error ?? '尚未发现可用引擎，可安装或自动查找已有目录。'}</p>}
           <div className="flex flex-wrap items-end gap-2">
@@ -1172,13 +1184,15 @@ export function EnginePage(): React.JSX.Element {
                     <div className="flex items-center gap-2">
                       <span className="truncate font-mono text-caption font-medium">{version.name}</span>
                       {version.current ? <Pill tone="accent">当前使用</Pill> : null}
+                      {!version.verified ? <Pill tone="amber">未验证</Pill> : null}
                     </div>
                     <p className="mt-0.5 truncate font-mono text-micro text-[var(--color-text-tertiary)]">{version.path}</p>
+                    {version.unverifiedReason ? <p className="mt-1 text-caption text-amber-200">{version.unverifiedReason}</p> : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    {!version.current ? (
-                      <Button tone="secondary" onClick={() => void selectEngineVersion(version.id)} disabled={busy || installationInProgress || isRemote && installingRemote !== null}>
-                        切换到此版本
+                    {!version.current || !version.verified || engine?.state === 'stale' ? (
+                      <Button tone="secondary" onClick={() => void selectEngineVersion(version)} disabled={busy || installationInProgress || isRemote && installingRemote !== null}>
+                        {!version.verified || version.current && engine?.state === 'stale' ? '验证并切换' : '切换到此版本'}
                       </Button>
                     ) : null}
                     <button
@@ -1213,26 +1227,26 @@ export function EnginePage(): React.JSX.Element {
                 用于自定义编译、未覆盖的 GPU 架构或本地调试。RTX 20/Turing 可优先下载上游 SM75 架构包。选择包含 moss-server 的安装根目录或 bin 目录；接入前会验证 protocol 2。
               </p>
             </div>
-            <Pill tone={settings?.inferenceBackend === 'mossinfer' && engine?.available ? 'accent' : 'neutral'}>
-              {settings?.inferenceBackend === 'mossinfer' && engine?.available ? '当前激活' : '未激活'}
+            <Pill tone={settings?.inferenceBackend === 'mossinfer' && localReady ? 'accent' : 'neutral'}>
+              {settings?.inferenceBackend === 'mossinfer' && localReady ? '当前激活' : '未激活'}
             </Pill>
           </div>
           <div className="mt-3 rounded-lg border border-[var(--color-border-subtle)] bg-black/15 p-3">
             <p className="text-caption font-medium">当前引擎路径</p>
             <p className="mt-1 break-all font-mono text-caption text-[var(--color-text-secondary)]">
-              {engine?.path ?? engine?.error ?? '未配置本机引擎'}
+              {engine?.path ?? engine?.reason ?? '未配置本机引擎'}
             </p>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button tone="secondary" onClick={() => void probeEngine()} disabled={busy || !engine?.available}>
+            <Button tone="secondary" onClick={() => void probeEngine()} disabled={busy || !engine?.path}>
               {busy ? <Spinner className="size-4" /> : <SquareTerminal className="size-4" />} 测试 hello / GPU
             </Button>
             <Button tone="primary" onClick={() => void selectThirdPartyEngine()} disabled={busy}>
               <FolderOpen className="size-4" /> 选择第三方引擎目录
             </Button>
           </div>
-          {probe ? (
-            <pre className="mt-3 max-h-64 overflow-auto rounded-lg bg-black/25 p-3 font-mono text-caption leading-4 text-[var(--color-text-secondary)]">{JSON.stringify(probe, null, 2)}</pre>
+          {hello ? (
+            <pre className="mt-3 max-h-64 overflow-auto rounded-lg bg-black/25 p-3 font-mono text-caption leading-4 text-[var(--color-text-secondary)]">{JSON.stringify(hello.raw, null, 2)}</pre>
           ) : null}
         </Card>
 
@@ -1244,7 +1258,7 @@ export function EnginePage(): React.JSX.Element {
                 使用一组已就绪的本机模型，沿用 Studio 的后端提交、模型绑定、引擎 load、生成和输出保存链路，执行 256×256 / 4 步测试。会实际占用 GPU 并写入一张测试图片。
               </p>
             </div>
-            <Button tone="primary" onClick={() => void runEngineChainTest()} disabled={chainTesting || busy || !engine?.available}>
+            <Button tone="primary" onClick={() => void runEngineChainTest()} disabled={chainTesting || busy || !localReady}>
               {chainTesting ? <Spinner className="size-4" /> : <Cpu className="size-4" />} 运行真实生成测试
             </Button>
           </div>

@@ -22,6 +22,7 @@ export async function runStudioCanvasUiTests(): Promise<void> {
   mock(Ipc.onboardingStatus, { ready: true, steps: [], checkedAt: '' })
   mock(Ipc.launchQueueList, [])
   mock(Ipc.mossInferDownloadState, null)
+  mock(Ipc.engineStatus, { state: 'missing', path: null, gpus: [] })
   mock(Ipc.hostsList, [])
 
   const win = createAppWindow('studio', false)
