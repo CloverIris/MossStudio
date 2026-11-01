@@ -1,5 +1,6 @@
 export type MossInferArchitecture = 'standard' | 'sm75'
 export type MossInferVariant = 'system-cuda' | 'bundled'
+export type MossInferFlavour = 'cu12' | 'cu13'
 
 export function mossInferArchitectureForComputeCapability(
   major: number,
@@ -10,10 +11,20 @@ export function mossInferArchitectureForComputeCapability(
   return null
 }
 
+export function mossInferFlavourAfterProbe(
+  architecture: MossInferArchitecture,
+  installedFlavour: MossInferFlavour,
+  recommendedFlavour: string,
+): MossInferFlavour {
+  return architecture === 'standard' && installedFlavour === 'cu13' && recommendedFlavour === 'cu12'
+    ? 'cu12'
+    : installedFlavour
+}
+
 export function mossInferArchiveBase(
   version: string,
   os: 'linux' | 'windows',
-  flavour: 'cu12' | 'cu13',
+  flavour: MossInferFlavour,
   variant: MossInferVariant,
   architecture: MossInferArchitecture,
 ): string {

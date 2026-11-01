@@ -1,5 +1,5 @@
 import { app, dialog, nativeTheme, protocol } from 'electron'
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
@@ -330,6 +330,8 @@ app.whenReady().then(async () => {
         `# MossStudio 0.2.0\n\n\`\`\`json clover-release\n${JSON.stringify(legacyMachine, null, 2)}\n\`\`\``,
       )
       const installer = findInstaller(parsed.document.installers, 'darwin', 'arm64')
+      const wrongArchitectureMissing =
+        findInstaller(parsed.document.installers, 'darwin', 'x64') === null
       const result = {
         scenario: 'release-parse',
         version: parsed.document.app.version,
@@ -337,6 +339,7 @@ app.whenReady().then(async () => {
         legacyHomeAbsent: legacy.document.home === undefined,
         body: parsed.body,
         installer: installer?.kind ?? null,
+        wrongArchitectureMissing,
         newer: compareSemver(parsed.document.app.version, '0.1.0'),
         betaPrerelease: compareSemver('0.2.0-beta.1', '0.2.0'),
         equal: compareSemver('0.2.0', '0.2.0'),
@@ -346,6 +349,7 @@ app.whenReady().then(async () => {
         result.version === '0.2.0' &&
           result.homeTitle === '一念落纸上，万象入画来。' &&
           result.legacyHomeAbsent &&
+          result.wrongArchitectureMissing &&
           result.installer === 'dmg' &&
           result.newer === 1 &&
           result.betaPrerelease === -1 &&
@@ -377,12 +381,20 @@ app.whenReady().then(async () => {
       if (!address || typeof address === 'string') throw new Error('test server did not bind a port')
       process.env['CLOVER_UPDATE_TEST'] = '1'
       const state = await downloadUpdate('9.9.9', {
-        platform: 'darwin',
-        arch: 'arm64',
-        kind: 'dmg',
+        platform: process.platform as 'darwin' | 'win32' | 'linux',
+        arch: process.arch === 'arm64' ? 'arm64' : 'x64',
+        kind: 'nsis',
         url: `http://127.0.0.1:${address.port}/fake.dmg`,
         sha256,
         size_bytes: payload.length,
+      })
+      const wrongSize = await downloadUpdate('9.9.9-size', {
+        platform: process.platform as 'darwin' | 'win32' | 'linux',
+        arch: process.arch === 'arm64' ? 'arm64' : 'x64',
+        kind: 'nsis',
+        url: `http://127.0.0.1:${address.port}/fake.dmg`,
+        sha256,
+        size_bytes: payload.length + 1,
       })
       const downloaded = state.path && existsSync(state.path) ? readFileSync(state.path) : null
       const digest = downloaded ? createHash('sha256').update(downloaded).digest('hex') : null
@@ -394,6 +406,7 @@ app.whenReady().then(async () => {
             bytes: state.bytes,
             path: state.path,
             digestMatches: digest === sha256,
+            exactSizeEnforced: wrongSize.phase === 'error' && wrongSize.error?.includes('大小不匹配'),
           },
           null,
           2,
@@ -404,10 +417,89 @@ app.whenReady().then(async () => {
         recursive: true,
         force: true,
       })
-      app.exit(state.phase === 'ready' && digest === sha256 ? 0 : 1)
+      rmSync(join(app.getPath('userData'), 'downloads', 'updates', '9.9.9-size'), {
+        recursive: true,
+        force: true,
+      })
+      app.exit(
+        state.phase === 'ready' &&
+          digest === sha256 &&
+          wrongSize.phase === 'error' &&
+          wrongSize.error?.includes('大小不匹配')
+          ? 0
+          : 1,
+      )
     } catch (error) {
       console.error(error)
       server.close()
+      app.exit(1)
+    }
+    return
+  }
+
+  if (scenario === 'update-zip') {
+    const zipPath = process.env['MOSS_UPDATE_TEST_ZIP']
+    if (!zipPath || !existsSync(zipPath)) {
+      console.error('MOSS_UPDATE_TEST_ZIP must point to a built release ZIP')
+      app.exit(1)
+      return
+    }
+    const size = statSync(zipPath).size
+    const hash = createHash('sha256')
+    try {
+      await new Promise<void>((resolvePromise, rejectPromise) => {
+        createReadStream(zipPath)
+          .on('data', (chunk: string | Buffer) => hash.update(chunk))
+          .on('end', resolvePromise)
+          .on('error', rejectPromise)
+      })
+      const sha256 = hash.digest('hex')
+      const server = createServer((_req, res) => {
+        res.writeHead(200, {
+          'content-type': 'application/zip',
+          'content-length': size,
+        })
+        createReadStream(zipPath).pipe(res)
+      })
+      await new Promise<void>((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise))
+      const address = server.address()
+      if (!address || typeof address === 'string') throw new Error('test server did not bind a port')
+      process.env['CLOVER_UPDATE_TEST'] = '1'
+      const state = await downloadUpdate('9.9.9-zip', {
+        platform: 'win32',
+        arch: 'x64',
+        kind: 'zip',
+        url: `http://127.0.0.1:${address.port}/MossStudio-test.zip`,
+        sha256,
+        size_bytes: size,
+      })
+      const stage = state.path ?? ''
+      const packageValid =
+        state.phase === 'ready' &&
+        existsSync(join(stage, 'MossStudio.exe')) &&
+        existsSync(join(stage, 'resources', 'app.asar')) &&
+        existsSync(join(stage, 'resources', 'release', 'updater.ps1'))
+      console.log(
+        JSON.stringify(
+          {
+            scenario: 'update-zip',
+            phase: state.phase,
+            size,
+            packageValid,
+            error: state.error,
+          },
+          null,
+          2,
+        ),
+      )
+      server.close()
+      rmSync(join(app.getPath('userData'), 'downloads', 'updates', '9.9.9-zip'), {
+        recursive: true,
+        force: true,
+      })
+      app.exit(packageValid ? 0 : 1)
+    } catch (error) {
+      console.error(error)
       app.exit(1)
     }
     return

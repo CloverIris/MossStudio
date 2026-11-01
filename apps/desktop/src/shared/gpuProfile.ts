@@ -2,10 +2,15 @@ import type { GpuInventoryDevice, GpuProfileOverride, Settings } from './types'
 
 export type GpuMemoryMode = Settings['mossInferMemoryMode']
 
+export function gpuRequiresBf16Tier(device: GpuInventoryDevice): boolean {
+  const capability = device.computeCapability
+  return capability !== undefined && capability.major > 0 && capability.major < 8
+}
+
 export interface ResolvedGpuProfile {
   memoryMode: GpuMemoryMode
   tier: Settings['mossInferTier']
-  source: 'recommended' | 'global' | 'gpu-override'
+  source: 'recommended' | 'global' | 'gpu-override' | 'hardware-compatibility'
 }
 
 export function recommendGpuMemoryMode(device: GpuInventoryDevice): GpuMemoryMode | null {
@@ -25,12 +30,16 @@ export function resolveGpuProfile(
   const memoryMode = override?.memoryMode ?? (
     recommendedMode ?? settings.mossInferMemoryMode
   )
+  const requestedTier = override?.tier ?? settings.mossInferTier
+  const bf16Only = gpuRequiresBf16Tier(device)
   return {
     memoryMode,
-    tier: override?.tier ?? settings.mossInferTier,
-    source: override?.memoryMode !== undefined || override?.tier !== undefined
-      ? 'gpu-override'
-      : recommendedMode ? 'recommended' : 'global',
+    tier: bf16Only ? 'reference' : requestedTier,
+    source: bf16Only && requestedTier !== 'reference'
+      ? 'hardware-compatibility'
+      : override?.memoryMode !== undefined || override?.tier !== undefined
+        ? 'gpu-override'
+        : recommendedMode ? 'recommended' : 'global',
   }
 }
 

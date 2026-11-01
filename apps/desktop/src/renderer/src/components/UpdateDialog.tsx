@@ -42,8 +42,10 @@ export function UpdateDialog(): React.JSX.Element | null {
 
   const version = updates?.latestVersion
   const activeDownload = download && download.version === version ? download : null
-  const downloading =
-    activeDownload?.phase === 'downloading' || activeDownload?.phase === 'verifying'
+  const updating = ['downloading', 'verifying', 'extracting', 'installing'].includes(
+    activeDownload?.phase ?? '',
+  )
+  const cancellable = ['downloading', 'verifying', 'extracting'].includes(activeDownload?.phase ?? '')
   const finished = activeDownload?.phase === 'ready' || activeDownload?.phase === 'opened'
   const installer = updates?.installer ?? null
 
@@ -81,7 +83,7 @@ export function UpdateDialog(): React.JSX.Element | null {
     <Modal
       open={open}
       onClose={() => {
-        if (downloading) setOpen(false)
+        if (updating) setOpen(false)
         else later()
       }}
       title={`发现新版本 ${version}`}
@@ -91,7 +93,7 @@ export function UpdateDialog(): React.JSX.Element | null {
       width="max-w-3xl"
       footer={
         <>
-          {downloading ? (
+          {cancellable ? (
             <Button tone="ghost" className="mr-auto" onClick={() => void cancelDownload()}>
               取消下载
             </Button>
@@ -108,10 +110,16 @@ export function UpdateDialog(): React.JSX.Element | null {
             </Button>
           ) : null}
           {installer && !finished ? (
-            <Button tone="primary" onClick={() => void begin()} disabled={downloading}>
+            <Button tone="primary" onClick={() => void begin()} disabled={updating}>
               <span className="inline-flex items-center gap-1.5">
-                {downloading ? <Spinner className="size-4" /> : <Download className="size-4" />}
-                {downloading ? '下载中' : '下载并安装'}
+                {updating ? <Spinner className="size-4" /> : <Download className="size-4" />}
+                {activeDownload?.phase === 'extracting'
+                  ? '解压中'
+                  : activeDownload?.phase === 'installing'
+                    ? '正在准备重启'
+                    : updating
+                      ? '下载中'
+                      : '下载并更新'}
               </span>
             </Button>
           ) : null}
@@ -149,8 +157,8 @@ export function UpdateDialog(): React.JSX.Element | null {
           </div>
         ) : (
           <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2.5 text-ui leading-5 text-[var(--color-text-tertiary)]">
-            下载完成后会校验 sha256 并打开安装程序；你仍需在系统安装界面完成安装。当前构建未签名时，
-            系统可能要求手动确认。
+            下载完成后会校验文件大小与 sha256，再安全解压更新包。应用将关闭并由 updater 替换程序文件后重新启动；
+            用户数据目录不会被覆盖。
           </div>
         )}
 
@@ -161,13 +169,17 @@ export function UpdateDialog(): React.JSX.Element | null {
                 {activeDownload.phase === 'downloading' ? <Spinner className="size-4" /> : null}
                 <span>
                   {activeDownload.phase === 'downloading'
-                    ? '正在下载安装包'
+                    ? '正在下载更新包'
                     : activeDownload.phase === 'verifying'
                       ? '正在校验 sha256'
+                      : activeDownload.phase === 'extracting'
+                        ? '正在安全解压更新包'
+                        : activeDownload.phase === 'installing'
+                          ? '正在启动更新程序'
                       : activeDownload.phase === 'opened'
-                        ? '安装程序已打开'
+                        ? '更新程序已启动，应用即将重启'
                         : activeDownload.phase === 'ready'
-                          ? '安装包已就绪'
+                          ? '更新包已就绪'
                           : activeDownload.phase === 'canceled'
                             ? '下载已取消'
                             : '下载失败'}

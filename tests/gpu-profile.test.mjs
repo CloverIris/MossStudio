@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { recommendGpuMemoryMode, resolveGpuProfile, settingsForGpuProfile } from '../apps/desktop/src/shared/gpuProfile.ts'
+import { gpuRequiresBf16Tier, recommendGpuMemoryMode, resolveGpuProfile, settingsForGpuProfile } from '../apps/desktop/src/shared/gpuProfile.ts'
 
-const gpu = (uuid, memoryTotalBytes) => ({
+const gpu = (uuid, memoryTotalBytes, major, minor = 0) => ({
   uuid,
   index: 0,
   name: 'Test GPU',
   memoryTotalBytes,
+  computeCapability: major === undefined ? undefined : { major, minor },
 })
 
 const settings = (overrides = {}, mode = 'auto') => ({
@@ -75,5 +76,35 @@ test('custom global profile is the fallback for GPUs without overrides', () => {
     memoryMode: 'min_memory',
     tier: 'turbo',
     source: 'global',
+  })
+})
+
+test('pre-Ampere GPU profile uses BF16 Reference without constraining other GPUs', () => {
+  const mixedSettings = {
+    ...settings(),
+    mossInferTier: 'turbo',
+    gpuProfileOverrides: { rtx20: { tier: 'turbo' }, ampere: { tier: 'high' } },
+  }
+  const rtx20 = gpu('rtx20', 8 * 1024 ** 3, 7, 5)
+  const v100 = gpu('v100', 16 * 1024 ** 3, 7, 0)
+  const ampere = gpu('ampere', 12 * 1024 ** 3, 8, 6)
+
+  assert.equal(gpuRequiresBf16Tier(rtx20), true)
+  assert.equal(gpuRequiresBf16Tier(v100), true)
+  assert.equal(gpuRequiresBf16Tier(ampere), false)
+  assert.deepEqual(resolveGpuProfile(mixedSettings, rtx20), {
+    memoryMode: 'balanced',
+    tier: 'reference',
+    source: 'hardware-compatibility',
+  })
+  assert.deepEqual(resolveGpuProfile(mixedSettings, v100), {
+    memoryMode: 'balanced',
+    tier: 'reference',
+    source: 'hardware-compatibility',
+  })
+  assert.deepEqual(resolveGpuProfile(mixedSettings, ampere), {
+    memoryMode: 'balanced',
+    tier: 'high',
+    source: 'gpu-override',
   })
 })

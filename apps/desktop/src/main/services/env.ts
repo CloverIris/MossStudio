@@ -3,6 +3,7 @@ import { gitBinary } from '../lib/gitBinary'
 import { promises as fs } from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
+import { isAbsolute } from 'node:path'
 import type {
   CheckItem,
   EnvReport,
@@ -159,7 +160,7 @@ async function detectPythons(settings: Settings): Promise<PythonInfo[]> {
 }
 
 async function detectTool(name: string, args: string[]): Promise<ToolState> {
-  const path = await which(name)
+  const path = isAbsolute(name) ? name : await which(name)
   if (!path) return { found: false }
   const result = await run(path, args, { timeoutMs: 4000 })
   const version = firstLine(result.stdout || result.stderr)

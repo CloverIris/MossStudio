@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import type { ReleaseDocument, ParsedRelease } from '@shared/release'
 import { parseReleaseMarkdown } from '@shared/release'
 import { paths } from '../lib/paths'
-import { getLastNetwork } from './network'
+import { getLastNetwork, githubMirrorChain } from './network'
+import { getSettings } from './settings'
 
 const LATEST_RELEASE_URL =
   'https://github.com/CloverIris/MossStudio/releases/latest/download/release.md'
@@ -31,6 +32,7 @@ export function localReleaseDir(): string | null {
   const candidates = [
     join(app.getAppPath(), 'release'),
     join(app.getAppPath(), '..', '..', 'release'),
+    join(process.resourcesPath, 'release'),
     join(process.cwd(), 'release'),
   ]
   for (const dir of candidates) {
@@ -51,12 +53,37 @@ function cacheFile(channel: UpdateChannel): string {
 }
 
 async function fetchText(url: string, timeoutMs = 7000): Promise<string> {
-  const response = await fetch(url, {
-    headers: { 'user-agent': `MossStudio-Launcher/${app.getVersion()}` },
-    signal: AbortSignal.timeout(timeoutMs),
-  })
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  return await response.text()
+  const parsed = new URL(url)
+  const settings = getSettings()
+  const githubUrl = parsed.hostname === 'github.com' || parsed.hostname === 'raw.githubusercontent.com'
+  const mirrors =
+    githubUrl && settings.networkMode !== 'direct'
+      ? githubMirrorChain(settings).map((mirror) => `${mirror.replace(/\/$/, '')}/${url}`)
+      : []
+  const preferred = Boolean(settings.gitMirror?.trim() || getLastNetwork()?.selected.git)
+  const candidates = [
+    ...new Set(preferred ? [...mirrors, url] : [url, ...mirrors]),
+  ]
+  const failures: string[] = []
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate, {
+        headers: { 'user-agent': `MossStudio-Launcher/${app.getVersion()}` },
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (!response.ok) {
+        failures.push(`${new URL(candidate).host}: HTTP ${response.status}`)
+        await response.body?.cancel()
+        continue
+      }
+      return await response.text()
+    } catch (error) {
+      failures.push(
+        `${new URL(candidate).host}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+  throw new Error(`Release 请求失败：${failures.join('；')}`)
 }
 
 function readLocal(): LoadedRelease | null {

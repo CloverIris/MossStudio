@@ -19,6 +19,8 @@ uv.lock
 node_modules/
 .pnpm-store/
 apps/desktop/out/
+/release/artifacts/
+/githubrelease/
 coverage/
 *.tsbuildinfo
 

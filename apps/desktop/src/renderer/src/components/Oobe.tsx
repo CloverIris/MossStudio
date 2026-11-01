@@ -6,7 +6,7 @@ import { Events, Ipc } from '@shared/channels'
 import type { EngineRemoteProgress, GpuInventorySnapshot, ManagedHost, MossInferDownloadState, OnboardingStatus, OnboardingStep, Settings } from '@shared/types'
 import { call, onEvent } from '../lib/api'
 import { bytes } from '../lib/format'
-import { recommendGpuMemoryMode } from '@shared/gpuProfile'
+import { gpuRequiresBf16Tier, recommendGpuMemoryMode } from '@shared/gpuProfile'
 import { useApp } from '../store'
 import { useUiAnimationEnabled } from './motion'
 import { OobeSpotlight } from './OobeSpotlight'
@@ -334,6 +334,11 @@ export function Oobe(): React.JSX.Element {
                             应用建议
                           </button>
                         </div>
+                      ) : null}
+                      {selectedGpu && gpuRequiresBf16Tier(selectedGpu) ? (
+                        <p className="mt-1 text-caption text-amber-200">
+                          此 GPU 使用 Reference（BF16）质量档；多卡设备的其他 GPU 会按各自硬件能力配置。
+                        </p>
                       ) : null}
                       {gpuInventory?.capabilityNotice ? <p className="mt-1 text-caption text-amber-200">{gpuInventory.capabilityNotice}</p> : null}
                     </section>

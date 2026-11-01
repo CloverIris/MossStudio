@@ -15,9 +15,14 @@
     "test:studio": "node tools/test-ui.mjs --studio",
     "release:md": "node tools/release-md.mjs",
     "release:md:check": "node tools/release-md.mjs --check",
+    "release:build": "pnpm typecheck && pnpm build && node tools/build-release.mjs",
+    "release:build:github": "pnpm typecheck && pnpm build && node tools/build-release.mjs --output=githubrelease",
     "test:models": "node --test tests/model-files.test.mjs",
     "test:gpu-studio": "node --test tests/gpu-profile.test.mjs tests/gpu-compatibility.test.mjs tests/gpu-scheduling.test.mjs tests/studio-canvas-branch.test.mjs",
     "test:model-imports": "node --test tests/model-imports.test.mjs",
     "test:model-runtime": "python -m unittest discover -s runner/tests"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0"
   }
 }

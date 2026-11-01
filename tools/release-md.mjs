@@ -20,13 +20,23 @@ const releaseDir = join(root, 'release')
 const manifest = JSON.parse(readFileSync(join(releaseDir, 'manifest.json'), 'utf8'))
 const catalog = JSON.parse(readFileSync(join(releaseDir, 'models.json'), 'utf8'))
 const appPackage = JSON.parse(readFileSync(join(root, 'apps/desktop/package.json'), 'utf8'))
+const rootPackage = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const readme = readFileSync(join(releaseDir, 'README.md'), 'utf8')
 const modelsRaw = readFileSync(join(releaseDir, 'models.json'))
 const catalogSha = createHash('sha256').update(modelsRaw).digest('hex')
 
-if (appPackage.version !== manifest.app?.version) {
+const version = manifest.app?.version
+const validVersion =
+  typeof version === 'string' &&
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version)
+
+if (!validVersion) {
+  console.error(`invalid release version: ${version}`)
+  process.exit(1)
+}
+if (appPackage.version !== version || rootPackage.version !== version) {
   console.error(
-    `version mismatch: apps/desktop/package.json=${appPackage.version} manifest=${manifest.app?.version}`,
+    `version mismatch: package.json=${rootPackage.version} apps/desktop/package.json=${appPackage.version} manifest=${version}`,
   )
   process.exit(1)
 }
@@ -89,16 +99,30 @@ function adapterTable(adapters) {
   ].join('\n')
 }
 
-const installers = (manifest.installers ?? manifest.assets ?? []).filter(
-  (item) =>
-    item &&
-    item.platform &&
-    item.arch &&
-    item.kind &&
-    /^https:\/\//.test(item.url ?? '') &&
-    /^[a-f0-9]{64}$/i.test(item.sha256 ?? '') &&
-    item.size_bytes > 0,
-)
+const installers = manifest.installers ?? manifest.assets ?? []
+if (!Array.isArray(installers)) {
+  console.error('installers must be an array')
+  process.exit(1)
+}
+const seenInstallers = new Set()
+for (const item of installers) {
+  const key = `${item?.platform}/${item?.arch}`
+  if (
+    !item ||
+    !['darwin', 'win32', 'linux'].includes(item.platform) ||
+    !['arm64', 'x64'].includes(item.arch) ||
+    !['dmg', 'zip', 'nsis', 'appimage'].includes(item.kind) ||
+    !/^https:\/\//.test(item.url ?? '') ||
+    !/^[a-f0-9]{64}$/i.test(item.sha256 ?? '') ||
+    !Number.isSafeInteger(item.size_bytes) ||
+    item.size_bytes <= 0 ||
+    seenInstallers.has(key)
+  ) {
+    console.error(`invalid or duplicate installer entry: ${key}`)
+    process.exit(1)
+  }
+  seenInstallers.add(key)
+}
 
 const announcements = (manifest.announcements ?? []).map((item) => ({
   id: item.id,

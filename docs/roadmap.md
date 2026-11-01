@@ -1,7 +1,8 @@
 # 路线图
 
 - 更新：2026-10-19
-- 应用版本：`0.1.0`（开发版）
+- 当前发布版本：`0.1.0`（严格 SemVer；待手动上传 GitHub Release）
+- 更新验收基线：`0.0.0` Windows x64 便携包
 - 基线：[status.md](status.md)
 - 当前判断：训练器/SSH 远端代码基座、Clover HTTP/WS 基座、Project JSON/基础图层已完成；
   下一步是 **真实 host/CUDA 验收**、**Clover 真实生成/Project UI 收尾**；

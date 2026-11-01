@@ -1,8 +1,8 @@
 # 发布源、模型目录与更新
 
-- 状态：代码路径已接；真实 GitHub Release 资产、签名安装包、electron-updater 未验收
+- 状态：`0.0.0` Windows x64 基线 ZIP 已验证；`0.1.0` 正在开发，`githubrelease/` 中已有的包尚不含当前未打包代码改动，需后续重建后再上传
 - 决策：[ADR-0005](decisions/0005-release-channel-and-updates.md)
-- 应用版本：`0.1.0`
+- 发布版本：`0.1.0`（严格版本）；更新测试基线：`0.0.0`
 
 > 截图为 `9.9.9` 测试数据，只展示交互，不是真实发布版本。
 
@@ -28,6 +28,10 @@ https://github.com/CloverIris/MossStudio/releases/latest/download/release.md
 Beta 通道先读 `releases/download/beta/release.md`，不存在时回退 latest/raw。
 设置里可选「稳定版 / Beta」。
 
+> 没有 GitHub Release 时，latest 资产读取会失败，应用仍可能从 raw `main` 或 jsDelivr
+> 读取到仓库中的 `release/release.md`。因此界面显示 `source: remote` 不代表 GitHub
+> Release/安装资产已存在；线上更新验收必须使用已发布的 Release 资产和可下载 ZIP。
+
 ## 2. 文件职责
 
 | 文件 | 角色 |
@@ -37,6 +41,9 @@ Beta 通道先读 `releases/download/beta/release.md`，不存在时回退 lates
 | `release/models.json` | **模型/适配器下载目录的机器源**；应用仍从这里取下载数据 |
 | `release/README.md` | 人可读发布说明；生成器会去掉维护者章节 |
 | `tools/release-md.mjs` | 从 manifest + models + README 生成 release.md |
+| `release/updater.ps1` | Windows ZIP 更新的外置替换/重启程序 |
+| `tools/build-release.mjs` | 构建 Windows x64 便携 ZIP、计算大小/SHA-256 并生成上传文件 |
+| `githubrelease/` | 当前待手动上传的 `0.1.0` 正式发布材料：ZIP、`release.md` 机器元数据、`README.md` 发布正文 |
 
 `release.md` 中的模型表是发布页镜像，不是第二下载数据源。生成器会校验
 `apps/desktop/package.json` 与 `manifest.app.version` 一致，不一致直接失败。修改模型后运行：
@@ -109,34 +116,56 @@ pnpm release:md:check
 1. 应用版本取 `app.getVersion()`；发布版本取 `release.md.app.version`；
 2. semver 比较包含 prerelease（`0.2.0-beta.1 < 0.2.0`）；
 3. `autoCheckUpdates` 开启时，启动检查；设置页可手动检查；
-4. 发现新版本：LauncherShell 弹出 UpdateDialog，公告里也保留入口；
+4. 发现新版本：LauncherShell 弹出 UpdateDialog；置顶公告同时进入应用内通知；
 5. 用户点「稍后」写入 `dismissedUpdateVersion`，同版本不再自动弹；版本再变重新提示；
-6. 用户点「下载并安装」：
+6. 用户点「下载并更新」：
    - 选择当前 platform/arch 的 installer；
-   - 下载到 `downloads/updates/<version>/`，显示进度/速度/取消；
-   - 校验 sha256；失败删除 `.part` 并报错；
-   - 校验通过后打开安装程序（测试模式 `CLOVER_UPDATE_TEST=1` 不打开）；
-7. 用户完成安装。应用不会静默重启。
+   - 按 GitHub 加速源回退下载到 `downloads/updates/<version>/`，显示进度/速度/取消；
+   - 校验实际文件大小与 sha256；
+   - Windows ZIP 使用 Electron/yauzl 安全解压，之后启动外置 updater；
+   - updater 等待应用退出，只复制程序文件、保留 `data/` 并重启应用；
+   - 测试模式 `CLOVER_UPDATE_TEST=1` 只下载和解压，不替换应用。
 
 网络/文件服务的实现见 `apps/desktop/src/main/services/release.ts` 与
 `updateDownload.ts`；UI 见 `components/UpdateDialog.tsx`。
 
+### 版本契约与在线更新测试
+
+- 根目录 `package.json`、`apps/desktop/package.json`、`release/manifest.json` 的
+  `app.version` 必须完全一致；打包后以 Electron `app.getVersion()` 为准。发布构建会
+  对不一致直接报错，不能只改其中一个版本源。
+- `0.0.0` 是保留的严格版本基线包，产物在 `release/artifacts/`；`0.1.0` 是本次准备的
+   严格正式版本，产物单独放在 `githubrelease/`，两者都不使用 prerelease 后缀。
+- GitHub 当前仍没有 Release。`githubrelease/` 中的材料只在手动创建 `v0.1.0` Release
+   并上传后才成为线上版本；本地生成文件不代表发布已经完成。
+- `manifest.json`/生成的 `release.md` 中的 GitHub 下载地址是版本对应的**预期地址**；
+   生成该地址不代表线上 tag 或资产存在。在线 E2E 需上传 `MossStudio-0.1.0-win32-x64.zip`
+   和 `release.md`；GitHub Release 正文可使用 `githubrelease/README.md`。从已安装的
+   `0.0.0` 客户端检查更新，验证版本识别、下载、SHA-256/大小校验、安全解压和 updater 替换。
+- 发布后该版本号不可复用；如果客户端升级到 `0.1.0`，后续更新版本必须严格高于 `0.1.0`。
+- SemVer 比较决定是否提示更新；`v` 只是 Git tag 前缀，不属于应用版本。不要通过
+  `0.0.0-beta.1` 等 prerelease 后缀改变本地基线。
+- 上传前，`0.0.0` 客户端可能通过 raw `main`/镜像读取到仓库中的 `0.1.0` 元数据；
+   但下载资产只有在 Release 上传后才可用。上传后再进行真实在线更新测试。
+- 代码变更后必须重新构建 `githubrelease/`；已有 ZIP 的哈希不能代表未打包的工作区代码。
+
 ## 5. 发布检查清单
 
-1. 改 `apps/desktop/package.json` 与 `release/manifest.json` 的 `app.version`；
-2. 在 `manifest.installers` 写安装包（platform/arch/kind/url/sha256/size_bytes）；
-3. 更新 `release/models.json`，运行 `pnpm release:md`；
-4. 确认 `pnpm release:md:check`、`pnpm typecheck`、`pnpm build`；
-5. 创建 GitHub Release（如 `v0.2.0`），上传 `release/release.md` 命名为 `release.md`
-   以及安装包；
-6. Beta 发布使用 prerelease + 固定 `beta` tag/资产；stable 才走 `latest`。
+1. 同步根目录和 `apps/desktop/package.json` 的版本号及 `release/manifest.json`；
+2. 更新 `release/models.json` 和发布说明；
+3. 运行 `pnpm release:md:check` 校验版本、安装包元数据和生成文档；
+4. 在 Windows x64 运行 `pnpm release:build:github`；产物写入 `githubrelease/`；
+5. 创建 `v<version>` GitHub Release，将 ZIP 和 `release.md` 上传为资产，并把
+   `README.md` 内容粘贴为 Release 正文；上传完成后再从 `0.0.0` 客户端验收在线更新。
 
 ## 6. 已知限制
 
-- 当前没有 electron-builder/electron-updater，也没有签名/公证产物；更新是
-  “用户批准 → 下载 → 校验 → 打开安装包”，不是静默后台安装；
-- 真实 GitHub Release 资产未验收；本地测试覆盖解析、semver、下载与面板渲染；
-- macOS 未签名 DMG / Windows 未签名 NSIS 会被系统拦截或警告；
+- 当前没有 electron-builder/electron-updater，也没有签名/公证产物；Windows
+  更新采用“用户批准 → 镜像回退下载 → 大小/SHA-256 校验 → 安全解压 →
+  外置 updater 替换程序文件并重启”的便携 ZIP 流程；
+- updater 不自动提权；安装目录必须对当前用户可写。它不会删除安装目录中的 `data/`；
+- 本地 Windows x64 构建只验证当前平台；macOS/Linux 安装包和真实 GitHub Release
+  在线更新仍需各自平台与线上资产验收；
 - `rules.json` 仍在旧文件，不随 `release.md` 迁移；
 - 模型表由生成器镜像 models.json；如果只改 release.md 表格，应用下载目录不会变化。
 
@@ -146,7 +175,16 @@ pnpm release:md:check
 pnpm release:md:check
 pnpm typecheck
 pnpm build
+pnpm release:build:github
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=release-parse
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=update-download
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=update-dialog
+```
+
+Windows PowerShell 可用本地 Electron 二进制运行，并验证刚构建的 `0.1.0` ZIP：
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+$env:MOSS_UPDATE_TEST_ZIP = (Resolve-Path 'githubrelease\MossStudio-0.1.0-win32-x64.zip').Path
+& .\apps\desktop\node_modules\electron\dist\electron.exe .\apps\desktop --scenario=update-zip
 ```

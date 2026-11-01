@@ -77,6 +77,8 @@ export interface ParsedRelease {
 export type UpdateDownloadPhase =
   | 'downloading'
   | 'verifying'
+  | 'extracting'
+  | 'installing'
   | 'ready'
   | 'opened'
   | 'canceled'
@@ -166,9 +168,5 @@ export function findInstaller(
   arch: string,
 ): ReleaseInstaller | null {
   const normalizedArch = arch === 'aarch64' ? 'arm64' : arch
-  return (
-    installers.find((item) => item.platform === platform && item.arch === normalizedArch) ??
-    installers.find((item) => item.platform === platform) ??
-    null
-  )
+  return installers.find((item) => item.platform === platform && item.arch === normalizedArch) ?? null
 }

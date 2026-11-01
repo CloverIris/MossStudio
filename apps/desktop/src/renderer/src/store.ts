@@ -234,8 +234,11 @@ export const useApp = create<AppStore>((set, get) => {
       if (state.phase === 'opened' || (state.phase === 'ready' && !state.error)) {
         get().pushNotification({
           tone: 'success',
-          title: '更新已下载',
-          message: `MossStudio ${state.version} 安装程序已打开`,
+          title: state.phase === 'opened' ? '正在应用更新' : '更新包已就绪',
+          message:
+            state.phase === 'opened'
+              ? `MossStudio ${state.version} 更新程序已启动，应用即将重启`
+              : `MossStudio ${state.version} 更新包已下载并完成校验`,
         })
       } else if (state.phase === 'error') {
         get().pushNotification({
@@ -384,6 +387,27 @@ export const useApp = create<AppStore>((set, get) => {
             settings.dismissedUpdateVersion !== updates.value.latestVersion
           ) {
             set({ updateDialogOpen: true })
+          }
+        }
+        if (updates.status === 'fulfilled') {
+          for (const announcement of updates.value.announcements.filter((item) => item.pinned)) {
+            get().pushNotification({
+              tone:
+                announcement.level === 'critical'
+                  ? 'error'
+                  : announcement.level === 'warning'
+                    ? 'warning'
+                    : announcement.level === 'success'
+                      ? 'success'
+                      : 'info',
+              title: announcement.title,
+              message:
+                announcement.body
+                  .replace(/[#>*_`]/g, '')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .slice(0, 180) || '打开通知面板查看公告详情。',
+            })
           }
         }
       } catch (error) {

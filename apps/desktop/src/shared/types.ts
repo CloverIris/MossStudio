@@ -698,7 +698,7 @@ export interface JobRecord {
   gpuProfile?: {
     memoryMode: Settings['mossInferMemoryMode']
     tier: Settings['mossInferTier']
-    source: 'recommended' | 'global' | 'gpu-override'
+    source: 'recommended' | 'global' | 'gpu-override' | 'hardware-compatibility'
   }
   kind?: 'inference' | 'training'
   trainerVersionId?: string

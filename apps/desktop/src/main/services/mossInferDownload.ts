@@ -20,6 +20,7 @@ import { assertFreeSpace } from '../lib/disk'
 import {
   mossInferArchitectureForComputeCapability,
   mossInferArchiveBase,
+  mossInferFlavourAfterProbe,
   type MossInferArchitecture,
 } from '../lib/engineAssets'
 import { getGpuInventory, refreshGpuInventory } from './devices'
@@ -758,6 +759,7 @@ export async function downloadMossInfer(
   }
   publish({ phase: 'querying' })
   let architectureNote: string | undefined
+  let flavourNote: string | undefined
   let automaticGpuUuid: string | undefined
   try {
     let architecture: Architecture = architectureChoice === 'auto' ? 'standard' : architectureChoice
@@ -806,14 +808,23 @@ export async function downloadMossInfer(
     // Upstream decision procedure: install cu13 by default, probe, fall back to cu12.
     let probe = await probeMossInfer(installed.serverPath)
     let recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
-    const devices = (probe['probe'] as { devices?: Array<{
+    const compatibleFlavour = mossInferFlavourAfterProbe(architecture, flavour, recommended)
+    if (compatibleFlavour !== flavour) {
+      publish({ phase: 'querying', version: '当前驱动需要 CUDA 12，正在切换到兼容构建' })
+      flavourNote = '已按引擎探测结果切换到 CUDA 12 构建'
+      flavour = compatibleFlavour
+      installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
+      probe = await probeMossInfer(installed.serverPath)
+      recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
+    }
+    const verifiedDevices = (probe['probe'] as { devices?: Array<{
       index?: number
       compute_major?: number
       compute_minor?: number
       supported?: boolean
       name?: string
     }> } | undefined)?.devices ?? []
-    const sm75Device = devices.find((device) =>
+    const sm75Device = verifiedDevices.find((device) =>
       device.compute_major === 7 && device.compute_minor === 5,
     )
     if (architecture === 'sm75' && sm75Device?.supported === false) {
@@ -823,7 +834,7 @@ export async function downloadMossInfer(
       const currentInventory = await refreshGpuInventory()
       const currentGpu = currentInventory.devices.find((device) => device.uuid === automaticGpuUuid)
       const target = currentGpu
-        ? devices.find((device) => device.index === currentGpu.index)
+        ? verifiedDevices.find((device) => device.index === currentGpu.index)
         : undefined
       const expectedCapability = architecture === 'sm75'
         ? target?.compute_major === 7 && target.compute_minor === 5
@@ -833,13 +844,6 @@ export async function downloadMossInfer(
           `新引擎未能验证所选 GPU 对 ${architecture} 构建的支持；已保留当前引擎，请勿切换到未验证的包。`,
         )
       }
-    }
-    if (architecture === 'standard' && flavour === 'cu13' && recommended === 'cu12') {
-      publish({ phase: 'querying', version: '驱动只支持 CUDA 12，改下 cu12 包' })
-      flavour = 'cu12'
-      installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
-      probe = await probeMossInfer(installed.serverPath)
-      recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
     }
     const update = updateSettings({
       mossInferServerPath: installed.serverPath,
@@ -856,7 +860,7 @@ export async function downloadMossInfer(
       recommendedFlavour: recommended,
       variant: installed.effectiveVariant,
       architecture,
-      note: [installed.fallbackNote, architectureNote].filter(Boolean).join('；') || undefined,
+      note: [installed.fallbackNote, architectureNote, flavourNote].filter(Boolean).join('；') || undefined,
       cublaslt: (probe['probe'] as Record<string, unknown> | undefined)?.['cublaslt'],
     })
   } catch (error) {

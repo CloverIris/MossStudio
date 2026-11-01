@@ -52,8 +52,10 @@ export function GpuTitlebarStatus(): React.JSX.Element {
         : configuredUuid && telemetry
           ? '已保存的默认 GPU 未连接'
           : telemetry ? '未选择推理 GPU' : '正在检测 GPU…'
-  const profileSourceLabel = (source: 'recommended' | 'global' | 'gpu-override'): string =>
-    source === 'recommended' ? '推荐' : source === 'gpu-override' ? '自定义' : '全局'
+  const profileSourceLabel = (source: 'recommended' | 'global' | 'gpu-override' | 'hardware-compatibility'): string =>
+    source === 'hardware-compatibility'
+      ? '硬件兼容'
+      : source === 'recommended' ? '推荐' : source === 'gpu-override' ? '自定义' : '全局'
 
   return (
     <div className="no-drag absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">

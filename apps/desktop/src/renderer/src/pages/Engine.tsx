@@ -31,6 +31,7 @@ import type {
 import type { BackendInfo } from '@shared/backend'
 import { recommendGpuMemoryMode } from '@shared/gpuProfile'
 import { selectAutomaticGpu } from '@shared/gpuScheduling'
+import { gpuRequiresBf16Tier } from '@shared/gpuProfile'
 import { call, onEvent } from '../lib/api'
 import { useApp } from '../store'
 import { openWindow } from '../lib/windows'
@@ -776,16 +777,25 @@ export function EnginePage(): React.JSX.Element {
                     <select
                       aria-label={`${device.name} 质量档`}
                       className="app-input w-full"
-                      value={settings?.gpuProfileOverrides[device.uuid]?.tier ?? 'global'}
+                      value={gpuRequiresBf16Tier(device) ? 'reference' : settings?.gpuProfileOverrides[device.uuid]?.tier ?? 'global'}
                       onChange={(event) => void saveGpuProfileOverride(device.uuid, 'tier', event.target.value)}
                     >
-                      <option value="global">跟随全局</option>
                       <option value="reference">Reference</option>
-                      <option value="high">High</option>
-                      <option value="turbo">Turbo</option>
+                      {!gpuRequiresBf16Tier(device) ? (
+                        <>
+                          <option value="global">跟随全局</option>
+                          <option value="high">High</option>
+                          <option value="turbo">Turbo</option>
+                        </>
+                      ) : null}
                     </select>
                   </label>
                 </div>
+                {gpuRequiresBf16Tier(device) ? (
+                  <p className="mt-1 text-micro text-amber-200">
+                    此卡为 SM{device.computeCapability?.major}{device.computeCapability?.minor}，仅使用 Reference（BF16）；其他 GPU 不受影响。
+                  </p>
+                ) : null}
               </div>
               )
             })}
@@ -835,6 +845,9 @@ export function EnginePage(): React.JSX.Element {
               { value: 'max_speed', label: '最快' },
             ]}
           />
+          <p className="text-caption text-[var(--color-text-tertiary)] sm:col-span-2">
+            全局质量档仅作为默认值；推理任务会按实际分配的 GPU 应用配置。计算能力低于 SM 8.0 的 GPU 自动使用 Reference（BF16），不会限制同机其他 GPU 使用 High 或 Turbo。
+          </p>
         </div>
         <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
           参数在下次引擎 load 时生效。BF16 模型配合 exact attention 时请选择 Reference；High 需要量化 DiT 或可用的 8-bit attention，Turbo 需要 INT4 DiT。
@@ -917,12 +930,12 @@ export function EnginePage(): React.JSX.Element {
           <label className="space-y-1">
             <span className="text-caption text-[var(--color-text-tertiary)]">GPU 架构</span>
             <select value={architecture} onChange={(event) => setArchitecture(event.target.value as 'auto' | 'standard' | 'sm75')} className="app-input w-full">
-              <option value="auto">自动（按当前目标 GPU 的硬件清单）</option>
+              <option value="auto">自动（架构与 CUDA 兼容性）</option>
               <option value="standard">标准架构（SM80+）</option>
               <option value="sm75">SM75（RTX 20 / Turing）</option>
             </select>
           </label>
-          <Button data-oobe="engine" data-oobe-hint="选择渠道、包类型和 GPU 架构后下载。自动模式按独立 GPU 清单选择与默认 GPU 匹配的上游构建；SM 能力未知时不会静默选择标准包。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || Boolean(downloading)}>
+          <Button data-oobe="engine" data-oobe-hint="自动模式会按目标 GPU 选择架构，探测实际引擎后再验证兼容性；如果 CUDA 13 构建不适合当前驱动，会自动尝试 CUDA 12 构建。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || Boolean(downloading)}>
             <Download className="size-4" /> 下载/更新引擎
           </Button>
         </div>
