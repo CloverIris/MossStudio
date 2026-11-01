@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { JobParams, RemoteCudaProbe, RemoteEngineInfo, TrainingHost } from '@shared/types'
+import { decodeEngineHello, protocolCompatible } from '@shared/engineProtocol'
 import { LineSplitter } from './parsers'
 import { posixQuote, remoteAbsolute, sshArgs, sshCommand, sshExec, sshEnv } from './ssh'
 import { probeRemoteCuda } from './remoteCuda'
@@ -204,9 +205,9 @@ export async function runRemoteEngineJob(
   })
 
   try {
-    const hello = await request('hello', { client: 'MossStudio', protocol_version: 2, devices: true })
-    if (Number(hello['protocol_version']) !== 2) throw new Error('远端 moss-server 协议不兼容，需要 protocol 2（MossInfer ≥ 2.0）')
-    sink.event({ type: 'hello', protocol: 1, runner_version: `mossinfer-remote-${String(hello['version'] ?? '')}` })
+    const hello = decodeEngineHello(await request('hello', { client: 'MossStudio', protocol_version: 2, devices: true }))
+    if (!protocolCompatible(hello)) throw new Error('远端 moss-server 协议不兼容，需要 protocol 2（MossInfer ≥ 2.0）')
+    sink.event({ type: 'hello', protocol: 1, runner_version: `mossinfer-remote-${hello.version ?? ''}` })
     await request('load', {
       model: opts.model,
       mode: opts.mode,

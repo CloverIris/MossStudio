@@ -22,7 +22,9 @@ import { ensureMirror, listBranches, listCommits } from './services/git'
 import { createInstance, deleteInstance, listInstances, updateInstance } from './services/instances'
 import { installDeps, readRuntime, resolveTorchIndex, writeRemoteRuntime } from './services/runtimes'
 import { cancelJob, getJob, getJobLogs, onJobCompleted, purgeLegacySimulationJobs, startEngineJob, startTrainingJob } from './services/supervisor'
-import { probeMossInfer, resolveServerPath, runMossInferJob, shutdownMossInfer } from './services/mossInfer'
+import { resolveServerPath, runMossInferJob, shutdownMossInfer } from './services/mossInfer'
+import { probeEngine } from './lib/probeEngine'
+import { protocolCompatible } from '@shared/engineProtocol'
 import { closeAllSshTerminals } from './services/sshSessions'
 import { createTrainerVersion, listTrainerVersions, startTrainerRun } from './services/trainers'
 import { listLaunchRows, removeLaunchRow, upsertLaunchRow } from './services/launchQueue'
@@ -1398,8 +1400,8 @@ app.whenReady().then(async () => {
       updateSettings({ inferenceBackend: 'mossinfer', mossInferServerPath: serverPath })
       const activeServerPath = resolveServerPath(getSettings())
       const activeEngineMatches = Boolean(activeServerPath && resolve(activeServerPath) === resolve(serverPath))
-      const hello = await probeMossInfer(serverPath)
-      const protocolReady = Number(hello['protocol_version']) === 2
+      const hello = await probeEngine(serverPath)
+      const protocolReady = protocolCompatible(hello)
       const [instance] = await listInstances()
       if (!instance) throw new Error('.dev-data 里没有实例，先跑 --scenario=create')
       const catalog = await getCatalog(getSettings(), true)
@@ -1442,9 +1444,9 @@ app.whenReady().then(async () => {
             activeServerPath,
             activeEngineMatches,
             hello: {
-              protocol_version: hello['protocol_version'],
-              version: hello['version'],
-              probe: hello['probe'],
+              protocol_version: hello.protocol,
+              version: hello.version,
+              probe: hello.raw['probe'],
             },
             configuredTier: getSettings().mossInferTier,
             configuredMemoryMode: getSettings().mossInferMemoryMode,

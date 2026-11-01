@@ -5,11 +5,18 @@ import type {
   LocalEngineVersion,
   RemoteEngineInfo,
 } from '@shared/types'
-import { mapEngineGpuProbe, type EngineGpuProbeDevice } from '@shared/gpuCompatibility'
+import {
+  judgeEngineGpuSupport,
+  mapEngineGpuProbe,
+  type EngineGpuProbeDevice,
+  type EngineProbeDeviceLike,
+} from '@shared/gpuCompatibility'
+import { protocolCompatible, type EngineHello } from '@shared/engineProtocol'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
-import { probeMossInfer, resolveServerPath, shutdownMossInfer } from './mossInfer'
+import { probeEngine } from '../lib/probeEngine'
+import { resolveServerPath, shutdownMossInfer } from './mossInfer'
 import { getSettings, updateSettings } from './settings'
 import { getGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
@@ -57,8 +64,8 @@ function isCurrent(path: string): boolean {
   return currentPath !== null && resolve(currentPath) === resolve(path)
 }
 
-let gpuProbeCache: { fingerprint: string; createdAt: number; snapshot: EngineGpuProbeSnapshot; raw: Record<string, unknown> } | null = null
-let gpuProbePending: { fingerprint: string; promise: Promise<Record<string, unknown>> } | null = null
+let gpuProbeCache: { fingerprint: string; createdAt: number; snapshot: EngineGpuProbeSnapshot; hello: EngineHello } | null = null
+let gpuProbePending: { fingerprint: string; promise: Promise<EngineHello> } | null = null
 
 function probeDevicesFrom(raw: Record<string, unknown>): EngineGpuProbeDevice[] {
   const probe = raw['probe']
@@ -86,45 +93,45 @@ function probeDevicesFrom(raw: Record<string, unknown>): EngineGpuProbeDevice[] 
 
 function mapGpuProbe(
   inventory: Awaited<ReturnType<typeof getGpuInventory>>['devices'],
-  raw: Record<string, unknown>,
+  hello: EngineHello,
   enginePath: string,
 ): EngineGpuProbeSnapshot {
   return mapEngineGpuProbe(
     inventory,
-    probeDevicesFrom(raw),
+    probeDevicesFrom(hello.raw),
     enginePath,
-    typeof raw['version'] === 'string' ? raw['version'] : undefined,
+    hello.version,
   )
 }
 
 export async function probeLocalEngineGpuCompatibility(
   force = false,
-): Promise<{ snapshot: EngineGpuProbeSnapshot; raw: Record<string, unknown> }> {
+): Promise<{ snapshot: EngineGpuProbeSnapshot; hello: EngineHello }> {
   const path = resolveServerPath(getSettings())
   if (!path || !existsSync(path)) throw new Error('未找到 moss-server')
   const fingerprint = `${resolve(path)}:${statSync(path).mtimeMs}`
   if (!force && gpuProbeCache?.fingerprint === fingerprint && Date.now() - gpuProbeCache.createdAt < 30_000) {
     const inventory = await getGpuInventory()
-    const snapshot = mapGpuProbe(inventory.devices, gpuProbeCache.raw, path)
+    const snapshot = mapGpuProbe(inventory.devices, gpuProbeCache.hello, path)
     gpuProbeCache.snapshot = snapshot
-    return { snapshot, raw: gpuProbeCache.raw }
+    return { snapshot, hello: gpuProbeCache.hello }
   }
-  let raw: Record<string, unknown>
+  let hello: EngineHello
   if (gpuProbePending?.fingerprint === fingerprint) {
-    raw = await gpuProbePending.promise
+    hello = await gpuProbePending.promise
   } else {
-    const pending = { fingerprint, promise: probeMossInfer(path) }
+    const pending = { fingerprint, promise: probeEngine(path) }
     gpuProbePending = pending
     try {
-      raw = await pending.promise
+      hello = await pending.promise
     } finally {
       if (gpuProbePending === pending) gpuProbePending = null
     }
   }
   const inventory = await getGpuInventory()
-  const snapshot = mapGpuProbe(inventory.devices, raw, path)
-  gpuProbeCache = { fingerprint, createdAt: Date.now(), snapshot, raw }
-  return { snapshot, raw }
+  const snapshot = mapGpuProbe(inventory.devices, hello, path)
+  gpuProbeCache = { fingerprint, createdAt: Date.now(), snapshot, hello }
+  return { snapshot, hello }
 }
 
 export function localEngineInfo(): LocalEngineInfo {
@@ -165,12 +172,22 @@ export async function selectLocalEngineVersion(id: string): Promise<LocalEngineI
   const inventory = await getGpuInventory()
   const targetGpu = resolveGpuSelection(inventory.devices, settings.gpuSelection)
   if (targetGpu) {
-    const raw = await probeMossInfer(version.path)
-    const compatibility = mapGpuProbe(inventory.devices, raw, version.path)
-      .devices.find((device) => device.uuid === targetGpu.uuid)
-    if (compatibility?.status === 'unsupported') {
+    const hello = await probeEngine(version.path)
+    if (!protocolCompatible(hello)) {
       throw new Error(
-        `无法切换到此引擎：${targetGpu.name} 不兼容。${compatibility.reason ?? '引擎 probe 判定此设备不受支持。'}`,
+        `无法切换到此引擎：协议不兼容（protocol ${hello.protocol}），需要 protocol 2（MossInfer ≥ 2.0）`,
+      )
+    }
+    // 安装后校验与切换共用同一判定，失败构建不能稍后被激活。
+    const devices = (hello.raw['probe'] as { devices?: EngineProbeDeviceLike[] } | undefined)?.devices ?? []
+    const verdict = judgeEngineGpuSupport(
+      devices,
+      { index: targetGpu.index, name: targetGpu.name },
+      /(?:^|-)sm75(?:-|$)/.test(version.id) ? 'sm75' : 'standard',
+    )
+    if (!verdict.ok) {
+      throw new Error(
+        `无法切换到此引擎：${targetGpu.name} 未通过兼容性校验。${verdict.reason ?? ''}`.trim(),
       )
     }
   }
@@ -190,9 +207,9 @@ export async function selectLocalEngineDirectory(directory: string): Promise<Loc
   if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error('所选路径不是有效的引擎目录')
   const serverPath = binaryIn(root)
   if (!serverPath) throw new Error(`所选目录中未找到 ${serverName()}；请选择解压后的引擎根目录或 bin 目录`)
-  const hello = await probeMossInfer(serverPath)
-  if (Number(hello['protocol_version']) !== 2) {
-    throw new Error(`引擎协议不兼容（protocol ${String(hello['protocol_version'] ?? 'unknown')}），需要 protocol 2`)
+  const hello = await probeEngine(serverPath)
+  if (!protocolCompatible(hello)) {
+    throw new Error(`引擎协议不兼容（protocol ${hello.protocol}），需要 protocol 2`)
   }
   const items = readExternal().filter((item) => resolve(item.path) !== resolve(serverPath))
   items.unshift({ path: serverPath, name: basename(root) })
@@ -218,8 +235,8 @@ export function removeLocalEngineVersion(id: string): boolean {
 }
 
 export async function probeLocalEngine(): Promise<Record<string, unknown>> {
-  const { snapshot, raw } = await probeLocalEngineGpuCompatibility(true)
-  return { ...raw, gpuCompatibility: snapshot }
+  const { snapshot, hello } = await probeLocalEngineGpuCompatibility(true)
+  return { ...hello.raw, gpuCompatibility: snapshot }
 }
 
 export async function remoteEngineInfo(hostId: string, refreshCuda = false): Promise<RemoteEngineInfo> {

@@ -12,7 +12,8 @@ import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
 import { run } from '../lib/run'
-import { probeMossInfer, resolveServerPath, shutdownMossInfer } from './mossInfer'
+import { resolveServerPath, shutdownMossInfer } from './mossInfer'
+import { probeEngine } from '../lib/probeEngine'
 import { installCudaWheels } from './cudaWheels'
 import { getSettings, updateSettings } from './settings'
 import { getLastNetwork, githubMirrorChain } from './network'
@@ -24,6 +25,11 @@ import {
   mossInferDriverCompatibilityError,
   type MossInferArchitecture,
 } from '../lib/engineAssets'
+import {
+  judgeEngineGpuSupport,
+  readEngineComputeCapability,
+  type EngineProbeDeviceLike,
+} from '@shared/gpuCompatibility'
 import { getGpuInventory, refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 
@@ -648,7 +654,7 @@ async function downloadAndInstall(
   cudaWheels = false,
   releaseTag?: string,
   architecture: Architecture = 'standard',
-): Promise<{ serverPath: string; stamp: string; effectiveVariant: Variant; fallbackNote?: string }> {
+): Promise<{ serverPath: string; installDir: string; stamp: string; effectiveVariant: Variant; fallbackNote?: string }> {
   let effectiveChannel: 'stable' | 'dev' = channel
   let source: Source
   if (channel === 'stable') {
@@ -729,7 +735,24 @@ async function downloadAndInstall(
     await installCudaWheels(installDir, flavour)
   } // free the archive before the CUDA-libs download
   rmSync(workDir, { recursive: true, force: true })
-  return { serverPath, stamp: source.stamp, effectiveVariant, fallbackNote }
+  return { serverPath, installDir, stamp: source.stamp, effectiveVariant, fallbackNote }
+}
+
+/**
+ * A build that failed post-install validation must not stay on disk: `localEngineVersions()`
+ * lists every directory under mossinfer/, so a leftover shows up as an installable version and
+ * "switch to this version" contradicts the failure that was just reported.
+ */
+function rollbackUnverifiedInstall(installDir: string): void {
+  const currentServer = resolveServerPath(getSettings())
+  // Never remove the directory backing the engine in use: re-installing the same stamp replaces
+  // it in place, and deleting it would leave the app with no engine at all.
+  if (currentServer && isInside(installDir, currentServer)) return
+  try {
+    rmSync(installDir, { recursive: true, force: true })
+  } catch {
+    // best effort: an orphan directory is less bad than losing the install report
+  }
 }
 
 export async function downloadMossInfer(
@@ -811,42 +834,38 @@ export async function downloadMossInfer(
     const driverError = mossInferDriverCompatibilityError(flavour, targetGpu?.driverVersion)
     if (driverError) throw new Error(driverError)
     let installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
-    let probe = await probeMossInfer(installed.serverPath)
-    let recommended = String((probe['probe'] as Record<string, unknown> | undefined)?.['recommended_flavour'] ?? '')
+    let probe = await probeEngine(installed.serverPath)
+    let recommended = probe.probe?.recommendedFlavour ?? ''
     if (recommended && recommended !== flavour) {
       flavourNote = `引擎建议 CUDA ${recommended.slice(2)}，当前仍保留默认 CUDA ${flavour.slice(2)}；请按 GPU 兼容性结果更新驱动`
     }
-    const verifiedDevices = (probe['probe'] as { devices?: Array<{
-      index?: number
-      compute_major?: number
-      compute_minor?: number
-      supported?: boolean
-      name?: string
-      unsupported_reason?: string
-    }> } | undefined)?.devices ?? []
-    const sm75Device = verifiedDevices.find((device) =>
-      device.compute_major === 7 && device.compute_minor === 5,
-    )
-    if (architecture === 'sm75' && sm75Device?.supported === false) {
-      throw new Error(`下载的 SM75 引擎仍将 ${sm75Device.name ?? 'GPU'} 判定为不兼容；请勿切换到该构建`)
+    const verifiedDevices = probe.probe?.devices.map((device) => device.raw as EngineProbeDeviceLike) ?? []
+    if (architecture === 'sm75') {
+      const sm75Device = verifiedDevices.find((device) => {
+        const capability = readEngineComputeCapability(device)
+        return capability?.major === 7 && capability.minor === 5
+      })
+      if (sm75Device?.supported === false) {
+        rollbackUnverifiedInstall(installed.installDir)
+        throw new Error(`下载的 SM75 引擎仍将 ${sm75Device.name ?? 'GPU'} 判定为不兼容；已移除该构建，请勿切换到它`)
+      }
     }
     if (selectedGpuUuid !== undefined) {
       const currentInventory = await refreshGpuInventory()
       const currentGpu = currentInventory.devices.find((device) => device.uuid === selectedGpuUuid)
-      const target = currentGpu
-        ? verifiedDevices.find((device) => device.index === currentGpu.index)
-        : undefined
-      const expectedCapability = architecture === 'sm75'
-        ? target?.compute_major === 7 && target.compute_minor === 5
-        : (target?.compute_major ?? 0) >= 8
-      if (!target || target.supported !== true || !expectedCapability) {
+      const verdict = judgeEngineGpuSupport(
+        verifiedDevices,
+        { index: currentGpu?.index, name: currentGpu?.name },
+        architecture,
+      )
+      if (!verdict.ok) {
+        rollbackUnverifiedInstall(installed.installDir)
         const driverError = mossInferDriverCompatibilityError(flavour, currentGpu?.driverVersion)
-        const probeReason = target?.unsupported_reason
         throw new Error(
           [
             driverError,
-            probeReason,
-            `新引擎未能验证所选 GPU 对 ${architecture} / CUDA ${flavour.slice(2)} 构建的支持；已保留当前引擎。`,
+            verdict.reason,
+            `新引擎未能验证所选 GPU 对 ${architecture} / CUDA ${flavour.slice(2)} 构建的支持；已移除该构建并保留当前引擎。`,
           ].filter(Boolean).join(' '),
         )
       }
@@ -867,7 +886,7 @@ export async function downloadMossInfer(
       variant: installed.effectiveVariant,
       architecture,
       note: [installed.fallbackNote, architectureNote, flavourNote].filter(Boolean).join('；') || undefined,
-      cublaslt: (probe['probe'] as Record<string, unknown> | undefined)?.['cublaslt'],
+      cublaslt: probe.probe?.cublasLt,
     })
   } catch (error) {
     publish({
