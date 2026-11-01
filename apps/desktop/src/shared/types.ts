@@ -133,6 +133,9 @@ export interface Settings {
   gitMirror: string | null
   pipIndex: string | null
   hfEndpoint: string | null
+  hasHfToken: boolean
+  modelDownloadConcurrency: number
+  hfQueryHostId: string | null
   modelsRoot: string | null
   modelDirectories: ModelDirectories
   pythonPath: string | null
@@ -226,11 +229,49 @@ export interface GpuTelemetrySnapshot {
   error?: string
 }
 
+export interface RemoteCudaProbe {
+  checkedAt: string
+  durationMs: number
+  driverVersion?: string
+  computeCapabilities: string[]
+  libraries: Array<{ path: string; major: 12 | 13; versionText?: string; dependencyCheck: 'passed' | 'failed' | 'unavailable'; error?: string }>
+  flavours: Array<'cu12' | 'cu13'>
+  foundFlavours?: Array<'cu12' | 'cu13'>
+  recommendedFlavour?: 'cu12' | 'cu13'
+  recommendedVariant?: 'system-cuda' | 'bundled'
+  standardArchitectureSupported?: boolean
+  gpuReason?: string
+  error?: string
+}
+
+export interface RemoteEngineInfo {
+  online: boolean
+  available: boolean
+  path: string
+  root: string
+  gpu: string
+  version?: string
+  cuda?: RemoteCudaProbe
+  error?: string
+  checkedAt: string
+}
+
+export interface RemoteEngineInstallOptions {
+  channel?: 'stable' | 'dev'
+  flavour?: 'cu12' | 'cu13'
+  variant?: 'system-cuda' | 'bundled'
+  architecture?: 'auto' | 'standard' | 'sm75'
+  releaseTag?: string
+}
+
 export interface EngineRemoteProgress {
   hostId: string
   phase: 'checking' | 'querying' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error'
   message: string
   percent?: number
+  bytes?: number
+  totalBytes?: number
+  speedBps?: number
 }
 
 export interface MossInferDownloadState {
@@ -445,6 +486,11 @@ export interface Catalog {
 export type DownloadState = 'queued' | 'running' | 'verifying' | 'paused' | 'done' | 'error' | 'canceled'
 
 export interface DownloadTask {
+  hostId?: string
+  hostName?: string
+  remotePath?: string
+  revision?: string
+  connectionError?: string
   id: string
   kind: 'model' | 'adapter'
   targetId: string
@@ -484,6 +530,10 @@ export interface TrainingHost {
   instanceRoot?: string
   /** Remote HF-compatible model cache; never auto-uploaded from the local cache. */
   modelsRoot?: string
+  downloadProxy?: string
+  hfEndpoint?: string
+  downloadConcurrency?: number
+  hasHfToken?: boolean
   status: 'unchecked' | 'ok' | 'error'
   lastCheckedAt?: string
   error?: string

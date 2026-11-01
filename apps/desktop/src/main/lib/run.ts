@@ -59,6 +59,9 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
       resolve({ code: code ?? -1, stdout, stderr, timedOut })
     })
 
+    // SSH can exit before consuming a worker upload/request. Its exit/error
+    // handlers report the failure; a broken stdin must not crash the launcher.
+    child.stdin?.on('error', () => undefined)
     if (options.input) child.stdin?.end(options.input)
     else child.stdin?.end()
   })
@@ -74,7 +77,7 @@ export function runStream(
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       windowsHide: true,
     })
     let stdout = ''
@@ -104,6 +107,9 @@ export function runStream(
     }
     pipe('stdout', child.stdout)
     pipe('stderr', child.stderr)
+
+    child.stdin?.on('error', () => undefined)
+    child.stdin?.end(options.input)
 
     child.on('error', (error) => {
       clearTimeout(timer)

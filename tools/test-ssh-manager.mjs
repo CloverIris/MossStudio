@@ -56,7 +56,7 @@ function fixture(check) {
     '../lib/paths': { paths }, '../lib/run': { run }, './sshTools': sshTools,
   })
   const ssh = loadTs('main/services/ssh', { '../lib/paths': { paths }, './sshCredentials': credentials, './sshHostKeys': hostKeys, './sshTools': sshTools, '../lib/run': { run, runStream: run } })
-  const hostMocks = { '../lib/paths': { paths }, '../lib/run': { run }, './devices': { listDevices: () => [] }, './ssh': ssh, './sshCredentials': credentials, './sshHostKeys': hostKeys }
+  const hostMocks = { '../lib/paths': { paths }, '../lib/run': { run }, './devices': { listDevices: () => [] }, './ssh': ssh, './sshCredentials': credentials, './sshHostKeys': hostKeys, './hfCredentials': { hasHfToken: () => false, saveHfToken: () => {} } }
   const hosts = loadTs('main/services/trainingHosts', hostMocks)
   return Promise.resolve().then(() => check({ root, credentials, ssh, hosts, hostKeys, state, calls, reloadHosts: () => loadTs('main/services/trainingHosts', hostMocks) }))
     .finally(() => rmSync(root, { recursive: true, force: true }))

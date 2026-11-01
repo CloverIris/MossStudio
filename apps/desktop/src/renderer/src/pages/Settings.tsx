@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Ipc } from '@shared/channels'
-import type { AppInfo, ModelDirectoryId, Settings } from '@shared/types'
+import type { AppInfo, ManagedHost, ModelDirectoryId, Settings } from '@shared/types'
 import type { WebAccessInfo } from '@shared/backend'
 import defaultHomeBackground from '../assets/home-background.png'
 import { call } from '../lib/api'
@@ -71,12 +71,15 @@ export function SettingsPage(): React.JSX.Element {
   const [edits, setEdits] = useState<Partial<Settings>>({})
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [saving, setSaving] = useState(false)
+  const [hfToken, setHfToken] = useState<string | null | undefined>(undefined)
+  const [hfHosts, setHfHosts] = useState<ManagedHost[]>([])
   const [webAccess, setWebAccess] = useState<WebAccessInfo | null>(null)
   const [section, setSection] = useState<SectionId>('appearance')
 
   useEffect(() => {
     void call<AppInfo>(Ipc.appInfo).then(setAppInfo).catch(() => undefined)
     void refreshWebAccess()
+    void call<ManagedHost[]>(Ipc.hostsList).then((hosts) => setHfHosts(hosts.filter((host) => host.kind === 'ssh'))).catch(() => undefined)
   }, [])
 
   async function refreshWebAccess(): Promise<void> {
@@ -112,7 +115,7 @@ export function SettingsPage(): React.JSX.Element {
     [settings, edits],
   )
   const draft = settings ? { ...settings, ...edits } : null
-  const dirty = Object.keys(changes).length > 0
+  const dirty = Object.keys(changes).length > 0 || hfToken !== undefined
 
   if (!draft) {
     return <div className="py-20 text-center text-ui text-[var(--color-text-tertiary)]">{t('common.loading')}</div>
@@ -128,8 +131,10 @@ export function SettingsPage(): React.JSX.Element {
   async function save(): Promise<void> {
     if (!draft || !dirty || saving) return
     setSaving(true)
+    const submittedToken = hfToken
     try {
-      await saveSettings(changes)
+      await saveSettings({ ...changes, ...(hfToken !== undefined ? { hfToken } : {}) })
+      setHfToken((current) => current === submittedToken ? undefined : current)
       setEdits((previous) => clearSavedSettings(previous, changes))
       await refreshAppInfo()
       toast.push('设置已保存', 'success')
@@ -506,6 +511,18 @@ export function SettingsPage(): React.JSX.Element {
                     onChange={(event) => patch({ hfEndpoint: event.target.value || null })}
                     className="w-full font-mono text-caption"
                   />
+                </Row>
+                <Row stacked title="HF Token" hint="用于模型查询与下载；设备可单独覆盖。通过系统安全存储加密保存。">
+                  <div className="flex gap-2"><Input type="password" autoComplete="new-password" value={hfToken ?? ''} onChange={(event) => setHfToken(event.target.value || undefined)} placeholder={draft.hasHfToken ? '已配置；留空保留' : 'hf_…'} className="min-w-0 flex-1" /><Button tone="ghost" disabled={!draft.hasHfToken && !hfToken} onClick={() => setHfToken(null)}>清除</Button></div>
+                  {hfToken === null ? <p className="text-caption text-[var(--color-text-tertiary)]">保存后清除全局 Token。</p> : null}
+                </Row>
+                <Row title="模型文件并发数" hint="本机及远端默认值；每台远端设备共享此并发上限。">
+                  <Input type="number" min={1} max={16} value={draft.modelDownloadConcurrency ?? 4} onChange={(event) => patch({ modelDownloadConcurrency: Number(event.target.value) })} className="w-24" />
+                </Row>
+                <Row stacked title="本机 HF 查询失败时" hint="通过 SSH 使用远端网络查询文件清单，沿用该设备的代理、镜像和 Token。">
+                  <select className="app-input w-full" value={draft.hfQueryHostId ?? ''} onChange={(event) => patch({ hfQueryHostId: event.target.value || null })}>
+                    <option value="">自动选择 SSH 设备</option><option value="local">仅使用本机</option>{hfHosts.map((host) => <option key={host.id} value={host.id}>{host.name}</option>)}
+                  </select>
                 </Row>
                 <Row title="GitHub Token" hint="下载 MossInfer 的 CI 构件需要（公开仓库同样要求）。">
                   <div className="flex items-center gap-1">

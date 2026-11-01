@@ -98,6 +98,8 @@ export const Ipc = {
   modelsImportFolder: 'models:import-folder',
   modelsRemoteInventory: 'models:remote-inventory',
   modelsRemoteDownload: 'models:remote-download',
+  remoteDownloadsRefresh: 'downloads:remote-refresh',
+  remoteDownloadControl: 'downloads:remote-control',
   modelsInstalled: 'models:installed',
   modelDownload: 'models:download',
   modelBundleInstall: 'models:install-bundle',

@@ -145,8 +145,8 @@ export async function remoteAbsolute(host: TrainingHost, path: string): Promise<
   return `${home.stdout.trim()}/${path.slice(2)}`
 }
 
-export async function sshExec(host: TrainingHost, command: string, timeoutMs = 60_000): Promise<RunResult> {
-  return run(sshCommand(), sshArgs(host, command), { timeoutMs, env: sshEnv(host) })
+export async function sshExec(host: TrainingHost, command: string, timeoutMs = 60_000, input?: string): Promise<RunResult> {
+  return run(sshCommand(), sshArgs(host, command), { timeoutMs, env: sshEnv(host), input })
 }
 
 export async function sshStream(
@@ -154,8 +154,9 @@ export async function sshStream(
   command: string,
   timeoutMs: number,
   onLine: (line: string, stream: 'stdout' | 'stderr') => void,
+  input?: string,
 ): Promise<RunResult> {
-  return runStream(sshCommand(), sshArgs(host, command), { timeoutMs, env: sshEnv(host) }, onLine)
+  return runStream(sshCommand(), sshArgs(host, command), { timeoutMs, env: sshEnv(host), input }, onLine)
 }
 
 export async function remotePathExists(host: TrainingHost, path: string, timeoutMs = 15_000): Promise<boolean> {

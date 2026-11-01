@@ -1,4 +1,5 @@
 ﻿import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { hasHfToken } from './hfCredentials'
 import type { Settings } from '@shared/types'
 import { paths, setEngineRoot } from '../lib/paths'
 
@@ -10,6 +11,9 @@ export const DEFAULT_SETTINGS: Settings = {
   gitMirror: null,
   pipIndex: null,
   hfEndpoint: null,
+  hasHfToken: false,
+  modelDownloadConcurrency: 4,
+  hfQueryHostId: null,
   modelsRoot: null,
   modelDirectories: {
     dit: null,
@@ -84,6 +88,7 @@ export function getSettings(): Settings {
   } catch {
     cache = { ...DEFAULT_SETTINGS }
   }
+  cache.hasHfToken = hasHfToken()
   setEngineRoot(cache.engineRoot)
   return cache
 }
@@ -98,6 +103,7 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (patch.dismissedAnnouncements) {
     next.dismissedAnnouncements = Array.from(new Set(patch.dismissedAnnouncements)).slice(-200)
   }
+  next.hasHfToken = hasHfToken()
   atomicWriteJson(paths.settings(), next)
   cache = next
   setEngineRoot(next.engineRoot)

@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { JobParams, TrainingHost } from '@shared/types'
+import type { JobParams, RemoteCudaProbe, RemoteEngineInfo, TrainingHost } from '@shared/types'
 import { LineSplitter } from './parsers'
 import { posixQuote, remoteAbsolute, sshArgs, sshCommand, sshExec, sshEnv } from './ssh'
+import { probeRemoteCuda } from './remoteCuda'
 
 export interface RemoteEngineSink {
   event: (payload: Record<string, unknown>) => void
@@ -26,32 +27,32 @@ function rootOf(host: TrainingHost): string {
   return host.engineRoot?.trim() || '~/.mossstudio/engine'
 }
 
-export interface RemoteEngineStatus {
-  online: boolean
-  available: boolean
-  path: string
-  root: string
-  gpu: string
-  error?: string
-  checkedAt: string
-}
+export type RemoteEngineStatus = RemoteEngineInfo
 
-export async function remoteEngineStatus(host: TrainingHost): Promise<RemoteEngineStatus> {
-  const root = await remoteAbsolute(host, rootOf(host)).catch(() => rootOf(host))
-  const path = `${root.replace(/\/$/, '')}/bin/moss-server`
-  const checkedAt = new Date().toISOString()
-  const result = await sshExec(host, [
-    'printf "__GPU__\\n"',
-    'nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || true',
-    'printf "__ENGINE__\\n"',
-    `test -x ${posixQuote(path)} && echo yes || echo no`,
-  ].join('\n'), 20_000)
-  if (result.code !== 0) {
-    return { online: false, available: false, path, root, gpu: '', error: (result.stderr || result.stdout).trim().slice(-1200), checkedAt }
+const CUDA_CACHE_MS = 60_000
+const cudaCache = new Map<string, { at: number; gpu: string; cuda: RemoteCudaProbe }>()
+const statusRequests = new Map<string, { promise: Promise<RemoteEngineStatus>; scansCuda: boolean }>()
+
+export async function remoteEngineStatus(host: TrainingHost, refreshCuda = false): Promise<RemoteEngineStatus> {
+  const key = JSON.stringify([host.id, host.host, host.port, host.user, rootOf(host)])
+  const running = statusRequests.get(key)
+  if (running) {
+    if (!refreshCuda || running.scansCuda) return running.promise
+    await running.promise
+    if (statusRequests.get(key) === running) statusRequests.delete(key)
+    return remoteEngineStatus(host, true)
   }
-  const gpu = (result.stdout.split('__GPU__')[1]?.split('__ENGINE__')[0] ?? '').trim()
-  const engine = (result.stdout.split('__ENGINE__')[1] ?? '').trim().endsWith('yes')
-  return { online: true, available: engine, path, root, gpu, checkedAt }
+  const previous = cudaCache.get(key)
+  const cached = !refreshCuda && previous && Date.now() - previous.at < CUDA_CACHE_MS ? previous : undefined
+  const promise = (async (): Promise<RemoteEngineStatus> => {
+    const status = await probeRemoteCuda(host, !cached)
+    if (status.cuda) cudaCache.set(key, { at: Date.now(), gpu: status.gpu, cuda: status.cuda })
+    else if (cached) { status.gpu = status.gpu || cached.gpu; status.cuda = cached.cuda }
+    return status
+  })()
+  statusRequests.set(key, { promise, scansCuda: !cached })
+  try { return await promise }
+  finally { if (statusRequests.get(key)?.promise === promise) statusRequests.delete(key) }
 }
 
 const PHASE_TO_STAGE: Record<string, string> = {

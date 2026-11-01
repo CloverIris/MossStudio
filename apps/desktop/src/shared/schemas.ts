@@ -3,6 +3,15 @@ import { releaseInstallerSchema } from './release'
 
 const pathLike = z.string().trim().min(1, '目录路径不能为空').max(4096)
 const urlLike = z.string().min(8).max(2048).regex(/^https?:\/\//)
+const hfEndpoint = z.string().trim().max(2048).refine((value) => {
+  if (!value) return true
+  try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash } catch { return false }
+}, '请输入有效的 HTTP/HTTPS HF 地址')
+const downloadProxy = z.string().trim().max(2048).refine((value) => {
+  if (!value) return true
+  try { const url = new URL(value); return ['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'].includes(url.protocol) && Boolean(url.hostname) && !url.search && !url.hash && (!url.pathname || url.pathname === '/') } catch { return false }
+}, '代理需使用 HTTP/HTTPS/SOCKS4/SOCKS4a/SOCKS5/SOCKS5h 地址')
+const hfToken = z.string().trim().max(2048).regex(/^[^\r\n\0]*$/, 'Token 不能包含换行或 NUL')
 const projectCanvasSchema = z.object({
   id: z.string().min(1).max(120),
   kind: z.enum(['layout', 'result']),
@@ -69,6 +78,11 @@ const hostSaveSchema = z.object({
   trainerRoot: z.string().min(1).max(4096),
   instanceRoot: z.string().max(4096).optional(),
   modelsRoot: z.string().max(4096).optional(),
+  downloadProxy: downloadProxy.optional(),
+  hfEndpoint: hfEndpoint.optional(),
+  downloadConcurrency: z.number().int().min(1).max(16).nullable().optional(),
+  hfToken: hfToken.optional(),
+  clearHfToken: z.boolean().optional(),
 })
 
 export const schemas = {
@@ -80,7 +94,10 @@ export const schemas = {
       networkMode: z.enum(['auto', 'direct', 'mirror']),
       gitMirror: z.string().max(2048).nullable(),
       pipIndex: z.string().max(2048).nullable(),
-      hfEndpoint: z.string().max(2048).nullable(),
+      hfEndpoint: hfEndpoint.nullable(),
+      hfToken: hfToken.nullable().optional(),
+      modelDownloadConcurrency: z.number().int().min(1).max(16),
+      hfQueryHostId: z.string().max(120).nullable(),
       modelsRoot: z.string().max(4096).nullable(),
       modelDirectories: z.object({
         dit: z.string().max(4096).nullable().optional(),
@@ -255,6 +272,8 @@ export const schemas = {
   modelsRemoteInventory: z.object({ hostId: z.string().min(1).max(120), modelsRoot: z.string().max(4096).optional() }),
 
   modelsRemoteDownload: z.object({ hostId: z.string().min(1).max(120), modelId: z.string().min(1).max(200) }),
+  remoteDownloadsRefresh: z.object({ hostId: z.string().min(1).max(120) }),
+  remoteDownloadControl: z.object({ hostId: z.string().min(1).max(120), taskId: z.string().min(1).max(400), operation: z.enum(['pause', 'resume', 'cancel']) }),
 
   hostUpdatePaths: z.object({
     id: z.string().min(1).max(120),
@@ -338,11 +357,18 @@ export const schemas = {
     temperature: z.number().min(0).max(2).optional(),
   }),
 
-  engineRemoteStatus: z.object({ hostId: z.string().min(1).max(80) }),
+  engineRemoteStatus: z.object({ hostId: z.string().min(1).max(80), refreshCuda: z.boolean().optional() }),
 
   enginePrepareRemoteModel: z.object({ hostId: z.string().min(1).max(80), repo: z.string().min(1).max(200).optional() }),
 
-  engineInstallRemote: z.object({ hostId: z.string().min(1).max(80) }),
+  engineInstallRemote: z.object({
+    hostId: z.string().min(1).max(80),
+    channel: z.enum(['stable', 'dev']).optional(),
+    flavour: z.enum(['cu12', 'cu13']).optional(),
+    variant: z.enum(['system-cuda', 'bundled']).optional(),
+    architecture: z.enum(['auto', 'standard', 'sm75']).optional(),
+    releaseTag: z.string().min(1).max(120).optional(),
+  }),
 
   engineSystemCuda: z.object({}).strict(),
 

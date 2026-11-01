@@ -10,7 +10,7 @@ import { remoteEngineStatus } from './remoteEngine'
 import { scanRemoteModels } from './remoteModels'
 
 export async function getOnboardingStatus(settings: Settings, hostId = 'local'): Promise<OnboardingStatus> {
-  const catalog = await getCatalog(settings)
+  const catalog = await getCatalog(settings, true)
   let installed = new Set(catalog.models.filter((model) => model.installed).map((model) => model.id))
   let deviceReady: boolean
   let deviceDetail: string
@@ -46,8 +46,29 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
     total + (installed.has(id) ? 2 : hostId === 'local' && catalog.models.find((model) => model.id === id)?.installState === 'partial' ? 1 : 0), 0,
   )
   const bundle = [...catalog.bundles].sort((a, b) => score(b) - score(a) || Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))[0]
-  const modelIds = bundle ? ids(bundle) : []
-  const modelCount = fullModelReady ? modelIds.length : modelIds.filter((id) => installed.has(id)).length
+  let modelIds = bundle ? ids(bundle) : []
+  let bundleName = bundle?.name
+  let modelCount = fullModelReady ? modelIds.length : modelIds.filter((id) => installed.has(id)).length
+  // Single-file MossInfer overrides still need the bundle's configs and tokenizer.
+  // Count the actual installed weights instead of asking for another BF16 download.
+  if (bundle && !fullModelReady && catalog.models.some((model) => model.id === 'moss-runtime-config')) {
+    const singleFile = (role: 'dit' | 'text_encoder') => catalog.models.find((model) =>
+      installed.has(model.id) && model.role === role && model.family === 'moss-image'
+      && model.format === 'comfyui' && ['bf16', 'int8', 'int4', 'w4a8'].includes(model.precision),
+    )
+    const dit = singleFile('dit')
+    const textEncoder = singleFile('text_encoder')
+    if (dit || textEncoder) {
+      const candidates = [dit?.id ?? bundle.components.dit, textEncoder?.id ?? bundle.components.textEncoder,
+        bundle.components.vae, 'moss-runtime-config']
+      const count = candidates.filter((id) => installed.has(id)).length
+      if (count > modelCount) {
+        modelIds = candidates
+        modelCount = count
+        bundleName = 'MossInfer 单文件组合'
+      }
+    }
+  }
   const modelReady = fullModelReady || modelIds.length > 0 && modelCount === modelIds.length
   const partialModel = modelCount > 0 || hostId === 'local' && modelIds.some((id) => catalog.models.find((model) => model.id === id)?.installState === 'partial')
   const steps: OnboardingStep[] = [
@@ -56,10 +77,10 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
     {
       id: 'model', title: '模型', action: 'models', modelIds,
       status: modelReady ? 'ok' : partialModel ? 'partial' : 'missing',
-      detail: modelReady ? `${bundle?.name ?? '完整模型'} 已就绪`
-        : `${bundle?.name ?? 'MOSS-Image'} · ${modelCount}/${modelIds.length || 4} 个组件已就绪，需准备主模型、文本编码器、VAE 与配置`,
+      detail: modelReady ? `${bundleName ?? '完整模型'} 已就绪`
+        : `${bundleName ?? 'MOSS-Image'} · ${modelCount}/${modelIds.length || 4} 个组件已就绪，需准备主模型、文本编码器、VAE 与配置`,
       sizeBytes: catalog.models.filter((model) => modelIds.includes(model.id) && !installed.has(model.id)).reduce((total, model) => total + model.sizeBytes, 0),
     },
   ]
-  return { hostId, bundleId: bundle?.id, bundleName: bundle?.name, ready: steps.every((step) => step.status === 'ok'), steps, checkedAt: new Date().toISOString() }
+  return { hostId, bundleId: bundle?.id, bundleName, ready: steps.every((step) => step.status === 'ok'), steps, checkedAt: new Date().toISOString() }
 }

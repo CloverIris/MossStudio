@@ -36,6 +36,12 @@ interface HostForm {
   engineRoot: string
   outputRoot: string
   modelsRoot: string
+  downloadProxy: string
+  hfEndpoint: string
+  downloadConcurrency: string
+  hfToken: string
+  hasHfToken: boolean
+  clearHfToken: boolean
 }
 
 const EMPTY_FORM: HostForm = {
@@ -51,6 +57,12 @@ const EMPTY_FORM: HostForm = {
   engineRoot: '~/.mossstudio/engine',
   outputRoot: '~/.mossstudio/outputs',
   modelsRoot: '~/.mossstudio/models',
+  downloadProxy: '',
+  hfEndpoint: '',
+  downloadConcurrency: '',
+  hfToken: '',
+  hasHfToken: false,
+  clearHfToken: false,
 }
 
 const AUTH_METHODS: Array<{ value: SshAuthMethod; label: string }> = [
@@ -163,6 +175,12 @@ export function DevicesPage(): React.JSX.Element {
       engineRoot: host.engineRoot ?? '~/.mossstudio/engine',
       outputRoot: host.outputRoot ?? '~/.mossstudio/outputs',
       modelsRoot: host.modelsRoot ?? '~/.mossstudio/models',
+      downloadProxy: host.downloadProxy ?? '',
+      hfEndpoint: host.hfEndpoint ?? '',
+      downloadConcurrency: host.downloadConcurrency ? String(host.downloadConcurrency) : '',
+      hfToken: '',
+      hasHfToken: host.hasHfToken ?? false,
+      clearHfToken: false,
     })
     setHostOpen(true)
   }
@@ -191,6 +209,11 @@ export function DevicesPage(): React.JSX.Element {
         engineRoot: form.engineRoot.trim() || undefined,
         outputRoot: form.outputRoot.trim() || undefined,
         modelsRoot: form.modelsRoot.trim() || undefined,
+        downloadProxy: form.downloadProxy.trim(),
+        hfEndpoint: form.hfEndpoint.trim(),
+        downloadConcurrency: form.downloadConcurrency ? Number(form.downloadConcurrency) : null,
+        hfToken: form.hfToken.trim() || undefined,
+        clearHfToken: form.clearHfToken,
       })
       setHosts((current) => {
         const existing = current.some((host) => host.id === saved.id)
@@ -645,6 +668,21 @@ export function DevicesPage(): React.JSX.Element {
               />
             </label>
           </div>
+          <fieldset className="space-y-3 rounded-md border border-[var(--color-border-subtle)] p-3">
+            <legend className="px-1 text-ui font-medium">远端模型下载与 HF 查询</legend>
+            <label className="block space-y-1">
+              <span className="text-caption text-[var(--color-text-secondary)]">代理地址</span>
+              <Input value={form.downloadProxy} onChange={(event) => setForm({ ...form, downloadProxy: event.target.value })} placeholder="socks5h://127.0.0.1:7890 或 http://127.0.0.1:7890" />
+              <p className="text-caption text-[var(--color-text-tertiary)]">支持 HTTP、HTTPS、SOCKS4/4a、SOCKS5/5h；地址从远端设备访问。留空使用远端环境代理。</p>
+            </label>
+            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+              <label className="block space-y-1"><span className="text-caption text-[var(--color-text-secondary)]">HF 镜像地址</span><Input value={form.hfEndpoint} onChange={(event) => setForm({ ...form, hfEndpoint: event.target.value })} placeholder="留空继承全局 HF endpoint" /></label>
+              <label className="block space-y-1"><span className="text-caption text-[var(--color-text-secondary)]">文件并发数</span><Input type="number" min={1} max={16} value={form.downloadConcurrency} onChange={(event) => setForm({ ...form, downloadConcurrency: event.target.value })} placeholder="继承全局" /></label>
+            </div>
+            <label className="block space-y-1"><span className="text-caption text-[var(--color-text-secondary)]">HF Token</span><Input type="password" autoComplete="new-password" value={form.hfToken} onChange={(event) => setForm({ ...form, hfToken: event.target.value, clearHfToken: false })} placeholder={form.hasHfToken ? '已配置；留空保留' : '留空使用全局 Token'} /></label>
+            {form.hasHfToken ? <label className="flex items-center gap-2 text-caption text-[var(--color-text-secondary)]"><input type="checkbox" checked={form.clearHfToken} onChange={(event) => setForm({ ...form, clearHfToken: event.target.checked, hfToken: '' })} />清除此设备的 Token，改用全局配置</label> : null}
+            <p className="text-caption text-[var(--color-text-tertiary)]">设置用于新的任务与重试；Token 在本机加密保存，远端任务凭据仅当前用户可读。</p>
+          </fieldset>
           <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">
             远端模型由远端自行下载/缓存，不会自动上传本机的 27 GB 权重。路径不做自动创建，
             测试连接只读取能力与根目录状态。

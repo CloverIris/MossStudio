@@ -7,6 +7,7 @@ import { run } from '../lib/run'
 import { listDevices } from './devices'
 import { probeHost } from './ssh'
 import { hasSshPassword, removeSshPassword, saveSshPassword } from './sshCredentials'
+import { hasHfToken, saveHfToken } from './hfCredentials'
 import { trustUnknownHost } from './sshHostKeys'
 
 const FILE = () => join(paths.root(), 'hosts.json')
@@ -63,6 +64,11 @@ export interface SaveTrainingHostInput {
   modelPath?: string
   instanceRoot?: string
   modelsRoot?: string
+  downloadProxy?: string
+  hfEndpoint?: string
+  downloadConcurrency?: number | null
+  hfToken?: string
+  clearHfToken?: boolean
 }
 
 export function saveTrainingHost(input: SaveTrainingHostInput): TrainingHost {
@@ -76,6 +82,8 @@ export function saveTrainingHost(input: SaveTrainingHostInput): TrainingHost {
   } else {
     removeSshPassword(id)
   }
+  if (input.clearHfToken) saveHfToken(id, null)
+  else if (input.hfToken) saveHfToken(id, input.hfToken)
   const next: TrainingHost = {
     id,
     name: input.name.trim() || input.host,
@@ -92,6 +100,10 @@ export function saveTrainingHost(input: SaveTrainingHostInput): TrainingHost {
     modelPath: input.modelPath?.trim() || existing?.modelPath,
     instanceRoot: input.instanceRoot?.trim() || existing?.instanceRoot,
     modelsRoot: input.modelsRoot?.trim() || undefined,
+    downloadProxy: input.downloadProxy === undefined ? existing?.downloadProxy : input.downloadProxy.trim() || undefined,
+    hfEndpoint: input.hfEndpoint === undefined ? existing?.hfEndpoint : input.hfEndpoint.trim() || undefined,
+    downloadConcurrency: input.downloadConcurrency === undefined ? existing?.downloadConcurrency : input.downloadConcurrency ?? undefined,
+    hasHfToken: hasHfToken(id),
     status: 'unchecked',
     lastCheckedAt: undefined,
   }
@@ -183,6 +195,7 @@ export function updateTrainingHostModelPath(id: string, modelPath: string): void
 
 export function removeTrainingHost(id: string): void {
   removeSshPassword(id)
+  saveHfToken(id, null)
   remote = load().filter((host) => host.id !== id)
   persist()
 }

@@ -79,7 +79,7 @@ interface AppStore {
   setUpdateDialogOpen: (open: boolean) => void
   startUpdateDownload: () => Promise<void>
   cancelUpdateDownload: () => Promise<void>
-  saveSettings: (patch: Partial<Settings>) => Promise<void>
+  saveSettings: (patch: Partial<Settings> & { hfToken?: string | null }) => Promise<void>
   toggleSidebar: () => Promise<void>
   toggleNotifications: () => void
   setNotificationsOpen: (open: boolean) => void
@@ -138,24 +138,34 @@ function upsertDownload(list: DownloadTask[], task: DownloadTask): DownloadTask[
 }
 
 export const useApp = create<AppStore>((set, get) => {
+  const startupDownloads = new Map<string, DownloadTask>()
+
+  function mergeDownloadSnapshot(snapshot: DownloadTask[]): DownloadTask[] {
+    const tasks = new Map(snapshot.map((task) => [task.id, task]))
+    for (const task of startupDownloads.values()) tasks.set(task.id, task)
+    return [...tasks.values()].filter((task) => task.state !== 'canceled')
+  }
+
   function subscribe(): void {
     if (subscribed) return
     subscribed = true
 
     onEvent<DownloadTask>(Events.download, (task) => {
+      if (!get().ready) startupDownloads.set(task.id, task)
+      const previous = get().downloads.find((item) => item.id === task.id)
       if (task.state === 'canceled') {
         set((state) => ({ downloads: state.downloads.filter((item) => item.id !== task.id) }))
         return
       }
       set((state) => ({ downloads: upsertDownload(state.downloads, task) }))
-      if (task.state === 'done') {
+      if (task.state === 'done' && previous?.state !== 'done') {
         void get().refreshCatalog()
         get().pushNotification({
           tone: 'success',
           title: '下载完成',
-          message: `${task.label} 已写入本地缓存`,
+          message: task.hostId ? `${task.label} 已下载到 ${task.hostName ?? task.hostId}` : `${task.label} 已写入本地缓存`,
         })
-      } else if (task.state === 'error') {
+      } else if (task.state === 'error' && previous?.state !== 'error') {
         get().pushNotification({
           tone: 'error',
           title: '下载失败',
@@ -356,7 +366,7 @@ export const useApp = create<AppStore>((set, get) => {
           env: env.status === 'fulfilled' ? env.value : null,
           updates: updates.status === 'fulfilled' ? updates.value : null,
           catalog: catalog.status === 'fulfilled' ? catalog.value : null,
-          downloads: downloads.status === 'fulfilled' ? downloads.value : [],
+          downloads: mergeDownloadSnapshot(downloads.status === 'fulfilled' ? downloads.value : []),
           jobs: jobs.status === 'fulfilled' ? jobs.value : [],
           diagnostics: diagnostics.status === 'fulfilled' ? diagnostics.value : [],
           devices: devices.status === 'fulfilled' ? devices.value : [],
@@ -369,6 +379,7 @@ export const useApp = create<AppStore>((set, get) => {
               : null,
           ready: true,
         })
+        startupDownloads.clear()
         const queued = queuedRows.status === 'fulfilled' ? queuedRows.value.filter((row) => row.state === 'queued') : []
         for (const deviceId of new Set(queued.map((row) => row.deviceId))) {
           setTimeout(() => {

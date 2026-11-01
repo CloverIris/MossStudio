@@ -52,6 +52,7 @@ test('live download updates preserve initial queue order and refresh task data',
       call: async (channel) => {
         if (channel === channels.Ipc.settingsGet) return { autoCheckUpdates: false }
         if (channel === channels.Ipc.downloadsList) return initial
+        if (channel === channels.Ipc.updatesCheck) return { announcements: [] }
         if (channel === channels.Ipc.modelDownload) return responseTask
         return []
       },
@@ -93,6 +94,9 @@ test('service snapshots keep insertion order across errors, pause and retry', as
     '../lib/events': { emit: () => {} },
     '../lib/paths': { paths: {} },
     './network': { getLastNetwork: () => null },
+    './hfNetwork': { fetchHf: async () => { throw new Error('offline fixture') } },
+    './hfCredentials': { getHfToken: () => undefined },
+    '../lib/disk': { assertFreeSpace: async () => {} },
     './updates': { localReleaseDir: () => null },
     './instances': { listInstances: async () => [] },
     './supervisor': { listJobs: async () => [] },

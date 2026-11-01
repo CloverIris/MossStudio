@@ -53,9 +53,10 @@ export async function resolveFiles(
   repo: string,
   revision: string,
   signal?: AbortSignal,
+  transport?: (url: string) => Promise<Response>,
 ): Promise<Snapshot> {
   const request = async (url: string): Promise<Response> => {
-    const response = await fetch(url, {
+    const response = transport ? await transport(url) : await fetch(url, {
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
         : AbortSignal.timeout(30_000),
@@ -92,12 +93,13 @@ export async function resolveFiles(
         throw new Error(`文件 hash 无效：${item.path}`)
       files.push({ path: item.path, size: item.size, oid })
     }
-    url =
+    const next =
       response.headers
         .get('link')
         ?.split(',')
         .find((part) => /rel="next"/.test(part))
         ?.match(/<([^>]+)>/)?.[1] ?? null
+    url = next ? new URL(next, url).href : null
   }
   return { sha: meta.sha, files }
 }
@@ -137,8 +139,8 @@ export async function materialize(source: string, target: string): Promise<void>
 const locks = new Map<string, Promise<void>>()
 let active = 0
 const waiters: Array<() => void> = []
-async function slot(): Promise<() => void> {
-  if (active >= 3) await new Promise<void>((done) => waiters.push(done))
+async function slot(concurrency = 4): Promise<() => void> {
+  if (active >= concurrency) await new Promise<void>((done) => waiters.push(done))
   else active += 1
   return () => {
     const next = waiters.shift()
@@ -153,12 +155,13 @@ export async function downloadFile(
   file: ModelFile,
   signal: AbortSignal,
   progress: (bytes: number, verifying: boolean) => void,
+  options: { token?: string; concurrency?: number } = {},
 ): Promise<void> {
   const previous = locks.get(destination) ?? Promise.resolve()
   const current = previous
     .catch(() => undefined)
     .then(async () => {
-      const release = await slot()
+      const release = await slot(options.concurrency)
       const part = `${destination}.part`
       try {
         signal.throwIfAborted()
@@ -190,14 +193,14 @@ export async function downloadFile(
           offset = 0
         }
         let response = await fetch(url, {
-          headers: offset ? { range: `bytes=${offset}-` } : {},
+          headers: { ...(offset ? { range: `bytes=${offset}-` } : {}), ...(options.token ? { authorization: `Bearer ${options.token}` } : {}) },
           signal,
           redirect: 'follow',
         })
         if (response.status === 416) {
           await response.body?.cancel()
           offset = 0
-          response = await fetch(url, { signal, redirect: 'follow' })
+          response = await fetch(url, { signal, redirect: 'follow', headers: options.token ? { authorization: `Bearer ${options.token}` } : undefined })
         }
         if (response.status !== 200 && response.status !== 206)
           throw new Error(`下载 HTTP ${response.status}`)

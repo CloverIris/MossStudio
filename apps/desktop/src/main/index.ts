@@ -51,6 +51,7 @@ import { downloadCustomModel, getCatalog, listDownloads } from './services/model
 import { registerGalleryProtocol } from './services/gallery'
 import { createAppWindow, getWindow, openWindow } from './windows'
 import { refreshGpuInventory } from './services/devices'
+import { startRemoteDownloadMonitor } from './services/remoteDownloads'
 import { startGpuTelemetry } from './services/gpuTelemetry'
 
 async function startJob(input: Record<string, unknown>) {
@@ -148,6 +149,7 @@ app.whenReady().then(async () => {
     catch (error) { console.error(error); app.exit(1) }
     return
   }
+  if (!scenario && !smoke && !screenshot) startRemoteDownloadMonitor()
   await startBackend()
   if (scenario === 'studio-canvas-ui') {
     await runStudioCanvasUiTests()
