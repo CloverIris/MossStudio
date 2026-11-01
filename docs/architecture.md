@@ -44,12 +44,16 @@ apps/desktop/src/
       remoteModels.ts       远端 HF 模型准备
       systemCuda.ts         系统 cuBLASLt 预检
       cudaWheels.ts         NVIDIA wheel 原生解压
-      engines.ts            本机/远端 engine 状态
+      engines.ts            本机版本验证/切换、远端 engine 状态
+      engineReadiness.ts    唯一五态就绪模型与缓存
       models.ts / modelFiles.ts / modelBundles.ts
       projects.ts
       trainingHosts.ts / trainers.ts / remoteTrainer.ts / trainerEnv.ts
       ai.ts                 Provider/Agent
       gbc.ts                GBC 桥
+    lib/
+      probeEngine.ts        一次性 moss-server hello 探测
+      engineStore.ts        staging/backup/trash 原子目录事务
   backend/                  HTTP/WS utility process
   preload/                  contextBridge
   renderer/
@@ -60,6 +64,8 @@ apps/desktop/src/
     pages/Models.tsx        模型库
     components/             panels, Agent, dialogs
   shared/                   types/channels/schemas/backend
+    engineProtocol.ts       所有不可信 hello 的唯一解码与兼容判定
+    engineReadiness.ts      引擎页与准备清单共用状态文案
 ```
 
 ## 4. 页面与路由
@@ -98,6 +104,7 @@ startEngineJob({ modelBinding, deviceId, prompt, ... })
 ```
 
 - `moss-server` JSON-lines：`hello / load / generate / cancel / shutdown`。
+- 所有本机和远端 `hello` 必须先经 `shared/engineProtocol.ts` 解码；禁止调用方直接读取未验证的 raw 字段。`supported: true` 是目标设备兼容性的唯一权威，算力只用于选包、展示和 warning。
 - 事件映射为 `hello / ready / log / stage / progress / result / error / canceled`。
 - 同一时间一个 active generation；后续任务在内存队列等待。
 - `startEngineJob` 不读取 Instance/Python runtime；只要求模型路径与引擎。
@@ -118,6 +125,9 @@ SSH host → spawn ssh → remote moss-server
 
 - 两种包：`system-cuda`（小，依赖系统 cuBLASLt）和 `bundled`（+700MB，自带 CUDA 库）。
 - 本机可选择 GitHub 正式 Release；上游没有 Release 时稳定渠道回退至最新成功 CI artifact。已安装版本可在引擎页切换或删除。
+- 本机安装是目录事务：下载、CUDA 库、probe、兼容判定和 manifest 都在 `.staging` 完成，验证通过后才晋升；current 先 shutdown 再进入 `.backup`，失败回滚，启动时按 `.pending.json` 恢复。settings 只在晋升成功后指向新 binary。
+- 版本列表保留无 manifest 的旧目录并标记「未验证」。managed 验证记录在安装目录 `.engine.json`；external 验证记录只在应用自己的 `external.json`，不写用户引擎目录。
+- `EngineReadiness = missing | unverified | stale | unsupported | ready` 是 store、Engine、Oobe、Settings 的唯一本机状态来源；binary 存在不等于 ready。活跃安装进度与持久化的最近尝试分开，`ready` 可以同时显示「上次更新失败」。
 - Windows `.zip` 由 Node `yauzl` 解压并校验归档路径，不依赖系统 Python；Linux `.tar.gz` 使用系统 `tar`。
 - 默认 `system-cuda`，下载前 `systemCuda.ts` 预检；缺库弹窗。
 - 缺库时的选项：
@@ -143,7 +153,10 @@ SSH host → spawn ssh → remote moss-server
   models/adapters/
   outputs/
   jobs/
-  mossinfer/<stamp>/
+  mossinfer/<stamp>/     已验证版本与 .engine.json
+  mossinfer/external.json 外部引擎登记与验证记录
+  mossinfer/last-attempt.json 最近一次安装成功/失败
+  mossinfer/.staging/    未晋升安装，不进入版本列表
   cache/
   trainer/
   legacy-inference-*/    旧推理归档
