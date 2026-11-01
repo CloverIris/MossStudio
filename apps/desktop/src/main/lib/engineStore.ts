@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -10,9 +10,9 @@ export interface EngineManifest {
   engineVersion?: string
   protocol: number
   verifiedAt: string
-  architecture: 'standard' | 'sm75'
-  flavour: 'cu12' | 'cu13'
-  variant: 'system-cuda' | 'bundled'
+  architecture?: 'standard' | 'sm75'
+  flavour?: 'cu12' | 'cu13'
+  variant?: 'system-cuda' | 'bundled'
   device?: EngineDevice
   devices: EngineDevice[]
   cublasLt?: EngineCublasLt
@@ -102,6 +102,21 @@ async function bestEffortRm(path: string | undefined, ops: EngineStoreOps): Prom
   } catch {
     // 清尾失败不覆盖安装结果，启动恢复会再次处理。
   }
+}
+
+export function readEngineManifest(installDir: string): EngineManifest | null {
+  try {
+    const raw = JSON.parse(readFileSync(join(installDir, '.engine.json'), 'utf8')) as Partial<EngineManifest>
+    if (raw.schemaVersion !== 1 || typeof raw.stamp !== 'string' || typeof raw.protocol !== 'number' ||
+        typeof raw.verifiedAt !== 'string' || !Array.isArray(raw.devices)) return null
+    return raw as EngineManifest
+  } catch {
+    return null
+  }
+}
+
+export async function writeEngineManifest(installDir: string, manifest: EngineManifest): Promise<void> {
+  await atomicWriteJson(join(installDir, '.engine.json'), manifest, defaultOps, 200)
 }
 
 export function isManagedEngineDirectory(name: string): boolean {

@@ -38,6 +38,7 @@ import {
   removeLocalEngineVersion,
   selectLocalEngineDirectory,
   selectLocalEngineVersion,
+  verifyLocalEngineVersion,
 } from './services/engines'
 import { detectSystemCuda } from './services/systemCuda'
 import { installMossInferCudaLibs } from './services/cudaWheels'
@@ -404,6 +405,8 @@ export function registerIpc(): void {
   handle(Ipc.engineVersions, null, () => localEngineVersions())
 
   handle(Ipc.engineVersionSelect, schemas.engineVersionId, ({ id }) => selectLocalEngineVersion(id))
+
+  handle(Ipc.engineVersionVerify, schemas.engineVersionId, ({ id }) => verifyLocalEngineVersion(id))
 
   handle(Ipc.engineVersionRemove, schemas.engineVersionId, ({ id }) => removeLocalEngineVersion(id))
 

@@ -1,4 +1,5 @@
 ﻿import type { ReleaseHomeCopy, ReleaseInstaller } from './release'
+import type { EngineComputeCapability } from './engineProtocol'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'unknown'
 
@@ -308,6 +309,15 @@ export interface LocalEngineVersion {
   current: boolean
   /** managed: unpacked under <userData>/mossinfer; external: a path the user picked. */
   source: 'managed' | 'external'
+  verified: boolean
+  verifiedAt?: string
+  engineVersion?: string
+  protocol?: number
+  capability?: EngineComputeCapability | null
+  flavour?: 'cu12' | 'cu13'
+  variant?: 'system-cuda' | 'bundled'
+  architecture?: 'standard' | 'sm75'
+  unverifiedReason?: string
 }
 
 export interface AppNotification {
