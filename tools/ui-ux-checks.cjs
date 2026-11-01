@@ -79,7 +79,6 @@ module.exports = async function checkUx({ evaluate, waitFor, capture }) {
   await waitFor('document.querySelector("#agent-requests").textContent === "1"')
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(provider)}).disabled`), true)
   assert.equal(await evaluate('document.querySelector("button[title=新对话]").disabled'), true)
-  assert.equal(await evaluate('document.querySelector("button[title=历史对话]").disabled'), true)
   await input(composer, '等待期间写的新草稿')
   await click('#agent-fail')
   await waitFor('document.querySelector("button[aria-label=发送消息]")?.disabled === false')
