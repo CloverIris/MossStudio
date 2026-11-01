@@ -44,8 +44,8 @@ apps/desktop/src/
       remoteModels.ts       远端 HF 模型准备
       systemCuda.ts         系统 cuBLASLt 预检
       cudaWheels.ts         NVIDIA wheel 原生解压
-      engines.ts            本机版本验证/切换、远端 engine 状态
-      engineReadiness.ts    唯一五态就绪模型与缓存
+      engines.ts            本机版本切换、远端 engine 状态
+      engineReadiness.ts    唯一就绪状态与缓存
       models.ts / modelFiles.ts / modelBundles.ts
       projects.ts
       trainingHosts.ts / trainers.ts / remoteTrainer.ts / trainerEnv.ts
@@ -153,8 +153,8 @@ SSH host → spawn ssh → remote moss-server
   models/adapters/
   outputs/
   jobs/
-  mossinfer/<stamp>/     已验证版本与 .engine.json
-  mossinfer/external.json 外部引擎登记与验证记录
+  mossinfer/<stamp>/     已安装版本目录
+  mossinfer/external.json 外部引擎路径登记
   mossinfer/last-attempt.json 最近一次安装成功/失败
   mossinfer/.staging/    未晋升安装，不进入版本列表
   cache/
