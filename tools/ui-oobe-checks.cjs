@@ -309,7 +309,8 @@ module.exports = async function checkOobe({ evaluate, waitFor, capture, webConte
     const rect = button.getBoundingClientRect();
     return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
   })()`)
-  await webContents.sendInputEvent({ type: 'mouseMove', x: verifyPoint.x, y: verifyPoint.y })
+  const inputScale = webContents.getZoomFactor()
+  await webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(verifyPoint.x * inputScale), y: Math.round(verifyPoint.y * inputScale) })
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   assert.equal(await evaluate('[...document.querySelectorAll("button")].find(button => button.textContent.trim() === "验证并切换").matches(":hover")'), true)
   await capture('engine-unverified-hover')
