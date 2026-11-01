@@ -158,7 +158,7 @@ GitHub Release 页面上的**正文（description / release notes）**和**附�
 - 根目录 `package.json`、`apps/desktop/package.json`、`release/manifest.json` 的
   `app.version` 必须完全一致；打包后以 Electron `app.getVersion()` 为准。发布构建会
   对不一致直接报错，不能只改其中一个版本源。
-- `0.0.0` 是保留的严格版本更新测试基线；`0.1.0` 是当前开发版本。两者都使用严格
+- `0.0.0` 是保留的严格版本更新测试基线；`1.0.1` 是当前待发布修复版本。两者都使用严格
    SemVer，不添加 prerelease 后缀。
 - 发布构建统一写入 `release/artifacts/`，不创建独立的 `githubrelease/` 目录。GitHub
    当前没有 Release；本地生成的材料只有手动创建 `v<version>` Release 并上传后才成为线上版本。
@@ -170,7 +170,7 @@ GitHub Release 页面上的**正文（description / release notes）**和**附�
    生成该地址不代表线上 tag 或资产存在。在线 E2E 需上传 `release/artifacts/` 中对应版本的
    ZIP 和 `release.md`，并把 `README.md` 内容粘贴为 Release 正文。从已安装的
    `0.0.0` 客户端检查更新，验证版本识别、下载、SHA-256/大小校验、安全解压和 updater 替换。
-- 发布后该版本号不可复用；如果客户端升级到 `0.1.0`，后续更新版本必须严格高于 `0.1.0`。
+- 发布后该版本号不可复用；如果客户端升级到 `1.0.1`，后续更新版本必须严格高于 `1.0.1`。
 - SemVer 比较决定是否提示更新；`v` 只是 Git tag 前缀，不属于应用版本。不要通过
   `0.0.0-beta.1` 等 prerelease 后缀改变本地基线。
 - 上传前，`0.0.0` 客户端可能通过 raw `main`/镜像读取到仓库中的开发版本元数据；

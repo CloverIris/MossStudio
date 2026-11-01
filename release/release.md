@@ -1,17 +1,17 @@
-# MossStudio 0.1.0
+# MossStudio 1.0.1
 
 > 本文件由 `node tools/release-md.mjs` 从 `release/manifest.json` 与
 > `release/models.json` 生成；请勿直接手改。发布时把本文件作为 GitHub Release
 > 的 `release.md` 资产上传。
 
 - 通道：**stable**
-- 发布：2026-11-01T06:18:00Z
+- 发布：2026-11-01T08:01:40Z
 - 最低版本：0.0.0
 - 模型目录：2026-10-19T09:48:26Z · `sha256:64e4f5552209…`
 
 ## 安装包
 
-- `win32/x64` · zip · 204 MB · `af22907c3f09…`
+- `win32/x64` · zip · 204 MB · `fd0ab9bc3a77…`
 
 ## 模型目录
 
@@ -45,15 +45,20 @@
 
 ## 公告
 
-### MossStudio 0.1.0 正式发布
+### MossStudio 1.0.1 更新修复
 
-> info · 2026-11-01T06:18:00Z
+> info · 2026-11-01T08:01:40Z
 
-MossStudio 首个正式版本现已发布。Windows x64 用户可下载便携 ZIP；安装并启动 0.0.0 基线版本的用户也可通过应用内更新升级至 0.1.0。更新前请保留项目数据目录；应用会先校验下载文件，再安全解压并替换程序文件。
+MossStudio 1.0.1 修复 Windows 应用内更新解压失败的问题。更新包仍会先校验大小和 SHA-256，再安全解压并替换程序文件；项目数据目录会保留。
 
 ## 发布说明
 
 MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、模型管理和本机推理整合在一个应用中；推理由 MossInfer 引擎执行。
+
+## 本次更新
+
+- 修复 Windows 应用内更新在解压 `resources/app.asar` 时失败的问题。
+- 更新包依旧会在解压前校验文件大小和 SHA-256；更新程序文件时保留用户数据目录。
 
 ## 主要功能
 
@@ -70,9 +75,9 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
 
 在「引擎」页安装 MossInfer，在「模型」页准备所需模型，然后即可在 Canvas 中创建并生成图像。本机推理需要兼容的 Windows x64 环境、NVIDIA GPU 和驱动；模型与推理引擎需另行下载。
 
-## 从 0.0.0 升级
+## 从旧版本升级
 
-已安装 `0.0.0` 基线版本的用户可使用应用内更新检查升级至 `0.1.0`。应用会校验下载包大小和 SHA-256，再安全解压并替换程序文件。更新过程需要关闭应用，安装目录必须对当前用户可写；项目数据目录会保留。
+已安装 `0.0.0` 或 `0.1.0` 的用户可使用应用内更新检查升级至 `1.0.1`。应用会校验下载包大小和 SHA-256，再安全解压并替换程序文件。更新过程需要关闭应用，安装目录必须对当前用户可写；项目数据目录会保留。
 
 ## 已知事项
 
@@ -87,19 +92,19 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
   "app": {
     "name": "MossStudio",
     "channel": "stable",
-    "version": "0.1.0",
+    "version": "1.0.1",
     "min_supported": "0.0.0",
-    "published_at": "2026-11-01T06:18:00Z",
-    "notes_url": "https://github.com/CloverIris/MossStudio/releases/tag/v0.1.0"
+    "published_at": "2026-11-01T08:01:40Z",
+    "notes_url": "https://github.com/CloverIris/MossStudio/releases/tag/v1.0.1"
   },
   "installers": [
     {
       "platform": "win32",
       "arch": "x64",
       "kind": "zip",
-      "url": "https://github.com/CloverIris/MossStudio/releases/download/v0.1.0/MossStudio-0.1.0-win32-x64.zip",
-      "sha256": "af22907c3f09152149c9c95204adb85d02ad8df1e82eecf5924f538afe58a8f1",
-      "size_bytes": 213773596
+      "url": "https://github.com/CloverIris/MossStudio/releases/download/v1.0.1/MossStudio-1.0.1-win32-x64.zip",
+      "sha256": "fd0ab9bc3a773d76d9b776617fbd098e8f512b2a15cbe76fda15dad5362627eb",
+      "size_bytes": 213773738
     }
   ],
   "home": {
@@ -114,11 +119,11 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
   },
   "announcements": [
     {
-      "id": "2026-11-mossstudio-0.1.0",
+      "id": "2026-11-mossstudio-1.0.1",
       "level": "info",
-      "title": "MossStudio 0.1.0 正式发布",
-      "body_markdown": "MossStudio 首个正式版本现已发布。Windows x64 用户可下载便携 ZIP；安装并启动 0.0.0 基线版本的用户也可通过应用内更新升级至 0.1.0。更新前请保留项目数据目录；应用会先校验下载文件，再安全解压并替换程序文件。",
-      "starts_at": "2026-11-01T06:18:00Z",
+      "title": "MossStudio 1.0.1 更新修复",
+      "body_markdown": "MossStudio 1.0.1 修复 Windows 应用内更新解压失败的问题。更新包仍会先校验大小和 SHA-256，再安全解压并替换程序文件；项目数据目录会保留。",
+      "starts_at": "2026-11-01T08:01:40Z",
       "ends_at": null,
       "dismissible": true,
       "pinned": true,

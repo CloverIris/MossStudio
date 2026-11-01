@@ -3,10 +3,10 @@
   "app": {
     "name": "MossStudio",
     "channel": "stable",
-    "version": "0.1.0",
+    "version": "1.0.1",
     "min_supported": "0.0.0",
-    "published_at": "2026-11-01T06:18:00Z",
-    "notes_url": "https://github.com/CloverIris/MossStudio/releases/tag/v0.1.0",
+    "published_at": "2026-11-01T08:01:40Z",
+    "notes_url": "https://github.com/CloverIris/MossStudio/releases/tag/v1.0.1",
     "rollout": 1
   },
   "home": {
@@ -16,11 +16,11 @@
   },
   "announcements": [
     {
-      "id": "2026-11-mossstudio-0.1.0",
+      "id": "2026-11-mossstudio-1.0.1",
       "level": "info",
-      "title": "MossStudio 0.1.0 正式发布",
-      "body_markdown": "MossStudio 首个正式版本现已发布。Windows x64 用户可下载便携 ZIP；安装并启动 0.0.0 基线版本的用户也可通过应用内更新升级至 0.1.0。更新前请保留项目数据目录；应用会先校验下载文件，再安全解压并替换程序文件。",
-      "starts_at": "2026-11-01T06:18:00Z",
+      "title": "MossStudio 1.0.1 更新修复",
+      "body_markdown": "MossStudio 1.0.1 修复 Windows 应用内更新解压失败的问题。更新包仍会先校验大小和 SHA-256，再安全解压并替换程序文件；项目数据目录会保留。",
+      "starts_at": "2026-11-01T08:01:40Z",
       "ends_at": null,
       "dismissible": true,
       "pinned": true,
@@ -35,9 +35,9 @@
       "platform": "win32",
       "arch": "x64",
       "kind": "zip",
-      "url": "https://github.com/CloverIris/MossStudio/releases/download/v0.1.0/MossStudio-0.1.0-win32-x64.zip",
-      "sha256": "af22907c3f09152149c9c95204adb85d02ad8df1e82eecf5924f538afe58a8f1",
-      "size_bytes": 213773596
+      "url": "https://github.com/CloverIris/MossStudio/releases/download/v1.0.1/MossStudio-1.0.1-win32-x64.zip",
+      "sha256": "fd0ab9bc3a773d76d9b776617fbd098e8f512b2a15cbe76fda15dad5362627eb",
+      "size_bytes": 213773738
     }
   ],
   "assets": [],
