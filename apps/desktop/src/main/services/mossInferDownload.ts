@@ -25,11 +25,7 @@ import {
   mossInferDriverCompatibilityError,
   type MossInferArchitecture,
 } from '../lib/engineAssets'
-import {
-  judgeEngineGpuSupport,
-  readEngineComputeCapability,
-  type EngineProbeDeviceLike,
-} from '@shared/gpuCompatibility'
+import { judgeEngineSupport, protocolCompatible } from '@shared/engineProtocol'
 import { getGpuInventory, refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 
@@ -839,36 +835,39 @@ export async function downloadMossInfer(
     if (recommended && recommended !== flavour) {
       flavourNote = `引擎建议 CUDA ${recommended.slice(2)}，当前仍保留默认 CUDA ${flavour.slice(2)}；请按 GPU 兼容性结果更新驱动`
     }
-    const verifiedDevices = probe.probe?.devices.map((device) => device.raw as EngineProbeDeviceLike) ?? []
-    if (architecture === 'sm75') {
-      const sm75Device = verifiedDevices.find((device) => {
-        const capability = readEngineComputeCapability(device)
-        return capability?.major === 7 && capability.minor === 5
-      })
-      if (sm75Device?.supported === false) {
-        rollbackUnverifiedInstall(installed.installDir)
-        throw new Error(`下载的 SM75 引擎仍将 ${sm75Device.name ?? 'GPU'} 判定为不兼容；已移除该构建，请勿切换到它`)
-      }
+    if (!protocolCompatible(probe)) {
+      rollbackUnverifiedInstall(installed.installDir)
+      throw new Error(`新引擎协议为 ${probe.protocol}，需要 protocol 2；未激活该构建`)
     }
+    const validationWarnings: string[] = []
+    let verificationGpu = targetGpu
     if (selectedGpuUuid !== undefined) {
       const currentInventory = await refreshGpuInventory()
-      const currentGpu = currentInventory.devices.find((device) => device.uuid === selectedGpuUuid)
-      const verdict = judgeEngineGpuSupport(
-        verifiedDevices,
-        { index: currentGpu?.index, name: currentGpu?.name },
-        architecture,
+      verificationGpu = currentInventory.devices.find((device) => device.uuid === selectedGpuUuid) ?? targetGpu
+    }
+    if (!verificationGpu) {
+      rollbackUnverifiedInstall(installed.installDir)
+      throw new Error('没有可用于验证新引擎的 NVIDIA GPU；未激活该构建')
+    }
+    const verdict = judgeEngineSupport(
+      probe,
+      { index: verificationGpu.index, name: verificationGpu.name },
+      {
+        expectedArchitecture: architecture,
+        inventoryCapability: verificationGpu.computeCapability,
+      },
+    )
+    validationWarnings.push(...verdict.warnings)
+    if (!verdict.ok) {
+      rollbackUnverifiedInstall(installed.installDir)
+      const driverError = mossInferDriverCompatibilityError(flavour, verificationGpu.driverVersion)
+      throw new Error(
+        [
+          driverError,
+          verdict.reason,
+          `新引擎未能验证所选 GPU 对 ${architecture} / CUDA ${flavour.slice(2)} 构建的支持；未激活该构建并保留当前引擎。`,
+        ].filter(Boolean).join(' '),
       )
-      if (!verdict.ok) {
-        rollbackUnverifiedInstall(installed.installDir)
-        const driverError = mossInferDriverCompatibilityError(flavour, currentGpu?.driverVersion)
-        throw new Error(
-          [
-            driverError,
-            verdict.reason,
-            `新引擎未能验证所选 GPU 对 ${architecture} / CUDA ${flavour.slice(2)} 构建的支持；已移除该构建并保留当前引擎。`,
-          ].filter(Boolean).join(' '),
-        )
-      }
     }
     const update = updateSettings({
       mossInferServerPath: installed.serverPath,
@@ -885,7 +884,7 @@ export async function downloadMossInfer(
       recommendedFlavour: recommended,
       variant: installed.effectiveVariant,
       architecture,
-      note: [installed.fallbackNote, architectureNote, flavourNote].filter(Boolean).join('；') || undefined,
+      note: [installed.fallbackNote, architectureNote, flavourNote, ...validationWarnings].filter(Boolean).join('；') || undefined,
       cublaslt: probe.probe?.cublasLt,
     })
   } catch (error) {

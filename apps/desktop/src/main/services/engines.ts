@@ -5,13 +5,12 @@ import type {
   LocalEngineVersion,
   RemoteEngineInfo,
 } from '@shared/types'
+import { mapEngineGpuProbe } from '@shared/gpuCompatibility'
 import {
-  judgeEngineGpuSupport,
-  mapEngineGpuProbe,
-  type EngineGpuProbeDevice,
-  type EngineProbeDeviceLike,
-} from '@shared/gpuCompatibility'
-import { protocolCompatible, type EngineHello } from '@shared/engineProtocol'
+  judgeEngineSupport,
+  protocolCompatible,
+  type EngineHello,
+} from '@shared/engineProtocol'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
@@ -67,30 +66,6 @@ function isCurrent(path: string): boolean {
 let gpuProbeCache: { fingerprint: string; createdAt: number; snapshot: EngineGpuProbeSnapshot; hello: EngineHello } | null = null
 let gpuProbePending: { fingerprint: string; promise: Promise<EngineHello> } | null = null
 
-function probeDevicesFrom(raw: Record<string, unknown>): EngineGpuProbeDevice[] {
-  const probe = raw['probe']
-  const rawDevices = probe && typeof probe === 'object'
-    ? (probe as Record<string, unknown>)['devices']
-    : undefined
-  if (!Array.isArray(rawDevices)) return []
-  return rawDevices.flatMap((candidate): EngineGpuProbeDevice[] => {
-    if (!candidate || typeof candidate !== 'object') return []
-    const item = candidate as Record<string, unknown>
-    const index = typeof item['index'] === 'number' && Number.isInteger(item['index'])
-      ? item['index']
-      : undefined
-    const name = typeof item['name'] === 'string' ? item['name'] : undefined
-    if (index === undefined && name === undefined) return []
-    return [{
-      index,
-      name,
-      supported: typeof item['supported'] === 'boolean' ? item['supported'] : undefined,
-      unsupportedReason: typeof item['unsupported_reason'] === 'string' ? item['unsupported_reason'] : undefined,
-      freeMemoryBytes: typeof item['free_memory_bytes'] === 'number' ? item['free_memory_bytes'] : undefined,
-    }]
-  })
-}
-
 function mapGpuProbe(
   inventory: Awaited<ReturnType<typeof getGpuInventory>>['devices'],
   hello: EngineHello,
@@ -98,7 +73,7 @@ function mapGpuProbe(
 ): EngineGpuProbeSnapshot {
   return mapEngineGpuProbe(
     inventory,
-    probeDevicesFrom(hello.raw),
+    hello.probe?.devices ?? [],
     enginePath,
     hello.version,
   )
@@ -179,11 +154,13 @@ export async function selectLocalEngineVersion(id: string): Promise<LocalEngineI
       )
     }
     // 安装后校验与切换共用同一判定，失败构建不能稍后被激活。
-    const devices = (hello.raw['probe'] as { devices?: EngineProbeDeviceLike[] } | undefined)?.devices ?? []
-    const verdict = judgeEngineGpuSupport(
-      devices,
+    const verdict = judgeEngineSupport(
+      hello,
       { index: targetGpu.index, name: targetGpu.name },
-      /(?:^|-)sm75(?:-|$)/.test(version.id) ? 'sm75' : 'standard',
+      {
+        expectedArchitecture: /(?:^|-)sm75(?:-|$)/.test(version.id) ? 'sm75' : 'standard',
+        inventoryCapability: targetGpu.computeCapability,
+      },
     )
     if (!verdict.ok) {
       throw new Error(

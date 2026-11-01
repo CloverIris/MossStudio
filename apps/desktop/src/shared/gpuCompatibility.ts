@@ -3,14 +3,7 @@ import type {
   EngineGpuProbeSnapshot,
   GpuInventoryDevice,
 } from './types'
-
-export interface EngineGpuProbeDevice {
-  index?: number
-  name?: string
-  supported?: boolean
-  unsupportedReason?: string
-  freeMemoryBytes?: number
-}
+import { matchEngineDevice, type EngineDevice } from './engineProtocol'
 
 function compatibilityReason(reason: string | undefined, driverVersion: string | undefined): string | undefined {
   if (!reason || !/no\s+nvidia\s+driver|nvidia\s+driver.{0,30}(?:not|unavailable|load)|(?:driver|cuda).{0,30}(?:insufficient|too old|not loaded)/i.test(reason)) {
@@ -24,36 +17,22 @@ function normalizedName(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 }
 
-function matchProbeDevice(
-  device: GpuInventoryDevice,
-  inventory: GpuInventoryDevice[],
-  candidates: EngineGpuProbeDevice[],
-): EngineGpuProbeDevice | undefined {
-  const byIndex = candidates.filter((candidate) =>
-    candidate.index === device.index &&
-    (candidate.name === undefined || normalizedName(candidate.name) === normalizedName(device.name)),
-  )
-  if (byIndex.length === 1) return byIndex[0]
-  const inventoryNameMatches = inventory.filter(
-    (candidate) => normalizedName(candidate.name) === normalizedName(device.name),
-  )
-  const byUniqueName = candidates.filter((candidate) =>
-    candidate.name !== undefined && normalizedName(candidate.name) === normalizedName(device.name),
-  )
-  return inventoryNameMatches.length === 1 && byUniqueName.length === 1
-    ? byUniqueName[0]
-    : undefined
-}
-
+/** 只负责把引擎 supported 结论映射到系统 GPU 快照，不再自行推断算力门槛。 */
 export function mapEngineGpuProbe(
   inventory: GpuInventoryDevice[],
-  candidates: EngineGpuProbeDevice[],
+  candidates: EngineDevice[],
   enginePath: string,
   engineVersion?: string,
   checkedAt = new Date().toISOString(),
 ): EngineGpuProbeSnapshot {
   const devices: EngineGpuCompatibility[] = inventory.map((device) => {
-    const candidate = matchProbeDevice(device, inventory, candidates)
+    let candidate = matchEngineDevice(candidates, device)
+    if (candidate && candidate.index !== device.index) {
+      const inventoryNameMatches = inventory.filter(
+        (item) => normalizedName(item.name) === normalizedName(device.name),
+      )
+      if (inventoryNameMatches.length !== 1) candidate = undefined
+    }
     if (!candidate) {
       return { ...device, status: 'unknown', reason: '引擎 probe 未返回可唯一匹配的 GPU 结果' }
     }
