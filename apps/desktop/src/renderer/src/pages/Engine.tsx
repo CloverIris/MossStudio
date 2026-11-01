@@ -17,6 +17,8 @@ import { Events, Ipc } from '@shared/channels'
 import type {
   Catalog,
   EngineRemoteProgress,
+  GpuInventorySnapshot,
+  GpuProfileOverride,
   JobRecord,
   LocalEngineVersion,
   ManagedHost,
@@ -26,6 +28,7 @@ import type {
   Settings,
 } from '@shared/types'
 import type { BackendInfo } from '@shared/backend'
+import { recommendGpuMemoryMode } from '@shared/gpuProfile'
 import { call, onEvent } from '../lib/api'
 import { useApp } from '../store'
 import { openWindow } from '../lib/windows'
@@ -66,10 +69,13 @@ export function EnginePage(): React.JSX.Element {
   const toast = useToast()
   const settings = useApp((state) => state.settings)
   const saveSettings = useApp((state) => state.saveSettings)
+  const gpuTelemetry = useApp((state) => state.gpuTelemetry)
   const download = useApp((state) => state.mossInferDownload)
   const setMossInferDownload = useApp((state) => state.setMossInferDownload)
   const [githubToken, setGithubToken] = useState(settings?.githubToken ?? '')
   const [engine, setEngine] = useState<LocalEngineInfo | null>(null)
+  const [gpuInventory, setGpuInventory] = useState<GpuInventorySnapshot | null>(null)
+  const [refreshingGpu, setRefreshingGpu] = useState(false)
   const [engineVersions, setEngineVersions] = useState<LocalEngineVersion[]>([])
   const [releases, setReleases] = useState<MossInferRelease[]>([])
   const [releaseTag, setReleaseTag] = useState('')
@@ -120,6 +126,26 @@ export function EnginePage(): React.JSX.Element {
   }, [setMossInferDownload, toast])
 
   useEffect(() => { void refresh() }, [refresh])
+  const refreshGpuInventory = useCallback(async () => {
+    setRefreshingGpu(true)
+    try {
+      setGpuInventory(await call<GpuInventorySnapshot>(Ipc.gpuInventoryRefresh))
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    } finally {
+      setRefreshingGpu(false)
+    }
+  }, [toast])
+  useEffect(() => {
+    let canceled = false
+    void call<GpuInventorySnapshot>(Ipc.gpuInventory).then((snapshot) => {
+      if (!canceled) setGpuInventory(snapshot)
+    }).catch((error: unknown) => {
+      if (!canceled) toast.push(error instanceof Error ? error.message : String(error), 'error')
+    })
+    const off = onEvent<GpuInventorySnapshot>(Events.gpuInventory, setGpuInventory)
+    return () => { canceled = true; off() }
+  }, [toast])
   const refreshReleases = useCallback(async () => {
     setLoadingReleases(true)
     setReleaseError(null)
@@ -225,10 +251,37 @@ export function EnginePage(): React.JSX.Element {
     patch: Partial<Pick<Settings, 'mossInferTier' | 'mossInferMemoryMode'>>,
   ): Promise<void> {
     try {
-      await saveSettings(patch)
+      await saveSettings({ ...patch, gpuProfileMode: 'custom' })
       toast.push('引擎性能设置已保存', 'success')
     } catch (error) {
       toast.push(`保存引擎性能设置失败：${error instanceof Error ? error.message : String(error)}`, 'error')
+    }
+  }
+
+  async function saveGpuProfileOverride(
+    uuid: string,
+    field: 'memoryMode' | 'tier',
+    value: string,
+  ): Promise<void> {
+    if (!settings) return
+    const overrides: Record<string, GpuProfileOverride> = { ...settings.gpuProfileOverrides }
+    const next: GpuProfileOverride = { ...overrides[uuid] }
+    if (field === 'memoryMode') {
+      if (value === 'global') delete next.memoryMode
+      else if (value === 'min_memory' || value === 'balanced' || value === 'max_speed') next.memoryMode = value
+      else return
+    } else {
+      if (value === 'global') delete next.tier
+      else if (value === 'reference' || value === 'high' || value === 'turbo') next.tier = value
+      else return
+    }
+    if (next.memoryMode === undefined && next.tier === undefined) delete overrides[uuid]
+    else overrides[uuid] = next
+    try {
+      await saveSettings({ gpuProfileOverrides: overrides })
+      toast.push('该 GPU 的性能策略已保存', 'success')
+    } catch (error) {
+      toast.push(`保存 GPU 性能策略失败：${error instanceof Error ? error.message : String(error)}`, 'error')
     }
   }
 
@@ -505,6 +558,17 @@ export function EnginePage(): React.JSX.Element {
   const selectedRelease = releases.find((release) => release.tag === releaseTag)
   const progressIndeterminate = Boolean(download && ['querying', 'extracting', 'cuda_libs'].includes(download.phase))
   const progressPercent = download ? download.phase === 'done' ? 100 : Math.max(0, Math.min(100, download.percent)) : 0
+  const recommendedGpu = gpuInventory?.devices.find((device) => device.uuid === gpuInventory.recommendedGpuUuid)
+  const gpuSelection = settings?.gpuSelection
+  const configuredGpuUuid = gpuSelection && typeof gpuSelection === 'object' ? gpuSelection.uuid : undefined
+  const selectedGpuUuid = configuredGpuUuid ?? recommendedGpu?.uuid
+  const selectedGpu = gpuInventory?.devices.find((device) => device.uuid === selectedGpuUuid)
+  const savedGpuMissing = Boolean(
+    configuredGpuUuid &&
+      gpuInventory &&
+      !gpuInventory.devices.some((device) => device.uuid === configuredGpuUuid),
+  )
+  const recommendedMemoryMode = selectedGpu ? recommendGpuMemoryMode(selectedGpu) : null
 
   return (
     <div className="space-y-4">
@@ -520,6 +584,130 @@ export function EnginePage(): React.JSX.Element {
           <IconButton label="刷新" onClick={() => void refresh()} disabled={busy}><RefreshCw className="size-4" /></IconButton>
         </div>
       </header>
+
+      <Card className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[14px] font-semibold">本机 NVIDIA 推理设备</h2>
+              <Pill tone={gpuInventory?.status === 'ok' ? 'accent' : gpuInventory?.status === 'error' ? 'red' : 'amber'}>
+                {gpuInventory?.status === 'ok' ? `${gpuInventory.devices.length} 张 GPU` : gpuInventory?.status === 'error' ? '扫描失败' : '尚无可用 GPU'}
+              </Pill>
+            </div>
+            <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">
+              默认推荐依据 SM 能力、显存和稳定的 CUDA 序号；GPU UUID 用于持久化，不会因序号变化而改绑。Canvas 任务会固定到提交时解析的 GPU UUID。
+            </p>
+            {gpuInventory?.error ? <p role="status" className="mt-2 text-caption text-amber-200">{gpuInventory.error}</p> : null}
+            {gpuInventory?.capabilityNotice ? <p role="status" className="mt-1 text-caption text-amber-200">{gpuInventory.capabilityNotice}</p> : null}
+          </div>
+          <Button tone="ghost" onClick={() => void refreshGpuInventory()} disabled={refreshingGpu}>
+            <RefreshCw className={`size-4 ${refreshingGpu ? 'animate-spin' : ''}`} /> 重新扫描
+          </Button>
+        </div>
+        <div className="mt-3 grid gap-3 border-t border-[var(--color-border-subtle)] pt-3 sm:grid-cols-[minmax(220px,0.7fr)_1.3fr]">
+          <label className="space-y-1">
+            <span className="text-caption text-[var(--color-text-tertiary)]">自动架构目标 GPU</span>
+            <select
+              value={settings && typeof settings.gpuSelection === 'object' ? settings.gpuSelection.uuid : 'auto'}
+              onChange={(event) => {
+                const next = event.target.value === 'auto' ? 'auto' : { uuid: event.target.value }
+                void saveSettings({ gpuSelection: next }).then(
+                  () => toast.push('默认推理 GPU 已保存', 'success'),
+                  (error: unknown) => toast.push(error instanceof Error ? error.message : String(error), 'error'),
+                )
+              }}
+              className="app-input w-full"
+            >
+              <option value="auto">
+                {recommendedGpu ? `自动推荐 · ${recommendedGpu.name}（GPU ${recommendedGpu.index}）` : '自动推荐 · 等待可识别的 GPU'}
+              </option>
+              {savedGpuMissing && settings && typeof settings.gpuSelection === 'object' ? (
+                <option value={settings.gpuSelection.uuid} disabled>已保存设备未连接 · {settings.gpuSelection.uuid.slice(0, 16)}</option>
+              ) : null}
+              {(gpuInventory?.devices ?? []).map((device) => (
+                <option key={device.uuid} value={device.uuid}>{device.name} · GPU {device.index}</option>
+              ))}
+            </select>
+            {savedGpuMissing ? <p role="status" className="text-caption text-amber-200">保存的 GPU 当前未连接；偏好已保留，请重新扫描或改选设备。</p> : null}
+            {selectedGpu ? (
+              <p className="text-caption text-[var(--color-text-tertiary)]">
+                当前目标：SM{selectedGpu.computeCapability ? `${selectedGpu.computeCapability.major}${selectedGpu.computeCapability.minor}` : '未知'}
+                {' · '}{selectedGpu.memoryTotalBytes ? bytes(selectedGpu.memoryTotalBytes) : '显存未知'}
+              </p>
+            ) : null}
+            {selectedGpu && recommendedMemoryMode ? (
+              <div className="mt-2 rounded-md border border-accent-500/15 bg-accent-500/[0.04] px-2.5 py-2">
+                <p className="text-caption text-[var(--color-text-secondary)]">
+                  显存建议：{recommendedMemoryMode === 'min_memory' ? '省显存' : recommendedMemoryMode === 'max_speed' ? '速度优先' : '均衡'}
+                  {' · '}依据总显存的保守预设，不会更改模型、权重精度或生成参数。每张 GPU 可单独覆盖策略。
+                </p>
+                <Button
+                  className="mt-1.5"
+                  tone="ghost"
+                  onClick={() => void saveGpuProfileOverride(selectedGpu.uuid, 'memoryMode', recommendedMemoryMode)}
+                >
+                  仅应用到此 GPU
+                </Button>
+              </div>
+            ) : null}
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(gpuInventory?.devices ?? []).map((device) => {
+              const telemetry = gpuTelemetry?.devices.find((candidate) => candidate.uuid === device.uuid)
+              return (
+              <div key={device.uuid} className="rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-ui font-medium">{device.name}</span>
+                  {device.uuid === selectedGpuUuid ? <Pill tone="accent">{settings?.gpuSelection === 'auto' ? '推荐' : '默认'}</Pill> : null}
+                  {settings?.gpuProfileOverrides[device.uuid] ? <Pill tone="amber">自定义策略</Pill> : null}
+                </div>
+                <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">
+                  GPU {device.index} · SM{device.computeCapability ? `${device.computeCapability.major}${device.computeCapability.minor}` : '未知'}
+                  {' · '}显存 {telemetry?.memoryUsedBytes !== undefined ? bytes(telemetry.memoryUsedBytes) : '未知'}
+                  {' / '}{device.memoryTotalBytes ? bytes(device.memoryTotalBytes) : '未知'}
+                  {' · '}{telemetry?.memoryFreeBytes !== undefined ? `${bytes(telemetry.memoryFreeBytes)} 可用` : '可用显存未知'}
+                  {' · '}GPU {telemetry?.utilizationPercent === undefined ? '—' : `${telemetry.utilizationPercent}%`}
+                  {' · '}{telemetry?.runningTasks ?? 0} 运行 / {telemetry?.queuedTasks ?? 0} 排队
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="text-micro text-[var(--color-text-tertiary)]">显存模式</span>
+                    <select
+                      aria-label={`${device.name} 显存模式`}
+                      className="app-input w-full"
+                      value={settings?.gpuProfileOverrides[device.uuid]?.memoryMode ?? 'global'}
+                      onChange={(event) => void saveGpuProfileOverride(device.uuid, 'memoryMode', event.target.value)}
+                    >
+                      <option value="global">{settings?.gpuProfileMode === 'auto' ? '自动建议' : '跟随全局'}</option>
+                      <option value="min_memory">省显存</option>
+                      <option value="balanced">均衡</option>
+                      <option value="max_speed">速度优先</option>
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-micro text-[var(--color-text-tertiary)]">质量档</span>
+                    <select
+                      aria-label={`${device.name} 质量档`}
+                      className="app-input w-full"
+                      value={settings?.gpuProfileOverrides[device.uuid]?.tier ?? 'global'}
+                      onChange={(event) => void saveGpuProfileOverride(device.uuid, 'tier', event.target.value)}
+                    >
+                      <option value="global">跟随全局</option>
+                      <option value="reference">Reference</option>
+                      <option value="high">High</option>
+                      <option value="turbo">Turbo</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+              )
+            })}
+            {gpuInventory?.status !== 'ok' ? (
+              <p className="text-caption text-[var(--color-text-tertiary)]">扫描状态会明确区分未检测到设备与驱动/命令错误；可手动选择引擎架构继续。</p>
+            ) : null}
+          </div>
+        </div>
+      </Card>
 
       <Card className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -642,12 +830,12 @@ export function EnginePage(): React.JSX.Element {
           <label className="space-y-1">
             <span className="text-caption text-[var(--color-text-tertiary)]">GPU 架构</span>
             <select value={architecture} onChange={(event) => setArchitecture(event.target.value as 'auto' | 'standard' | 'sm75')} className="app-input w-full">
-              <option value="auto">自动（从当前引擎检测）</option>
+              <option value="auto">自动（按当前目标 GPU 的硬件清单）</option>
               <option value="standard">标准架构（SM80+）</option>
               <option value="sm75">SM75（RTX 20 / Turing）</option>
             </select>
           </label>
-          <Button data-oobe="engine" data-oobe-hint="选择渠道、包类型和 GPU 架构后下载。RTX 20/Turing GPU 选择 SM75；自动模式从当前引擎探测，首次安装时建议手动选择。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || Boolean(downloading)}>
+          <Button data-oobe="engine" data-oobe-hint="选择渠道、包类型和 GPU 架构后下载。自动模式按独立 GPU 清单选择与默认 GPU 匹配的上游构建；SM 能力未知时不会静默选择标准包。" tone="primary" className="self-end" onClick={() => void install()} disabled={busy || Boolean(downloading)}>
             <Download className="size-4" /> 下载/更新引擎
           </Button>
         </div>

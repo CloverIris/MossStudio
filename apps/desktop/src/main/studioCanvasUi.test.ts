@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain } from 'electron'
-import { Ipc } from '@shared/channels'
+import { Events, Ipc } from '@shared/channels'
+import type { JobRecord } from '@shared/types'
 import { createAppWindow } from './windows'
-import { getProject, listProjects } from './services/projects'
+import { getProject, listProjects, saveProject } from './services/projects'
 
 export async function runStudioCanvasUiTests(): Promise<void> {
   const mock = (channel: string, data: unknown): void => {
@@ -84,12 +85,117 @@ export async function runStudioCanvasUiTests(): Promise<void> {
     project = getProject(projectId!)
     assert.equal(project?.canvases.length, 2)
 
+    const sourceCanvas = project?.canvases.find((canvas) => canvas.title === 'Canvas 1')
+    assert.ok(sourceCanvas, 'source Canvas should exist before testing generation controls')
+    const activeJobId = 'e2e-canvas-generation'
+    project = saveProject({
+      id: projectId!,
+      name: project!.name,
+      canvases: project!.canvases.map((canvas) => canvas.id === sourceCanvas!.id
+        ? { ...canvas, jobId: activeJobId, jobState: 'starting' }
+        : canvas),
+      selectedCanvasId: sourceCanvas!.id,
+    })
+    await new Promise<void>((resolve) => {
+      win.webContents.once('did-finish-load', () => resolve())
+      void win.webContents.reload()
+    })
+    await waitFor("[...document.querySelectorAll('button')].some((button) => button.textContent.includes('未命名 Project'))")
+    await evaluate("[...document.querySelectorAll('button')].find((button) => button.textContent.includes('未命名 Project'))?.click()")
+    await waitFor("document.querySelector('article[aria-label^=\"Canvas 1\"]')")
+    const generateDisabled = (): Promise<unknown> => evaluate("document.querySelector('[data-studio-generate]')?.disabled")
+    assert.equal(await generateDisabled(), true, 'generation action should be disabled while the Canvas job is active')
+
+    const job = (
+      state: JobRecord['state'],
+      jobId = activeJobId,
+      canvasId = sourceCanvas!.id,
+    ): JobRecord => ({
+      id: jobId,
+      instanceId: 'engine',
+      instanceName: 'E2E MossInfer',
+      projectId: projectId!,
+      canvasId,
+      kind: 'inference',
+      mode: 'runner',
+      engine: 'mossinfer',
+      state,
+      stage: 'denoise',
+      params: {
+        prompt: 'canvas button state test',
+        negativePrompt: '',
+        width: 512,
+        height: 512,
+        steps: 4,
+        cfg: 3,
+        seed: 1,
+        profile: 'dmd8',
+      },
+      progress: { stage: 'denoise', current: 1, total: 4, percent: 25 },
+      startedAt: new Date().toISOString(),
+    })
+    const sendJob = (
+      state: JobRecord['state'],
+      jobId = activeJobId,
+      canvasId = sourceCanvas!.id,
+    ): void => {
+      win.webContents.send(Events.job, job(state, jobId, canvasId))
+    }
+
+    sendJob('failed')
+    await waitFor("document.querySelector('[data-studio-generate]')?.disabled === false")
+    assert.equal(await generateDisabled(), false, 'generation action should be restored after failure')
+
+    sendJob('running')
+    await waitFor("document.querySelector('[data-studio-generate]')?.disabled === true")
+    sendJob('canceled')
+    await waitFor("document.querySelector('[data-studio-generate]')?.disabled === false")
+    assert.equal(await generateDisabled(), false, 'generation action should be restored after cancellation')
+
+    const rerunJobId = 'e2e-canvas-rerun'
+    const rerunCanvasId = 'e2e-canvas-rerun-result'
+    project = saveProject({
+      id: projectId!,
+      name: project!.name,
+      canvases: project!.canvases.map((canvas) =>
+        canvas.id === sourceCanvas!.id ? { ...canvas, jobState: 'succeeded' as const } : canvas,
+      ).concat({
+        ...sourceCanvas!,
+        id: rerunCanvasId,
+        kind: 'result',
+        title: 'E2E rerun',
+        sourceCanvasId: sourceCanvas!.id,
+        jobId: rerunJobId,
+        jobState: 'running',
+        outputs: [],
+        error: undefined,
+      }),
+      selectedCanvasId: sourceCanvas!.id,
+    })
+    await new Promise<void>((resolve) => {
+      win.webContents.once('did-finish-load', () => resolve())
+      void win.webContents.reload()
+    })
+    await waitFor("[...document.querySelectorAll('button')].some((button) => button.textContent.includes('未命名 Project'))")
+    await evaluate("[...document.querySelectorAll('button')].find((button) => button.textContent.includes('未命名 Project'))?.click()")
+    await waitFor("document.querySelector('[data-studio-generate]')?.disabled === true")
+    sendJob('canceled', rerunJobId, rerunCanvasId)
+    await waitFor("document.querySelector('[data-studio-generate]')?.disabled === false")
+    assert.equal(await generateDisabled(), false, 'source Canvas action should restore when a rerun is canceled')
+
     writeFileSync(join(app.getPath('userData'), 'studio-canvas-ui-result.json'), JSON.stringify({
       scenario: 'studio-canvas-ui',
       ok: true,
       projectId,
       canvases: project?.canvases.length,
       selectedCanvasId: project?.selectedCanvasId,
+      generationControl: {
+        disabledWhileActive: true,
+        restoredAfterFailure: true,
+        restoredAfterCancel: true,
+        sourceDisabledDuringRerun: true,
+        sourceRestoredAfterRerunCancel: true,
+      },
     }))
     setTimeout(() => app.exit(0), 50)
   } catch (error) {

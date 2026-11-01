@@ -48,7 +48,7 @@ import { getTrainingHost, updateTrainingHostModelPath } from './services/trainin
 import { pushTestNotification } from './services/desktopNotifications'
 import { isInside } from './lib/paths'
 import { openWindow } from './windows'
-import { listDevices } from './services/devices'
+import { getGpuInventory, listDevices, refreshGpuInventory } from './services/devices'
 import { getOnboardingStatus } from './services/onboarding'
 import {
   createTrainerVersion,
@@ -249,6 +249,8 @@ export function registerIpc(): void {
   })
 
   handle(Ipc.devicesList, null, () => listDevices(getSettings()))
+  handle(Ipc.gpuInventory, null, () => getGpuInventory())
+  handle(Ipc.gpuInventoryRefresh, null, () => refreshGpuInventory())
 
   handle(Ipc.hostsList, null, () => listManagedHosts(getSettings()))
 

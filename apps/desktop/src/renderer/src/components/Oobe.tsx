@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowRight, Boxes, Check, ChevronDown, ChevronRight, Download, ListChecks, Maximize2, RefreshCw, X } from 'lucide-react'
+import { ArrowRight, Boxes, Check, ChevronDown, ChevronRight, Cpu, Download, ListChecks, Maximize2, RefreshCw, X } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Events, Ipc } from '@shared/channels'
-import type { EngineRemoteProgress, ManagedHost, MossInferDownloadState, OnboardingStatus, OnboardingStep, Settings } from '@shared/types'
+import type { EngineRemoteProgress, GpuInventorySnapshot, ManagedHost, MossInferDownloadState, OnboardingStatus, OnboardingStep, Settings } from '@shared/types'
 import { call, onEvent } from '../lib/api'
 import { bytes } from '../lib/format'
+import { recommendGpuMemoryMode } from '@shared/gpuProfile'
 import { useApp } from '../store'
 import { useUiAnimationEnabled } from './motion'
 import { OobeSpotlight } from './OobeSpotlight'
@@ -31,6 +32,8 @@ export function Oobe(): React.JSX.Element {
   const [status, setStatus] = useState<OnboardingStatus | null>(null)
   const [hosts, setHosts] = useState<ManagedHost[]>([])
   const [engineDownload, setEngineDownload] = useState<MossInferDownloadState | null>(null)
+  const [gpuInventory, setGpuInventory] = useState<GpuInventorySnapshot | null>(null)
+  const [refreshingGpu, setRefreshingGpu] = useState(false)
   const [remoteProgress, setRemoteProgress] = useState<EngineRemoteProgress | null>(null)
   const [revision, setRevision] = useState(0)
   const initialized = useRef(false)
@@ -65,6 +68,23 @@ export function Oobe(): React.JSX.Element {
     const off = onEvent(Events.hostsChanged, () => { loadHosts(); refresh() })
     return () => { canceled = true; off() }
   }, [visible])
+
+  useEffect(() => {
+    if (!visible || hostId !== 'local') return
+    let canceled = false
+    void call<GpuInventorySnapshot>(Ipc.gpuInventory).then((snapshot) => {
+      if (!canceled) setGpuInventory(snapshot)
+    }).catch((reason: unknown) => {
+      if (!canceled) setGpuInventory({
+        scannedAt: new Date().toISOString(),
+        status: 'error',
+        devices: [],
+        error: reason instanceof Error ? reason.message : String(reason),
+      })
+    })
+    const off = onEvent<GpuInventorySnapshot>(Events.gpuInventory, setGpuInventory)
+    return () => { canceled = true; off() }
+  }, [visible, hostId])
 
   useEffect(() => {
     if (!visible) return
@@ -148,6 +168,17 @@ export function Oobe(): React.JSX.Element {
     finally { setBusy(false) }
   }
 
+  async function refreshGpu(): Promise<void> {
+    setRefreshingGpu(true)
+    try {
+      setGpuInventory(await call<GpuInventorySnapshot>(Ipc.gpuInventoryRefresh))
+    } catch (reason) {
+      toast.push(reason instanceof Error ? reason.message : String(reason), 'error')
+    } finally {
+      setRefreshingGpu(false)
+    }
+  }
+
   function dock(step?: OnboardingStep): void {
     if (screen !== 'checklist') previousRect.current = panel.current?.getBoundingClientRect() ?? null
     setScreen('checklist')
@@ -170,6 +201,18 @@ export function Oobe(): React.JSX.Element {
   }
 
   const canFinish = Boolean(current?.ready && completed === total && !checking && !error)
+  const recommendedGpu = gpuInventory?.devices.find((device) => device.uuid === gpuInventory.recommendedGpuUuid)
+  const gpuSelection = settings?.gpuSelection
+  const selectedGpu = gpuSelection && typeof gpuSelection === 'object'
+    ? gpuInventory?.devices.find((device) => device.uuid === gpuSelection.uuid)
+    : recommendedGpu
+  const savedGpuMissing = Boolean(
+    gpuSelection &&
+      typeof gpuSelection === 'object' &&
+      gpuInventory &&
+      !gpuInventory.devices.some((device) => device.uuid === gpuSelection.uuid),
+  )
+  const recommendedMemoryMode = selectedGpu ? recommendGpuMemoryMode(selectedGpu) : null
 
   return (
     <>
@@ -243,6 +286,58 @@ export function Oobe(): React.JSX.Element {
                     <ProgressBar value={completed / total * 100} />
                     {!docked ? <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">{current?.bundleName ? `模型组合：${current.bundleName}。` : ''}已有内容会自动勾选，下载可在对应页面暂停或继续。</p> : null}
                   </div>
+                  {hostId === 'local' ? (
+                    <section aria-label="本机推理设备" className={cn('my-3 rounded-lg border border-[var(--color-border-subtle)] bg-white/[0.025]', docked ? 'px-2.5 py-2' : 'px-3 py-2.5')}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Cpu className="size-4 shrink-0 text-accent-300" />
+                          <span className="text-caption font-medium">推理设备</span>
+                          {gpuInventory?.status === 'ok'
+                            ? <span className="text-caption text-[var(--color-text-tertiary)]">{gpuInventory.devices.length} 张 NVIDIA GPU</span>
+                            : <span className="truncate text-caption text-amber-200">{gpuInventory?.status === 'error' ? '扫描失败' : '等待检测'}</span>}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button type="button" className="text-caption text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] disabled:opacity-50" disabled={refreshingGpu} onClick={() => void refreshGpu()}>
+                            {refreshingGpu ? '扫描中…' : '重扫'}
+                          </button>
+                          <button type="button" className="text-caption text-accent-300 hover:text-accent-200" onClick={() => navigate('/engines')}>配置</button>
+                        </div>
+                      </div>
+                      <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">
+                        {selectedGpu
+                          ? `${selectedGpu.name} · GPU ${selectedGpu.index} · SM${selectedGpu.computeCapability ? `${selectedGpu.computeCapability.major}${selectedGpu.computeCapability.minor}` : '待引擎验证'} · ${selectedGpu.memoryTotalBytes ? bytes(selectedGpu.memoryTotalBytes) : '显存未知'}`
+                          : savedGpuMissing
+                            ? '已保存的 GPU 当前未连接；偏好已保留，请重新扫描或在引擎页改选。'
+                            : gpuInventory?.error ?? '尚未发现可自动推荐的本机 NVIDIA GPU；仍可在引擎页手动选择架构。'}
+                      </p>
+                      {selectedGpu && recommendedMemoryMode ? (
+                        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-caption text-[var(--color-text-secondary)]">
+                            建议{recommendedMemoryMode === 'min_memory' ? '省显存' : recommendedMemoryMode === 'max_speed' ? '速度优先' : '均衡'}；只调整此 GPU 的执行策略，不会更改模型、精度或生成参数。
+                          </p>
+                          <button
+                            type="button"
+                            className="text-caption text-accent-300 hover:text-accent-200"
+                            onClick={() => {
+                              if (!settings) return
+                              const overrides = { ...settings.gpuProfileOverrides }
+                              overrides[selectedGpu.uuid] = {
+                                ...overrides[selectedGpu.uuid],
+                                memoryMode: recommendedMemoryMode,
+                              }
+                              void saveSettings({ gpuProfileOverrides: overrides }).then(
+                                () => toast.push('已保存此 GPU 的显存建议', 'success'),
+                                (reason: unknown) => toast.push(reason instanceof Error ? reason.message : String(reason), 'error'),
+                              )
+                            }}
+                          >
+                            应用建议
+                          </button>
+                        </div>
+                      ) : null}
+                      {gpuInventory?.capabilityNotice ? <p className="mt-1 text-caption text-amber-200">{gpuInventory.capabilityNotice}</p> : null}
+                    </section>
+                  ) : null}
                   {error ? <p role="alert" className="py-3 text-ui text-red-300">检查失败：{error}。请重新检查或切换准备位置。</p> : null}
                   {!current ? !error ? <div className="flex items-center gap-2 py-6 text-ui text-[var(--color-text-secondary)]"><Spinner className="size-4" />正在检查所需项目…</div> : null : (
                     <ol className="divide-y divide-[var(--color-border-subtle)]">

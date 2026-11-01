@@ -1,15 +1,27 @@
 # GPU 设备管理、性能推荐与多卡 Canvas 调度
 
-- 状态：设计中，尚未实现
+- 状态：实施中（Phase 1–3 功能已落地；真实异构双卡硬件验收待完成）
 - 日期：2026-11-01
 - 关联：[Studio 多 Canvas Project 设计](./multi-canvas-studio.md)
 - 范围：本机 NVIDIA GPU 枚举、架构感知的引擎选择、推理设备设置、OOBE/引擎页 UX、标题栏状态与按 GPU 调度 Canvas 推理任务
+
+## 当前实现进度
+
+- 已实现：启动后台扫描 NVIDIA GPU；采集 UUID、当前 index、名称、显存、利用率、驱动版本及驱动可提供的 compute capability；探测状态/错误通过 IPC 与事件展示。
+- 已实现：按可识别的 compute capability、显存与 index 生成可复现的推荐设备；默认 UUID 选择和显存策略偏好持久化；引擎页/OOBE 显示设备清单，允许手动设默认卡与重新扫描。
+- 已实现：自动架构安装不再从当前引擎猜测；读取选定 GPU 的独立清单，未知架构或无明确设备时拒绝自动选包，安装后以 UUID 重新解析 index 并要求新引擎 probe 明确支持目标 GPU。
+- 已实现（Phase 2）：Canvas 可保存 GPU UUID；Studio 提供“跟随应用默认/指定 GPU”，提交时以 UUID 固定设备，并在 Job 快照中保留设备名与当次 index。GPU UUID 在线但 ordinal 变化时按 UUID 重新解析；绑定设备缺失时显式失败。每个 Canvas 阻止重复活动任务。
+- 已实现（Phase 2）：本机每个 GPU UUID 有独立 MossInfer sidecar 与队列；Supervisor 按 GPU UUID 串行调度同卡任务、并行启动不同卡任务。进程崩溃、超时与取消重启限制在对应 GPU runtime；远端按 hostId 独立排队。
+- 已实现（Phase 3）：逐卡 memory/tier 覆盖和 Job 策略快照；主进程统一 GPU 遥测；Studio 标题栏摘要与展开详情。
+- 待实现：设备热插拔/驱动重置的主动监听、逐卡显存需求预检与基于实际模型的显存估算；目前设备变化依赖显式刷新、启动探测和任务提交校验。
+- 验证边界：现有自动测试与 fake server 验证运行链路；当前硬件仅有单卡，双卡并行仍需在多 GPU 机器上实测。
+- 验证边界：单元测试覆盖 inventory 解析、推荐排序和 SM75/标准架构判定；目标 Windows NVIDIA 硬件的完整安装与真实推理仍需实机验收。
 
 ## 1. 背景与问题
 
 当前 GPU 信息来自不同的临时路径：环境扫描只取一个 GPU，设备页用 `nvidia-smi` 枚举 CUDA ordinal，MossInfer `hello` 才提供 compute capability 和引擎兼容性。引擎下载的“自动架构”又依赖当前引擎的探测结果。首次安装、旧引擎不报告完整设备信息或多卡架构不同时，这些信息可能不完整，最终把普通 SM80+ 包误当成适用于 SM75 的包。
 
-任务同样缺少统一的设备所有权：Canvas 可携带设备字符串，但目前本机 MossInfer 是一个共享 sidecar 和一个 FIFO 队列。设备编号若直接持久化为 `cuda:0`，GPU 枚举变化后可能静默指向另一张卡。
+设计实施前，任务缺少统一的设备所有权：Canvas 可携带设备字符串，但本机 MossInfer 只有一个共享 sidecar 和 FIFO 队列。设备编号若直接持久化为 `cuda:0`，GPU 枚举变化后可能静默指向另一张卡。
 
 本设计将 GPU 作为应用级资源统一建模，使设备探测、引擎兼容、用户选择、性能建议、任务绑定和运行状态有一致的数据来源。
 
@@ -168,12 +180,12 @@ gpuProfileOverrides: Record<string, {
 
 ### 8.2 Engine Runtime
 
-现有单例 MossInfer child、单一 `active`/`queue` 无法安全实现多卡并发。改为 `GpuRuntimeManager`：
+已按 GPU UUID 将单例 MossInfer child、单一 `active`/`queue` 拆分为独立 runtime 状态：
 
 - 每个 GPU UUID 有独立 runtime/sidecar、请求表、已加载模型 key、活动 generation 和队列。
 - 每个 runtime 仅执行绑定给本 GPU 的任务；启动时把稳定 UUID 约束到进程可见设备，再使用该进程内可见 ordinal（通常为 0）。传递给引擎的 ordinal 必须由 runtime 建立并验证，不能直接使用系统 index。
-- 每个 GPU runtime 可按需加载模型；相同 bundle 在多卡上可能占多份显存。启动第二份加载前先做每卡显存预检，并展示并行带来的显存成本。
-- 一个 GPU 内 FIFO；不同 GPU 的 FIFO 可同时推进。应用全局队列保留提交时间，自动分配只为未显式绑定的任务找空闲槽位。
+- 每个 GPU runtime 可按需加载模型；相同 bundle 在多卡上会占用各自显存。逐卡显存预检和并行显存成本提示仍待实现。
+- 一个 GPU 内 FIFO；不同 GPU 的 FIFO 可同时推进。应用资源槽按 UUID 隔离，提交任务时 Canvas 绑定即固定，不会在队列等待期间漂移。
 - 两个项目/窗口的 Canvas 共享相同 GPU 槽位管理器，不能通过不同 UI 绕过限额。
 - 远端引擎 runtime 仍以 host + remote UUID 为独立资源域；首期可维持远端串行，不计入本机并发卡数。
 
@@ -204,6 +216,7 @@ gpuProfileOverrides: Record<string, {
 
 - 编辑面板显示“目标 GPU”选择器及兼容/显存提示；新 Canvas 使用应用默认 GPU，用户可逐 Canvas 改绑。
 - Canvas 卡片显示已绑定 GPU 名称/显存、等待槽位时显示排队位置，运行时显示 GPU 和阶段进度。
+- 对当前仍在排队、启动或运行的 Layout Canvas，左侧“开始生成”按钮保持禁用；任务失败或取消后根据 Job 终态恢复可用，成功后也允许再次提交。
 - 运行中锁定设备绑定；取消后才允许改绑/重排。
 - 自动分配也要显示具体分配结果，不能只写“自动”。
 - 选择器仅列出当前已兼容 GPU；不兼容卡可展开查看原因，但不可提交运行任务。
@@ -248,18 +261,19 @@ gpuProfileOverrides: Record<string, {
 
 ### Phase 2：Canvas 设备绑定与单卡资源槽
 
-- Canvas/Job 使用 GPU UUID，旧数据迁移。
-- 主进程集中调度，每卡最多一个任务；单 GPU 保持串行。
-- Engine Manager 支持按 UUID 管理独立 sidecar；不同卡可以并行。
-- 任务/Canvas UI 展示设备与队列状态。
+- 已完成：Canvas/Job 使用 GPU UUID；旧 Canvas 缺字段时跟随应用默认；提交任务时固定 UUID 与设备快照；主进程阻止同一 Canvas 重复活动任务；Studio 可为 Canvas 选择 GPU。
+- 已完成：主进程按 GPU UUID 维护独立资源槽，Engine Manager 为每卡维护独立 sidecar 和 FIFO；同卡串行、不同卡可并行；卡片显示 GPU，排队序号按资源槽计算。
 
-**验收**：1 GPU 时两个 Canvas 只能一个活动；2 GPU 时不同卡可同时活动、同卡仍串行；UUID 与 ordinal 变化后不会错绑。
+**当前验证**：UUID 解析使用当下 inventory ordinal；缺失的已绑定 GPU 不会静默改绑。自动化构建/fake server 通过；由于当前开发机只有一张 NVIDIA GPU，双卡并行硬件验收仍未完成。
+**最终验收**：1 GPU 时两个 Canvas 只能一个活动；2 GPU 时不同卡可同时活动、同卡仍串行；UUID 与 ordinal 变化后不会错绑。
 
 ### Phase 3：性能推荐、OOBE 与标题栏
 
-- 提供可解释的显存策略建议和用户覆盖；保留精度/权重/生成参数不变。
-- OOBE 展示探测、默认卡和策略；标题栏显示 GPU/显存/活动任务。
-- 显存/利用率节流更新、窗口隐藏降频及重启恢复测试。
+- 已实现：按总显存给出省显存/均衡/速度优先建议；设置支持每 GPU memory mode/tier 覆盖。任务提交时解析并快照实际配置，且仅覆盖 MossInfer 的 memory mode/tier，不改模型、dtype、精度或 Canvas 参数。
+- 已实现：OOBE 与引擎页显示单卡建议并允许用户应用；未确认的建议不会静默覆盖已有设置。
+- 已实现：主进程统一采集每卡显存/利用率与本机运行/排队任务数，通过单一 telemetry event 广播；窗口可见时有任务约 4 秒更新、空闲约 15 秒，隐藏约 30 秒，系统挂起期间暂停。
+- 已实现：Studio 标题栏展示默认 GPU 状态，展开后查看各卡显存、SM、利用率、任务队列及有效显存策略。
+- 仍待硬件验收：当前单卡开发机不能验证真实异构双卡并行及占用变化；系统恢复后的采样由 resume event 立即触发。
 
 **验收**：重新启动后记住用户 GPU/策略选择；探测信息缺失时不误报；动态占用变化及时但不抖动；不触碰模型精度和 Canvas 参数。
 

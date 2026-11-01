@@ -161,9 +161,53 @@ export interface Settings {
   mossInferChannel: 'stable' | 'dev'
   mossInferVariant: 'system-cuda' | 'bundled'
   mossInferArchitecture: 'auto' | 'standard' | 'sm75'
+  gpuSelection: GpuSelection
+  gpuProfileMode: 'auto' | 'custom'
+  gpuProfileOverrides: Record<string, GpuProfileOverride>
   githubToken: string | null
   disabledDevices: string[]
   deviceLabels: Record<string, string>
+}
+
+export type GpuSelection = 'auto' | { uuid: string }
+
+export interface GpuProfileOverride {
+  memoryMode?: Settings['mossInferMemoryMode']
+  tier?: Settings['mossInferTier']
+}
+
+export interface GpuInventoryDevice {
+  uuid: string
+  index: number
+  name: string
+  computeCapability?: { major: number; minor: number }
+  memoryTotalBytes?: number
+  memoryFreeBytes?: number
+  utilizationPercent?: number
+  driverVersion?: string
+}
+
+export interface GpuInventorySnapshot {
+  scannedAt: string
+  status: 'ok' | 'unavailable' | 'error'
+  devices: GpuInventoryDevice[]
+  recommendedGpuUuid?: string
+  error?: string
+  capabilityNotice?: string
+}
+
+export interface GpuTelemetryDevice extends GpuInventoryDevice {
+  memoryUsedBytes?: number
+  runningTasks: number
+  queuedTasks: number
+}
+
+export interface GpuTelemetrySnapshot {
+  sampledAt: string
+  status: 'ok' | 'unavailable' | 'error'
+  devices: GpuTelemetryDevice[]
+  recommendedGpuUuid?: string
+  error?: string
 }
 
 export interface EngineRemoteProgress {
@@ -628,6 +672,17 @@ export interface JobRecord {
   caseName?: string
   workspace?: WorkspaceKind
   deviceId?: string
+  deviceUuid?: string
+  gpuSnapshot?: {
+    index: number
+    name: string
+    computeCapability?: { major: number; minor: number }
+  }
+  gpuProfile?: {
+    memoryMode: Settings['mossInferMemoryMode']
+    tier: Settings['mossInferTier']
+    source: 'recommended' | 'global' | 'gpu-override'
+  }
   kind?: 'inference' | 'training'
   trainerVersionId?: string
   trainerRunName?: string
@@ -776,6 +831,7 @@ export interface ProjectCanvas {
   steps: number
   cfg: number
   modelBundleId?: string
+  deviceUuid?: string
   deviceId?: string
   backgroundPath?: string
   sourceCanvasId?: string

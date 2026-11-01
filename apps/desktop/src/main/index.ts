@@ -22,7 +22,7 @@ import { ensureMirror, listBranches, listCommits } from './services/git'
 import { createInstance, deleteInstance, listInstances, updateInstance } from './services/instances'
 import { installDeps, readRuntime, resolveTorchIndex, writeRemoteRuntime } from './services/runtimes'
 import { cancelJob, getJob, getJobLogs, onJobCompleted, purgeLegacySimulationJobs, startEngineJob, startTrainingJob } from './services/supervisor'
-import { probeMossInfer, resolveServerPath, shutdownMossInfer } from './services/mossInfer'
+import { probeMossInfer, resolveServerPath, runMossInferJob, shutdownMossInfer } from './services/mossInfer'
 import { closeAllSshTerminals } from './services/sshSessions'
 import { createTrainerVersion, listTrainerVersions, startTrainerRun } from './services/trainers'
 import { listLaunchRows, removeLaunchRow, upsertLaunchRow } from './services/launchQueue'
@@ -50,6 +50,8 @@ import { checkUpdates } from './services/updates'
 import { downloadCustomModel, getCatalog, listDownloads } from './services/models'
 import { registerGalleryProtocol } from './services/gallery'
 import { createAppWindow, getWindow, openWindow } from './windows'
+import { refreshGpuInventory } from './services/devices'
+import { startGpuTelemetry } from './services/gpuTelemetry'
 
 async function startJob(input: Record<string, unknown>) {
   return startEngineJob(input as never)
@@ -905,6 +907,85 @@ app.whenReady().then(async () => {
       console.log(JSON.stringify({ scenario: 'mossinfer-engine-job', state: done.state, engine: done.engine, instanceId: done.instanceId, outputs: done.outputs?.length ?? 0 }, null, 2))
       app.exit(done.state === 'succeeded' && done.engine === 'mossinfer' ? 0 : 1)
     } catch (error) {
+      console.error(error)
+      app.exit(1)
+    }
+    return
+  }
+
+  if (scenario === 'mossinfer-runtime-isolation') {
+    try {
+      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'fake-moss-server.mjs')
+      chmodSync(serverPath, 0o755)
+      setupMossInferScenario(serverPath, null)
+      const model = join(paths.hub(getSettings().modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT', 'snapshots', 'a'.repeat(40))
+      const params = {
+        prompt: 'independent GPU runtime test',
+        negativePrompt: '',
+        width: 256,
+        height: 256,
+        steps: 4,
+        cfg: 1,
+        seed: 9,
+        profile: 'dmd8' as const,
+      }
+      const readyAt: number[] = []
+      const finish = (id: string, deviceUuid: string, systemDeviceIndex: number): Promise<{ code: number; completedAt: number }> => {
+        const job: JobRecord = {
+          id,
+          instanceId: 'engine',
+          instanceName: 'MossInfer Runtime Test',
+          workspace: 'clover',
+          deviceUuid,
+          deviceId: `cuda:${systemDeviceIndex}`,
+          kind: 'inference',
+          mode: 'runner',
+          engine: 'mossinfer',
+          state: 'starting',
+          stage: 'idle',
+          params,
+          progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
+          startedAt: new Date().toISOString(),
+        }
+        return new Promise((resolvePromise, rejectPromise) => {
+          void runMossInferJob(job, params, {
+            model,
+            device: 0,
+            deviceUuid,
+            systemDeviceIndex,
+            loras: [],
+            output: join(paths.outputs(), `${id}.png`),
+            settings: getSettings(),
+          }, {
+            event: (event) => {
+              if (event['type'] === 'ready') readyAt.push(Date.now())
+              if (event['type'] === 'error') rejectPromise(new Error(String(event['message'] ?? 'fake runtime failed')))
+            },
+            stderr: () => undefined,
+            done: (code) => resolvePromise({ code, completedAt: Date.now() }),
+          }).catch(rejectPromise)
+        })
+      }
+      const startedAt = Date.now()
+      const results = await Promise.all([
+        finish('runtime-gpu-a', 'GPU-test-a', 0),
+        finish('runtime-gpu-b', 'GPU-test-b', 1),
+      ])
+      const concurrent = readyAt.length === 2
+        && Math.max(...readyAt) < Math.min(...results.map((result) => result.completedAt))
+      const ok = concurrent && results.every((result) => result.code === 0)
+      const report = { scenario, ok, readyAt, completedAt: results.map((result) => result.completedAt), elapsedMs: Date.now() - startedAt }
+      writeFileSync(join(app.getPath('userData'), 'mossinfer-runtime-isolation-result.json'), JSON.stringify(report, null, 2))
+      await shutdownMossInfer()
+      console.log(JSON.stringify(report, null, 2))
+      app.exit(ok ? 0 : 1)
+    } catch (error) {
+      await shutdownMossInfer()
+      writeFileSync(join(app.getPath('userData'), 'mossinfer-runtime-isolation-result.json'), JSON.stringify({
+        scenario,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      }, null, 2))
       console.error(error)
       app.exit(1)
     }
@@ -1935,6 +2016,8 @@ exit 0
   }
 
   createAppWindow('studio')
+  void refreshGpuInventory()
+  startGpuTelemetry()
   app.on('activate', () => {
     openWindow('studio')
   })

@@ -7,6 +7,7 @@ import type {
   DownloadTask,
   EnvReport,
   GalleryItem,
+  GpuTelemetrySnapshot,
   InstanceInfo,
   JobLogLine,
   JobRecord,
@@ -55,6 +56,7 @@ interface AppStore {
   jobLogs: Record<string, JobLogLine[]>
   diagnostics: Diagnostic[]
   devices: LaunchDevice[]
+  gpuTelemetry: GpuTelemetrySnapshot | null
   cases: LaunchCase[]
   launchRows: LaunchRow[]
   onboarding: OnboardingStatus | null
@@ -219,6 +221,9 @@ export const useApp = create<AppStore>((set, get) => {
     onEvent<Diagnostic>(Events.diagnostic, (diagnostic) => {
       set((state) => ({ diagnostics: upsertDiagnostic(state.diagnostics, diagnostic) }))
     })
+    onEvent<GpuTelemetrySnapshot>(Events.gpuTelemetry, (gpuTelemetry) => {
+      set({ gpuTelemetry })
+    })
 
     onEvent<Settings>(Events.settingsChanged, (settings) => {
       applyAppearance(settings)
@@ -305,6 +310,7 @@ export const useApp = create<AppStore>((set, get) => {
     jobLogs: {},
     diagnostics: [],
     devices: [],
+    gpuTelemetry: null,
     cases: [],
     launchRows: [],
     onboarding: null,

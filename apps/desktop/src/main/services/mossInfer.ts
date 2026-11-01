@@ -7,9 +7,8 @@ import { paths } from '../lib/paths'
 import { LineSplitter } from './parsers'
 
 /**
- * MossInfer sidecar client: one long-lived `moss-server` process shared by all
- * mossinfer jobs (JSON lines over stdio, protocol 2 / ABI 1). Generations are
- * serialized through an internal FIFO; the server is re-spawned on crash and
+ * MossInfer sidecar clients: one long-lived `moss-server` process per GPU UUID.
+ * Each device has an independent FIFO; the server is re-spawned on crash and
  * `load` is re-sent whenever the model/device/mode/tier config changes.
  * Events are translated into the runner NDJSON event shapes that
  * supervisor.handleRunnerEvent already understands.
@@ -67,6 +66,7 @@ interface PendingRequest {
 interface EngineConfig {
   model: string
   device: number
+  deviceUuid: string
   mode: Settings['mossInferMemoryMode']
   tier: Settings['mossInferTier']
 }
@@ -77,6 +77,8 @@ interface QueuedJob {
   opts: {
     model: string
     device: number
+    deviceUuid: string
+    systemDeviceIndex: number
     loras: Array<{ path: string; strength: number }>
     output: string
     settings: Settings
@@ -92,16 +94,46 @@ interface ActiveGeneration {
   queue: QueuedJob
 }
 
-let child: ChildProcessWithoutNullStreams | null = null
-let hello: MossInferHello | null = null
-let loadedKey: string | null = null
-let reqSeq = 0
-const pending = new Map<string, PendingRequest>()
-let active: ActiveGeneration | null = null
-const queue: QueuedJob[] = []
-const stderrRing: string[] = []
-const outSplitter = new LineSplitter()
-const errSplitter = new LineSplitter()
+interface MossInferRuntime {
+  deviceUuid: string
+  child: ChildProcessWithoutNullStreams | null
+  boundDeviceUuid: string | null
+  hello: MossInferHello | null
+  loadedKey: string | null
+  reqSeq: number
+  pending: Map<string, PendingRequest>
+  active: ActiveGeneration | null
+  busy: boolean
+  queue: QueuedJob[]
+  stderrRing: string[]
+  outSplitter: LineSplitter
+  errSplitter: LineSplitter
+}
+
+const runtimes = new Map<string, MossInferRuntime>()
+
+function runtimeFor(deviceUuid: string): MossInferRuntime {
+  let runtime = runtimes.get(deviceUuid)
+  if (!runtime) {
+    runtime = {
+      deviceUuid,
+      child: null,
+      boundDeviceUuid: null,
+      hello: null,
+      loadedKey: null,
+      reqSeq: 0,
+      pending: new Map(),
+      active: null,
+      busy: false,
+      queue: [],
+      stderrRing: [],
+      outSplitter: new LineSplitter(),
+      errSplitter: new LineSplitter(),
+    }
+    runtimes.set(deviceUuid, runtime)
+  }
+  return runtime
+}
 
 export function resolveServerPath(settings: Settings): string | null {
   const candidates: Array<string | null | undefined> = [
@@ -152,58 +184,59 @@ const PHASE_TO_STAGE: Record<string, JobStage> = {
   decode: 'decode',
 }
 
-function send(line: Record<string, unknown>): void {
-  if (!child?.stdin.writable) throw new Error('moss-server 未运行')
-  child.stdin.write(`${JSON.stringify(line)}\n`)
+function send(runtime: MossInferRuntime, line: Record<string, unknown>): void {
+  if (!runtime.child?.stdin.writable) throw new Error('moss-server 未运行')
+  runtime.child.stdin.write(`${JSON.stringify(line)}\n`)
 }
 
-function request(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return requestWithId(`mi-${++reqSeq}`, method, params)
+function request(runtime: MossInferRuntime, method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return requestWithId(runtime, `mi-${++runtime.reqSeq}`, method, params)
 }
 
 // The generate request id must be the job id itself so `cancel` matches it exactly.
 function requestWithId(
+  runtime: MossInferRuntime,
   id: string,
   method: string,
   params: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   return new Promise((resolvePromise, rejectPromise) => {
     const timer = setTimeout(() => {
-      pending.delete(id)
+      runtime.pending.delete(id)
       rejectPromise(new Error(`moss-server ${method} 请求超时`))
-      void restartMossInfer()
+      void restartMossInfer(runtime.deviceUuid)
     }, 60_000)
-    pending.set(id, {
+    runtime.pending.set(id, {
       resolve: resolvePromise,
       reject: rejectPromise,
       timer,
     })
     try {
-      send({ id, method, params })
+      send(runtime, { id, method, params })
     } catch (error) {
       clearTimeout(timer)
-      pending.delete(id)
+      runtime.pending.delete(id)
       rejectPromise(error instanceof Error ? error : new Error(String(error)))
     }
   })
 }
 
-function dispatchLine(line: string): void {
+function dispatchLine(runtime: MossInferRuntime, line: string): void {
   let message: Record<string, unknown>
   try {
     message = JSON.parse(line) as Record<string, unknown>
   } catch {
-    if (active) active.sink.stderr(line)
+    if (runtime.active) runtime.active.sink.stderr(line)
     return
   }
   if (typeof message['event'] === 'string') {
-    handleServerEvent(message)
+    handleServerEvent(runtime, message)
     return
   }
   const id = message['id']
-  if ((typeof id === 'string' || typeof id === 'number') && pending.has(String(id))) {
-    const entry = pending.get(String(id))!
-    pending.delete(String(id))
+  if ((typeof id === 'string' || typeof id === 'number') && runtime.pending.has(String(id))) {
+    const entry = runtime.pending.get(String(id))!
+    runtime.pending.delete(String(id))
     clearTimeout(entry.timer)
     const error = message['error'] as { code?: string; message?: string } | undefined
     if (error) {
@@ -214,19 +247,19 @@ function dispatchLine(line: string): void {
   }
 }
 
-function handleServerEvent(message: Record<string, unknown>): void {
+function handleServerEvent(runtime: MossInferRuntime, message: Record<string, unknown>): void {
   const event = message['event'] as string
   const id = message['id']
   // log events can belong to a request (load) or to the active generation
-  if (event === 'log' && (!active || id !== active.genId)) {
+  if (event === 'log' && (!runtime.active || id !== runtime.active.genId)) {
     const text = String(message['message'] ?? '')
-    if (active) active.sink.stderr(`[moss-server] ${text}`)
-    else ringPush(`[moss-server] ${text}`)
+    if (runtime.active) runtime.active.sink.stderr(`[moss-server] ${text}`)
+    else ringPush(runtime, `[moss-server] ${text}`)
     return
   }
-  if (!active || id !== active.genId) return
-  const sink = active.sink
-  const { params } = active.queue
+  if (!runtime.active || id !== runtime.active.genId) return
+  const sink = runtime.active.sink
+  const { params } = runtime.active.queue
   switch (event) {
     case 'log': {
       sink.event({
@@ -243,8 +276,8 @@ function handleServerEvent(message: Record<string, unknown>): void {
     case 'progress': {
       const phase = String(message['phase'] ?? '')
       const stage = PHASE_TO_STAGE[phase] ?? 'denoise'
-      if (phase !== active.phase) {
-        active.phase = phase
+      if (phase !== runtime.active.phase) {
+        runtime.active.phase = phase
         sink.event({ type: 'stage', name: stage })
       }
       const step = Number(message['step'] ?? 0)
@@ -264,8 +297,8 @@ function handleServerEvent(message: Record<string, unknown>): void {
       // no preview surface yet; preview_output is never requested
       return
     case 'done': {
-      const current = active
-      active = null
+      const current = runtime.active
+      runtime.active = null
       const status = String(message['status'] ?? 'error')
       const warnings = Array.isArray(message['warnings']) ? (message['warnings'] as unknown[]) : []
       for (const warning of warnings) {
@@ -303,7 +336,8 @@ function handleServerEvent(message: Record<string, unknown>): void {
             },
           })
           sink.done(0)
-          void pump()
+          runtime.busy = false
+          void pump(runtime)
         })()
         return
       }
@@ -320,7 +354,8 @@ function handleServerEvent(message: Record<string, unknown>): void {
         })
         sink.done(1)
       }
-      void pump()
+      runtime.busy = false
+      void pump(runtime)
       return
     }
     default:
@@ -360,64 +395,94 @@ async function writeSidecar(
   }
 }
 
-function ringPush(line: string): void {
-  stderrRing.push(line)
-  if (stderrRing.length > 50) stderrRing.shift()
+function ringPush(runtime: MossInferRuntime, line: string): void {
+  runtime.stderrRing.push(line)
+  if (runtime.stderrRing.length > 50) runtime.stderrRing.shift()
 }
 
-function handleExit(code: number | null, signal: string | null): void {
+function handleExit(
+  runtime: MossInferRuntime,
+  proc: ChildProcessWithoutNullStreams,
+  code: number | null,
+  signal: string | null,
+): void {
+  if (runtime.child !== proc) return
   const reason = `moss-server 异常退出 (code ${code ?? 'null'}${signal ? `, signal ${signal}` : ''})${
-    stderrRing.length ? `，最后输出：${stderrRing.slice(-5).join(' | ')}` : ''
+    runtime.stderrRing.length ? `，最后输出：${runtime.stderrRing.slice(-5).join(' | ')}` : ''
   }`
-  child = null
-  hello = null
-  loadedKey = null
-  for (const [, entry] of pending) {
+  runtime.child = null
+  runtime.boundDeviceUuid = null
+  runtime.hello = null
+  runtime.loadedKey = null
+  for (const [, entry] of runtime.pending) {
     clearTimeout(entry.timer)
     entry.reject(new Error(reason))
   }
-  pending.clear()
-  if (active) {
-    const sink = active.sink
-    active = null
+  runtime.pending.clear()
+  if (runtime.active) {
+    const sink = runtime.active.sink
+    runtime.active = null
+    runtime.busy = false
     sink.event({ type: 'error', code: 'E_ENGINE', message: reason, fatal: true })
     sink.done(-1)
   }
-  if (queue.length) void pump()
+  if (runtime.queue.length) void pump(runtime)
 }
 
-function spawnServer(settings: Settings): void {
+function spawnServer(runtime: MossInferRuntime, settings: Settings, deviceUuid: string): void {
   const serverPath = resolveServerPath(settings)
   if (!serverPath) throw new Error('未找到 moss-server 可执行文件')
-  stderrRing.length = 0
-  const proc = spawnMossServer(serverPath, ['--parent-pid', String(process.pid)])
-  child = proc
+  runtime.stderrRing.length = 0
+  const proc = spawnMossServer(serverPath, ['--parent-pid', String(process.pid)], {
+    CUDA_VISIBLE_DEVICES: deviceUuid,
+  })
+  runtime.child = proc
+  runtime.boundDeviceUuid = deviceUuid
   proc.stdout.setEncoding('utf8')
   proc.stderr.setEncoding('utf8')
   proc.stdout.on('data', (chunk: string) => {
-    for (const line of outSplitter.push(chunk)) {
-      if (line.trim()) dispatchLine(line.trimEnd())
+    for (const line of runtime.outSplitter.push(chunk)) {
+      if (line.trim()) dispatchLine(runtime, line.trimEnd())
     }
   })
   proc.stderr.on('data', (chunk: string) => {
-    for (const line of errSplitter.push(chunk)) {
+    for (const line of runtime.errSplitter.push(chunk)) {
       const trimmed = line.trimEnd()
       if (!trimmed) continue
-      if (active) active.sink.stderr(trimmed)
-      else ringPush(trimmed)
+      if (runtime.active) runtime.active.sink.stderr(trimmed)
+      else ringPush(runtime, trimmed)
     }
   })
   proc.on('error', (error) => {
-    ringPush(String(error))
-    handleExit(-1, null)
+    if (runtime.child !== proc) return
+    ringPush(runtime, String(error))
+    handleExit(runtime, proc, -1, null)
   })
-  proc.on('close', (code, signal) => handleExit(code, signal))
+  proc.on('close', (code, signal) => handleExit(runtime, proc, code, signal))
 }
 
-async function ensureEngine(config: EngineConfig, settings: Settings): Promise<number> {
-  if (!child) {
-    spawnServer(settings)
-    const result = (await request('hello', {
+async function ensureEngine(runtime: MossInferRuntime, config: EngineConfig, settings: Settings): Promise<number> {
+  if (runtime.child && runtime.boundDeviceUuid !== config.deviceUuid) {
+    const previous = runtime.child
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      const timer = setTimeout(() => {
+        rejectPromise(new Error('等待旧 GPU MossInfer runtime 退出超时；为避免两张卡被错误绑定，未启动新 runtime'))
+      }, 5000)
+      previous.once('close', () => {
+        clearTimeout(timer)
+        resolvePromise()
+      })
+      try {
+        previous.kill('SIGKILL')
+      } catch (error) {
+        clearTimeout(timer)
+        rejectPromise(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
+  if (!runtime.child) {
+    spawnServer(runtime, settings, config.deviceUuid)
+    const result = (await request(runtime, 'hello', {
       client: 'MossStudio',
       protocol_version: 2,
       devices: true,
@@ -425,9 +490,9 @@ async function ensureEngine(config: EngineConfig, settings: Settings): Promise<n
     if (result.protocol_version !== 2) {
       throw new Error(`E_ENGINE: moss-server 协议不兼容 (protocol ${String(result.protocol_version)})，需要 protocol 2（MossInfer ≥ 2.0）`)
     }
-    hello = result
+    runtime.hello = result
   }
-  const devices = hello?.probe?.devices ?? []
+  const devices = runtime.hello?.probe?.devices ?? []
   const selected = config.device < 0
     ? devices.find((item) => item.supported)
     : devices.find((item) => item.index === config.device)
@@ -449,38 +514,39 @@ async function ensureEngine(config: EngineConfig, settings: Settings): Promise<n
     )
   }
   const device = selected.index
-  const key = JSON.stringify({ model: config.model, device, mode: config.mode, tier: config.tier })
-  if (key !== loadedKey) {
-    await request('load', {
+  const key = JSON.stringify({ model: config.model, deviceUuid: config.deviceUuid, device, mode: config.mode, tier: config.tier })
+  if (key !== runtime.loadedKey) {
+    await request(runtime, 'load', {
       model: config.model,
       mode: config.mode,
       device,
       tier: config.tier,
       cache_dir: join(paths.cache(), 'mossinfer'),
     })
-    loadedKey = key
+    runtime.loadedKey = key
   }
   return device
 }
 
-async function pump(): Promise<void> {
-  if (active || !queue.length) return
-  const next = queue.shift()!
+async function pump(runtime: MossInferRuntime): Promise<void> {
+  if (runtime.busy || runtime.active || !runtime.queue.length) return
+  runtime.busy = true
+  const next = runtime.queue.shift()!
   const { job, params, opts, sink } = next
   try {
-    const device = await ensureEngine(
-      { model: opts.model, device: opts.device, mode: opts.settings.mossInferMemoryMode, tier: opts.settings.mossInferTier },
+    await ensureEngine(runtime,
+      { model: opts.model, device: opts.device, deviceUuid: opts.deviceUuid, mode: opts.settings.mossInferMemoryMode, tier: opts.settings.mossInferTier },
       opts.settings,
     )
-    sink.event({ type: 'hello', protocol: 1, runner_version: `mossinfer-${hello?.version ?? '2.0.0'}` })
+    sink.event({ type: 'hello', protocol: 1, runner_version: `mossinfer-${runtime.hello?.version ?? '2.0.0'}` })
     sink.event({
       type: 'ready',
-      device: `cuda:${device}`,
+      device: `cuda:${opts.systemDeviceIndex}`,
       dtype: 'bf16',
       capabilities: ['progress', 'cancel'],
     })
     const genId = job.id
-    active = { jobId: job.id, genId, sink, phase: '', queue: next }
+    runtime.active = { jobId: job.id, genId, sink, phase: '', queue: next }
     try {
       const generateParams: Record<string, unknown> = {
         output: opts.output,
@@ -495,18 +561,21 @@ async function pump(): Promise<void> {
         include_prompts: true,
       }
       if (opts.loras.length) generateParams['loras'] = opts.loras
-      await requestWithId(genId, 'generate', generateParams)
+      await requestWithId(runtime, genId, 'generate', generateParams)
     } catch (error) {
-      active = null
-      const message = engineFailureMessage(error)
-      sink.event({
-        type: 'error',
-        code: message.startsWith('E_DEVICE:') ? 'E_DEVICE' : 'E_ENGINE',
-        message,
-        fatal: true,
-      })
-      sink.done(1)
-      void pump()
+      runtime.busy = false
+      if (runtime.active?.jobId === job.id) {
+        runtime.active = null
+        const message = engineFailureMessage(error)
+        sink.event({
+          type: 'error',
+          code: message.startsWith('E_DEVICE:') ? 'E_DEVICE' : 'E_ENGINE',
+          message,
+          fatal: true,
+        })
+        sink.done(1)
+      }
+      void pump(runtime)
     }
   } catch (error) {
     const message = engineFailureMessage(error)
@@ -517,7 +586,8 @@ async function pump(): Promise<void> {
       fatal: true,
     })
     sink.done(1)
-    void pump()
+    runtime.busy = false
+    void pump(runtime)
   }
 }
 
@@ -529,69 +599,80 @@ export async function runMossInferJob(
   opts: {
     model: string
     device: number
+    deviceUuid: string
+    systemDeviceIndex: number
     loras: Array<{ path: string; strength: number }>
     output: string
     settings: Settings
   },
   sink: MossInferSink,
 ): Promise<void> {
-  if (active || queue.length) {
+  const runtime = runtimeFor(opts.deviceUuid)
+  if (runtime.active || runtime.queue.length) {
     sink.event({
       type: 'log',
       level: 'info',
       message: 'MossInfer 引擎忙，排队等待上一个任务完成',
     })
   }
-  queue.push({ job, params, opts, sink })
-  void pump()
+  runtime.queue.push({ job, params, opts, sink })
+  void pump(runtime)
 }
 
 export function cancelMossInferJob(jobId: string): boolean {
-  if (active && active.jobId === jobId) {
-    try {
-      send({ id: `mi-${++reqSeq}`, method: 'cancel', params: { id: active.genId } })
-    } catch {
-      // server already gone; exit handler fails the job
+  for (const runtime of runtimes.values()) {
+    if (runtime.active?.jobId === jobId) {
+      try {
+        send(runtime, { id: `mi-${++runtime.reqSeq}`, method: 'cancel', params: { id: runtime.active.genId } })
+      } catch {
+        // server already gone; exit handler fails the job
+      }
+      return true
     }
-    return true
-  }
-  const index = queue.findIndex((item) => item.job.id === jobId)
-  if (index >= 0) {
-    const [removed] = queue.splice(index, 1)
-    removed.sink.event({ type: 'canceled', at_stage: 'idle' })
-    removed.sink.done(130)
-    return true
+    const index = runtime.queue.findIndex((item) => item.job.id === jobId)
+    if (index >= 0) {
+      const [removed] = runtime.queue.splice(index, 1)
+      removed.sink.event({ type: 'canceled', at_stage: 'idle' })
+      removed.sink.done(130)
+      return true
+    }
   }
   return false
 }
 
-export async function restartMossInfer(): Promise<void> {
-  if (!child) return
-  const proc = child
-  try {
-    proc.kill('SIGKILL')
-  } catch {
-    // already gone
-  }
-}
-
-export async function shutdownMossInfer(): Promise<void> {
-  if (!child) return
-  const proc = child
-  try {
-    const response = request('shutdown', {})
-    const exited = await Promise.race([
-      response.then(() => new Promise<void>((resolve) => proc.once('close', () => resolve()))),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
-    ])
-    if (exited === null) proc.kill('SIGKILL')
-  } catch {
+export async function restartMossInfer(deviceUuid?: string): Promise<void> {
+  const targets = deviceUuid
+    ? [runtimes.get(deviceUuid)].filter((runtime): runtime is MossInferRuntime => Boolean(runtime))
+    : [...runtimes.values()]
+  for (const runtime of targets) {
+    if (!runtime.child) continue
     try {
-      proc.kill('SIGKILL')
+      runtime.child.kill('SIGKILL')
     } catch {
       // already gone
     }
   }
+}
+
+export async function shutdownMossInfer(): Promise<void> {
+  await Promise.all([...runtimes.values()].map(async (runtime) => {
+    if (!runtime.child) return
+    const proc = runtime.child
+    try {
+      const response = request(runtime, 'shutdown', {})
+      const exited = await Promise.race([
+        response.then(() => new Promise<void>((resolve) => proc.once('close', () => resolve()))),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+      ])
+      if (exited === null) proc.kill('SIGKILL')
+    } catch {
+      try {
+        proc.kill('SIGKILL')
+      } catch {
+        // already gone
+      }
+    }
+  }))
 }
 
 /**

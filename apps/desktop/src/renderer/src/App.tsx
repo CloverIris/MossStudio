@@ -23,7 +23,7 @@ import { TrainerWindow } from './pages/TrainerWindow'
 import { useApp } from './store'
 import { cloverUrl } from './lib/clover'
 import { MotionPanel } from './components/motion'
-import { AppTitlebar, TitlebarFrame } from './components/AppTitlebar'
+import { AppTitlebar, GpuTitlebarStatus, TitlebarFrame } from './components/AppTitlebar'
 import { APP_PAGES as PAGES, PageNavigation } from './components/PageNavigation'
 import type { WindowIntent } from './lib/windows'
 import { Bell, SquareTerminal, X } from 'lucide-react'
@@ -108,6 +108,7 @@ function StudioShell(): React.JSX.Element {
     <div className="app-shell flex h-full flex-col text-[var(--color-text)]">
       <TitlebarFrame>
         <div className="min-w-0 flex-1" aria-hidden="true" />
+        <GpuTitlebarStatus />
         <div className="no-drag ml-auto flex items-center gap-0.5">
           <Oobe />
           <IconButton label={terminalOpen ? '关闭终端' : '打开终端'} className="size-8" onClick={() => setTerminalOpen((open) => !open)}>

@@ -12,6 +12,7 @@ import type {
   JobStage,
   JobState,
   ModelBinding,
+  GpuInventoryDevice,
   WorkspaceKind,
 } from '@shared/types'
 import { emit } from '../lib/events'
@@ -20,6 +21,9 @@ import { prepareModelBundle } from './modelBundles'
 import { legacyModelReady, resolveLegacyModelPath } from './modelReadiness'
 import { cancelMossInferJob, resolveServerPath, restartMossInfer, runMossInferJob } from './mossInfer'
 import { getSettings } from './settings'
+import { refreshGpuInventory } from './devices'
+import { resolveGpuSelection } from '../lib/gpuInventory'
+import { resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
 import { getTrainingHost } from './trainingHosts'
 import { runRemoteEngineJob } from './remoteEngine'
 import {
@@ -213,7 +217,11 @@ function finish(job: JobRecord, runningJob: RunningJob, code: number | null): vo
   for (const line of runningJob.out.flush()) appendLog(job, 'stdout', line, runningJob)
   for (const line of runningJob.err.flush()) appendLog(job, 'stderr', line, runningJob)
   running.delete(job.id)
-  scheduleEngineQueue()
+  const slot = engineSlotKey(job)
+  if (slot) {
+    activeEngineSlots.delete(slot)
+    if (engineQueues.get(slot)?.length) scheduleEngineQueue(slot)
+  }
 
   const exitCode = code ?? -1
   if (job.state === 'succeeded' || job.state === 'canceled') {
@@ -444,6 +452,7 @@ export interface StartEngineJobInput {
   cfg: number
   seed: number
   profile?: 'base' | 'dmd8'
+  deviceUuid?: string
   deviceId?: string
   hostId?: string
   remoteModelPath?: string
@@ -454,24 +463,24 @@ interface QueuedEngineJob {
   job: JobRecord
 }
 
-const engineQueue: QueuedEngineJob[] = []
-let engineStartClaimed = false
+const engineQueues = new Map<string, QueuedEngineJob[]>()
+const activeEngineSlots = new Set<string>()
+const canvasReservations = new Set<string>()
 
-function hasActiveEngineJob(): boolean {
-  return [...running.keys()].some((id) => {
-    const job = jobs.get(id)
-    return job?.kind === 'inference' && job.engine === 'mossinfer' && (job.state === 'starting' || job.state === 'running')
-  })
+function engineSlotKey(job: { deviceUuid?: string; hostId?: string }): string | null {
+  if (job.hostId) return `host:${job.hostId}`
+  return job.deviceUuid ? `gpu:${job.deviceUuid}` : null
 }
 
-function scheduleEngineQueue(): void {
-  setTimeout(() => { void pumpEngineQueue() }, 0)
+function scheduleEngineQueue(slot: string): void {
+  setTimeout(() => { void pumpEngineQueue(slot) }, 0)
 }
 
-async function pumpEngineQueue(): Promise<void> {
-  if (engineStartClaimed || hasActiveEngineJob() || engineQueue.length === 0) return
-  const next = engineQueue.shift()!
-  engineStartClaimed = true
+async function pumpEngineQueue(slot: string): Promise<void> {
+  const queue = engineQueues.get(slot)
+  if (activeEngineSlots.has(slot) || !queue?.length) return
+  const next = queue.shift()!
+  activeEngineSlots.add(slot)
   try {
     await startEngineJobNow(next.input, next.job)
   } catch (error) {
@@ -482,9 +491,36 @@ async function pumpEngineQueue(): Promise<void> {
       exitCode: 1,
     })
     notifyCompleted(next.job)
-    scheduleEngineQueue()
+    activeEngineSlots.delete(slot)
+    if (queue.length) scheduleEngineQueue(slot)
   } finally {
-    engineStartClaimed = false
+    if (!queue.length) engineQueues.delete(slot)
+  }
+}
+
+async function resolveLocalGpu(
+  deviceUuid: string | undefined,
+): Promise<GpuInventoryDevice> {
+  const settings = getSettings()
+  const inventory = await refreshGpuInventory()
+  const device = resolveGpuSelection(inventory.devices, settings.gpuSelection, deviceUuid)
+  if (!device) {
+    if (deviceUuid) {
+      throw new Error('此 Canvas 绑定的 GPU 当前不可用；请重新扫描设备或为 Canvas 重新分配 GPU。')
+    }
+    if (typeof settings.gpuSelection === 'object') {
+      throw new Error('设置中选择的默认 GPU 当前不可用；请在引擎页重新扫描或选择其他设备。')
+    }
+    throw new Error(inventory.error ?? '没有可用的 NVIDIA GPU；请在引擎页检查设备或选择远端推理引擎。')
+  }
+  return device
+}
+
+function gpuSnapshot(device: GpuInventoryDevice): NonNullable<JobRecord['gpuSnapshot']> {
+  return {
+    index: device.index,
+    name: device.name,
+    computeCapability: device.computeCapability,
   }
 }
 
@@ -493,7 +529,44 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
   await loadJobs()
   if (!input.prompt.trim()) throw new Error('提示词不能为空')
 
-  if (engineStartClaimed || hasActiveEngineJob() || engineQueue.length > 0) {
+  if (input.projectId && input.canvasId) {
+    const reservationKey = `${input.projectId}:${input.canvasId}`
+    const activeCanvasJob = [...jobs.values()].find((job) =>
+      job.projectId === input.projectId &&
+      job.canvasId === input.canvasId &&
+      (job.state === 'queued' || job.state === 'starting' || job.state === 'running'),
+    )
+    if (activeCanvasJob || canvasReservations.has(reservationKey)) {
+      const state = activeCanvasJob?.state
+      throw new Error(`此 Canvas 已有任务${state === 'queued' ? '排队' : '正在运行'}，请等待完成或先取消该任务。`)
+    }
+    canvasReservations.add(reservationKey)
+    try {
+      return await scheduleEngineJob(input)
+    } finally {
+      canvasReservations.delete(reservationKey)
+    }
+  }
+
+  return scheduleEngineJob(input)
+}
+
+async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord> {
+  let assignedGpu: GpuInventoryDevice | undefined
+  let assignedInput: StartEngineJobInput
+  const settings = getSettings()
+  if (input.hostId) {
+    assignedInput = { ...input, deviceUuid: undefined }
+  } else {
+    assignedGpu = await resolveLocalGpu(input.deviceUuid)
+    assignedInput = { ...input, deviceUuid: assignedGpu.uuid, deviceId: `cuda:${assignedGpu.index}` }
+  }
+
+  const slot = engineSlotKey(assignedInput)
+  if (!slot) throw new Error('无法确定推理设备资源槽；请重新选择 GPU 后重试。')
+  const gpuProfile = assignedGpu ? resolveGpuProfile(settings, assignedGpu) : undefined
+  const queue = engineQueues.get(slot) ?? []
+  if (activeEngineSlots.has(slot) || queue.length > 0) {
     const params: JobParams = {
       prompt: input.prompt,
       negativePrompt: input.negativePrompt ?? '',
@@ -509,10 +582,13 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
       instanceId: 'engine',
       instanceName: input.modelName ?? 'MossInfer',
       workspace: 'clover',
-      projectId: input.projectId,
-      canvasId: input.canvasId,
-      deviceId: input.deviceId,
-      hostId: input.hostId,
+      projectId: assignedInput.projectId,
+      canvasId: assignedInput.canvasId,
+      deviceId: assignedInput.deviceId,
+      deviceUuid: assignedInput.deviceUuid,
+      gpuSnapshot: assignedGpu ? gpuSnapshot(assignedGpu) : undefined,
+      gpuProfile,
+      hostId: assignedInput.hostId,
       kind: 'inference',
       mode: 'runner',
       engine: 'mossinfer',
@@ -527,16 +603,23 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
     logs.set(job.id, [])
     seqs.set(job.id, 0)
     update(job, {})
-    engineQueue.push({ input, job })
+    queue.push({ input: assignedInput, job })
+    engineQueues.set(slot, queue)
     return snapshot(job)
   }
 
-  engineStartClaimed = true
+  activeEngineSlots.add(slot)
   try {
-    return await startEngineJobNow(input)
+    return await startEngineJobNow(assignedInput)
   } finally {
-    engineStartClaimed = false
-    if (engineQueue.length) scheduleEngineQueue()
+    const slotHasRunningJob = [...running.keys()].some((id) => {
+      const job = jobs.get(id)
+      return job !== undefined && engineSlotKey(job) === slot
+    })
+    if (!slotHasRunningJob) {
+      activeEngineSlots.delete(slot)
+      if (engineQueues.get(slot)?.length) scheduleEngineQueue(slot)
+    }
   }
 }
 
@@ -562,6 +645,13 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     }
     if (!modelPath) throw new Error('模型权重尚未就绪，请先在模型库下载 MOSS-Image')
   }
+
+  const localGpu = input.hostId ? null : await resolveLocalGpu(input.deviceUuid)
+  const resolvedDeviceId = localGpu ? `cuda:${localGpu.index}` : input.deviceId
+  const gpuProfile = localGpu
+    ? queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu)
+    : undefined
+  const executionSettings = gpuProfile ? settingsForGpuProfile(settings, gpuProfile) : settings
 
   if (input.hostId) {
     const host = getTrainingHost(settings, input.hostId)
@@ -664,7 +754,10 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     projectId: input.projectId,
     canvasId: input.canvasId,
     modelSnapshot,
-    deviceId: input.deviceId,
+    deviceId: resolvedDeviceId,
+    deviceUuid: localGpu?.uuid,
+    gpuSnapshot: localGpu ? gpuSnapshot(localGpu) : undefined,
+    gpuProfile,
     kind: 'inference',
     mode: 'runner',
     engine: 'mossinfer',
@@ -678,7 +771,10 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     instanceName: input.modelName ?? 'MossInfer',
     projectId: input.projectId,
     canvasId: input.canvasId,
-    deviceId: input.deviceId,
+    deviceId: resolvedDeviceId,
+    deviceUuid: localGpu?.uuid,
+    gpuSnapshot: localGpu ? gpuSnapshot(localGpu) : undefined,
+    gpuProfile,
     modelSnapshot,
     state: 'starting' as const,
     params,
@@ -707,7 +803,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
         signature: `E_TIMEOUT:${job.id}`,
       })
       update(job, { state: 'failed', error: { code: 'E_TIMEOUT', message: '启动超时' } })
-      void restartMossInfer()
+      void restartMossInfer(job.deviceUuid)
     }
   }, 180_000)
   const runningJob: RunningJob = {
@@ -719,12 +815,19 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     cancelRequested: false,
   }
   running.set(job.id, runningJob)
-  const cudaOrdinal = input.deviceId?.startsWith('cuda:') ? Number(input.deviceId.slice(5)) : -1
   const output = join(outputDir, `${job.id}-1.png`)
   void runMossInferJob(
     job,
     params,
-    { model: modelPath!, device: cudaOrdinal, loras: [], output, settings },
+    {
+      model: modelPath!,
+      device: 0,
+      deviceUuid: localGpu!.uuid,
+      systemDeviceIndex: localGpu!.index,
+      loras: [],
+      output,
+      settings: executionSettings,
+    },
     {
       event: (payload) => handleRunnerEvent(job, runningJob, JSON.stringify(payload)),
       stderr: (line) => appendLog(job, 'stderr', line, runningJob),
@@ -883,12 +986,14 @@ export async function cancelJob(id: string): Promise<JobRecord | null> {
   const job = jobs.get(id)
   const runningJob = running.get(id)
   if (!job) return null
-  const queuedIndex = engineQueue.findIndex((entry) => entry.job.id === id)
-  if (queuedIndex >= 0) {
-    engineQueue.splice(queuedIndex, 1)
+  for (const [slot, queue] of engineQueues) {
+    const queuedIndex = queue.findIndex((entry) => entry.job.id === id)
+    if (queuedIndex < 0) continue
+    queue.splice(queuedIndex, 1)
+    if (!queue.length) engineQueues.delete(slot)
     update(job, { state: 'canceled', endedAt: new Date().toISOString() })
     notifyCompleted(job)
-    scheduleEngineQueue()
+    if (queue.length) scheduleEngineQueue(slot)
     return snapshot(job)
   }
   if (!runningJob) {
@@ -903,7 +1008,7 @@ export async function cancelJob(id: string): Promise<JobRecord | null> {
     cancelMossInferJob(job.id)
     // server 卡死兜底：5 秒后仍无 done-cancelled 则重启引擎，exit 处理会失败活动任务
     runningJob.killTimer = setTimeout(() => {
-      void restartMossInfer()
+      void restartMossInfer(job.deviceUuid)
     }, 5000)
     return snapshot(job)
   }
@@ -984,6 +1089,20 @@ export async function purgeLegacySimulationJobs(): Promise<number> {
 export async function listJobs(): Promise<JobRecord[]> {
   await loadJobs()
   return [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).map(snapshot)
+}
+
+export async function getGpuJobCounts(): Promise<Record<string, { runningTasks: number; queuedTasks: number }>> {
+  await loadJobs()
+  const counts: Record<string, { runningTasks: number; queuedTasks: number }> = {}
+  for (const job of jobs.values()) {
+    if (!job.deviceUuid || job.hostId || job.engine !== 'mossinfer') continue
+    if (job.state !== 'queued' && job.state !== 'starting' && job.state !== 'running') continue
+    const count = counts[job.deviceUuid] ?? { runningTasks: 0, queuedTasks: 0 }
+    if (job.state === 'queued') count.queuedTasks += 1
+    else count.runningTasks += 1
+    counts[job.deviceUuid] = count
+  }
+  return counts
 }
 
 export async function getJob(id: string): Promise<JobRecord | null> {

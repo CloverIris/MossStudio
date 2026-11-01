@@ -32,6 +32,7 @@ const projectCanvasSchema = z.object({
   steps: z.number().int().min(1).max(1000),
   cfg: z.number().min(0).max(20),
   modelBundleId: z.string().max(160).optional(),
+  deviceUuid: z.string().min(1).max(200).optional(),
   deviceId: z.string().max(160).optional(),
   backgroundPath: z.string().max(4096).optional(),
   sourceCanvasId: z.string().max(120).optional(),
@@ -115,6 +116,15 @@ export const schemas = {
       mossInferChannel: z.enum(['stable', 'dev']),
       mossInferVariant: z.enum(['system-cuda', 'bundled']),
       mossInferArchitecture: z.enum(['auto', 'standard', 'sm75']),
+      gpuSelection: z.union([
+        z.literal('auto'),
+        z.object({ uuid: z.string().min(1).max(200) }),
+      ]),
+      gpuProfileMode: z.enum(['auto', 'custom']),
+      gpuProfileOverrides: z.record(z.string().max(200), z.object({
+        memoryMode: z.enum(['min_memory', 'balanced', 'max_speed']).optional(),
+        tier: z.enum(['reference', 'high', 'turbo']).optional(),
+      })),
       githubToken: z.string().max(200).nullable(),
     })
     .partial(),

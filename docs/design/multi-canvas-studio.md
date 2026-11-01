@@ -2,8 +2,8 @@
 
 - 状态：**已实现**（2026-10-31 更新到 as-built）
 - 日期：2026-10-31
-- 范围：Project 内的多 Canvas Board、串行推理任务、进度与生成结果呈现
-- 后续扩展：GPU 感知的 Canvas 绑定与多卡并发以 [GPU 设备管理设计](./gpu-device-management.md) 为准；本文第一阶段“全局串行”是当时的实现约束，完成新设计后将按 GPU 槽位取代。
+- 范围：Project 内的多 Canvas Board、按 GPU 槽位调度的推理任务、进度与生成结果呈现
+- GPU 设备绑定与调度以 [GPU 设备管理设计](./gpu-device-management.md) 为准：同一 GPU 串行，不同 GPU 可并行。
 
 ## As-built 差异（相对本设计早期提案）
 
@@ -24,11 +24,13 @@
 ## 当前实现进度
 
 - 已落地：Project schema v3 Canvas 数据（自由 `x/y`）、原子保存；空 Project Board 与 Canvas 选择/新增/复制/删除/拖动。
-- 已落地：Layout/Result Canvas 与 Job 关联、MossInfer FIFO 启动队列及排队取消；Canvas 上显示结构化阶段/去噪进度。
+- 已落地：Layout/Result Canvas 与 Job 关联、按 GPU UUID 的 MossInfer FIFO 启动队列及排队取消；Canvas 上显示结构化阶段/去噪进度。
 - 已落地：生成结果节点内预览图片；重跑创建新结果，不覆盖旧节点；无 Canvas 时编辑面板提示并禁用。
+- 已落地：选中 Layout Canvas 有 queued/starting/running 任务时，左侧“开始生成”按钮禁用并显示生成中；Job 进入 failed/canceled 终态后按钮恢复，避免对同一 Canvas 重复提交且不把失败/取消状态锁死。
 - 已覆盖：Project v3 多 Canvas/Job/输出持久化、多个同名背景资源隔离、空 Board 保存、旧 schema 文件如实返回不可读。
 - 已覆盖：fake MossInfer FIFO、Canvas/Project 关联、排队取消与串行完成场景；Result 预览包含文件缺失与 Job 记录失联提示。
 - 已覆盖：Studio 窗口级创建 Canvas、独立 Prompt 自动保存、刷新后重新打开 Project 的交互测试。
+- 新增 E2E 场景：Canvas 运行态按钮禁用，以及失败、取消后恢复；当前环境 Electron 启动失败，场景尚未实际运行。
 - 本轮验证：`tsc -p tsconfig.node.json`、`tsc -p tsconfig.web.json`、`electron-vite build`、8 套工具链测试 55 项断言、本机 RTX 2080 真实出图。
 
 
@@ -43,13 +45,13 @@
 1. 在一个 Project 中表达多个布局、生成任务和结果，并保留它们的参数快照与来源关系。
 2. 选中某个 Canvas 后才启用左右编辑面板，所有编辑都明确作用于当前选择。
 3. 把队列、实际阶段、采样进度、错误和结果显示在对应 Canvas 上。
-4. 第一阶段严格串行执行生成任务，不允许两个 Canvas 并行占用推理引擎。
+4. 同一 GPU 上的生成任务严格串行；分配到不同 GPU 时允许并行。
 5. 兼容当前 schema v1 Project、已有任务记录和全局画廊；升级不能丢失已有创作或生成文件。
 
 非目标：
 
 - Canvas 之间合成、蒙版、图层式图像编辑或时间线。
-- 多 GPU 并行、同时运行多个 Canvas 任务，或复杂的队列优先级管理。
+- 复杂的队列优先级管理。
 - 将模型/引擎二进制、模型权重或输出 PNG 复制进 Project。
 - 用不可靠的文本正则取代 MossInfer 已有的结构化进度协议。
 
@@ -266,7 +268,7 @@ Job 需要增加可选的 `projectId`、`canvasId`/关联元数据，或在 Proj
 | 场景 | 预期行为 |
 | --- | --- |
 | 模型未准备好/绑定失效 | 不创建运行中任务；在所选 Layout Canvas 显示可操作错误和模型页入口 |
-| 用户提交后立即切换 Project | 任务仍在全局串行队列运行；完成后按 Project/Canvas ID 更新原节点 |
+| 用户提交后立即切换 Project | 任务仍在对应 GPU 队列运行；完成后按 Project/Canvas ID 更新原节点 |
 | Project 被关闭或应用重启 | 从持久化 Job ID 恢复状态；运行任务遵循现有重启中断策略 |
 | Canvas 正在排队时删除 | 先取消队列项并确认，或禁止删除并解释；不留下孤儿 Job |
 | Canvas 正在运行时删除 | 要求确认停止后删除关联，输出仍保留；不得静默终止 |

@@ -44,6 +44,9 @@ export const DEFAULT_SETTINGS: Settings = {
   mossInferChannel: 'stable',
   mossInferVariant: 'system-cuda',
   mossInferArchitecture: 'auto',
+  gpuSelection: 'auto',
+  gpuProfileMode: 'auto',
+  gpuProfileOverrides: {},
   githubToken: null,
   disabledDevices: [],
   deviceLabels: {},
@@ -60,6 +63,15 @@ export function getSettings(): Settings {
       ...DEFAULT_SETTINGS,
       ...parsed,
       modelDirectories: { ...DEFAULT_SETTINGS.modelDirectories, ...parsed.modelDirectories },
+      gpuProfileOverrides: parsed.gpuProfileOverrides ?? DEFAULT_SETTINGS.gpuProfileOverrides,
+    }
+    if (
+      typeof cache.gpuSelection !== 'object' ||
+      cache.gpuSelection === null ||
+      typeof cache.gpuSelection.uuid !== 'string' ||
+      cache.gpuSelection.uuid.startsWith('cuda:')
+    ) {
+      cache.gpuSelection = 'auto'
     }
     if (!Array.isArray(cache.dismissedAnnouncements)) cache.dismissedAnnouncements = []
     if ((cache.mossInferVariant as string) === 'sm75') {

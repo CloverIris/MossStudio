@@ -24,7 +24,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { GalleryItem, JobRecord, ManagedHost, ProjectCanvas, ProjectDocument, ProjectSummary } from '@shared/types'
+import type { GalleryItem, GpuInventorySnapshot, JobRecord, ManagedHost, ProjectCanvas, ProjectDocument, ProjectSummary } from '@shared/types'
 import type { BackendInfo } from '@shared/backend'
 import { Events, Ipc } from '@shared/channels'
 import { call, onEvent } from '../lib/api'
@@ -167,6 +167,7 @@ interface DraftTabSnapshot {
   cfg: number
   modelBundleId: string
   deviceId: string
+  deviceUuid: string
   seriesId: string
   page: number
   background: GalleryItem | null
@@ -210,6 +211,7 @@ export function StudioPage(): React.JSX.Element {
   }, [background, setStudioBackground])
   const catalog = useApp((state) => state.catalog)
   const devices = useApp((state) => state.devices)
+  const [gpuInventory, setGpuInventory] = useState<GpuInventorySnapshot | null>(null)
   const [hosts, setHosts] = useState<ManagedHost[]>([])
   const [engineHostId, setEngineHostId] = useState('')
   const [remoteModelPath, setRemoteModelPath] = useState('')
@@ -290,6 +292,7 @@ export function StudioPage(): React.JSX.Element {
   const [seed, setSeed] = useState(42)
   const [modelBundleId, setModelBundleId] = useState(() => localStorage.getItem('mossstudio.modelBundleId') ?? '')
   const [deviceId, setDeviceId] = useState(() => localStorage.getItem('mossstudio.deviceId') ?? '')
+  const [deviceUuid, setDeviceUuid] = useState('')
   const modelBundle = catalog?.bundles.find((bundle) => bundle.id === modelBundleId) ?? null
   const modelBinding = modelBundle ? { bundleId: modelBundle.id, ...modelBundle.components } : undefined
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -349,6 +352,17 @@ export function StudioPage(): React.JSX.Element {
   const jobs = useApp((state) => state.jobs)
   const cancelJob = useApp((state) => state.cancelJob)
   const selectedCanvas = canvases.find((canvas) => canvas.id === selectedCanvasId) ?? null
+  const isCanvasJobActive = (canvas: ProjectCanvas): boolean => {
+    const job = canvas.jobId ? jobs.find((item) => item.id === canvas.jobId) : undefined
+    return ['queued', 'starting', 'running'].includes(job?.state ?? canvas.jobState ?? '')
+  }
+  const selectedCanvasGenerating = Boolean(
+    selectedCanvas?.kind === 'layout' &&
+      canvases.some((canvas) =>
+        (canvas.id === selectedCanvas.id || canvas.sourceCanvasId === selectedCanvas.id) &&
+          isCanvasJobActive(canvas),
+      ),
+  )
   // Fit the board once per opened project, as soon as its Canvases are on screen.
   const fitPendingRef = useRef(true)
   useEffect(() => { fitPendingRef.current = true }, [projectId])
@@ -465,9 +479,10 @@ export function StudioPage(): React.JSX.Element {
       cfg,
       modelBundleId: modelBundleId || undefined,
       deviceId: deviceId || undefined,
+      deviceUuid: deviceUuid || undefined,
       backgroundPath: background?.path,
     }
-  }, [selectedCanvas, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, background?.path])
+  }, [selectedCanvas, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, deviceUuid, background?.path])
   const persistedCanvases = useMemo(
     () => currentCanvasSnapshot
       ? canvases.map((canvas) => canvas.id === currentCanvasSnapshot.id ? currentCanvasSnapshot : canvas)
@@ -492,6 +507,10 @@ export function StudioPage(): React.JSX.Element {
       return changed ? next : previous
     })
   }, [jobs])
+  useEffect(() => {
+    void call<GpuInventorySnapshot>(Ipc.gpuInventory).then(setGpuInventory).catch(() => undefined)
+    return onEvent<GpuInventorySnapshot>(Events.gpuInventory, setGpuInventory)
+  }, [])
   const snapshot = useMemo(
     () => JSON.stringify({
       name: projectName,
@@ -796,6 +815,7 @@ export function StudioPage(): React.JSX.Element {
     setCfg(canvas.cfg)
     setModelBundleId(canvas.modelBundleId ?? '')
     setDeviceId(canvas.deviceId ?? '')
+    setDeviceUuid(canvas.deviceUuid ?? '')
     if (canvas.backgroundPath) {
       const path = canvas.backgroundPath
       setStudioBackground({
@@ -879,6 +899,7 @@ export function StudioPage(): React.JSX.Element {
       cfg: source?.cfg ?? cfg,
       modelBundleId: (source?.modelBundleId ?? modelBundleId) || undefined,
       deviceId: (source?.deviceId ?? deviceId) || undefined,
+      deviceUuid: (source?.deviceUuid ?? deviceUuid) || undefined,
       backgroundPath: source?.backgroundPath,
     }
   }
@@ -1069,6 +1090,7 @@ export function StudioPage(): React.JSX.Element {
       cfg,
       modelBundleId,
       deviceId,
+      deviceUuid,
       seriesId,
       page,
       background,
@@ -1094,6 +1116,7 @@ export function StudioPage(): React.JSX.Element {
     setCfg(draftTab.cfg)
     setModelBundleId(draftTab.modelBundleId)
     setDeviceId(draftTab.deviceId)
+    setDeviceUuid(draftTab.deviceUuid)
     setStudioBackground(draftTab.background)
     setCanvases(draftTab.canvases)
     setSelectedCanvasId(draftTab.selectedCanvasId)
@@ -1140,6 +1163,7 @@ export function StudioPage(): React.JSX.Element {
         setCfg(nextSelected.cfg)
         setModelBundleId(nextSelected.modelBundleId ?? '')
         setDeviceId(nextSelected.deviceId ?? '')
+        setDeviceUuid(nextSelected.deviceUuid ?? '')
         if (nextSelected.backgroundPath) {
           const path = nextSelected.backgroundPath
           setStudioBackground({ id: `project-bg-${nextSelected.id}`, path, name: path.split(/[\\/]/).pop() ?? 'background', dir: path.slice(0, Math.max(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')))), root: '', size: 0, mtime: 0, ext: path.split('.').pop() ?? '' })
@@ -1212,6 +1236,7 @@ export function StudioPage(): React.JSX.Element {
     setProjectName(nextProjectName())
     setCanvases([])
     setSelectedCanvasId(null)
+    setDeviceUuid('')
     setSeriesId('')
     setPage(1)
     setPrompt('')
@@ -1294,6 +1319,13 @@ export function StudioPage(): React.JSX.Element {
     const source = resolved && promptOverride !== undefined ? { ...resolved, prompt: promptOverride } : resolved
     if (!source) {
       toast.push('先点击选择一个 Canvas，再开始生成', 'error')
+      return
+    }
+    const activeRelatedCanvas = canvases.find((canvas) =>
+      (canvas.id === source.id || canvas.sourceCanvasId === source.id) && isCanvasJobActive(canvas),
+    )
+    if (activeRelatedCanvas) {
+      toast.push('此 Canvas 已有任务正在运行或排队，请等待完成后再生成', 'info')
       return
     }
     const selectedBundle = source.modelBundleId
@@ -1388,6 +1420,7 @@ export function StudioPage(): React.JSX.Element {
           modelBinding: sourceBinding,
           modelName: selectedBundle?.name,
           deviceId: source.deviceId || undefined,
+          deviceUuid: source.deviceUuid || undefined,
           hostId: engineHostId || undefined,
           remoteModelPath: engineHostId ? remoteModelPath.trim() : undefined,
           prompt: effective.prompt,
@@ -1414,7 +1447,13 @@ export function StudioPage(): React.JSX.Element {
       if (!isJobRecord(body)) throw new Error('后端返回了无效的任务记录')
       const observedJob = useApp.getState().jobs.find((job) => job.id === body.id)
       taskCanvases = taskCanvases.map((canvas) => canvas.id === taskCanvasId
-        ? { ...canvas, jobId: body.id, jobState: observedJob?.state ?? body.state }
+        ? {
+            ...canvas,
+            jobId: body.id,
+            jobState: observedJob?.state ?? body.state,
+            deviceId: body.deviceId ?? canvas.deviceId,
+            deviceUuid: body.deviceUuid ?? canvas.deviceUuid,
+          }
         : canvas)
       setCanvases(taskCanvases)
       setSelectedCanvasId(taskCanvasId)
@@ -1623,11 +1662,33 @@ export function StudioPage(): React.JSX.Element {
               {catalog?.bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}
             </Select>
           ))}
-          {row('设备', (
+          {row(engineHostId ? '远端设备' : 'GPU', engineHostId ? (
             <Select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); localStorage.setItem('mossstudio.deviceId', event.target.value) }} className="w-[184px]">
               {devices.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.kind.toUpperCase()}</option>)}
             </Select>
-          ))}
+          ) : (
+            <Select
+              aria-label="此 Canvas 使用的 GPU"
+              value={deviceUuid}
+              onChange={(event) => setDeviceUuid(event.target.value)}
+              className="w-[184px]"
+            >
+              <option value="">跟随应用默认 GPU</option>
+              {deviceUuid && !gpuInventory?.devices.some((device) => device.uuid === deviceUuid) ? (
+                <option value={deviceUuid} disabled>绑定设备暂不可用 · {deviceUuid.slice(0, 12)}</option>
+              ) : null}
+              {(gpuInventory?.devices ?? []).map((device) => (
+                <option key={device.uuid} value={device.uuid}>
+                  {device.name} · GPU {device.index}{device.computeCapability ? ` · SM ${device.computeCapability.major}.${device.computeCapability.minor}` : ''}
+                </option>
+              ))}
+            </Select>
+          ), engineHostId ? '选择远端主机上的 CUDA 设备' : '每个 Canvas 独立绑定 GPU；默认跟随引擎页设置')}
+          {!engineHostId && gpuInventory?.status !== 'ok' ? (
+            <p role="status" className="py-1 text-caption text-amber-200">
+              {gpuInventory?.error ?? '正在检测本机 NVIDIA GPU；任务提交时会再次验证设备。'}
+            </p>
+          ) : null}
           {row('引擎', (
             <Select value={engineHostId} onChange={(event) => setEngineHostId(event.target.value)} className="w-[184px]">
               <option value="">本机 MossInfer</option>
@@ -1799,14 +1860,18 @@ export function StudioPage(): React.JSX.Element {
                 tone="primary"
                 className="w-full"
                 data-studio-generate
-                aria-busy={submitting}
-                disabled={submitting || projectSaving || !pendingPrompt.prompt.trim()}
-                title={pendingPrompt.regions > 0 ? `编译布局后生成到 ${selectedCanvas.title}` : `用手写提示词生成到 ${selectedCanvas.title}`}
+                aria-busy={submitting || selectedCanvasGenerating}
+                disabled={submitting || selectedCanvasGenerating || projectSaving || !pendingPrompt.prompt.trim()}
+                title={selectedCanvasGenerating
+                  ? '此 Canvas 的生成任务正在排队或运行'
+                  : pendingPrompt.regions > 0
+                    ? `编译布局后生成到 ${selectedCanvas.title}`
+                    : `用手写提示词生成到 ${selectedCanvas.title}`}
                 onClick={() => void generate()}
               >
                 <span className="inline-flex items-center gap-1.5">
-                  {submitting ? '正在提交…' : '开始生成'}
-                  {submitting ? <Spinner /> : <ArrowRight className="size-4" />}
+                  {submitting ? '正在提交…' : selectedCanvasGenerating ? '生成中…' : '开始生成'}
+                  {submitting || selectedCanvasGenerating ? <Spinner /> : <ArrowRight className="size-4" />}
                 </span>
               </Button>
               {!pendingPrompt.prompt.trim() ? (
@@ -2003,10 +2068,19 @@ export function StudioPage(): React.JSX.Element {
                   )
                   const queuePosition = job?.state === 'queued'
                     ? jobs
-                        .filter((item) => item.engine === 'mossinfer' && item.kind === 'inference' && item.state === 'queued')
+                        .filter((item) =>
+                          item.engine === 'mossinfer'
+                          && item.kind === 'inference'
+                          && item.state === 'queued'
+                          && item.deviceUuid === job.deviceUuid
+                          && item.hostId === job.hostId,
+                        )
                         .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
                         .findIndex((item) => item.id === job.id) + 1
                     : 0
+                  const boundGpu = gpuInventory?.devices.find((device) =>
+                    device.uuid === (job?.deviceUuid ?? canvas.deviceUuid),
+                  )
                   const currentPercent = progress?.stage === 'denoise' && progress.total > 0
                     ? Math.min(100, Math.max(0, progress.percent))
                     : undefined
@@ -2064,6 +2138,13 @@ export function StudioPage(): React.JSX.Element {
                           <span className="ml-1.5 text-micro text-[var(--color-text-tertiary)]">
                             {canvas.kind === 'result' ? '结果' : `${canvas.width}×${canvas.height}`}
                           </span>
+                          {(job?.deviceUuid ?? canvas.deviceUuid) ? (
+                            <span title={boundGpu?.uuid ?? canvas.deviceUuid}>
+                              <Pill tone={boundGpu ? 'accent' : 'amber'}>
+                                {boundGpu?.name ?? job?.gpuSnapshot?.name ?? `GPU ${job?.gpuSnapshot?.index ?? ''}`}
+                              </Pill>
+                            </span>
+                          ) : null}
                         </span>
                         {hasOutputs && canvas.kind === 'layout' ? (
                           <button

@@ -1,6 +1,6 @@
 # 实现状态
 
-最后更新：2026-10-31
+最后更新：2026-11-01
 版本：`0.1.0`（开发版）
 
 ## 1. 当前可运行
@@ -16,6 +16,7 @@
 | Project tabs | ✅ | 重命名、删除、拖动排序、`Ctrl/Cmd+S` 显式保存、自动保存 |
 | 本机 MossInfer | ✅ | Windows + RTX 2080 真实出图（1024² / 8 步 / 69.2s） |
 | 引擎管理页 | ✅ | 状态、探测、Release 选择、安装进度、本机版本切换与删除 |
+| GPU 清单与默认设备 | 🟡 | 启动扫描 UUID/SM/显存；OOBE/引擎页可选默认卡与显存建议；按 GPU 持久化 memory/tier 覆盖并随 Job 快照；标题栏展示统一遥测与队列；Canvas UUID 绑定、每卡独立 sidecar/队列；真实双卡硬件复验待完成 |
 | system/bundled 引擎包 | 🟡 | Windows ZIP、Linux tar、预检、CUDA wheel 解压已接 |
 | Linux SSH 远端 sidecar | 🟡 | fake SSH 出图通过；真实 Linux GPU 未验收 |
 | 远端 HF 模型准备 | 🟡 | 默认 SFT curl 下载；组件 bundle/断点续传未做 |
@@ -31,7 +32,7 @@
 
 ```
 Studio → IPC / HTTP → startEngineJob
-  → local moss-server（单例 + FIFO）
+  → local moss-server（每 GPU UUID 独立 sidecar + FIFO）
   → Linux SSH moss-server
   → outputs/<job>.png
 ```
@@ -61,6 +62,7 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 ## 4. 已知限制
 
 - RTX 2080 是 Turing（CC 7.5）；在引擎页选择 SM75 架构包（上游 v2.1.1+，Windows CUDA 13）而非默认 SM80+ 构建。
+- 架构自动选择改为依赖独立 GPU 清单；若驱动无法报告 SM，必须手动选择，禁止静默回退到标准包。多卡并发已有 fake-server 验证，真实双卡硬件验收仍待完成。
 - 真实引擎下载、CUDA 库修补只在单台 Windows 机器上验证过；Linux 远端未验收。
 - 远端 HF 仅默认 SFT 全量；组件 bundle、断点续传、失败恢复未完成。
 - Trainer 仍依赖 Python/Git；GBC 依赖外部 Python 工具。
