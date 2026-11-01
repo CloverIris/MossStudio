@@ -28,13 +28,6 @@ import { resolveGpuSelection } from '../lib/gpuInventory'
 import { getTrainingHost } from './trainingHosts'
 import { remoteEngineStatus } from './remoteEngine'
 
-export interface LocalEngineInfo {
-  available: boolean
-  path: string | null
-  version?: string
-  error?: string
-}
-
 interface ExternalEngineEntry {
   path: string
   name: string
@@ -123,13 +116,6 @@ export async function probeLocalEngineGpuCompatibility(
   const snapshot = mapGpuProbe(inventory.devices, hello, path)
   gpuProbeCache = { fingerprint, createdAt: Date.now(), snapshot, hello }
   return { snapshot, hello }
-}
-
-export function localEngineInfo(): LocalEngineInfo {
-  const path = resolveServerPath(getSettings())
-  if (!path) return { available: false, path: null, error: '未找到 moss-server；请下载引擎或设置路径' }
-  const version = localEngineVersions().find((item) => resolve(item.path) === resolve(path))?.name
-  return version ? { available: existsSync(path), path, version } : { available: existsSync(path), path }
 }
 
 function withVerification(
@@ -224,12 +210,11 @@ async function verifyProbe(version: LocalEngineVersion): Promise<EngineManifest>
   }
 }
 
-async function activateLocalEngineVersion(version: LocalEngineVersion): Promise<LocalEngineInfo> {
+async function activateLocalEngineVersion(version: LocalEngineVersion): Promise<void> {
   const updated = updateSettings({ inferenceBackend: 'mossinfer', mossInferServerPath: version.path })
   emit(Events.settingsChanged, updated)
   gpuProbeCache = null
   await shutdownMossInfer()
-  return localEngineInfo()
 }
 
 async function persistVerification(version: LocalEngineVersion, manifest: EngineManifest): Promise<void> {
@@ -244,7 +229,7 @@ async function persistVerification(version: LocalEngineVersion, manifest: Engine
 }
 
 /** 已验证版本在切换前仍会确认当前 GPU；未验证版本必须走验证并切换。 */
-export async function selectLocalEngineVersion(id: string): Promise<LocalEngineInfo> {
+export async function selectLocalEngineVersion(id: string): Promise<void> {
   const version = findLocalEngineVersion(id)
   if (!version.verified) throw new Error('此引擎尚未验证，请使用「验证并切换」')
   const manifest = await verifyProbe(version)
@@ -252,7 +237,7 @@ export async function selectLocalEngineVersion(id: string): Promise<LocalEngineI
   return activateLocalEngineVersion(version)
 }
 
-export async function verifyLocalEngineVersion(id: string): Promise<LocalEngineInfo> {
+export async function verifyLocalEngineVersion(id: string): Promise<void> {
   const version = findLocalEngineVersion(id)
   const manifest = await verifyProbe(version)
   await persistVerification(version, manifest)
