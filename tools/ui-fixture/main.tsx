@@ -4,7 +4,8 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { Ipc } from '../../apps/desktop/src/shared/channels'
 import { schemas } from '../../apps/desktop/src/shared/schemas'
-import type { EngineReadiness, InstanceInfo, LocalEngineVersion, ManagedHost, MossInferDownloadState, OnboardingStatus, Settings } from '../../apps/desktop/src/shared/types'
+import type { EngineReadiness, InstanceInfo, LocalEngineVersion, ManagedHost, MossInferDownloadState, OnboardingStatus, ProjectDocument, Settings } from '../../apps/desktop/src/shared/types'
+import type { StudioProjectInput } from '../../apps/desktop/src/renderer/src/lib/studioClient'
 import { Card, Field, Input, Modal, Select, Sheet, Spinner, Switch, Textarea, ToastProvider, useToast } from '../../apps/desktop/src/renderer/src/components/ui'
 import { SettingsPage } from '../../apps/desktop/src/renderer/src/pages/Settings'
 import { StudioPage } from '../../apps/desktop/src/renderer/src/pages/Studio'
@@ -109,6 +110,12 @@ window.clover = {
       savedSettings = { ...savedSettings, ...schemas.settingsUpdate.parse(payload) }
     }
     if (channel === Ipc.backendInfo) return { ok: true, data: { ready: true, url: 'http://studio-fixture', token: 'fixture' } } as T
+    if (channel === Ipc.projectSave) {
+      const input = payload as StudioProjectInput
+      const now = new Date().toISOString()
+      const project: ProjectDocument = { ...input, schemaVersion: 3, id: input.id ?? 'fixture-project', createdAt: now, updatedAt: now }
+      return { ok: true, data: project } as T
+    }
     if (channel === Ipc.windowOpen) document.getElementById('window-request')!.textContent = JSON.stringify(schemas.windowOpen.parse(payload))
     const data = channel === Ipc.settingsUpdate ? savedSettings : channel === Ipc.appInfo || channel === Ipc.envScan ? null : []
     return { ok: true, data } as T
