@@ -42,12 +42,12 @@ Beta 通道先读 `releases/download/beta/release.md`，不存在时回退 lates
 | --- | --- |
 | `release/release.md` | GitHub Release 页面正文 + `json clover-release` 机器块；版本、安装包、首页文案、公告、模型表镜像 |
 | `release/manifest.json` | 应用版本/通道/首页文案/公告/安装包元数据的维护源 |
-| `release/models.json` | **模型/适配器下载目录的机器源**；应用仍从这里取下载数据 |
-| `release/README.md` | 待发布的人可读说明草稿；生成器会去掉「发布与更新（维护者）」章节 |
+| `release/models.json` | **模型/适配器下载目录的维护源**；构建时随应用打包，应用优先从随包副本读取 |
+| `release/README.md` | 人可读发布说明源；构建生成一份移除「发布与更新（维护者）」章节的副本，供粘贴到 GitHub Release 正文 |
 | `tools/release-md.mjs` | 从 manifest + models + README 生成 release.md |
 | `release/updater.ps1` | Windows ZIP 更新的外置替换/重启程序 |
 | `tools/build-release.mjs` | 构建 Windows x64 便携 ZIP、计算大小/SHA-256 并生成发布文件 |
-| `release/artifacts/` | 唯一的本地产物目录，已加入 `.gitignore`；构建生成 ZIP、`release.md` 机器元数据和 `README.md` 发布正文，供维护者手动上传 |
+| `release/artifacts/` | 唯一的本地产物目录，已加入 `.gitignore`；包含待上传 ZIP、`release.md` 机器元数据及可粘贴的 `README.md` 正文 |
 
 `release.md` 中的模型表是发布页镜像，不是第二下载数据源。生成器会校验
 `apps/desktop/package.json` 与 `manifest.app.version` 一致，不一致直接失败。修改模型后运行：
@@ -56,6 +56,26 @@ Beta 通道先读 `releases/download/beta/release.md`，不存在时回退 lates
 pnpm release:md
 pnpm release:md:check
 ```
+
+### GitHub Release 页面：资产与正文
+
+GitHub Release 页面上的**正文（description / release notes）**和**附件资产（assets）**是两个不同位置：
+
+| 本地产物 | 放到 GitHub Release 的位置 | 是否必需 | 用途 |
+| --- | --- | --- | --- |
+| `release/artifacts/MossStudio-<version>-win32-x64.zip` | 上传为附件资产；文件名保持原样 | 是 | 更新器按 `release.md` 中记录的 URL、大小和 SHA-256 下载并校验 |
+| `release/artifacts/release.md` | 上传为附件资产；资产名必须是 `release.md` | 是 | 应用从 `releases/latest/download/release.md` 读取版本、公告、安装包地址等机器数据 |
+| `release/artifacts/README.md` | **打开文件、复制全文，粘贴到 GitHub Release 的正文框**；不要仅把文件作为附件上传 | 是（发布页面说明） | 面向用户的 Release 页面说明；不是应用的更新清单 |
+
+创建稳定版时使用 `v<version>` tag（例如 `v0.1.0`），不要勾选预发布，并将其设为 latest stable release。Release 资产名和 URL 必须与 `manifest.json`/`release.md` 记录完全一致。不要把 `manifest.json`、`models.json`、`rules.json` 或 `updater.ps1` 单独上传：它们是仓库/应用包中的维护源或运行文件，不是 Release 页面机器清单。`release.md` 文件内部同时含人类可读内容和 `clover-release` JSON 块，但更新器需要的是这个**作为附件上传的文件**，不是 Release 正文里的文本。
+
+只把 README 上传为附件不会填充 Release 页面正文；反过来，粘贴 README 正文也不会创建 `README.md` 附件。当前应用更新代码不读取 GitHub Release 页面的正文来解析版本或公告。
+
+### 应用实际读取路径
+
+- **公告/版本/更新器清单**：打包应用先请求 GitHub 稳定版 latest 的 `release.md` 资产；若不可用，再尝试仓库 `main/release/release.md` 和 jsDelivr。只有远端均失败后，才使用成功缓存、应用包内本地 `release.md`，最后才读取旧版 `manifest.json`。所以 no-Release 时，raw `main` 仍可能提供版本/公告数据；它不代表对应 ZIP 已发布。
+- **模型列表**：`models.ts` 优先读取应用随包携带的 `release/models.json`。只有找不到本地文件时才尝试远端 catalog；加载失败则使用编译进应用的 builtin catalog。它不从 GitHub Release 页面正文或 `release.md` 的模型表下载列表。
+- `release.md` 的 `catalog.models_url` 指向仓库中的 `release/models.json`；其中的模型表是可读镜像。模型 catalog 的实际本地优先级不会因 GitHub Release 创建/缺失而改变。
 
 ## 3. release.md 契约
 
@@ -142,11 +162,13 @@ pnpm release:md:check
    SemVer，不添加 prerelease 后缀。
 - 发布构建统一写入 `release/artifacts/`，不创建独立的 `githubrelease/` 目录。GitHub
    当前没有 Release；本地生成的材料只有手动创建 `v<version>` Release 并上传后才成为线上版本。
-- `release/README.md` 是可供未来 Release 使用的正文草稿，不表示版本已经发布；本地产物统一写入并忽略于
-   `release/artifacts/`。构建完成后需核对 ZIP、哈希、大小与 Release 元数据，再手动上传。
+- `release/README.md` 是 Release 页面正文源，不是应用的更新清单。构建会把去掉维护者章节的正文复制为
+   `release/artifacts/README.md`；把该文件内容粘贴到 GitHub Release 正文框。
+- `release/artifacts/` 统一保存被 `.gitignore` 忽略的构建输出。GitHub Release 必须上传 ZIP 与名为
+   `release.md` 的元数据附件；README 用作页面正文，不要误认为上传 README 附件就等于设置正文。
 - `manifest.json`/生成的 `release.md` 中的 GitHub 下载地址是版本对应的**预期地址**；
    生成该地址不代表线上 tag 或资产存在。在线 E2E 需上传 `release/artifacts/` 中对应版本的
-   ZIP 和 `release.md`；GitHub Release 正文可使用 `release/artifacts/README.md`。从已安装的
+   ZIP 和 `release.md`，并把 `README.md` 内容粘贴为 Release 正文。从已安装的
    `0.0.0` 客户端检查更新，验证版本识别、下载、SHA-256/大小校验、安全解压和 updater 替换。
 - 发布后该版本号不可复用；如果客户端升级到 `0.1.0`，后续更新版本必须严格高于 `0.1.0`。
 - SemVer 比较决定是否提示更新；`v` 只是 Git tag 前缀，不属于应用版本。不要通过
@@ -161,8 +183,9 @@ pnpm release:md:check
 2. 更新 `release/models.json` 和发布说明；
 3. 运行 `pnpm release:md:check` 校验版本、安装包元数据和生成文档；
 4. 在 Windows x64 运行 `pnpm release:build`；产物统一写入 `release/artifacts/`；
-5. 创建 `v<version>` GitHub Release，将 ZIP 和 `release.md` 上传为资产，并把
-   `release/artifacts/README.md` 内容粘贴为 Release 正文；上传完成后再从 `0.0.0` 客户端验收在线更新。
+5. 创建非预发布的 `v<version>` GitHub Release 并设为 latest；将 `MossStudio-<version>-win32-x64.zip`
+   与命名为 `release.md` 的文件上传为资产，再将 `release/artifacts/README.md` 全文粘贴到正文框。
+   不要只上传 README 或只填页面正文：两项都需要。上传完成后再从 `0.0.0` 客户端验收在线更新。
 
 ## 6. 已知限制
 

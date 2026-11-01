@@ -32,4 +32,6 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
 
 - 这是 MossStudio 0.1.0 的拟发布正文草稿；在构建产物并上传到 GitHub Release 前，版本尚未正式发布。
 - 发布前在 Windows x64 运行 `pnpm release:build`，确认 `release/artifacts/` 中的 ZIP、`release.md` 与本正文一致。
+- 创建非预发布的 `v0.1.0` Release 并设为 latest；上传 ZIP 与 `release.md` 作为附件资产。打开 `release/artifacts/README.md`，复制全文粘贴到 GitHub Release 正文框；不要只上传 README 附件。
+- ZIP 下载地址由 `release.md` 记录，资产文件名必须保持 `MossStudio-0.1.0-win32-x64.zip`；元数据附件必须精确命名为 `release.md`。
 - 不要使用此前构建的哈希或大小；构建命令会根据新 ZIP 更新 `release/manifest.json` 和 `release/release.md`。
