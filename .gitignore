@@ -19,8 +19,8 @@ uv.lock
 node_modules/
 .pnpm-store/
 apps/desktop/out/
+# Keep release source files tracked; ignore only generated upload artifacts.
 /release/artifacts/
-/githubrelease/
 coverage/
 *.tsbuildinfo
 

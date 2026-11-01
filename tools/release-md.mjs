@@ -177,7 +177,7 @@ const machine = {
 
 const notes = readme
   .replace(/^#\s+.*\r?\n+/, '')
-  .replace(/\n## 发布与更新（维护者）[\s\S]*?(?=\n## )/, '\n')
+  .replace(/\n## 发布与更新（维护者）[\s\S]*?(?=\n## |$)/, '\n')
   .trim()
 const announcementText = announcements
   .map((item) => {

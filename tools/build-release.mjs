@@ -15,15 +15,12 @@ const desktopDir = join(root, 'apps', 'desktop')
 const tempDir = await mkdtemp(join(tmpdir(), 'mossstudio-release-'))
 const manifestPath = join(releaseDir, 'manifest.json')
 const originalManifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-const outputArgument = process.argv.find((arg) => arg.startsWith('--output='))?.slice('--output='.length)
-const artifactsDir = resolve(root, outputArgument ?? process.env.MOSS_RELEASE_OUTPUT_DIR ?? 'release/artifacts')
+const artifactsDir = join(releaseDir, 'artifacts')
 let finalized = false
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
-
-assert(artifactsDir.startsWith(`${resolve(root)}${sep}`), 'Release output must be a directory inside the repository.')
 
 function validVersion(value) {
   return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(value)

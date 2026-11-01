@@ -1,8 +1,8 @@
 # 发布源、模型目录与更新
 
-- 状态：`0.0.0` Windows x64 基线 ZIP 已验证；`0.1.0` 正在开发，`githubrelease/` 中已有的包尚不含当前未打包代码改动，需后续重建后再上传
+- 状态：`0.0.0` Windows x64 基线此前已验证，构建产物现已清理；`0.1.0` 尚未重新构建或上传，GitHub 当前没有 Release
 - 决策：[ADR-0005](decisions/0005-release-channel-and-updates.md)
-- 发布版本：`0.1.0`（严格版本）；更新测试基线：`0.0.0`
+- 待发布版本：`0.1.0`（严格版本）；更新测试基线：`0.0.0`
 
 > 截图为 `9.9.9` 测试数据，只展示交互，不是真实发布版本。
 
@@ -31,6 +31,10 @@ Beta 通道先读 `releases/download/beta/release.md`，不存在时回退 lates
 > 没有 GitHub Release 时，latest 资产读取会失败，应用仍可能从 raw `main` 或 jsDelivr
 > 读取到仓库中的 `release/release.md`。因此界面显示 `source: remote` 不代表 GitHub
 > Release/安装资产已存在；线上更新验收必须使用已发布的 Release 资产和可下载 ZIP。
+>
+> 当前 `release/manifest.json` 中的 ZIP 大小和 SHA-256 来自已清理的旧构建，不能用于下载校验。
+> 必须在上传前重新运行 `pnpm release:build`；该命令会重建 ZIP 并更新 manifest 与 `release.md`。
+> 在新资产准备好之前，不要把这份待发布元数据当成已上线版本。
 
 ## 2. 文件职责
 
@@ -39,11 +43,11 @@ Beta 通道先读 `releases/download/beta/release.md`，不存在时回退 lates
 | `release/release.md` | GitHub Release 页面正文 + `json clover-release` 机器块；版本、安装包、首页文案、公告、模型表镜像 |
 | `release/manifest.json` | 应用版本/通道/首页文案/公告/安装包元数据的维护源 |
 | `release/models.json` | **模型/适配器下载目录的机器源**；应用仍从这里取下载数据 |
-| `release/README.md` | 人可读发布说明；生成器会去掉维护者章节 |
+| `release/README.md` | 待发布的人可读说明草稿；生成器会去掉「发布与更新（维护者）」章节 |
 | `tools/release-md.mjs` | 从 manifest + models + README 生成 release.md |
 | `release/updater.ps1` | Windows ZIP 更新的外置替换/重启程序 |
-| `tools/build-release.mjs` | 构建 Windows x64 便携 ZIP、计算大小/SHA-256 并生成上传文件 |
-| `githubrelease/` | 当前待手动上传的 `0.1.0` 正式发布材料：ZIP、`release.md` 机器元数据、`README.md` 发布正文 |
+| `tools/build-release.mjs` | 构建 Windows x64 便携 ZIP、计算大小/SHA-256 并生成发布文件 |
+| `release/artifacts/` | 唯一的本地产物目录，已加入 `.gitignore`；构建生成 ZIP、`release.md` 机器元数据和 `README.md` 发布正文，供维护者手动上传 |
 
 `release.md` 中的模型表是发布页镜像，不是第二下载数据源。生成器会校验
 `apps/desktop/package.json` 与 `manifest.app.version` 一致，不一致直接失败。修改模型后运行：
@@ -134,29 +138,31 @@ pnpm release:md:check
 - 根目录 `package.json`、`apps/desktop/package.json`、`release/manifest.json` 的
   `app.version` 必须完全一致；打包后以 Electron `app.getVersion()` 为准。发布构建会
   对不一致直接报错，不能只改其中一个版本源。
-- `0.0.0` 是保留的严格版本基线包，产物在 `release/artifacts/`；`0.1.0` 是本次准备的
-   严格正式版本，产物单独放在 `githubrelease/`，两者都不使用 prerelease 后缀。
-- GitHub 当前仍没有 Release。`githubrelease/` 中的材料只在手动创建 `v0.1.0` Release
-   并上传后才成为线上版本；本地生成文件不代表发布已经完成。
+- `0.0.0` 是保留的严格版本更新测试基线；`0.1.0` 是当前开发版本。两者都使用严格
+   SemVer，不添加 prerelease 后缀。
+- 发布构建统一写入 `release/artifacts/`，不创建独立的 `githubrelease/` 目录。GitHub
+   当前没有 Release；本地生成的材料只有手动创建 `v<version>` Release 并上传后才成为线上版本。
+- `release/README.md` 是可供未来 Release 使用的正文草稿，不表示版本已经发布；本地产物统一写入并忽略于
+   `release/artifacts/`。构建完成后需核对 ZIP、哈希、大小与 Release 元数据，再手动上传。
 - `manifest.json`/生成的 `release.md` 中的 GitHub 下载地址是版本对应的**预期地址**；
-   生成该地址不代表线上 tag 或资产存在。在线 E2E 需上传 `MossStudio-0.1.0-win32-x64.zip`
-   和 `release.md`；GitHub Release 正文可使用 `githubrelease/README.md`。从已安装的
+   生成该地址不代表线上 tag 或资产存在。在线 E2E 需上传 `release/artifacts/` 中对应版本的
+   ZIP 和 `release.md`；GitHub Release 正文可使用 `release/artifacts/README.md`。从已安装的
    `0.0.0` 客户端检查更新，验证版本识别、下载、SHA-256/大小校验、安全解压和 updater 替换。
 - 发布后该版本号不可复用；如果客户端升级到 `0.1.0`，后续更新版本必须严格高于 `0.1.0`。
 - SemVer 比较决定是否提示更新；`v` 只是 Git tag 前缀，不属于应用版本。不要通过
   `0.0.0-beta.1` 等 prerelease 后缀改变本地基线。
-- 上传前，`0.0.0` 客户端可能通过 raw `main`/镜像读取到仓库中的 `0.1.0` 元数据；
+- 上传前，`0.0.0` 客户端可能通过 raw `main`/镜像读取到仓库中的开发版本元数据；
    但下载资产只有在 Release 上传后才可用。上传后再进行真实在线更新测试。
-- 代码变更后必须重新构建 `githubrelease/`；已有 ZIP 的哈希不能代表未打包的工作区代码。
+- 代码变更后必须重新构建 `release/artifacts/`；已有 ZIP 的哈希不能代表未打包的工作区代码。
 
 ## 5. 发布检查清单
 
 1. 同步根目录和 `apps/desktop/package.json` 的版本号及 `release/manifest.json`；
 2. 更新 `release/models.json` 和发布说明；
 3. 运行 `pnpm release:md:check` 校验版本、安装包元数据和生成文档；
-4. 在 Windows x64 运行 `pnpm release:build:github`；产物写入 `githubrelease/`；
+4. 在 Windows x64 运行 `pnpm release:build`；产物统一写入 `release/artifacts/`；
 5. 创建 `v<version>` GitHub Release，将 ZIP 和 `release.md` 上传为资产，并把
-   `README.md` 内容粘贴为 Release 正文；上传完成后再从 `0.0.0` 客户端验收在线更新。
+   `release/artifacts/README.md` 内容粘贴为 Release 正文；上传完成后再从 `0.0.0` 客户端验收在线更新。
 
 ## 6. 已知限制
 
@@ -175,7 +181,7 @@ pnpm release:md:check
 pnpm release:md:check
 pnpm typecheck
 pnpm build
-pnpm release:build:github
+pnpm release:build
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=release-parse
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=update-download
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=update-dialog
@@ -185,6 +191,6 @@ Windows PowerShell 可用本地 Electron 二进制运行，并验证刚构建的
 
 ```powershell
 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
-$env:MOSS_UPDATE_TEST_ZIP = (Resolve-Path 'githubrelease\MossStudio-0.1.0-win32-x64.zip').Path
+$env:MOSS_UPDATE_TEST_ZIP = (Resolve-Path 'release\artifacts\MossStudio-0.1.0-win32-x64.zip').Path
 & .\apps\desktop\node_modules\electron\dist\electron.exe .\apps\desktop --scenario=update-zip
 ```

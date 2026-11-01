@@ -27,3 +27,9 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
 - 本机推理依赖兼容的 NVIDIA GPU、驱动、引擎和模型；首次使用需先完成准备。
 - Linux SSH 远端功能仍需在真实 GPU 主机环境中进一步验收。
 - Windows 程序尚未签名，首次启动时系统可能显示安全提示。
+
+## 发布与更新（维护者）
+
+- 这是 MossStudio 0.1.0 的拟发布正文草稿；在构建产物并上传到 GitHub Release 前，版本尚未正式发布。
+- 发布前在 Windows x64 运行 `pnpm release:build`，确认 `release/artifacts/` 中的 ZIP、`release.md` 与本正文一致。
+- 不要使用此前构建的哈希或大小；构建命令会根据新 ZIP 更新 `release/manifest.json` 和 `release/release.md`。
