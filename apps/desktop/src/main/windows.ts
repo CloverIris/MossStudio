@@ -23,6 +23,10 @@ export function createAppWindow(kind: WindowKind, show = true): BrowserWindow {
   }
 
   const meta = config[kind]
+  const iconPath = app.isPackaged
+    ? join(__dirname, '..', 'renderer', 'mossstudio-icon.png')
+    : join(app.getAppPath(), 'src', 'renderer', 'public', 'mossstudio-icon.png')
+  if (process.platform === 'darwin') app.dock?.setIcon(iconPath)
   const win = new BrowserWindow({
     width: meta.width,
     height: meta.height,
@@ -30,6 +34,7 @@ export function createAppWindow(kind: WindowKind, show = true): BrowserWindow {
     minHeight: meta.minHeight,
     show: false,
     title: meta.title,
+    icon: iconPath,
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 15 } }
       : process.platform === 'win32'
