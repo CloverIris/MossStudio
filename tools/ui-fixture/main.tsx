@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { Ipc } from '../../apps/desktop/src/shared/channels'
 import { schemas } from '../../apps/desktop/src/shared/schemas'
+import type { AiChatInput, AiMessage } from '../../apps/desktop/src/shared/ai'
 import type { EngineReadiness, InstanceInfo, LocalEngineVersion, ManagedHost, MossInferDownloadState, OnboardingStatus, ProjectDocument, Settings } from '../../apps/desktop/src/shared/types'
 import type { StudioProjectInput } from '../../apps/desktop/src/renderer/src/lib/studioClient'
 import { Card, Field, Input, Modal, Select, Sheet, Spinner, Switch, Textarea, ToastProvider, useToast } from '../../apps/desktop/src/renderer/src/components/ui'
@@ -73,8 +74,11 @@ window.clover = {
       return new Promise<T>((resolve) => {
         replyToAgent = (fail) => {
           replyToAgent = undefined
-          const input = payload as { messages: Array<{ role: string; content: string }> }
-          resolve((fail ? { ok: false, error: { code: 'E_FIXTURE', message: 'Agent fixture failure' } } : { ok: true, data: { reply: 'Fixture reply', conversation: { id: 'fixture-chat', title: 'Fixture chat', providerId: 'fixture-ai', messages: input.messages.map((message, index) => ({ ...message, id: String(index), createdAt: '' })).concat([{ id: 'reply', role: 'assistant', content: 'Fixture reply', createdAt: '' }]), createdAt: '', updatedAt: '' } } }) as T)
+          const input = payload as AiChatInput
+          const messages: AiMessage[] = input.message
+            ? [{ id: 'user', role: 'user', content: input.message, createdAt: '' }]
+            : []
+          resolve((fail ? { ok: false, error: { code: 'E_FIXTURE', message: 'Agent fixture failure' } } : { ok: true, data: { reply: 'Fixture reply', conversation: { id: 'fixture-chat', title: 'Fixture chat', providerId: 'fixture-ai', messages: messages.concat([{ id: 'reply', role: 'assistant', content: 'Fixture reply', createdAt: '' }]), createdAt: '', updatedAt: '' } } }) as T)
         }
       })
     }

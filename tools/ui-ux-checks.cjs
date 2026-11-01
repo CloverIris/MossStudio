@@ -26,7 +26,12 @@ module.exports = async function checkUx({ evaluate, waitFor, capture }) {
   await waitFor('!document.querySelector("#notification-panel")')
 
   await click('#view-studio')
+  await waitFor('Array.from(document.querySelectorAll("button")).some(button => button.textContent.includes("新建内容"))')
+  await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent.includes("新建内容")).click()')
+  await waitFor('Boolean(document.querySelector("button[aria-label=示例布局]"))')
+  await click('button[aria-label=示例布局]')
   await waitFor('Boolean(document.querySelector("[data-box-id]"))')
+  await input('textarea[placeholder="描述画面、文字、风格与布局。"]', 'Fixture prompt')
   const boxes = await evaluate('document.querySelectorAll(".studio-viewport [data-box-id]").length')
   await click('button[aria-label=清空画布]')
   await waitFor('Boolean(document.querySelector("dialog[open]"))')
@@ -41,22 +46,22 @@ module.exports = async function checkUx({ evaluate, waitFor, capture }) {
   await waitFor('!document.querySelector(".studio-viewport [data-box-id]")')
   assert.equal(await evaluate('document.querySelector("button[aria-label=清空画布]").disabled'), true)
 
+  await waitFor('document.querySelector("[data-studio-generate]")?.disabled === false')
   await click('#hold-job')
   const requests = Number(await evaluate('document.querySelector("#job-requests").textContent'))
   await evaluate('(() => { const button = document.querySelector("[data-studio-generate]"); button.click(); button.click() })()')
-  await waitFor('document.querySelector("[data-studio-generate]").disabled')
+  await waitFor('document.querySelector("[data-studio-generate]").getAttribute("aria-busy") === "true"')
   assert.equal(Number(await evaluate('document.querySelector("#job-requests").textContent')), requests + 1)
   assert.equal(await evaluate('document.querySelector("[data-studio-generate]").getAttribute("aria-busy")'), 'true')
   await click('#release-job')
   await waitFor('!document.querySelector("[data-studio-generate]").disabled')
   await evaluate(`(() => {
-    const originalFetch = window.fetch
-    try {
-      window.fetch = async () => { throw new Error('Fixture submit failure') }
-      document.querySelector('[data-studio-generate]').click()
-    } finally { window.fetch = originalFetch }
+    window.__fixtureOriginalFetch = window.fetch
+    window.fetch = async () => { throw new Error('Fixture submit failure') }
+    document.querySelector('[data-studio-generate]').click()
   })()`)
   await waitFor('document.body.textContent.includes("Fixture submit failure")')
+  await evaluate('window.fetch = window.__fixtureOriginalFetch; delete window.__fixtureOriginalFetch')
   assert.equal(await evaluate('document.querySelector("[data-studio-generate]").disabled'), false)
   await click('[data-studio-generate]')
   await waitFor(`Number(document.querySelector('#job-requests').textContent) === ${requests + 2} && !document.querySelector('[data-studio-generate]').disabled`)
@@ -74,7 +79,7 @@ module.exports = async function checkUx({ evaluate, waitFor, capture }) {
   await waitFor('document.querySelector("#agent-requests").textContent === "1"')
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(provider)}).disabled`), true)
   assert.equal(await evaluate('document.querySelector("button[title=新对话]").disabled'), true)
-  assert.equal(await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent === "历史对话").disabled'), true)
+  assert.equal(await evaluate('document.querySelector("button[title=历史对话]").disabled'), true)
   await input(composer, '等待期间写的新草稿')
   await click('#agent-fail')
   await waitFor('document.querySelector("button[aria-label=发送消息]")?.disabled === false')
