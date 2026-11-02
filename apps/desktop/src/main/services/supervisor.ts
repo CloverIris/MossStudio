@@ -456,6 +456,8 @@ export interface StartEngineJobInput {
   cfg: number
   seed: number
   profile?: 'base' | 'dmd8'
+  /** Resolved LoRA adapters; paths must already be validated against the model root. */
+  adapters?: Array<{ path: string; strength: number }>
   deviceUuid?: string
   deviceId?: string
   hostId?: string
@@ -671,6 +673,7 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
         cfg: input.cfg,
         seed: input.seed,
         profile: input.profile ?? 'base',
+      adapters: input.adapters,
       }
       const job: JobRecord = {
         id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
@@ -769,6 +772,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       cfg: input.cfg,
       seed: input.seed,
       profile: input.profile ?? 'base',
+      adapters: input.adapters,
     }
     const job: JobRecord = queuedJob ?? {
       id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
@@ -847,6 +851,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     cfg: input.cfg,
     seed: input.seed,
     profile: input.profile ?? 'base',
+      adapters: input.adapters,
   }
   const job: JobRecord = queuedJob ?? {
     id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
@@ -928,7 +933,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       device: 0,
       deviceUuid: localGpu!.uuid,
       systemDeviceIndex: localGpu!.index,
-      loras: [],
+      loras: params.adapters ?? [],
       output,
       settings: executionSettings,
     },

@@ -1423,6 +1423,7 @@ export function StudioPage(): React.JSX.Element {
           remoteModelPath: engineHostId ? remoteModelPath.trim() : undefined,
           prompt: effective.prompt,
           negativePrompt: source.negative,
+          adapters: source.adapters ?? [],
           width: source.width,
           height: source.height,
           steps: source.steps,

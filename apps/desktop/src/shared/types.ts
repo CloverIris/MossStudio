@@ -1,4 +1,4 @@
-﻿import type { ReleaseHomeCopy, ReleaseInstaller } from './release'
+import type { ReleaseHomeCopy, ReleaseInstaller } from './release'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'unknown'
 
@@ -881,6 +881,12 @@ export interface ProjectDocument {
   updatedAt: string
 }
 
+export interface CanvasAdapter {
+  id: string
+  strength: number
+  path?: string
+}
+
 export interface ProjectCanvas {
   id: string
   kind: 'layout' | 'result'
@@ -907,6 +913,8 @@ export interface ProjectCanvas {
   progress?: JobProgress
   outputs?: NonNullable<JobRecord['outputs']>
   error?: JobRecord['error']
+  /** LoRA adapters applied when this Canvas generates. */
+  adapters?: CanvasAdapter[]
 }
 
 export interface ProjectSummary {

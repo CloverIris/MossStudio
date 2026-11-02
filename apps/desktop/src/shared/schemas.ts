@@ -1,4 +1,4 @@
-﻿import { z } from 'zod'
+import { z } from 'zod'
 import { releaseInstallerSchema } from './release'
 
 const pathLike = z.string().trim().min(1, '目录路径不能为空').max(4096)
@@ -62,6 +62,11 @@ const projectCanvasSchema = z.object({
     seed: z.number(),
   })).max(64).optional(),
   error: z.object({ code: z.string().max(120), message: z.string().max(4000) }).optional(),
+  adapters: z.array(z.object({
+    id: z.string().min(1).max(160),
+    strength: z.number().min(0).max(2),
+    path: z.string().max(4096).optional(),
+  })).max(16).optional(),
 })
 
 
