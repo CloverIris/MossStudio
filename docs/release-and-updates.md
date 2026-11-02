@@ -1,8 +1,8 @@
 # 发布源、模型目录与更新
 
-- 状态：`0.0.0` Windows x64 基线此前已验证；`0.1.0` Windows x64 ZIP 已按当前代码重新构建至 `release/artifacts/`，尚未上传，GitHub 当前没有 Release
+- 状态：`1.0.1` Windows x64 便携 ZIP 已发布为 GitHub Release（tag `1.0.1`，资产 `MossStudio-1.0.1-win32-x64.zip` + `release.md`）；`1.0.2` 在开发中，尚未构建
 - 决策：[ADR-0005](decisions/0005-release-channel-and-updates.md)
-- 待发布版本：`0.1.0`（严格版本）；更新测试基线：`0.0.0`
+- 待发布版本：`1.0.2`（严格版本）；更新验收基线：`1.0.1`
 
 > 截图为 `9.9.9` 测试数据，只展示交互，不是真实发布版本。
 
@@ -28,13 +28,16 @@ https://github.com/CloverIris/MossStudio/releases/latest/download/release.md
 Beta 通道先读 `releases/download/beta/release.md`，不存在时回退 latest/raw。
 设置里可选「稳定版 / Beta」。
 
-> 没有 GitHub Release 时，latest 资产读取会失败，应用仍可能从 raw `main` 或 jsDelivr
-> 读取到仓库中的 `release/release.md`。因此界面显示 `source: remote` 不代表 GitHub
-> Release/安装资产已存在；线上更新验收必须使用已发布的 Release 资产和可下载 ZIP。
+> 界面显示 `source: remote` 不代表安装资产一定可下载；线上更新验收必须使用已发布
+> Release 的资产和可下载 ZIP。
 >
-> 当前 `release/manifest.json` 的 ZIP 大小和 SHA-256 已由本次构建更新，并与
-> `release/artifacts/MossStudio-0.1.0-win32-x64.zip` 一致。GitHub Release 尚未创建；
-> 上传前不要将本地待发布材料视为线上版本。
+> 发布 tag 必须与 `release/manifest.json` 的 `app.notes_url` 中 `/tag/<tag>` 完全一致。
+> 当前 Release 的 tag 是 `1.0.1`（不带 `v`）；历史上的 `v1.0.1` 下载地址全部 404，
+> 因为仓库里没有同名 tag。`pnpm release:build` 会用 `notes_url` 里的 tag 拼 ZIP 地址，
+> 所以先改 `notes_url` 再构建。
+>
+> `1.0.2` 的 `manifest.json` 目前 `installers: []`：构建脚本在打包后写入真实 URL、
+> 大小与 SHA-256 并重新生成 `release.md`。构建前不要把空安装包目录当成已发布。
 
 ## 2. 文件职责
 
@@ -67,7 +70,7 @@ GitHub Release 页面上的**正文（description / release notes）**和**附�
 | `release/artifacts/release.md` | 上传为附件资产；资产名必须是 `release.md` | 是 | 应用从 `releases/latest/download/release.md` 读取版本、公告、安装包地址等机器数据 |
 | `release/artifacts/README.md` | **打开文件、复制全文，粘贴到 GitHub Release 的正文框**；不要仅把文件作为附件上传 | 是（发布页面说明） | 面向用户的 Release 页面说明；不是应用的更新清单 |
 
-创建稳定版时使用 `v<version>` tag（例如 `v0.1.0`），不要勾选预发布，并将其设为 latest stable release。Release 资产名和 URL 必须与 `manifest.json`/`release.md` 记录完全一致。不要把 `manifest.json`、`models.json`、`rules.json` 或 `updater.ps1` 单独上传：它们是仓库/应用包中的维护源或运行文件，不是 Release 页面机器清单。`release.md` 文件内部同时含人类可读内容和 `clover-release` JSON 块，但更新器需要的是这个**作为附件上传的文件**，不是 Release 正文里的文本。
+创建稳定版时用 `manifest.json` 的 `app.notes_url` 里记录的 tag（当前是 `1.0.2`，不带 `v`；`pnpm release:build` 用它拼 ZIP 下载地址），不要勾选预发布，并将其设为 latest stable release。Release 资产名和 URL 必须与 `manifest.json`/`release.md` 记录完全一致。不要把 `manifest.json`、`models.json`、`rules.json` 或 `updater.ps1` 单独上传：它们是仓库/应用包中的维护源或运行文件，不是 Release 页面机器清单。`release.md` 文件内部同时含人类可读内容和 `clover-release` JSON 块，但更新器需要的是这个**作为附件上传的文件**，不是 Release 正文里的文本。
 
 只把 README 上传为附件不会填充 Release 页面正文；反过来，粘贴 README 正文也不会创建 `README.md` 附件。当前应用更新代码不读取 GitHub Release 页面的正文来解析版本或公告。
 
@@ -139,7 +142,7 @@ GitHub Release 页面上的**正文（description / release notes）**和**附�
 
 1. 应用版本取 `app.getVersion()`；发布版本取 `release.md.app.version`；
 2. semver 比较包含 prerelease（`0.2.0-beta.1 < 0.2.0`）；
-3. `autoCheckUpdates` 开启时，启动检查；设置页可手动检查；
+3. `autoCheckUpdates` 开启时：启动后立即检查，之后每 45 分钟一次，窗口重新获得焦点时补查（5 分钟下限）；设置页可手动检查；
 4. 发现新版本：LauncherShell 弹出 UpdateDialog；置顶公告同时进入应用内通知；
 5. 用户点「稍后」写入 `dismissedUpdateVersion`，同版本不再自动弹；版本再变重新提示；
 6. 用户点「下载并更新」：
@@ -158,10 +161,11 @@ GitHub Release 页面上的**正文（description / release notes）**和**附�
 - 根目录 `package.json`、`apps/desktop/package.json`、`release/manifest.json` 的
   `app.version` 必须完全一致；打包后以 Electron `app.getVersion()` 为准。发布构建会
   对不一致直接报错，不能只改其中一个版本源。
-- `0.0.0` 是保留的严格版本更新测试基线；`1.0.1` 是当前待发布修复版本。两者都使用严格
+- `1.0.1` 是当前线上版本（GitHub Release，tag `1.0.1`）；`1.0.2` 是当前开发版本，
+  尚未构建发布包。两者都使用严格
    SemVer，不添加 prerelease 后缀。
 - 发布构建统一写入 `release/artifacts/`，不创建独立的 `githubrelease/` 目录。GitHub
-   当前没有 Release；本地生成的材料只有手动创建 `v<version>` Release 并上传后才成为线上版本。
+   创建与 `app.notes_url` 一致的 tag 并上传后，本地材料才成为线上版本。
 - `release/README.md` 是 Release 页面正文源，不是应用的更新清单。构建会把去掉维护者章节的正文复制为
    `release/artifacts/README.md`；把该文件内容粘贴到 GitHub Release 正文框。
 - `release/artifacts/` 统一保存被 `.gitignore` 忽略的构建输出。GitHub Release 必须上传 ZIP 与名为
@@ -169,23 +173,27 @@ GitHub Release 页面上的**正文（description / release notes）**和**附�
 - `manifest.json`/生成的 `release.md` 中的 GitHub 下载地址是版本对应的**预期地址**；
    生成该地址不代表线上 tag 或资产存在。在线 E2E 需上传 `release/artifacts/` 中对应版本的
    ZIP 和 `release.md`，并把 `README.md` 内容粘贴为 Release 正文。从已安装的
-   `0.0.0` 客户端检查更新，验证版本识别、下载、SHA-256/大小校验、安全解压和 updater 替换。
-- 发布后该版本号不可复用；如果客户端升级到 `1.0.1`，后续更新版本必须严格高于 `1.0.1`。
-- SemVer 比较决定是否提示更新；`v` 只是 Git tag 前缀，不属于应用版本。不要通过
-  `0.0.0-beta.1` 等 prerelease 后缀改变本地基线。
-- 上传前，`0.0.0` 客户端可能通过 raw `main`/镜像读取到仓库中的开发版本元数据；
-   但下载资产只有在 Release 上传后才可用。上传后再进行真实在线更新测试。
+   `1.0.1` 客户端检查更新，验证版本识别、下载、SHA-256/大小校验、安全解压和 updater 替换。
+- 发布后该版本号不可复用；如果客户端升级到 `1.0.2`，后续更新版本必须严格高于 `1.0.2`。
+- 下载地址由 tag 拼成（`releases/download/<tag>/<asset>`），tag 与 `notes_url` 不一致会
+  直接 404：`1.0.1` 曾按 `v1.0.1` 写进文档，实际 tag 是 `1.0.1`，安装包因此无法下载。
+- SemVer 比较决定是否提示更新；tag 上的 `v` 只是仓库约定，不属于应用版本。不要通过
+  `1.0.2-beta.1` 等 prerelease 后缀改变本地基线。
+- 上传前，旧客户端可能通过 raw `main`/镜像读取到开发版本元数据；此时 `1.0.2` 还没有
+  安装包，更新弹窗会提示“当前平台暂无安装包”。上传后再进行真实在线更新测试。
 - 代码变更后必须重新构建 `release/artifacts/`；已有 ZIP 的哈希不能代表未打包的工作区代码。
 
 ## 5. 发布检查清单
 
 1. 同步根目录和 `apps/desktop/package.json` 的版本号及 `release/manifest.json`；
-2. 更新 `release/models.json` 和发布说明；
-3. 运行 `pnpm release:md:check` 校验版本、安装包元数据和生成文档；
-4. 在 Windows x64 运行 `pnpm release:build`；产物统一写入 `release/artifacts/`；
-5. 创建非预发布的 `v<version>` GitHub Release 并设为 latest；将 `MossStudio-<version>-win32-x64.zip`
+2. 把 `release/manifest.json` 的 `app.notes_url` 指向将要创建的 tag（如 `.../tag/1.0.2`）；
+3. 更新 `release/models.json` 和发布说明，运行 `pnpm release:md`；
+4. 运行 `pnpm release:md:check` 校验版本、安装包元数据和生成文档；
+5. 在 Windows x64 运行 `pnpm release:build`；产物统一写入 `release/artifacts/`，并回填
+   `installers` 的 URL、大小与 SHA-256；
+6. 创建非预发布、与 `notes_url` 同名的 GitHub Release 并设为 latest；将 `MossStudio-<version>-win32-x64.zip`
    与命名为 `release.md` 的文件上传为资产，再将 `release/artifacts/README.md` 全文粘贴到正文框。
-   不要只上传 README 或只填页面正文：两项都需要。上传完成后再从 `0.0.0` 客户端验收在线更新。
+   不要只上传 README 或只填页面正文：两项都需要。上传完成后再从 `1.0.1` 客户端验收在线更新。
 
 ## 6. 已知限制
 
@@ -210,10 +218,10 @@ env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scen
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=update-dialog
 ```
 
-Windows PowerShell 可用本地 Electron 二进制运行，并验证刚构建的 `0.1.0` ZIP：
+Windows PowerShell 可用本地 Electron 二进制运行，并验证刚构建的 ZIP：
 
 ```powershell
 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
-$env:MOSS_UPDATE_TEST_ZIP = (Resolve-Path 'release\artifacts\MossStudio-0.1.0-win32-x64.zip').Path
+$env:MOSS_UPDATE_TEST_ZIP = (Resolve-Path 'release\artifacts\MossStudio-1.0.2-win32-x64.zip').Path
 & .\apps\desktop\node_modules\electron\dist\electron.exe .\apps\desktop --scenario=update-zip
 ```

@@ -46,6 +46,9 @@ apps/desktop/src/
       cudaWheels.ts         NVIDIA wheel 原生解压
       engines.ts            本机版本切换、远端 engine 状态
       engineReadiness.ts    唯一就绪状态与缓存
+      adapterResolution.ts  Canvas LoRA id → 权重路径（本地导入/训练产物）
+      updates.ts            发布文档解析、更新检查、公告
+      updateWatcher.ts      启动/定时/窗口聚焦触发的主动检查
       models.ts / modelFiles.ts / modelBundles.ts
       projects.ts
       trainingHosts.ts / trainers.ts / remoteTrainer.ts / trainerEnv.ts
@@ -66,6 +69,8 @@ apps/desktop/src/
   shared/                   types/channels/schemas/backend
     engineProtocol.ts       所有不可信 hello 的唯一解码与兼容判定
     engineReadiness.ts      引擎页与准备清单共用状态文案
+    adapters.ts             LoRA id/强度校验、状态与选择解析
+    release.ts              release.md 机器块解析、版本比较
 ```
 
 ## 4. 页面与路由
@@ -108,6 +113,7 @@ startEngineJob({ modelBinding, deviceId, prompt, ... })
 - 事件映射为 `hello / ready / log / stage / progress / result / error / canceled`。
 - 同一时间一个 active generation；后续任务在内存队列等待。
 - `startEngineJob` 不读取 Instance/Python runtime；只要求模型路径与引擎。
+- Canvas `adapters` 在两条入口（IPC 与 HTTP backend RPC）都先经 `adapterResolution.ts` 解析成绝对路径，缺失/未安装直接抛错，不静默丢弃；`generate.loras` 只在非空时下发。远端引擎暂不支持 LoRA，提交时给出明确提示。
 
 ### 远端
 

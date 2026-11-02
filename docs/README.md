@@ -30,6 +30,7 @@
 | [architecture.md](architecture.md) | 当前进程/窗口/服务/引擎架构 |
 | [product-design.md](product-design.md) | 工作台信息架构、画布板、交互边界 |
 | [design/multi-canvas-studio.md](design/multi-canvas-studio.md) | Project 多 Canvas 画布板、串行生成与结果呈现（已实现，含 as-built 差异） |
+| [design/lora-support.md](design/lora-support.md) | Canvas LoRA 选择、强度、导入与生成链路（本机已实现，远端拒绝） |
 | [design/gpu-device-management.md](design/gpu-device-management.md) | GPU 枚举与兼容引擎、设备推荐、显存策略、标题栏状态及按卡调度 Canvas |
 | [mossinfer-migration.md](mossinfer-migration.md) | sidecar、远端、HF、CUDA wheel、旧链路清理 |
 | [layout-schema.md](layout-schema.md) | 画布坐标、布局编译契约 |

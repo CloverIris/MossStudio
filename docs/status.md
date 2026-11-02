@@ -1,8 +1,8 @@
 # 实现状态
 
-最后更新：2026-11-01
-当前开发版本：`0.1.0`（严格 SemVer；未构建发布包）
-更新验收基线：`0.0.0` Windows x64 便携包
+最后更新：2026-11-02
+当前开发版本：`1.0.2`（严格 SemVer；未构建发布包）
+更新验收基线：`1.0.1` Windows x64 便携包
 
 ## 1. 当前可运行
 
@@ -13,11 +13,13 @@
 | Canvas 卡片 | ✅ | 按自身宽高比呈现、状态色、生成中动画与底部进度绑带 |
 | 布局 Canvas 编辑 | ✅ | 区域框内提示词、图层列表双向定位、图层拖拽排序 |
 | 生成与结果 | ✅ | 串行队列；结果落在新 Canvas，不覆盖旧结果；双击预览 |
+| Canvas LoRA | ✅ | 每画布选择权重与强度；id 在提交时解析为路径，缺失/远端/未安装直接报错；支持导入本地 `.safetensors` |
+| 更新与公告 | ✅ | 启动、定时（45 min）与窗口聚焦时检查；标题栏版本胶囊、通知中心未读角标、公告自动推送 |
 | 布局 Prompt 合成 | ✅ | 有区域自动编译，无区域用手写提示词；提交前可预览 |
 | Project tabs | ✅ | 重命名、删除、拖动排序、`Ctrl/Cmd+S` 显式保存、自动保存 |
 | 本机 MossInfer | ✅ | Windows + RTX 2080 真实出图（1024² / 8 步 / 69.2s） |
 | GPU 质量档兼容 | ✅ | 按任务实际分配的 GPU 生效；SM 8.0 以下固定 Reference（BF16），不影响同机其他 GPU |
-| 引擎管理页 | ✅ | 状态、探测、Release 选择、安装进度、本机版本切换与删除 |
+| 引擎管理页 | ✅ | 状态、探测、Release 选择、安装进度、本机版本切换与删除；下载/探测/兼容性都在 `.staging` 完成，安装失败不进版本列表 |
 | GPU 清单与默认设备 | 🟡 | 启动扫描 UUID/SM/显存；OOBE/引擎页可选默认卡与显存建议；按 GPU 持久化 memory/tier 覆盖并随 Job 快照；标题栏展示统一遥测与队列；Canvas UUID 绑定、每卡独立 sidecar/队列；真实双卡硬件复验待完成 |
 | system/bundled 引擎包 | 🟡 | Windows ZIP、Linux tar、预检、CUDA wheel 解压已接 |
 | Linux SSH 远端 sidecar | 🟡 | fake SSH 出图通过；真实 Linux GPU 未验收 |
@@ -49,7 +51,8 @@ Studio → IPC / HTTP → startEngineJob
 ```bash
 pnpm typecheck
 pnpm build
-node --test tools/test-onboarding.mjs
+node --test "tests/*.test.mjs"
+CLOVER_UI_NO_SANDBOX=1 pnpm test:ui
 pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 ```
 
@@ -58,7 +61,8 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 - `tsc -p tsconfig.node.json` ✅ 0 error
 - `tsc -p tsconfig.web.json` ✅ 0 error
 - `electron-vite build` ✅
-- 工具链测试 8 个套件 55 项断言 ✅
+- 工具链与协议测试 74 项断言 ✅（含 LoRA、更新/发布文档、引擎协议、原子安装、就绪状态）
+- `pnpm test:ui` ✅ 100% / 150% / 200% 三档缩放，含 LoRA 选择与强度、引擎就绪页面分支
 - 真实出图：`job-mvw31llh-60fe09`，1024×1024，8 步，CFG 3，seed 42，profile `dmd8`，耗时 69.2s，输出 `outputs/job-mvw31llh-60fe09-1.png` ✅
 
 ## 4. 已知限制
@@ -69,11 +73,12 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 - 远端 HF 仅默认 SFT 全量；组件 bundle、断点续传、失败恢复未完成。
 - Trainer 仍依赖 Python/Git；GBC 依赖外部 Python 工具。
 - **无向前兼容**：`project.json` 只读 `schemaVersion: 3`，旧工程不会出现在列表里。
-- 无安装包、无签名、无自动更新产物。
+- 已发布 Windows x64 便携 ZIP 与应用内更新，但没有签名安装程序；macOS/Linux 产物仍未构建。
+- 远端引擎（SSH）暂不支持 LoRA；选择远端引擎时提交会直接报错，不做静默降级。
 
 ## 5. 下一轮
 
-1. 安装包与更新：NSIS 产物、签名、通道验证。
-2. 真实 Linux NVIDIA 远端验收：预检、system/bundled、wheels、出图。
-3. 远端 `RemoteEngineManager`：每 host 一个持久 sidecar + FIFO。
-4. 清理仓库里残留的旧推理模块与 scenario。
+1. 发布 1.0.2：`pnpm release:build`、上传 ZIP 与 `release.md`，tag 用 `1.0.2`（不带 `v`）。
+2. 签名安装包与 NSIS 产物、通道验证。
+3. 真实 Linux NVIDIA 远端验收：预检、system/bundled、wheels、出图。
+4. 远端 `RemoteEngineManager`：每 host 一个持久 sidecar + FIFO。

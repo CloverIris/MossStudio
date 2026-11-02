@@ -155,8 +155,15 @@ try {
   assert(desktopPackage.productName === 'MossStudio', 'desktop package productName must be MossStudio.')
   assert(originalManifest.app?.channel === 'stable', 'This local package must use the stable update channel.')
 
+  // The asset URL must use the tag the release is actually published under. Tags are
+  // written by hand, and this repo has shipped both `<version>` and `v<version>`
+  // (`v1.0.1` produced a 404 download URL in the 1.0.1 release document), so read the
+  // tag from `notes_url` — which must point at the real release page — instead of
+  // assuming a `v` prefix.
+  const releaseTag = String(originalManifest.app?.notes_url ?? '').match(/\/tag\/([^/?#]+)/)?.[1] ?? version
+  assert(releaseTag.length > 0, 'Release tag is empty: set app.notes_url to the real release page.')
   const assetName = `MossStudio-${version}-win32-x64.zip`
-  const assetUrl = `https://github.com/CloverIris/MossStudio/releases/download/v${version}/${assetName}`
+  const assetUrl = `https://github.com/CloverIris/MossStudio/releases/download/${releaseTag}/${assetName}`
   const iconPath = join(desktopDir, 'src', 'renderer', 'public', 'mossstudio-icon.ico')
   const electronPackage = JSON.parse(
     await readFile(join(desktopDir, 'node_modules', 'electron', 'package.json'), 'utf8'),

@@ -1,8 +1,8 @@
 # 路线图
 
-- 更新：2026-11-01
-- 当前开发版本：`0.1.0`（严格 SemVer；未构建发布包）
-- 更新验收基线：`0.0.0` Windows x64 便携包
+- 更新：2026-11-02
+- 当前开发版本：`1.0.2`（严格 SemVer；未构建发布包）
+- 更新验收基线：`1.0.1` Windows x64 便携包（GitHub Release，tag `1.0.1`）
 - 基线：[status.md](status.md)
 - 当前判断：训练器/SSH 远端代码基座、Clover HTTP/WS 基座、Project JSON/基础图层已完成；
   下一步是 **真实 host/CUDA 验收**、**Clover 真实生成/Project UI 收尾**；
@@ -32,7 +32,7 @@
 - 真实 SSH host / CUDA 验收；
 - 真实训练导出/采样；
 - Clover 真实生成验收、Project 完整 UI；
-- 真实 GitHub Release 资产、签名/公证安装包、electron-updater、打包；
+- 签名/公证安装包、electron-updater、macOS/Linux 打包（Windows 便携 ZIP 与在线更新已可用）；
 - 系统 Git/Python 工具链检测、安装引导与 OOBE 运行环境（ADR-0006）。
 
 > 官方 Gradio 退役、MossStudio 增加局域网/移动 WebUI（ADR-0007）；
@@ -221,12 +221,12 @@
 
 ## 6. P2 · 更新收尾
 
-已具备：`release.md` 发布源、公告/模型表镜像、版本比较、更新弹窗、
-sha256 下载与打开安装包。
+已具备：`release.md` 发布源、公告/模型表镜像、版本比较、主动检查（启动、45 min 定时、
+窗口聚焦补查）、更新弹窗、标题栏版本胶囊、通知中心未读角标、sha256 下载与打开安装包。
 
 范围：
 
-1. 真实 GitHub Release latest/beta 资产验收；
+1. 真实 GitHub Release latest/beta 资产验收（1.0.1 已发布，1.0.2 待发布）；
 2. 签名/公证安装包与 Windows NSIS；
 3. electron-updater 静默安装/重启；
 4. 下载缓存清理/断点续传（可选）。

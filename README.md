@@ -1,4 +1,4 @@
-﻿<p align="center">
+<p align="center">
   <img src="docs/assets/mossstudio-logo.svg" alt="MossStudio" width="180">
 </p>
 
@@ -32,7 +32,7 @@
 
 MossStudio 是 [MOSS-Image](https://github.com/OpenMOSS/MOSS-Image) 的桌面工作台。它把**模型下载、参数调节、布局画布、AI Agent 和推理引擎**收进同一个窗口，让你不用再和 `git clone`、conda、Gradio 表单打交道。
 
-> 当前处于**发布前最后一轮内部测试**：核心链路已经在真实 NVIDIA 显卡上跑通，安装包和跨机器验收还在收尾。
+> 当前处于**发布收尾阶段**：`1.0.1` 已发布 Windows x64 便携包并支持应用内更新，正在开发 `1.0.2`；macOS/Linux 产物和签名安装程序仍在收尾。
 
 - 🔒 **完全本地**：图片不出本机，API Key 只存在你自己的用户目录
 - 🧩 **开箱即用**：内置模型下载器，自动挑最快的加速源
@@ -51,7 +51,9 @@ MossStudio 是 [MOSS-Image](https://github.com/OpenMOSS/MOSS-Image) 的桌面工
 | **模型管理** | 27 GB 权重拆成 Dit / Text Encoder / VAE 分开下载、共享 HF 缓存、自由组合，先下哪个由你决定 |
 | **自动加速源** | 自动探测并切换 GitHub 代理 / HF 镜像 / 包源，失败了自动回退直连 |
 | **布局画布** | Figma 式的自由画布，多张画布平铺；每块画布可按 1024/768/512 比例出图，区域框直接写提示词 |
+| **LoRA** | 每块画布单独绑定 LoRA 权重、0–2 强度滑杆，支持导入本地 `.safetensors`；缺权重时直接报错，不会悄悄生成一张少了 LoRA 的图 |
 | **AI Agent** | 支持 OpenAI / DeepSeek / Anthropic / Gemini / Ollama；Agent 通过标准 MCP 风格的工具调用直接操作画布并生成 |
+| **更新与公告** | 启动、定时与回到窗口时自动检查新版本；标题栏版本胶囊、通知中心未读角标，更新包先校验大小与 SHA-256 再解压替换 |
 | **诊断** | 环境检查、错误翻译、一键复制诊断信息；同一个错误不会反复弹窗 |
 
 ## 引擎性能
