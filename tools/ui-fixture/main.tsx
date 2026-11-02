@@ -4,7 +4,9 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { Ipc } from '../../apps/desktop/src/shared/channels'
 import { schemas } from '../../apps/desktop/src/shared/schemas'
-import type { InstanceInfo, ManagedHost, OnboardingStatus, Settings } from '../../apps/desktop/src/shared/types'
+import type { AiChatInput, AiMessage } from '../../apps/desktop/src/shared/ai'
+import type { EngineReadiness, InstanceInfo, LocalEngineVersion, ManagedHost, MossInferDownloadState, OnboardingStatus, ProjectDocument, Settings } from '../../apps/desktop/src/shared/types'
+import type { StudioProjectInput } from '../../apps/desktop/src/renderer/src/lib/studioClient'
 import { Card, Field, Input, Modal, Select, Sheet, Spinner, Switch, Textarea, ToastProvider, useToast } from '../../apps/desktop/src/renderer/src/components/ui'
 import { SettingsPage } from '../../apps/desktop/src/renderer/src/pages/Settings'
 import { StudioPage } from '../../apps/desktop/src/renderer/src/pages/Studio'
@@ -19,6 +21,10 @@ import { App } from '../../apps/desktop/src/renderer/src/App'
 import { AgentSidebar } from '../../apps/desktop/src/renderer/src/components/AgentSidebar'
 
 let fixtureHosts: ManagedHost[] = []
+const fixtureEnginePath = 'C:\\fixture\\mossinfer\\v2.1.1\\bin\\moss-server.exe'
+let fixtureEngineReadiness: EngineReadiness = { state: 'missing', path: null }
+let fixtureEngineVersions: LocalEngineVersion[] = []
+let fixtureEngineDownload: MossInferDownloadState | null = null
 let failOobeSave = false
 let oobeComplete = false
 let oobeNeedsDevice = false
@@ -47,7 +53,9 @@ function onboarding(hostId = 'local'): OnboardingStatus {
 
 let savedSettings: Settings = {
   theme: 'system', uiAnimation: 'system', language: 'zh-CN', networkMode: 'auto', gitMirror: null,
-  pipIndex: null, hfEndpoint: null, modelsRoot: null, pythonPath: null,
+  pipIndex: null, hfEndpoint: null, modelsRoot: null,
+  modelDirectories: { dit: null, textEncoder: null, vae: null, support: null, adapters: null },
+  pythonPath: null,
   autoCheckUpdates: false, desktopNotifications: false, updateChannel: 'stable',
   dismissedAnnouncements: [], dismissedUpdateVersion: null, sidebarCollapsed: false,
   onboardingState: 'dismissed', onboardingHostId: 'local',
@@ -73,10 +81,10 @@ window.clover = {
       return new Promise<T>((resolve) => {
         replyToAgent = (fail) => {
           replyToAgent = undefined
-          const input = payload as { message?: string; messages?: Array<{ role: string; content: string }> }
+          const input = payload as AiChatInput & { messages?: AiMessage[] }
           // The renderer sends the new turn as `message`; older callers sent `messages`.
-          const history = input.messages ?? [{ role: 'user', content: input.message ?? '' }]
-          const conversation = { id: 'fixture-chat', title: 'Fixture chat', providerId: 'fixture-ai', messages: history.map((message, index) => ({ ...message, id: String(index), createdAt: '' })).concat([{ id: 'reply', role: 'assistant', content: 'Fixture reply', createdAt: '' }]), createdAt: '', updatedAt: '' }
+          const messages: AiMessage[] = input.messages ?? [{ id: 'user', role: 'user', content: input.message ?? '', createdAt: '' }]
+          const conversation = { id: 'fixture-chat', title: 'Fixture chat', providerId: 'fixture-ai', messages: messages.concat([{ id: 'reply', role: 'assistant', content: 'Fixture reply', createdAt: '' }]), createdAt: '', updatedAt: '' }
           if (!fail) {
             // Keep the history in sync: the sidebar refreshes it after every turn.
             fixtureConversations = [conversation, ...fixtureConversations.filter((item) => item.id !== conversation.id)]
@@ -86,8 +94,16 @@ window.clover = {
       })
     }
     if (channel === Ipc.onboardingStatus) return { ok: true, data: onboarding((payload as { hostId?: string })?.hostId) } as T
-    if (channel === Ipc.mossInferDownloadState) return { ok: true, data: null } as T
-    if (channel === Ipc.engineStatus) return { ok: true, data: { available: false, path: null } } as T
+    if (channel === Ipc.mossInferDownloadState) return { ok: true, data: fixtureEngineDownload } as T
+    if (channel === Ipc.engineStatus) return { ok: true, data: fixtureEngineReadiness } as T
+    if (channel === Ipc.engineVersions) return { ok: true, data: fixtureEngineVersions } as T
+    if (channel === Ipc.engineVersionSelect) {
+      const { id } = payload as { id: string }
+      const selected = fixtureEngineVersions.find((version) => version.id === id)
+      fixtureEngineVersions = fixtureEngineVersions.map((version) => ({ ...version, current: version.id === id }))
+      if (selected) fixtureEngineReadiness = { ...fixtureEngineReadiness, state: 'ready', path: selected.path }
+      return { ok: true, data: null } as T
+    }
     if (channel === Ipc.engineRemoteStatus) return { ok: true, data: { online: true, available: false, path: '/fixture/engine/bin/moss-server', root: '/fixture/engine', gpu: 'Fixture GPU', checkedAt: '' } } as T
     if (channel === Ipc.engineSystemCuda) return { ok: true, data: { supported: false, gpu: 'Fixture GPU', cublasLt: [], preferredFlavour: 'cu13', error: 'Fixture missing CUDA' } } as T
     if (channel === Ipc.modelsCatalog) return { ok: true, data: fixtureOobeCatalog } as T
@@ -111,17 +127,16 @@ window.clover = {
       savedSettings = { ...savedSettings, ...schemas.settingsUpdate.parse(payload) }
     }
     if (channel === Ipc.backendInfo) return { ok: true, data: { ready: true, url: 'http://studio-fixture', token: 'fixture' } } as T
-    // Projects: the Studio board saves through these, and a save response with no
-    // canvases used to blank the board (and crash the fixture).
     if (channel === Ipc.projectSave) {
-      const input = payload as { id?: string; name: string; canvases: unknown[]; selectedCanvasId?: string; seriesId?: string; page?: number }
+      const input = payload as StudioProjectInput
       const now = new Date().toISOString()
-      return { ok: true, data: { ...input, schemaVersion: 3, id: input.id ?? 'fixture-project', createdAt: now, updatedAt: now } } as T
+      const project: ProjectDocument = { ...input, schemaVersion: 3, id: input.id ?? 'fixture-project', createdAt: now, updatedAt: now }
+      return { ok: true, data: project } as T
     }
     if (channel === Ipc.projectGet) return { ok: true, data: null } as T
     // The Studio board reads gpuInventory.devices while rendering cards; the generic
     // `[]` fallback would crash the whole tree on the first Canvas.
-    if (channel === Ipc.gpuInventory) return {
+    if (channel === Ipc.gpuInventory || channel === Ipc.gpuInventoryRefresh) return {
       ok: true,
       data: {
         scannedAt: new Date().toISOString(),
@@ -192,6 +207,43 @@ window.fetch = async (_url, init) => {
   return new Response(JSON.stringify({ id: 'fixture-job' }), { status: 200 })
 }
 
+type EngineScenario = 'empty' | 'install-error' | 'legacy' | 'ready' | 'update-failed'
+
+function setEngineScenario(scenario: EngineScenario): void {
+  const attemptedAt = '2026-11-01T00:00:00.000Z'
+  const version: LocalEngineVersion = {
+    id: 'v2.1.1', name: 'v2.1.1', path: fixtureEnginePath, current: true, source: 'managed',
+  }
+  fixtureEngineDownload = null
+  const previousVersion: LocalEngineVersion = {
+    ...version,
+    id: 'v2.1.0',
+    name: 'v2.1.0',
+    path: 'C:\\fixture\\mossinfer\\v2.1.0\\bin\\moss-server.exe',
+    current: false,
+  }
+  fixtureEngineVersions = scenario === 'empty' || scenario === 'install-error'
+    ? []
+    : scenario === 'legacy' ? [version, previousVersion] : [version]
+  fixtureEngineReadiness = scenario === 'empty' || scenario === 'install-error'
+    ? { state: 'missing', path: null }
+    : { state: 'ready', path: fixtureEnginePath }
+  if (scenario === 'install-error' || scenario === 'update-failed') {
+    const error = scenario === 'update-failed' ? '新构建校验失败，已保留当前版本' : '下载连接中断'
+    fixtureEngineReadiness.lastAttempt = { at: attemptedAt, version: 'v2.1.1', error }
+    fixtureEngineDownload = {
+      channel: 'stable', phase: 'error', bytes: 0, totalBytes: 0, speedBps: 0, percent: 100,
+      version: 'v2.1.1', updatedAt: attemptedAt, error,
+    }
+  }
+  oobeComplete = scenario === 'legacy' || scenario === 'ready' || scenario === 'update-failed'
+  useApp.setState({
+    engineReadiness: fixtureEngineReadiness,
+    mossInferDownload: fixtureEngineDownload,
+    catalog: { ...fixtureOobeCatalog } as never,
+  })
+}
+
 function Fixture(): React.JSX.Element {
   const navigate = useNavigate()
   const [modal, setModal] = useState(false)
@@ -220,6 +272,7 @@ function Fixture(): React.JSX.Element {
         <button id="view-settings" onClick={() => setView('settings')}>Settings</button>
         <button id="view-devices" onClick={() => setView('devices')}>Devices</button>
         <button id="view-oobe" onClick={() => {
+          setEngineScenario('empty')
           oobeComplete = false
           oobeNeedsDevice = false
           savedSettings = { ...savedSettings, onboardingState: 'pending', onboardingHostId: 'local', uiAnimation: 'on' }
@@ -232,16 +285,20 @@ function Fixture(): React.JSX.Element {
         }}>OOBE</button>
         <button id="remount-oobe" onClick={() => setOobeKey((value) => value + 1)}>Reopen app</button>
         <button id="oobe-ready" onClick={() => {
-          oobeComplete = true
+          setEngineScenario('ready')
           useApp.setState({ catalog: { ...fixtureCatalog } as never })
         }}>Ready</button>
         <button id="oobe-needs-device" onClick={() => {
+          setEngineScenario('empty')
           oobeNeedsDevice = true
           useApp.setState({ catalog: { ...fixtureOobeCatalog } as never })
           navigate('/devices')
         }}>Device setup</button>
         <button id="oobe-download" onClick={() => useApp.setState({ downloads: [{ id: 'test-download', kind: 'model', targetId: 'dit', state: 'running', bytes: 5, totalBytes: 10 } as never] })}>Download</button>
         <button id="oobe-fail-save" onClick={() => { failOobeSave = true }}>Fail save</button>
+        <button id="engine-install-failed" onClick={() => setEngineScenario('install-error')}>Engine install error</button>
+        <button id="engine-legacy" onClick={() => setEngineScenario('legacy')}>Legacy engine versions</button>
+        <button id="engine-update-failed" onClick={() => setEngineScenario('update-failed')}>Engine update error</button>
         <button id="view-studio" onClick={() => {
           useApp.setState({ studioPrompt: 'Fixture prompt', catalog: fixtureCatalog as never, devices: fixtureDevices as never })
           setView('studio')

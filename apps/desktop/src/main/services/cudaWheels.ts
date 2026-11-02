@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import * as yauzl from 'yauzl'
 import { getSettings } from './settings'
-import { probeMossInfer, shutdownMossInfer } from './mossInfer'
+import { shutdownMossInfer } from './mossInfer'
+import { probeEngine } from '../lib/probeEngine'
+import type { EngineHello } from '@shared/engineProtocol'
 
 interface PyPiFile {
   filename?: string
@@ -114,13 +116,13 @@ export async function installMossInferCudaLibs(): Promise<{ installed: string[];
   const settings = getSettings()
   const serverPath = settings.mossInferServerPath
   if (!serverPath || !existsSync(serverPath)) throw new Error('还没有安装 moss-server，请先下载引擎')
-  let probe: Record<string, unknown>
+  let probe: EngineHello
   try {
-    probe = await probeMossInfer(serverPath, { MOSSINFER_CUDA_LIBS: 'bundled' })
+    probe = await probeEngine(serverPath, { env: { MOSSINFER_CUDA_LIBS: 'bundled' } })
   } catch (error) {
     throw new Error(`无法探测引擎 CUDA 版本：${error instanceof Error ? error.message : String(error)}`)
   }
-  const runtime = Number((probe['probe'] as Record<string, unknown> | undefined)?.['runtime_cuda_version'] ?? 0)
+  const runtime = probe.probe?.runtimeCudaVersion ?? 0
   const major = Math.floor(runtime / 1000)
   if (major !== 12 && major !== 13) throw new Error(`无法识别引擎 CUDA 主版本（${runtime}）`)
   const installDir = join(serverPath, '..', '..')

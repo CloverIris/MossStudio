@@ -1,4 +1,5 @@
 import type { ReleaseHomeCopy, ReleaseInstaller } from './release'
+import type { EngineComputeCapability, EngineDevice } from './engineProtocol'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'unknown'
 
@@ -308,6 +309,28 @@ export interface LocalEngineVersion {
   current: boolean
   /** managed: unpacked under <userData>/mossinfer; external: a path the user picked. */
   source: 'managed' | 'external'
+}
+
+export interface EngineInstallAttempt {
+  at: string
+  version?: string
+  error?: string
+}
+
+export interface EngineInstallProgress {
+  phase: MossInferDownloadState['phase']
+  percent: number
+  version?: string
+}
+
+export type EngineReadinessState = 'missing' | 'ready'
+
+export interface EngineReadiness {
+  state: EngineReadinessState
+  path: string | null
+  reason?: string
+  installing?: EngineInstallProgress
+  lastAttempt?: EngineInstallAttempt
 }
 
 export interface AppNotification {

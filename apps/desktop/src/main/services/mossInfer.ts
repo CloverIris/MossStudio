@@ -1,9 +1,17 @@
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { join } from 'node:path'
 import type { JobParams, JobRecord, JobStage, Settings } from '@shared/types'
+import {
+  decodeEngineHello,
+  judgeEngineSupport,
+  protocolCompatible,
+  type EngineDevice,
+  type EngineHello,
+} from '@shared/engineProtocol'
 import { paths } from '../lib/paths'
+import { spawnEngineServer } from '../lib/probeEngine'
 import { LineSplitter } from './parsers'
 
 /**
@@ -18,43 +26,6 @@ export interface MossInferSink {
   event(payload: Record<string, unknown>): void
   stderr(line: string): void
   done(exitCode: number): void
-}
-
-function spawnMossServer(
-  serverPath: string,
-  args: string[],
-  extraEnv?: Record<string, string>,
-): ChildProcessWithoutNullStreams {
-  const isJavaScript = ['.js', '.cjs', '.mjs'].includes(extname(serverPath).toLowerCase())
-  const command = isJavaScript ? process.execPath : serverPath
-  const commandArgs = isJavaScript ? [serverPath, ...args] : args
-  const env = {
-    ...process.env,
-    ...extraEnv,
-    ...(isJavaScript ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
-  }
-  return spawn(command, commandArgs, {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
-    env,
-  })
-}
-
-interface MossInferHelloDevice {
-  index: number
-  name: string
-  supported: boolean
-  compute_major?: number
-  compute_minor?: number
-  unsupported_reason?: string
-  free_memory_bytes?: number
-}
-
-interface MossInferHello {
-  protocol_version: number
-  abi_version: number
-  version?: string
-  probe?: { devices?: MossInferHelloDevice[] }
 }
 
 interface PendingRequest {
@@ -98,7 +69,7 @@ interface MossInferRuntime {
   deviceUuid: string
   child: ChildProcessWithoutNullStreams | null
   boundDeviceUuid: string | null
-  hello: MossInferHello | null
+  hello: EngineHello | null
   loadedKey: string | null
   reqSeq: number
   pending: Map<string, PendingRequest>
@@ -433,7 +404,7 @@ function spawnServer(runtime: MossInferRuntime, settings: Settings, deviceUuid: 
   const serverPath = resolveServerPath(settings)
   if (!serverPath) throw new Error('未找到 moss-server 可执行文件')
   runtime.stderrRing.length = 0
-  const proc = spawnMossServer(serverPath, ['--parent-pid', String(process.pid)], {
+  const proc = spawnEngineServer(serverPath, ['--parent-pid', String(process.pid)], {
     CUDA_VISIBLE_DEVICES: deviceUuid,
   })
   runtime.child = proc
@@ -482,36 +453,35 @@ async function ensureEngine(runtime: MossInferRuntime, config: EngineConfig, set
   }
   if (!runtime.child) {
     spawnServer(runtime, settings, config.deviceUuid)
-    const result = (await request(runtime, 'hello', {
+    const hello = decodeEngineHello(await request(runtime, 'hello', {
       client: 'MossStudio',
       protocol_version: 2,
       devices: true,
-    })) as unknown as MossInferHello
-    if (result.protocol_version !== 2) {
-      throw new Error(`E_ENGINE: moss-server 协议不兼容 (protocol ${String(result.protocol_version)})，需要 protocol 2（MossInfer ≥ 2.0）`)
+    }))
+    if (!protocolCompatible(hello)) {
+      throw new Error(`E_ENGINE: moss-server 协议不兼容 (protocol ${hello.protocol})，需要 protocol 2（MossInfer ≥ 2.0）`)
     }
-    runtime.hello = result
+    runtime.hello = hello
   }
   const devices = runtime.hello?.probe?.devices ?? []
-  const selected = config.device < 0
-    ? devices.find((item) => item.supported)
-    : devices.find((item) => item.index === config.device)
-  if (!selected) {
-    throw new Error(
-      config.device < 0
-        ? 'E_DEVICE: 未检测到当前 MossInfer 构建支持的 NVIDIA GPU；RTX 20/Turing 请下载 SM75 架构包或选择兼容的本地引擎。'
-        : `E_DEVICE: MossInfer 未检测到 CUDA 设备 ${config.device}`,
+  let selected: EngineDevice | undefined
+  if (config.device < 0) {
+    selected = devices.find((item) => item.supported === true)
+    if (!selected) {
+      throw new Error('E_DEVICE: 未检测到当前 MossInfer 构建支持的 NVIDIA GPU；请下载兼容该 GPU 的引擎构建。')
+    }
+  } else {
+    // spawnServer 已设置 CUDA_VISIBLE_DEVICES，目标卡在 hello 中被重映射为序号 0，不能再按系统序号或名称匹配。
+    const verdict = judgeEngineSupport(
+      runtime.hello!,
+      { index: config.device },
+      { indexOnly: true },
     )
+    if (!verdict.ok) throw new Error(`E_DEVICE: ${verdict.reason ?? 'MossInfer 未给出设备兼容性结论'}`)
+    selected = verdict.device
   }
-  if (!selected.supported) {
-    const compute = selected.compute_major === undefined
-      ? ''
-      : `（计算能力 ${selected.compute_major}.${selected.compute_minor ?? 0}）`
-    const reason = selected.unsupported_reason?.trim()
-    throw new Error(
-      `E_DEVICE: ${selected.name}${compute} 不受当前 MossInfer 构建支持。` +
-        `${reason ? `${reason}；` : ''}请安装包含该 GPU 架构的引擎构建；更换性能档或 CUDA 库不能解决此兼容问题。`,
-    )
+  if (!selected || selected.index === null) {
+    throw new Error(`E_DEVICE: MossInfer 未检测到 CUDA 设备 ${config.device}`)
   }
   const device = selected.index
   const key = JSON.stringify({ model: config.model, deviceUuid: config.deviceUuid, device, mode: config.mode, tier: config.tier })
@@ -673,62 +643,4 @@ export async function shutdownMossInfer(): Promise<void> {
       }
     }
   }))
-}
-
-/**
- * One-shot probe of an arbitrary moss-server binary (post-install validation,
- * flavour recommendation, settings "test" button). Independent of the managed
- * singleton above: spawns, says hello with devices, shuts down.
- */
-export async function probeMossInfer(
-  serverPath: string,
-  extraEnv?: Record<string, string>,
-): Promise<Record<string, unknown>> {
-  const proc = spawnMossServer(serverPath, [], extraEnv)
-  try {
-    return await new Promise((resolvePromise, rejectPromise) => {
-      const splitter = new LineSplitter()
-      const timer = setTimeout(() => rejectPromise(new Error('moss-server hello 超时')), 30_000)
-      proc.stdout.setEncoding('utf8')
-      proc.stdout.on('data', (chunk: string) => {
-        for (const line of splitter.push(chunk)) {
-          if (!line.trim()) continue
-          let message: Record<string, unknown>
-          try {
-            message = JSON.parse(line) as Record<string, unknown>
-          } catch {
-            continue
-          }
-          if (message['id'] === 'probe') {
-            clearTimeout(timer)
-            const error = message['error'] as { message?: string } | undefined
-            if (error) rejectPromise(new Error(error.message ?? 'hello 失败'))
-            else resolvePromise((message['result'] ?? {}) as Record<string, unknown>)
-          }
-        }
-      })
-      proc.on('error', (error) => {
-        clearTimeout(timer)
-        rejectPromise(error)
-      })
-      proc.on('close', (code) => {
-        clearTimeout(timer)
-        rejectPromise(new Error(`moss-server 退出 (code ${code ?? 'null'})，未完成 hello`))
-      })
-      proc.stdin.write(`${JSON.stringify({ id: 'probe', method: 'hello', params: { client: 'MossStudio', protocol_version: 2, devices: true } })}\n`)
-    })
-  } finally {
-    try {
-      proc.stdin.write(`${JSON.stringify({ id: 'bye', method: 'shutdown' })}\n`)
-    } catch {
-      // ignore
-    }
-    setTimeout(() => {
-      try {
-        proc.kill('SIGKILL')
-      } catch {
-        // already gone
-      }
-    }, 2000).unref()
-  }
 }

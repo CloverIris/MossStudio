@@ -60,6 +60,7 @@ module.exports = async function checkStudio({ evaluate, waitFor, webContents }) 
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(slider, '0.8');
     slider.dispatchEvent(new Event('input', { bubbles: true }))`)
   assert.equal(await evaluate('document.querySelector(\'[data-adapter-row="fixture-lora"] input[type=range]\').value'), '0.8')
+  await waitFor('document.querySelector("[data-studio-generate]")?.disabled === false')
   await evaluate(`document.querySelector('#studio-job').textContent = ''; ${generate}`)
   await waitFor(`Boolean(document.querySelector('#studio-job').textContent)`)
   const payload = JSON.parse(await evaluate(`document.querySelector('#studio-job').textContent`))

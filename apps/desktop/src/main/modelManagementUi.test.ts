@@ -55,6 +55,7 @@ export async function runModelManagementUi(): Promise<void> {
   mock(Ipc.casesList, [])
   mock(Ipc.launchQueueList, [])
   mock(Ipc.onboardingStatus, { ready: true, steps: [], checkedAt: '' })
+  mock(Ipc.engineStatus, { state: 'missing', path: null, gpus: [] })
   mock(Ipc.runtimeState, null)
   mock(Ipc.gitCommits, [])
   const win = createAppWindow('studio', false)

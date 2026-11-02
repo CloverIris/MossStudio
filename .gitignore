@@ -46,7 +46,15 @@ runs/
 .idea/
 .vscode/
 .agents/
+.claude/
+.codex/
+.cursor/
+.mcp.json
 *.log
+
+# AI 会话恢复与实施计划（仅本地保留）
+docs/requirements.md
+docs/initial-plan.md
 
 # ------------------------------------------------------------------
 # docs/assets：只跟踪 README 里实际引用的截图

@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
 import test from 'node:test'
-import { mapEngineGpuProbe } from '../apps/desktop/src/shared/gpuCompatibility.ts'
+
+const protocolUrl = new URL('../apps/desktop/src/shared/engineProtocol.ts', import.meta.url).href
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === './engineProtocol' && context.parentURL?.endsWith('/gpuCompatibility.ts')) {
+      return { url: protocolUrl, shortCircuit: true }
+    }
+    return nextResolve(specifier, context)
+  },
+})
+const { mapEngineGpuProbe } = await import('../apps/desktop/src/shared/gpuCompatibility.ts')
 
 const inventory = [
   { uuid: 'a', index: 0, name: 'GPU A', driverVersion: '581.15' },
@@ -8,7 +19,7 @@ const inventory = [
   { uuid: 'c', index: 2, name: 'GPU C' },
 ]
 
-test('engine probe maps supported and unsupported devices by index and name', () => {
+test('引擎 probe 按序号和名称映射支持与不支持设备', () => {
   const result = mapEngineGpuProbe(
     inventory,
     [
@@ -28,19 +39,19 @@ test('engine probe maps supported and unsupported devices by index and name', ()
   assert.equal(result.engineVersion, '2.1.1')
 })
 
-test('duplicate GPU names require a unique match instead of guessing', () => {
+test('重名 GPU 不做名称猜测匹配', () => {
   const result = mapEngineGpuProbe(
     [
       { uuid: 'a', index: 0, name: 'Same GPU' },
       { uuid: 'b', index: 1, name: 'Same GPU' },
     ],
-    [{ name: 'Same GPU', supported: true }],
+    [{ name: 'Same GPU', index: null, supported: true }],
     'moss-server',
   )
   assert.deepEqual(result.devices.map((device) => device.status), ['unknown', 'unknown'])
 })
 
-test('driver initialization errors explain the CUDA 13 driver requirement', () => {
+test('驱动初始化错误补充 CUDA 13 驱动说明', () => {
   const result = mapEngineGpuProbe(
     [inventory[1]],
     [{

@@ -24,6 +24,7 @@ import { getSettings } from './settings'
 import { refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 import { selectAutomaticGpu } from '@shared/gpuScheduling'
+import { judgeEngineSupport } from '@shared/engineProtocol'
 import { canvasBranchesConflict } from '@shared/canvasJobBranch'
 import { resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
 import { probeLocalEngineGpuCompatibility } from './engines'
@@ -518,8 +519,12 @@ async function resolveLocalGpu(
       throw new Error(`自动分配无法验证引擎与 GPU 的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备，或手动指定 GPU。`)
     }
     const compatibleUuids = new Set(
-      probe.snapshot.devices
-        .filter((device) => device.status === 'supported')
+      inventory.devices
+        .filter((device) => judgeEngineSupport(
+          probe.hello,
+          { index: device.index, name: device.name },
+          { inventoryCapability: device.computeCapability },
+        ).ok)
         .map((device) => device.uuid),
     )
     const loads: Record<string, { runningTasks: number; queuedTasks: number }> = {}
@@ -573,9 +578,13 @@ async function resolveLocalGpu(
     } catch (error) {
       throw new Error(`无法确认所选 GPU 与当前引擎的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备后重试。`)
     }
-    const compatibility = probe.snapshot.devices.find((candidate) => candidate.uuid === device.uuid)
-    if (compatibility?.status === 'unsupported') {
-      throw new Error(`当前引擎不支持 ${device.name}：${compatibility.reason ?? 'probe 未提供原因'}。请选择其他 GPU 或切换兼容引擎。`)
+    const verdict = judgeEngineSupport(
+      probe.hello,
+      { index: device.index, name: device.name },
+      { inventoryCapability: device.computeCapability },
+    )
+    if (!verdict.ok) {
+      throw new Error(`当前引擎不支持 ${device.name}：${verdict.reason ?? 'probe 未提供原因'}。请选择其他 GPU 或切换兼容引擎。`)
     }
   }
   return device

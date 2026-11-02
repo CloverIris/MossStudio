@@ -6,6 +6,7 @@ import type {
   Catalog,
   Diagnostic,
   DownloadTask,
+  EngineReadiness,
   EnvReport,
   GalleryItem,
   GpuTelemetrySnapshot,
@@ -17,7 +18,6 @@ import type {
   LaunchDevice,
   LaunchRow,
   LaunchStartInput,
-  OnboardingStatus,
   Settings,
   UpdateState,
 } from '@shared/types'
@@ -49,6 +49,7 @@ interface AppStore {
   updateDialogOpen: boolean
   updateDownload: UpdateDownloadState | null
   mossInferDownload: MossInferDownloadState | null
+  engineReadiness: EngineReadiness | null
   instances: InstanceInfo[]
   catalog: Catalog | null
   downloads: DownloadTask[]
@@ -60,7 +61,6 @@ interface AppStore {
   gpuTelemetry: GpuTelemetrySnapshot | null
   cases: LaunchCase[]
   launchRows: LaunchRow[]
-  onboarding: OnboardingStatus | null
   notifications: AppNotification[]
   notificationsOpen: boolean
   studioPrompt: string
@@ -108,7 +108,7 @@ interface AppStore {
   dismissDiagnostic: (id: string) => Promise<void>
   clearDiagnostics: () => Promise<void>
   refreshDevices: () => Promise<void>
-  refreshOnboarding: () => Promise<void>
+  refreshEngineReadiness: () => Promise<EngineReadiness | null>
   startLaunch: (input: LaunchStartInput) => Promise<LaunchRow>
   stopLaunch: (rowId: string) => Promise<void>
   startNextQueued: (deviceId: string) => Promise<void>
@@ -138,6 +138,17 @@ function upsertDownload(list: DownloadTask[], task: DownloadTask): DownloadTask[
     return list.map((item) => item.id === task.id ? task : item)
   }
   return [...list, task]
+}
+
+function withEngineDownload(
+  readiness: EngineReadiness | null,
+  download: MossInferDownloadState | null,
+): EngineReadiness | null {
+  if (!readiness) return null
+  const installing = download && !['done', 'error', 'canceled'].includes(download.phase)
+    ? { phase: download.phase, percent: download.percent, version: download.version }
+    : undefined
+  return { ...readiness, installing }
 }
 
 export const useApp = create<AppStore>((set, get) => {
@@ -293,6 +304,7 @@ export const useApp = create<AppStore>((set, get) => {
     onEvent<Settings>(Events.settingsChanged, (settings) => {
       applyAppearance(settings)
       set({ settings })
+      void get().refreshEngineReadiness()
     })
     onEvent<UpdateDownloadState>(Events.updateDownload, (state) => {
       set({ updateDownload: state })
@@ -315,20 +327,31 @@ export const useApp = create<AppStore>((set, get) => {
     })
     onEvent<MossInferDownloadState>(Events.mossInferDownload, (download) => {
       const previous = get().mossInferDownload
-      set({ mossInferDownload: download })
+      set((state) => ({
+        mossInferDownload: download,
+        engineReadiness: withEngineDownload(state.engineReadiness, download),
+      }))
       if (download.phase === 'done' && previous?.phase !== 'done') {
-        get().pushNotification({
-          tone: 'success',
-          title: 'MossInfer 引擎已就绪',
-          message: download.version ? `${download.version} 已安装并设为当前版本` : '引擎已安装并设为当前版本',
+        void get().refreshEngineReadiness().then(() => {
+          get().pushNotification({
+            tone: 'success',
+            title: 'MossInfer 引擎已就绪',
+            message: download.version ? `${download.version} 已安装并设为当前版本` : '引擎已安装并设为当前版本',
+          })
         })
       } else if (download.phase === 'error' && previous?.phase !== 'error') {
-        get().pushNotification({
-          tone: 'error',
-          title: 'MossInfer 引擎安装失败',
-          message: download.error ?? '查看引擎页的安装状态了解详情',
+        void get().refreshEngineReadiness().then((readiness) => {
+          const currentReady = (readiness ?? get().engineReadiness)?.state === 'ready'
+          get().pushNotification({
+            tone: currentReady ? 'warning' : 'error',
+            title: currentReady ? 'MossInfer 引擎更新失败' : 'MossInfer 引擎安装失败',
+            message: currentReady
+              ? `当前引擎仍可用 · ${download.error ?? '上次更新未完成'}`
+              : download.error ?? '查看引擎页的安装状态了解详情',
+          })
         })
       } else if (download.phase === 'canceled' && previous?.phase !== 'canceled') {
+        void get().refreshEngineReadiness()
         get().pushNotification({
           tone: 'warning',
           title: 'MossInfer 引擎安装已取消',
@@ -370,6 +393,7 @@ export const useApp = create<AppStore>((set, get) => {
     updateDialogOpen: false,
     updateDownload: null,
     mossInferDownload: null,
+    engineReadiness: null,
     instances: [],
     catalog: null,
     downloads: [],
@@ -381,7 +405,6 @@ export const useApp = create<AppStore>((set, get) => {
     gpuTelemetry: null,
     cases: [],
     launchRows: [],
-    onboarding: null,
     notifications: [],
     notificationsOpen: false,
     studioPrompt: '',
@@ -404,7 +427,7 @@ export const useApp = create<AppStore>((set, get) => {
         set({ settings })
         subscribe()
 
-        const [env, updates, catalog, downloads, jobs, diagnostics, devices, onboarding, queuedRows, engineDownload] =
+        const [env, updates, catalog, downloads, jobs, diagnostics, devices, queuedRows, engineDownload, readiness] =
           await Promise.allSettled([
             call<EnvReport>(Ipc.envScan),
             call<UpdateState>(Ipc.updatesCheck),
@@ -413,9 +436,9 @@ export const useApp = create<AppStore>((set, get) => {
             call<JobRecord[]>(Ipc.jobList),
             call<Diagnostic[]>(Ipc.diagnosticsList),
             call<LaunchDevice[]>(Ipc.devicesList),
-            call<OnboardingStatus>(Ipc.onboardingStatus),
             call<LaunchRow[]>(Ipc.launchQueueList),
             call<MossInferDownloadState | null>(Ipc.mossInferDownloadState),
+            call<EngineReadiness>(Ipc.engineStatus),
           ])
         set({
           env: env.status === 'fulfilled' ? env.value : null,
@@ -425,9 +448,9 @@ export const useApp = create<AppStore>((set, get) => {
           jobs: jobs.status === 'fulfilled' ? jobs.value : [],
           diagnostics: diagnostics.status === 'fulfilled' ? diagnostics.value : [],
           devices: devices.status === 'fulfilled' ? devices.value : [],
-          onboarding: onboarding.status === 'fulfilled' ? onboarding.value : null,
           launchRows: queuedRows.status === 'fulfilled' ? queuedRows.value : [],
           mossInferDownload: engineDownload.status === 'fulfilled' ? engineDownload.value : null,
+          engineReadiness: readiness.status === 'fulfilled' ? readiness.value : null,
           activeJobId:
             jobs.status === 'fulfilled'
               ? (jobs.value.find((job) => job.state === 'running' || job.state === 'starting')?.id ?? null)
@@ -518,6 +541,7 @@ export const useApp = create<AppStore>((set, get) => {
       const settings = await call<Settings>(Ipc.settingsUpdate, patch)
       applyAppearance(settings)
       set({ settings })
+      void get().refreshEngineReadiness()
     },
 
     async toggleSidebar() {
@@ -534,8 +558,11 @@ export const useApp = create<AppStore>((set, get) => {
       set({ notificationsOpen: open })
     },
 
-    setMossInferDownload(state) {
-      set({ mossInferDownload: state })
+    setMossInferDownload(download) {
+      set((state) => ({
+        mossInferDownload: download,
+        engineReadiness: withEngineDownload(state.engineReadiness, download),
+      }))
     },
 
     pushNotification(input) {
@@ -669,11 +696,13 @@ export const useApp = create<AppStore>((set, get) => {
       }
     },
 
-    async refreshOnboarding() {
+    async refreshEngineReadiness() {
       try {
-        set({ onboarding: await call<OnboardingStatus>(Ipc.onboardingStatus) })
+        const readiness = await call<EngineReadiness>(Ipc.engineStatus)
+        set({ engineReadiness: readiness })
+        return readiness
       } catch {
-        // keep previous
+        return get().engineReadiness
       }
     },
 

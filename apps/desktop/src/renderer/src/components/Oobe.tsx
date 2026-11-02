@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { ArrowRight, Boxes, Check, ChevronDown, ChevronRight, Cpu, Download, ListChecks, Maximize2, RefreshCw, X } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Events, Ipc } from '@shared/channels'
-import type { EngineRemoteProgress, GpuInventorySnapshot, ManagedHost, MossInferDownloadState, OnboardingStatus, OnboardingStep, Settings } from '@shared/types'
+import type { EngineRemoteProgress, GpuInventorySnapshot, ManagedHost, OnboardingStatus, OnboardingStep, Settings } from '@shared/types'
 import { call, onEvent } from '../lib/api'
 import { bytes } from '../lib/format'
 import { gpuRequiresBf16Tier, recommendGpuMemoryMode } from '@shared/gpuProfile'
@@ -22,6 +22,9 @@ export function Oobe(): React.JSX.Element {
   const saveSettings = useApp((state) => state.saveSettings)
   const catalog = useApp((state) => state.catalog)
   const downloads = useApp((state) => state.downloads)
+  const engineDownload = useApp((state) => state.mossInferDownload)
+  const engineReadiness = useApp((state) => state.engineReadiness)
+  const refreshEngineReadiness = useApp((state) => state.refreshEngineReadiness)
   const animate = useUiAnimationEnabled()
   const [screen, setScreen] = useState<Screen>(null)
   const [collapsed, setCollapsed] = useState(false)
@@ -31,7 +34,6 @@ export function Oobe(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<OnboardingStatus | null>(null)
   const [hosts, setHosts] = useState<ManagedHost[]>([])
-  const [engineDownload, setEngineDownload] = useState<MossInferDownloadState | null>(null)
   const [gpuInventory, setGpuInventory] = useState<GpuInventorySnapshot | null>(null)
   const [refreshingGpu, setRefreshingGpu] = useState(false)
   const [remoteProgress, setRemoteProgress] = useState<EngineRemoteProgress | null>(null)
@@ -51,6 +53,9 @@ export function Oobe(): React.JSX.Element {
     && (hostId === 'local' ? !task.hostId : task.hostId === hostId)
     && ['done', 'error', 'canceled'].includes(task.state))
     .map((task) => `${task.id}:${task.state}:${task.updatedAt}`).join(',')
+  const engineReadinessKey = engineReadiness
+    ? [engineReadiness.state, engineReadiness.path, engineReadiness.lastAttempt?.at, engineReadiness.lastAttempt?.error].join(':')
+    : 'pending'
   const refresh = (): void => setRevision((value) => value + 1)
 
   useEffect(() => {
@@ -102,23 +107,25 @@ export function Oobe(): React.JSX.Element {
       }).finally(() => { if (!canceled) setChecking(false) })
     }, 120)
     return () => { canceled = true; window.clearTimeout(timer) }
-  }, [visible, hostId, location.pathname, catalog, settings?.modelsRoot, settings?.mossInferServerPath, modelDownloadRevision, revision])
+  }, [visible, hostId, location.pathname, catalog, settings?.modelsRoot, settings?.mossInferServerPath, modelDownloadRevision, engineReadinessKey, revision])
 
   useEffect(() => {
     if (!visible) return
     window.addEventListener('focus', refresh)
-    const offLocal = onEvent<MossInferDownloadState>(Events.mossInferDownload, (next) => {
-      setEngineDownload(next)
-      if (next.phase === 'done' || next.phase === 'error' || next.phase === 'canceled') refresh()
-    })
     const offRemote = onEvent<EngineRemoteProgress>(Events.engineRemoteProgress, (next) => {
       if (next.hostId !== hostId) return
       setRemoteProgress(next)
       if (next.phase === 'done' || next.phase === 'error') refresh()
     })
-    if (hostId === 'local') void call<MossInferDownloadState | null>(Ipc.mossInferDownloadState).then(setEngineDownload).catch(() => undefined)
-    return () => { window.removeEventListener('focus', refresh); offLocal(); offRemote() }
+    return () => { window.removeEventListener('focus', refresh); offRemote() }
   }, [visible, hostId])
+
+  useEffect(() => {
+    if (!visible || hostId !== 'local') return
+    const onFocus = (): void => { void refreshEngineReadiness() }
+    window.addEventListener('focus', onFocus)
+    return () => { window.removeEventListener('focus', onFocus) }
+  }, [visible, hostId, refreshEngineReadiness])
 
   useLayoutEffect(() => {
     const element = dialog.current
@@ -360,17 +367,26 @@ export function Oobe(): React.JSX.Element {
                         const taskBytes = tasks.reduce((sum, task) => sum + task.bytes, 0)
                         const taskTotal = tasks.reduce((sum, task) => sum + task.totalBytes, 0)
                         const engine = step.id === 'engine' && hostId === 'local' ? engineDownload : null
+                        const readiness = step.id === 'engine' && hostId === 'local' ? engineReadiness : null
                         const remote = step.id === 'engine' && remoteProgress?.hostId === hostId ? remoteProgress : null
                         const canceled = engine?.phase === 'canceled'
                         const running = !done && (tasks.some((task) => ['queued', 'running', 'verifying'].includes(task.state)) || engine && !['done', 'error', 'canceled'].includes(engine.phase) || remote && !['done', 'error'].includes(remote.phase))
                         const failed = !done && (tasks.some((task) => task.state === 'error') || engine?.phase === 'error' || remote?.phase === 'error')
-                        const label = done ? '已就绪' : failed ? '下载失败，可重试' : canceled ? '已取消，可重试' : running ? queued ? '排队中' : '准备中' : tasks.some((task) => task.state === 'paused') ? '已暂停' : step.status === 'partial' ? '待补齐' : '待准备'
+                        const updateFailed = done && readiness?.state === 'ready' && Boolean(readiness.lastAttempt?.error)
+                        const label = readiness?.installing ? '准备中'
+                          : updateFailed ? '已就绪 · 上次更新失败'
+                            : done ? '已就绪'
+                              : failed ? '下载失败，可重试'
+                                : canceled ? '已取消，可重试'
+                                  : running ? queued ? '排队中' : '准备中'
+                                    : tasks.some((task) => task.state === 'paused') ? '已暂停'
+                                      : step.status === 'partial' ? '待补齐' : '待准备'
                         return <li key={step.id} data-oobe-step={step.id} data-status={done ? 'ok' : failed ? 'error' : canceled ? 'canceled' : running ? 'running' : step.status} className="flex items-start gap-2.5 py-3">
                           <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-caption tabular-nums', done ? 'border-accent-500/25 bg-accent-500/10 text-accent-300' : 'border-[var(--color-border)] text-[var(--color-text-tertiary)]')}>
                             {done ? <Check className="size-4" /> : running ? <Spinner className="size-4" /> : index + 1}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><span className="text-ui font-medium">{step.title}</span><span className={cn('text-caption', failed ? 'text-red-300' : done ? 'text-accent-300' : 'text-[var(--color-text-tertiary)]')}>{label}</span></div>
+                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><span className="text-ui font-medium">{step.title}</span><span className={cn('text-caption', failed ? 'text-red-300' : updateFailed ? 'text-amber-200' : done ? 'text-accent-300' : 'text-[var(--color-text-tertiary)]')}>{label}</span></div>
                             <p className="mt-1 break-words text-caption leading-4 text-[var(--color-text-tertiary)]">{step.detail}</p>
                             {!done && step.sizeBytes ? <p className="mt-1 text-caption tabular-nums text-[var(--color-text-tertiary)]">约 {bytes(step.sizeBytes)}{taskTotal ? ` · 下载进度 ${Math.round(taskBytes / taskTotal * 100)}%` : ''}</p> : null}
                           </div>
