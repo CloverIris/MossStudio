@@ -94,6 +94,8 @@ interface LocalAdapterRecord {
   files: string[]
   sizeBytes: number
   createdAt: string
+  /** Where the record came from; drives the catalog tags and the default name. */
+  origin?: 'trained' | 'imported'
 }
 
 interface LocalAdapterIndex {
@@ -136,6 +138,7 @@ export async function registerTrainedAdapter(
     kind?: AdapterEntry['kind']
     base?: string
     license?: string
+    origin?: LocalAdapterRecord['origin']
   },
 ): Promise<AdapterEntry> {
   const id = input.id.replace(/[^A-Za-z0-9._-]/g, '-')
@@ -144,6 +147,7 @@ export async function registerTrainedAdapter(
   const file = basename(input.sourcePath)
   await copyFile(input.sourcePath, join(destDir, file))
   const info = await stat(join(destDir, file))
+  const origin = input.origin ?? 'trained'
   const record: LocalAdapterRecord = {
     id,
     name: input.name || id,
@@ -154,6 +158,7 @@ export async function registerTrainedAdapter(
     files: [file],
     sizeBytes: info.size,
     createdAt: new Date().toISOString(),
+    origin,
   }
   const existing = (await readLocalAdapters(settings)).filter((item) => item.id !== id)
   await writeFile(
@@ -173,11 +178,59 @@ export async function registerTrainedAdapter(
     license: record.license,
     files: record.files,
     sizeBytes: record.sizeBytes,
-    tags: ['trained'],
-    notes: '由 Kohaku Trainer 产物登记',
+    tags: localAdapterTags(origin),
+    notes: localAdapterNotes(origin),
     installed: true,
     installedBytes: record.sizeBytes,
   }
+}
+
+function localAdapterTags(origin: LocalAdapterRecord['origin']): string[] {
+  return origin === 'imported' ? ['local-import'] : ['trained']
+}
+
+function localAdapterNotes(origin: LocalAdapterRecord['origin']): string {
+  return origin === 'imported' ? '从本地 .safetensors 文件导入' : '由 Kohaku Trainer 产物登记'
+}
+
+/**
+ * Copy a user-picked LoRA into the adapters directory and register it.
+ *
+ * The file is copied rather than referenced: the engine opens the path itself and
+ * users routinely move or delete downloads, which would break a project that had
+ * remembered the original location.
+ */
+export async function importAdapterFile(
+  settings: Settings,
+  input: { sourcePath: string; name?: string },
+): Promise<AdapterEntry> {
+  if (!/\.safetensors$/i.test(input.sourcePath)) throw new Error('只支持 .safetensors 格式的 LoRA / LyCORIS 文件')
+  const stem = basename(input.sourcePath).replace(/\.[^.]+$/, '')
+  const base = stem.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 80) || 'lora'
+  const root = paths.adapters(settings.modelsRoot, settings.modelDirectories)
+  await assertFreeSpace(root, (await stat(input.sourcePath)).size, `LoRA ${basename(input.sourcePath)}`)
+  let id = base
+  for (let suffix = 2; existsSync(join(root, id)) && suffix < 1000; suffix += 1) id = `${base}-${suffix}`
+  return registerTrainedAdapter(settings, {
+    id,
+    name: input.name?.trim() || stem,
+    sourcePath: input.sourcePath,
+    kind: 'lora',
+    origin: 'imported',
+  })
+}
+
+/**
+ * Display name for an adapter id. Used in error messages, so it must stay cheap:
+ * no catalog refresh, no network — just the warm cache, the local index and the
+ * packaged catalog, in that order.
+ */
+export async function findAdapterName(settings: Settings, id: string): Promise<string> {
+  const cached = catalogCache?.adapters.find((entry) => entry.id === id)
+  if (cached?.name) return cached.name
+  const local = (await readLocalAdapters(settings).catch(() => [])).find((entry) => entry.id === id)
+  if (local?.name) return local.name
+  return (BUILTIN.adapters ?? []).find((entry) => entry.id === id)?.name ?? id
 }
 
 /** Resolve an installed adapter's weight file (LoRA safetensors) on disk; null when missing. */
@@ -475,7 +528,8 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       provider: 'local',
       repo: local.path,
       revision: 'local',
-      tags: ['trained'],
+      tags: localAdapterTags(local.origin),
+      notes: localAdapterNotes(local.origin),
       installed: true,
       installedBytes: local.sizeBytes,
     })

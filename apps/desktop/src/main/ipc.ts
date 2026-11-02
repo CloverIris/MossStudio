@@ -11,7 +11,7 @@ import { ensureDirs, paths } from './lib/paths'
 import { openDirectoryInFileManager, revealInFileManager } from './lib/fileManager'
 import { scanEnvironment } from './services/env'
 import { getPythonInstallState, installManagedPython } from './services/managedPython'
-import { cancelDownload, getCatalog, deleteModel, importModelFolder, listDownloads, pauseDownload, startDownload, installBundle } from './services/models'
+import { cancelDownload, getCatalog, deleteModel, importAdapterFile, importModelFolder, invalidateCatalog, listDownloads, pauseDownload, startDownload, installBundle } from './services/models'
 import { galleryDetail, listGallery, revealInFolder } from './services/gallery'
 import { cancelJob, getJob, getJobLogs, inputJob, listJobs } from './services/supervisor'
 import { clearDiagnostics, dismissDiagnostic, listDiagnostics } from './services/diagnostics'
@@ -490,6 +490,23 @@ export function registerIpc(): void {
     if (result.canceled || !result.filePaths[0]) return { canceled: true, added: 0, duplicates: 0 }
     const imported = await importModelFolder(result.filePaths[0], getSettings())
     return { canceled: false, ...imported }
+  })
+
+  handle(Ipc.modelsImportAdapter, null, async () => {
+    const result = await dialog.showOpenDialog({
+      title: '导入 LoRA 文件',
+      buttonLabel: '导入',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'LoRA / LyCORIS', extensions: ['safetensors'] }],
+    })
+    if (result.canceled || !result.filePaths.length) return { canceled: true, adapters: [] }
+    const settings = getSettings()
+    const adapters = []
+    for (const sourcePath of result.filePaths) {
+      adapters.push(await importAdapterFile(settings, { sourcePath }))
+    }
+    invalidateCatalog()
+    return { canceled: false, adapters }
   })
 
   handle(Ipc.modelsInstalled, null, async () => {

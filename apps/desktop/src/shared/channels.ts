@@ -96,6 +96,7 @@ export const Ipc = {
   runtimeState: 'runtime:state',
   modelsCatalog: 'models:catalog',
   modelsImportFolder: 'models:import-folder',
+  modelsImportAdapter: 'models:import-adapter',
   modelsRemoteInventory: 'models:remote-inventory',
   modelsRemoteDownload: 'models:remote-download',
   remoteDownloadsRefresh: 'downloads:remote-refresh',

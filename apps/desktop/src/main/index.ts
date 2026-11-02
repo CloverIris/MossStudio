@@ -47,7 +47,8 @@ import { scanEnvironment } from './services/env'
 import { getSettings, updateSettings } from './services/settings'
 import { collectTrainerArtifact } from './services/trainerArtifacts'
 import { checkUpdates } from './services/updates'
-import { downloadCustomModel, getCatalog, listDownloads, resolveAdapterFile } from './services/models'
+import { downloadCustomModel, getCatalog, listDownloads } from './services/models'
+import { resolveCanvasAdapters } from './services/adapterResolution'
 import { registerGalleryProtocol } from './services/gallery'
 import { createAppWindow, getWindow, openWindow } from './windows'
 import { refreshGpuInventory } from './services/devices'
@@ -56,16 +57,8 @@ import { startGpuTelemetry } from './services/gpuTelemetry'
 
 async function startJob(input: Record<string, unknown>) {
   // Canvas adapters arrive as model-library ids; resolve them to files the engine can open.
-  const requested = Array.isArray(input.adapters) ? input.adapters : []
-  const adapters: Array<{ path: string; strength: number }> = []
-  for (const item of requested.slice(0, 16)) {
-    const entry = item as { id?: unknown; strength?: unknown }
-    if (typeof entry.id !== 'string' || !entry.id) continue
-    const path = await resolveAdapterFile(getSettings(), entry.id).catch(() => null)
-    if (!path) continue
-    const strength = typeof entry.strength === 'number' ? Math.min(2, Math.max(0, entry.strength)) : 1
-    adapters.push({ path, strength })
-  }
+  const hostId = typeof input['hostId'] === 'string' ? input['hostId'] : undefined
+  const adapters = await resolveCanvasAdapters(getSettings(), input['adapters'], { hostId })
   return startEngineJob({ ...input, adapters } as never)
 }
 

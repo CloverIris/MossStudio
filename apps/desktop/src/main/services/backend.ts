@@ -6,6 +6,7 @@ import type { BackendInfo, WebAccessInfo } from '@shared/backend'
 import type { JobRecord } from '@shared/types'
 import { onEmit } from '../lib/events'
 import { cancelJob, getJob, listJobs, startEngineJob } from './supervisor'
+import { resolveCanvasAdapters } from './adapterResolution'
 import { getCatalog } from './models'
 import { listGallery, readGalleryFile } from './gallery'
 import { deleteProject, getProject, listProjects, saveProject } from './projects'
@@ -29,7 +30,11 @@ function handleRpc(message: Record<string, unknown>): void {
   void (async () => {
     try {
       if (method === 'startEngineJob') {
-        respond(await startEngineJob(params as never))
+        // The renderer posts model-library adapter ids; resolve them here as well,
+        // because this RPC path does not go through the IPC `startJob` wrapper.
+        const hostId = typeof params['hostId'] === 'string' && params['hostId'] ? params['hostId'] : undefined
+        const adapters = await resolveCanvasAdapters(getSettings(), params['adapters'], { hostId })
+        respond(await startEngineJob({ ...params, adapters } as never))
       } else if (method === 'cancelJob') {
         respond(await cancelJob(String(params['id'] ?? '')))
       } else if (method === 'getJob') {

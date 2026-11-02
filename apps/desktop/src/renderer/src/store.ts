@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { Events, Ipc } from '@shared/channels'
 import type {
+  AdapterEntry,
   AppNotification,
   Catalog,
   Diagnostic,
@@ -93,6 +94,8 @@ interface AppStore {
   dismissAnnouncement: (id: string) => Promise<void>
   downloadModel: (modelId: string) => Promise<void>
   downloadAdapter: (adapterId: string) => Promise<void>
+  /** Pick one or more local .safetensors files and register them as LoRAs. */
+  importAdapters: () => Promise<AdapterEntry[]>
   pauseDownload: (taskId: string) => Promise<void>
   cancelDownload: (taskId: string) => Promise<void>
   deleteModel: (kind: 'model' | 'adapter', id: string) => Promise<void>
@@ -564,6 +567,13 @@ export const useApp = create<AppStore>((set, get) => {
     async downloadAdapter(adapterId) {
       const task = await call<DownloadTask>(Ipc.modelDownload, { kind: 'adapter', id: adapterId })
       set((state) => ({ downloads: upsertDownload(state.downloads, task) }))
+    },
+
+    async importAdapters() {
+      const result = await call<{ canceled: boolean; adapters: AdapterEntry[] }>(Ipc.modelsImportAdapter)
+      if (result.canceled) return []
+      await get().refreshCatalog()
+      return result.adapters
     },
 
     async pauseDownload(taskId) {

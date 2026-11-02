@@ -24,7 +24,17 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { GalleryItem, GpuInventorySnapshot, JobRecord, ManagedHost, ProjectCanvas, ProjectDocument, ProjectSummary } from '@shared/types'
+import type { CanvasAdapter, GalleryItem, GpuInventorySnapshot, JobRecord, ManagedHost, ProjectCanvas, ProjectDocument, ProjectSummary } from '@shared/types'
+import {
+  ADAPTER_STRENGTH_DEFAULT,
+  ADAPTER_STRENGTH_MAX,
+  ADAPTER_STRENGTH_MIN,
+  ADAPTER_STRENGTH_STEP,
+  adapterStatuses,
+  clampAdapterStrength,
+  formatAdapterStrength,
+  normalizeCanvasAdapters,
+} from '@shared/adapters'
 import { activeCanvasBranchIds, canvasLineage } from '@shared/canvasJobBranch'
 import type { BackendInfo } from '@shared/backend'
 import { Events, Ipc } from '@shared/channels'
@@ -46,6 +56,7 @@ import { Button, ConfirmDialog, IconButton, Input, Modal, Pill, Segmented, Selec
 import { PromptSegmentsModal } from '../components/PromptSegmentsModal'
 import { GbcImportModal } from '../components/GbcImportModal'
 import { AgentSidebar } from '../components/AgentSidebar'
+import { AdapterPicker } from '../components/studio/AdapterPicker'
 import { AnalysisPanel } from '../components/studio/AnalysisPanel'
 import { StudioSection } from '../components/studio/StudioSection'
 import { StudioSidebar } from '../components/studio/StudioSidebar'
@@ -169,6 +180,7 @@ interface DraftTabSnapshot {
   modelBundleId: string
   deviceId: string
   deviceUuid: string
+  adapters: CanvasAdapter[]
   seriesId: string
   page: number
   background: GalleryItem | null
@@ -211,6 +223,7 @@ export function StudioPage(): React.JSX.Element {
     }
   }, [background, setStudioBackground])
   const catalog = useApp((state) => state.catalog)
+  const importAdapters = useApp((state) => state.importAdapters)
   const devices = useApp((state) => state.devices)
   const [gpuInventory, setGpuInventory] = useState<GpuInventorySnapshot | null>(null)
   const [hosts, setHosts] = useState<ManagedHost[]>([])
@@ -237,6 +250,9 @@ export function StudioPage(): React.JSX.Element {
   const [prompt, setPrompt] = useState(storedPrompt)
   const [negative, setNegative] = useState('nsfw, worst quality, bad anatomy, watermark, jpeg artifact')
   const [draft, setDraft] = useState<LayoutDraft>(storedDraft ?? exampleDraft())
+  /** LoRAs applied to the selected Canvas, in library order; `path` is cache only. */
+  const [adapters, setAdapters] = useState<CanvasAdapter[]>([])
+  const [adapterPickerOpen, setAdapterPickerOpen] = useState(false)
   const [tool, setTool] = useState<'select' | 'draw' | 'pan'>('draw')
   const [label, setLabel] = useState<LayoutLabel>('object')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -480,9 +496,10 @@ export function StudioPage(): React.JSX.Element {
       modelBundleId: modelBundleId || undefined,
       deviceId: deviceId || undefined,
       deviceUuid: deviceUuid || undefined,
+      adapters,
       backgroundPath: background?.path,
     }
-  }, [selectedCanvas, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, deviceUuid, background?.path])
+  }, [selectedCanvas, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, deviceUuid, adapters, background?.path])
   const persistedCanvases = useMemo(
     () => currentCanvasSnapshot
       ? canvases.map((canvas) => canvas.id === currentCanvasSnapshot.id ? currentCanvasSnapshot : canvas)
@@ -816,6 +833,7 @@ export function StudioPage(): React.JSX.Element {
     setModelBundleId(canvas.modelBundleId ?? '')
     setDeviceId(canvas.deviceId ?? '')
     setDeviceUuid(canvas.deviceUuid ?? '')
+    setAdapters(normalizeCanvasAdapters(canvas.adapters))
     if (canvas.backgroundPath) {
       const path = canvas.backgroundPath
       setStudioBackground({
@@ -900,6 +918,7 @@ export function StudioPage(): React.JSX.Element {
       modelBundleId: (source?.modelBundleId ?? modelBundleId) || undefined,
       deviceId: (source?.deviceId ?? deviceId) || undefined,
       deviceUuid: (source?.deviceUuid ?? deviceUuid) || undefined,
+      adapters: source ? normalizeCanvasAdapters(source.adapters) : adapters,
       backgroundPath: source?.backgroundPath,
     }
   }
@@ -1040,6 +1059,7 @@ export function StudioPage(): React.JSX.Element {
         setPrompt('')
         setStudioPrompt('')
         setNegative('')
+        setAdapters([])
         setSelectedId(null)
       }
     }
@@ -1091,6 +1111,7 @@ export function StudioPage(): React.JSX.Element {
       modelBundleId,
       deviceId,
       deviceUuid,
+      adapters,
       seriesId,
       page,
       background,
@@ -1117,6 +1138,7 @@ export function StudioPage(): React.JSX.Element {
     setModelBundleId(draftTab.modelBundleId)
     setDeviceId(draftTab.deviceId)
     setDeviceUuid(draftTab.deviceUuid)
+    setAdapters(draftTab.adapters ?? [])
     setStudioBackground(draftTab.background)
     setCanvases(draftTab.canvases)
     setSelectedCanvasId(draftTab.selectedCanvasId)
@@ -1164,6 +1186,7 @@ export function StudioPage(): React.JSX.Element {
         setModelBundleId(nextSelected.modelBundleId ?? '')
         setDeviceId(nextSelected.deviceId ?? '')
         setDeviceUuid(nextSelected.deviceUuid ?? '')
+        setAdapters(normalizeCanvasAdapters(nextSelected.adapters))
         if (nextSelected.backgroundPath) {
           const path = nextSelected.backgroundPath
           setStudioBackground({ id: `project-bg-${nextSelected.id}`, path, name: path.split(/[\\/]/).pop() ?? 'background', dir: path.slice(0, Math.max(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')))), root: '', size: 0, mtime: 0, ext: path.split('.').pop() ?? '' })
@@ -1241,6 +1264,7 @@ export function StudioPage(): React.JSX.Element {
     setPage(1)
     setPrompt('')
     setStudioPrompt('')
+    setAdapters([])
     const draft = createDraft(1024, 1024)
     setDraft(draft)
     setStudioDraft(draft)
@@ -1341,6 +1365,18 @@ export function StudioPage(): React.JSX.Element {
       toast.push('选择远端引擎后需要填写远端模型路径', 'error')
       return
     }
+    // LoRA selection is validated here so the user gets a named, actionable error
+    // before a job record exists; the main process re-checks and fails loudly too.
+    const sourceAdapters = normalizeCanvasAdapters(source.adapters)
+    if (engineHostId && sourceAdapters.length) {
+      toast.push('远端引擎暂不支持 LoRA；请切回本机 MossInfer，或移除 LoRA 后再生成', 'error')
+      return
+    }
+    const uninstalled = adapterStatuses(sourceAdapters, catalog?.adapters).filter((item) => !item.installed)
+    if (uninstalled.length) {
+      toast.push(`LoRA ${uninstalled.map((item) => `「${item.name}」`).join('')} 未安装或文件缺失；请先移除，或到模型库重新安装`, 'error')
+      return
+    }
     // Regions win over the handwritten prompt: the layout is the more specific input.
     const effective = effectivePromptFor(source)
     if (!effective.prompt.trim()) {
@@ -1423,7 +1459,7 @@ export function StudioPage(): React.JSX.Element {
           remoteModelPath: engineHostId ? remoteModelPath.trim() : undefined,
           prompt: effective.prompt,
           negativePrompt: source.negative,
-          adapters: source.adapters ?? [],
+          adapters: sourceAdapters,
           width: source.width,
           height: source.height,
           steps: source.steps,
@@ -1614,6 +1650,21 @@ export function StudioPage(): React.JSX.Element {
     const viewport = viewportRef.current
     if (viewport?.hasPointerCapture(gesture.pointerId)) viewport.releasePointerCapture(gesture.pointerId)
   }
+  /** Selection joined with the library, so missing files are visible before submit. */
+  const adapterRows = adapterStatuses(adapters, catalog?.adapters)
+  const missingAdapters = adapterRows.filter((item) => !item.installed)
+  const remoteAdapterWarning = Boolean(engineHostId) && adapters.length > 0
+
+  function toggleAdapter(id: string): void {
+    setAdapters((previous) => previous.some((item) => item.id === id)
+      ? previous.filter((item) => item.id !== id)
+      : normalizeCanvasAdapters([...previous, { id, strength: ADAPTER_STRENGTH_DEFAULT }]))
+  }
+
+  function setAdapterStrength(id: string, value: number): void {
+    setAdapters((previous) => previous.map((item) => (item.id === id ? { ...item, strength: clampAdapterStrength(value) } : item)))
+  }
+
   function renderSection(id: SectionId): React.JSX.Element {
     if (id === 'prompt') return (
       <div className="space-y-2 p-3">
@@ -1661,6 +1712,60 @@ export function StudioPage(): React.JSX.Element {
               {catalog?.bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}
             </Select>
           ))}
+          {row('LoRA', (
+            <button
+              type="button"
+              onClick={() => setAdapterPickerOpen(true)}
+              title="为此 Canvas 叠加 LoRA"
+              className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 py-1 text-caption text-[var(--color-text-secondary)] hover:border-accent-500/40 hover:text-accent-200"
+            >
+              <Plus className="size-3.5" />
+              {adapters.length ? `${adapters.length} 个` : '选择'}
+            </button>
+          ), 'LoRA / LyCORIS，按选择顺序叠加；强度 0–2')}
+          {adapterRows.length ? (
+            <div className="space-y-1 py-1.5">
+              {adapterRows.map(({ adapter, name, installed }) => (
+                <div key={adapter.id} className="flex items-center gap-1.5">
+                  <span className="min-w-0 flex-1 truncate text-caption" title={installed ? name : `${name}（未安装）`}>
+                    <span className={cn('truncate', installed ? 'text-[var(--color-text)]' : 'text-amber-200')}>{name}</span>
+                  </span>
+                  <input
+                    type="range"
+                    aria-label={`${name} 强度`}
+                    min={ADAPTER_STRENGTH_MIN}
+                    max={ADAPTER_STRENGTH_MAX}
+                    step={ADAPTER_STRENGTH_STEP}
+                    value={adapter.strength}
+                    onChange={(event) => setAdapterStrength(adapter.id, Number(event.target.value))}
+                    className="w-[70px] shrink-0 accent-[var(--color-accent)]"
+                  />
+                  <span className="w-7 shrink-0 text-right font-mono text-caption tabular-nums text-[var(--color-text-tertiary)]">
+                    {formatAdapterStrength(adapter.strength)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleAdapter(adapter.id)}
+                    aria-label={`移除 ${name}`}
+                    title="移除此 LoRA"
+                    className="shrink-0 text-[var(--color-text-tertiary)] hover:text-red-400"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+              {missingAdapters.length ? (
+                <p role="status" className="text-caption leading-4 text-amber-200">
+                  {missingAdapters.map((item) => `「${item.name}」`).join('')} 未安装，生成前请移除或在模型库重新安装。
+                </p>
+              ) : null}
+              {remoteAdapterWarning ? (
+                <p role="status" className="text-caption leading-4 text-amber-200">
+                  远端引擎暂不支持 LoRA，请切回本机 MossInfer 或移除后再生成。
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {row(engineHostId ? '远端设备' : 'GPU', engineHostId ? (
             <Select value={deviceId} onChange={(event) => { setDeviceId(event.target.value); localStorage.setItem('mossstudio.deviceId', event.target.value) }} className="w-[184px]">
               {devices.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.kind.toUpperCase()}</option>)}
@@ -1832,6 +1937,7 @@ export function StudioPage(): React.JSX.Element {
                 <dt>步数</dt><dd>{selectedCanvas.steps}</dd>
                 <dt>CFG</dt><dd>{selectedCanvas.cfg}</dd>
                 <dt>Seed</dt><dd>{selectedCanvas.seed}</dd>
+                <dt>LoRA</dt><dd>{selectedCanvas.adapters?.length ? `${selectedCanvas.adapters.length} 个` : '无'}</dd>
               </dl>
               <p>使用 Canvas 上的“重跑”按相同参数创建新结果，或复制参数创建可编辑 Canvas。</p>
             </div>
@@ -2638,6 +2744,27 @@ export function StudioPage(): React.JSX.Element {
         initialTab={gbcTab}
         onClose={() => setGbcOpen(false)}
         onImport={requestGbcImport}
+      />
+
+      <AdapterPicker
+        open={adapterPickerOpen}
+        selected={adapters}
+        catalog={catalog?.adapters}
+        onClose={() => setAdapterPickerOpen(false)}
+        onToggle={toggleAdapter}
+        onImport={async () => {
+          const imported = await importAdapters().catch((error: unknown) => {
+            toast.push(error instanceof Error ? error.message : String(error), 'error')
+            return []
+          })
+          if (!imported.length) return
+          // Auto-select what was just imported: the user opened the picker to use it.
+          setAdapters((previous) => normalizeCanvasAdapters([
+            ...previous,
+            ...imported.map((entry) => ({ id: entry.id, strength: ADAPTER_STRENGTH_DEFAULT })),
+          ]))
+          toast.push(`已导入 ${imported.length} 个 LoRA`, 'success')
+        }}
       />
 
       <Modal
