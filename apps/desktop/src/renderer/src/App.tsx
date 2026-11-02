@@ -26,7 +26,7 @@ import { MotionPanel } from './components/motion'
 import { AppTitlebar, GpuTitlebarStatus, TitlebarFrame } from './components/AppTitlebar'
 import { APP_PAGES as PAGES, PageNavigation } from './components/PageNavigation'
 import type { WindowIntent } from './lib/windows'
-import { Bell, ExternalLink, SquareTerminal, X } from 'lucide-react'
+import { ArrowUpCircle, Bell, ExternalLink, SquareTerminal, X } from 'lucide-react'
 import { Button, IconButton, cn } from './components/ui'
 
 function useAppBackground(): React.CSSProperties {
@@ -83,6 +83,9 @@ function StudioShell(): React.JSX.Element {
   const env = useApp((state) => state.env)
   const notificationsOpen = useApp((state) => state.notificationsOpen)
   const setNotificationsOpen = useApp((state) => state.setNotificationsOpen)
+  const unread = useApp((state) => state.notifications.filter((item) => !item.read).length)
+  const updates = useApp((state) => state.updates)
+  const setUpdateDialogOpen = useApp((state) => state.setUpdateDialogOpen)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const page = PAGES.find((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)) ?? PAGES[0]
 
@@ -115,14 +118,35 @@ function StudioShell(): React.JSX.Element {
           <IconButton label={terminalOpen ? '关闭终端' : '打开终端'} className="size-8" onClick={() => setTerminalOpen((open) => !open)}>
             <SquareTerminal className="size-4" />
           </IconButton>
+          {/* Passive update indicator: shows up on its own when a later check finds a release. */}
+          {updates?.updateAvailable && updates.latestVersion ? (
+            <button
+              type="button"
+              data-update-chip
+              title={`MossStudio ${updates.latestVersion} 可用，点击查看更新说明`}
+              onClick={() => setUpdateDialogOpen(true)}
+              className="mr-1 inline-flex items-center gap-1 rounded-full border border-accent-500/40 bg-accent-500/12 px-2 py-0.5 text-caption font-medium text-accent-200 transition hover:bg-accent-500/20"
+            >
+              <ArrowUpCircle className="size-3.5" />
+              {updates.latestVersion}
+            </button>
+          ) : null}
           <IconButton
             label={notificationsOpen ? '隐藏通知' : '显示通知'}
             aria-expanded={notificationsOpen}
             aria-controls="notification-panel"
-            className={cn('size-8', notificationsOpen && 'bg-white/[0.07]')}
+            className={cn('relative size-8', notificationsOpen && 'bg-white/[0.07]')}
             onClick={() => setNotificationsOpen(!notificationsOpen)}
           >
             <Bell className="size-4" />
+            {unread > 0 ? (
+              <span
+                data-notification-badge
+                className="absolute right-0.5 top-0.5 flex min-w-3 items-center justify-center rounded-[3px] bg-accent-500 px-0.5 text-micro font-semibold leading-[12px] text-[#10141c]"
+              >
+                {unread > 9 ? '9+' : unread}
+              </span>
+            ) : null}
           </IconButton>
         </div>
       </TitlebarFrame>

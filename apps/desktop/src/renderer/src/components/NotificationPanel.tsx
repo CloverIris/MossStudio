@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Info, Megaphone, X } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Ipc } from '@shared/channels'
 import { call } from '../lib/api'
 import { relative } from '../lib/format'
@@ -32,6 +32,14 @@ export function NotificationPanel(): React.JSX.Element | null {
   const unread = notifications.filter((item) => !item.read).length
 
   const announcements = (updates?.announcements ?? []).slice(0, 4)
+
+  // Closing the panel is the signal that the user has seen what is in it; without
+  // this the titlebar badge would keep counting items that were already looked at.
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (wasOpen.current && !open) markAllRead()
+    wasOpen.current = open
+  }, [open, markAllRead])
 
   const close = (): void => {
     toggle(false)

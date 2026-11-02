@@ -47,6 +47,7 @@ import { scanEnvironment } from './services/env'
 import { getSettings, updateSettings } from './services/settings'
 import { collectTrainerArtifact } from './services/trainerArtifacts'
 import { checkUpdates } from './services/updates'
+import { startUpdateWatcher, stopUpdateWatcher } from './services/updateWatcher'
 import { downloadCustomModel, getCatalog, listDownloads } from './services/models'
 import { resolveCanvasAdapters } from './services/adapterResolution'
 import { registerGalleryProtocol } from './services/gallery'
@@ -2116,6 +2117,7 @@ exit 0
   createAppWindow('studio')
   void refreshGpuInventory()
   startGpuTelemetry()
+  startUpdateWatcher()
   app.on('activate', () => {
     openWindow('studio')
   })
@@ -2130,6 +2132,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   closeAllSshTerminals()
+  stopUpdateWatcher()
   stopBackend()
   void shutdownMossInfer()
 })

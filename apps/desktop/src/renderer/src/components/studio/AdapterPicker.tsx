@@ -97,6 +97,7 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
                       type="button"
                       onClick={() => onToggle(entry.id)}
                       aria-pressed={active}
+                      data-adapter-option={entry.id}
                       className={cn(
                         'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
                         active ? 'bg-accent-500/[0.08]' : 'hover:bg-white/[0.03]',

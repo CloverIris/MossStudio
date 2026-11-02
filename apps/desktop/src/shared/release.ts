@@ -170,3 +170,62 @@ export function findInstaller(
   const normalizedArch = arch === 'aarch64' ? 'arm64' : arch
   return installers.find((item) => item.platform === platform && item.arch === normalizedArch) ?? null
 }
+
+/**
+ * Version-looking strings a GitHub release advertises, newest first.
+ *
+ * Release tags are typed by hand, so they drift (`v0.1.0` for the 1.0.1 build).
+ * The packed asset name and the title always carry the real version, so read all
+ * of them instead of trusting the tag alone.
+ */
+export function releaseVersionCandidates(input: {
+  tag?: string | null
+  name?: string | null
+  assets?: string[] | null
+  body?: string | null
+}): string[] {
+  // Core version plus an optional prerelease marker. A bare `-win32`/`-x64` in an
+  // asset name is a platform suffix, not a prerelease, so it must not be included.
+  const versionPattern = /(\d+\.\d+\.\d+(?:-(?:alpha|beta|rc|pre|dev|next)[0-9A-Za-z.-]*)?)/gi
+  const sources = [
+    input.tag ?? '',
+    input.name ?? '',
+    ...(input.assets ?? []),
+    // Only the title line of the notes: bodies mention older versions in changelogs.
+    (input.body ?? '').split('\n').find((line) => line.trim().startsWith('#')) ?? '',
+  ]
+  const found = new Set<string>()
+  for (const source of sources) {
+    for (const match of source.matchAll(versionPattern)) {
+      const version = match[1]!
+      if (parseVersion(version)) found.add(version)
+    }
+  }
+  return [...found].sort((a, b) => compareSemver(b, a))
+}
+
+/**
+ * Effective newest version, given both the manifest and the GitHub release.
+ *
+ * The manifest is the richer document (installers, announcements, home copy) but
+ * it is only as fresh as the last commit that bumped it. A release published on
+ * GitHub without that bump still exists for users, so the newer of the two wins;
+ * the caller keeps the manifest document for everything except the version.
+ */
+export function pickLatestVersion(input: {
+  manifest: string | null
+  github: string | null
+  current: string
+}): { version: string | null; updateAvailable: boolean; from: 'manifest' | 'github' | 'none' } {
+  const { manifest, github, current } = input
+  if (manifest !== null && compareSemver(manifest, current) > 0) {
+    return { version: manifest, updateAvailable: true, from: 'manifest' }
+  }
+  if (github !== null && compareSemver(github, current) > 0) {
+    // Skip a GitHub tag the manifest already covers (same or older version).
+    if (manifest === null || compareSemver(github, manifest) > 0) {
+      return { version: github, updateAvailable: true, from: 'github' }
+    }
+  }
+  return { version: manifest ?? github, updateAvailable: false, from: 'none' }
+}

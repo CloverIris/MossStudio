@@ -2,9 +2,10 @@ import { app } from 'electron'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Announcement, Settings, UpdateState } from '@shared/types'
-import { compareSemver, findInstaller } from '@shared/release'
+import { compareSemver, findInstaller, pickLatestVersion, releaseVersionCandidates } from '@shared/release'
 import { paths } from '../lib/paths'
 import { loadReleaseDocument, localReleaseDir } from './release'
+import { applyGitMirror, getLastNetwork, githubMirrorChain } from './network'
 import { getSettings, updateSettings } from './settings'
 import { pushLocalNotification } from './desktopNotifications'
 
@@ -45,13 +46,77 @@ function releaseNotes(body: string): string {
   return body.slice(marker + '## 发布说明'.length).replace(/^\s+/, '').trim()
 }
 
-export async function checkUpdates(settings?: Settings): Promise<UpdateState> {
+interface GithubRelease {
+  version: string
+  url?: string
+  notes?: string
+  publishedAt?: string
+}
+
+/**
+ * Newest published GitHub release, straight from the API.
+ *
+ * `release/manifest.json` is only bumped when someone remembers to; a release
+ * published on GitHub without it was invisible to every client. Ask GitHub as a
+ * second opinion so a real release never goes unnoticed, and keep the manifest
+ * as the source for installers, announcements and the home copy.
+ */
+async function latestGithubRelease(settings: Settings): Promise<GithubRelease | null> {
+  const base = getLastNetwork()?.selected.manifest ?? 'https://raw.githubusercontent.com/CloverIris/MossStudio/main'
+  const repo = /raw\.githubusercontent\.com\/([^/]+)\/([^/]+)/.exec(base)
+  const slug = repo ? `${repo[1]}/${repo[2]}` : 'CloverIris/MossStudio'
+  const api = `https://api.github.com/repos/${slug}/releases/latest`
+  const targets = settings.networkMode === 'direct'
+    ? [api]
+    : [api, ...githubMirrorChain(settings).map((mirror) => applyGitMirror(api, mirror))]
+  for (const target of targets) {
+    try {
+      const response = await fetch(target, {
+        headers: { accept: 'application/vnd.github+json', 'user-agent': `MossStudio-Launcher/${app.getVersion()}` },
+        signal: AbortSignal.timeout(6000),
+      })
+      if (!response.ok) continue
+      const body = await response.json() as {
+        tag_name?: string
+        name?: string
+        html_url?: string
+        body?: string
+        published_at?: string
+        draft?: boolean
+        prerelease?: boolean
+        assets?: Array<{ name?: string }>
+      }
+      if (!body.tag_name || body.draft) continue
+      if (body.prerelease && settings.updateChannel !== 'beta') continue
+      const [version] = releaseVersionCandidates({
+        tag: body.tag_name,
+        name: body.name,
+        assets: (body.assets ?? []).map((asset) => asset.name ?? ''),
+        body: body.body,
+      })
+      if (!version) continue
+      return { version, url: body.html_url, notes: body.body?.trim() || undefined, publishedAt: body.published_at }
+    } catch {
+      // Try the next mirror; a blocked API must never fail the whole check.
+    }
+  }
+  return null
+}
+
+/**
+ * Read the current release state.
+ *
+ * `force` bypasses the per-process document cache. Background and manual checks
+ * pass it: without a fresh read a long-running app would keep answering from the
+ * document it loaded at startup, no matter how often it asked.
+ */
+export async function checkUpdates(settings?: Settings, options: { force?: boolean } = {}): Promise<UpdateState> {
   const effective = settings ?? getSettings()
   const checkedAt = new Date().toISOString()
   const currentVersion = app.getVersion()
 
   try {
-    const loaded = await loadReleaseDocument(false, effective.updateChannel)
+    const loaded = await loadReleaseDocument(options.force === true, effective.updateChannel)
     const doc = loaded.document
     const localDir = localReleaseDir()
     const now = Date.now()
@@ -77,19 +142,28 @@ export async function checkUpdates(settings?: Settings): Promise<UpdateState> {
     }
     announcements.sort((a, b) => Number(b.pinned) - Number(a.pinned))
 
-    const updateAvailable = compareSemver(doc.app.version, currentVersion) > 0
+    // The manifest only knows what it was built with; GitHub knows what was published.
+    const github = compareSemver(doc.app.version, currentVersion) > 0 ? null : await latestGithubRelease(effective)
+    const choice = pickLatestVersion({ manifest: doc.app.version, github: github?.version ?? null, current: currentVersion })
+    const latestVersion = choice.version ?? doc.app.version
+    const notes = choice.from === 'github' && github?.notes ? github.notes : releaseNotes(loaded.body)
+    const releaseUrl = choice.from === 'github' && github?.url ? github.url : doc.app.notes_url
+    const publishedAt = choice.from === 'github' && github?.publishedAt ? github.publishedAt : doc.app.published_at
+    if (choice.from === 'github') {
+      console.log(`[updates] github release ${latestVersion} is newer than the manifest (${doc.app.version})`)
+    }
     const state: UpdateState = {
       checkedAt,
       currentVersion,
-      latestVersion: doc.app.version,
-      updateAvailable,
+      latestVersion,
+      updateAvailable: choice.updateAvailable,
       channel: doc.app.channel,
       manifestSource: loaded.source,
       home: doc.home,
       announcements,
-      releaseNotes: releaseNotes(loaded.body),
-      publishedAt: doc.app.published_at,
-      releaseUrl: doc.app.notes_url,
+      releaseNotes: notes,
+      publishedAt,
+      releaseUrl,
       installer: findInstaller(doc.installers, process.platform, process.arch),
       mandatory: doc.app.mandatory ?? false,
     }
@@ -98,18 +172,18 @@ export async function checkUpdates(settings?: Settings): Promise<UpdateState> {
       process.argv.includes('--screenshot') ||
       process.argv.some((arg) => arg.startsWith('--scenario='))
     if (
-      updateAvailable &&
-      doc.app.version !== lastNotifiedUpdateVersion &&
-      doc.app.version !== effective.dismissedUpdateVersion &&
+      choice.updateAvailable &&
+      latestVersion !== lastNotifiedUpdateVersion &&
+      latestVersion !== effective.dismissedUpdateVersion &&
       !quiet
     ) {
       const shown = pushLocalNotification({
-        title: `发现新版本 ${doc.app.version}`,
+        title: `发现新版本 ${latestVersion}`,
         body: '打开启动器查看更新说明并选择是否安装。',
         windowKind: 'studio',
         route: '/settings',
       })
-      if (shown) lastNotifiedUpdateVersion = doc.app.version
+      if (shown) lastNotifiedUpdateVersion = latestVersion
     }
     return state
   } catch (error) {

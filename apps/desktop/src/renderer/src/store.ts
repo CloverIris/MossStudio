@@ -142,6 +142,54 @@ function upsertDownload(list: DownloadTask[], task: DownloadTask): DownloadTask[
 
 export const useApp = create<AppStore>((set, get) => {
   const startupDownloads = new Map<string, DownloadTask>()
+  /** Versions and announcement ids already surfaced, so repeated checks stay quiet. */
+  const announcedVersions = new Set<string>()
+  const announcedAnnouncements = new Set<string>()
+
+  /**
+   * Turn a fresh release document into user-visible signals.
+   *
+   * Called once at startup and again for every background check, which is what
+   * makes a release published while the app is open show up without the user
+   * opening Settings. `initial` only controls the interruptive dialog: a later
+   * check opens it immediately, the startup check respects the onboarding state.
+   */
+  function announceUpdates(state: UpdateState, options: { initial?: boolean } = {}): void {
+    const settings = get().settings
+    const version = state.latestVersion
+    if (state.updateAvailable && version && !announcedVersions.has(version) && settings?.dismissedUpdateVersion !== version) {
+      announcedVersions.add(version)
+      get().pushNotification({
+        tone: 'info',
+        title: '发现新版本',
+        message: `MossStudio ${version} 可用，点击查看更新说明`,
+      })
+      if (settings?.autoCheckUpdates !== false && (!options.initial || settings?.onboardingState !== 'pending')) {
+        set({ updateDialogOpen: true })
+      }
+    }
+    for (const announcement of [...state.announcements].slice(0, 3)) {
+      if (announcedAnnouncements.has(announcement.id)) continue
+      announcedAnnouncements.add(announcement.id)
+      get().pushNotification({
+        tone:
+          announcement.level === 'critical'
+            ? 'error'
+            : announcement.level === 'warning'
+              ? 'warning'
+              : announcement.level === 'success'
+                ? 'success'
+                : 'info',
+        title: announcement.title,
+        message:
+          announcement.body
+            .replace(/[#>*_`]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 180) || '打开通知面板查看公告详情。',
+      })
+    }
+  }
 
   function mergeDownloadSnapshot(snapshot: DownloadTask[]): DownloadTask[] {
     const tasks = new Map(snapshot.map((task) => [task.id, task]))
@@ -153,6 +201,10 @@ export const useApp = create<AppStore>((set, get) => {
     if (subscribed) return
     subscribed = true
 
+    onEvent<UpdateState>(Events.updatesChanged, (state) => {
+      set({ updates: state })
+      announceUpdates(state)
+    })
     onEvent<DownloadTask>(Events.download, (task) => {
       if (!get().ready) startupDownloads.set(task.id, task)
       const previous = get().downloads.find((item) => item.id === task.id)
@@ -389,41 +441,7 @@ export const useApp = create<AppStore>((set, get) => {
             void get().startNextQueued(deviceId)
           }, 800)
         }
-        if (settings.autoCheckUpdates && updates.status === 'fulfilled' && updates.value.updateAvailable) {
-          get().pushNotification({
-            tone: 'info',
-            title: '发现新版本',
-            message: `MossStudio ${updates.value.latestVersion} 可用`,
-          })
-          if (
-            updates.value.latestVersion &&
-            settings.onboardingState !== 'pending' &&
-            settings.dismissedUpdateVersion !== updates.value.latestVersion
-          ) {
-            set({ updateDialogOpen: true })
-          }
-        }
-        if (updates.status === 'fulfilled') {
-          for (const announcement of updates.value.announcements.filter((item) => item.pinned)) {
-            get().pushNotification({
-              tone:
-                announcement.level === 'critical'
-                  ? 'error'
-                  : announcement.level === 'warning'
-                    ? 'warning'
-                    : announcement.level === 'success'
-                      ? 'success'
-                      : 'info',
-              title: announcement.title,
-              message:
-                announcement.body
-                  .replace(/[#>*_`]/g, '')
-                  .replace(/\s+/g, ' ')
-                  .trim()
-                  .slice(0, 180) || '打开通知面板查看公告详情。',
-            })
-          }
-        }
+        if (updates.status === 'fulfilled') announceUpdates(updates.value, { initial: true })
       } catch (error) {
         set({ error: error instanceof Error ? error.message : String(error) })
       } finally {
@@ -465,7 +483,8 @@ export const useApp = create<AppStore>((set, get) => {
       try {
         const updates = await call<UpdateState>(Ipc.updatesCheck)
         set({ updates })
-        if (updates.updateAvailable) set({ updateDialogOpen: true })
+        // Same signals as a background check: chip, badge and (when allowed) the dialog.
+        announceUpdates(updates)
         return updates
       } catch {
         return null

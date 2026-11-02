@@ -1727,6 +1727,7 @@ export function StudioPage(): React.JSX.Element {
             <button
               type="button"
               onClick={() => setAdapterPickerOpen(true)}
+              data-adapter-picker
               title="为此 Canvas 叠加 LoRA"
               className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 py-1 text-caption text-[var(--color-text-secondary)] hover:border-accent-500/40 hover:text-accent-200"
             >
@@ -1737,7 +1738,7 @@ export function StudioPage(): React.JSX.Element {
           {adapterRows.length ? (
             <div className="space-y-1 py-1.5">
               {adapterRows.map(({ adapter, name, installed }) => (
-                <div key={adapter.id} className="flex items-center gap-1.5">
+                <div key={adapter.id} className="flex items-center gap-1.5" data-adapter-row={adapter.id}>
                   <span className="min-w-0 flex-1 truncate text-caption" title={installed ? name : `${name}（未安装）`}>
                     <span className={cn('truncate', installed ? 'text-[var(--color-text)]' : 'text-amber-200')}>{name}</span>
                   </span>
@@ -2152,6 +2153,7 @@ export function StudioPage(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => addCanvas()}
+                data-studio-board-empty
                 className="flex min-h-[320px] w-full items-center justify-center rounded-lg border border-dashed border-accent-400/40 bg-white/[0.025] text-ui text-[var(--color-text-secondary)] transition hover:border-accent-300 hover:bg-accent-400/[0.06]"
               >
                 <span className="flex flex-col items-center gap-2">

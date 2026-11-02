@@ -160,6 +160,7 @@ export const Events = {
   jobLog: 'event:job-log',
   diagnostic: 'event:diagnostic',
   updateDownload: 'event:update-download',
+  updatesChanged: 'event:updates-changed',
   mossInferDownload: 'event:mossinfer-download',
   engineRemoteProgress: 'event:engine-remote-progress',
   terminalData: 'event:ssh-terminal-data',

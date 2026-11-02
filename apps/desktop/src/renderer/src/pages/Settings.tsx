@@ -549,8 +549,8 @@ export function SettingsPage(): React.JSX.Element {
                     <Switch aria-label="桌面通知" checked={draft.desktopNotifications} onCheckedChange={(value: boolean) => patch({ desktopNotifications: value })} />
                   </div>
                 </Row>
-                <Row title="启动时检查更新" hint="读取 GitHub Release；开发模式优先本地 release/。">
-                  <Switch aria-label="启动时检查更新" checked={draft.autoCheckUpdates} onCheckedChange={(value: boolean) => patch({ autoCheckUpdates: value })} />
+                <Row title="自动检查更新" hint="启动时、每 45 分钟以及切回窗口时检查一次 GitHub Release；关闭后仍会在标题栏提示新版本，只是不弹窗。">
+                  <Switch aria-label="自动检查更新" checked={draft.autoCheckUpdates} onCheckedChange={(value: boolean) => patch({ autoCheckUpdates: value })} />
                 </Row>
               </div>
             </Card>

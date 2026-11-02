@@ -17,6 +17,7 @@ import { cancelJob, getJob, getJobLogs, inputJob, listJobs } from './services/su
 import { clearDiagnostics, dismissDiagnostic, listDiagnostics } from './services/diagnostics'
 import { getSettings, updateSettings } from './services/settings'
 import { checkUpdates, dismissAnnouncement } from './services/updates'
+import { markUpdateCheck } from './services/updateWatcher'
 import { cancelUpdateDownload, downloadUpdate } from './services/updateDownload'
 import {
   cancelMossInferDownload,
@@ -387,7 +388,13 @@ export function registerIpc(): void {
 
   handle(Ipc.envScan, null, () => scanEnvironment(getSettings(), (event) => emit(Events.envProgress, event)))
 
-  handle(Ipc.updatesCheck, null, () => checkUpdates(getSettings()))
+  handle(Ipc.updatesCheck, null, async () => {
+    // A check the user asked for must not answer from the startup cache.
+    const state = await checkUpdates(getSettings(), { force: true })
+    // Keep the background watcher's focus throttle in sync with manual checks.
+    markUpdateCheck()
+    return state
+  })
 
   handle(Ipc.updatesDownload, schemas.updatesDownload, ({ version, installer }) =>
     downloadUpdate(version, installer),
