@@ -30,7 +30,16 @@
       }
     }
   ],
-  "installers": [],
+  "installers": [
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "kind": "zip",
+      "url": "https://github.com/CloverIris/MossStudio/releases/download/1.0.2/MossStudio-1.0.2-win32-x64.zip",
+      "sha256": "9fa562f2e92cd0311f9077c68c024532ad64d3f9156c6fe9821e718eb68762d5",
+      "size_bytes": 213810033
+    }
+  ],
   "assets": [],
   "sources": {
     "git_mirrors": [

@@ -36,8 +36,8 @@ Beta 通道先读 `releases/download/beta/release.md`，不存在时回退 lates
 > 因为仓库里没有同名 tag。`pnpm release:build` 会用 `notes_url` 里的 tag 拼 ZIP 地址，
 > 所以先改 `notes_url` 再构建。
 >
-> `1.0.2` 的 `manifest.json` 目前 `installers: []`：构建脚本在打包后写入真实 URL、
-> 大小与 SHA-256 并重新生成 `release.md`。构建前不要把空安装包目录当成已发布。
+> `1.0.2` 已用 `pnpm release:build` 构建：`manifest.json` 与 `release.md` 已写入真实 ZIP 的
+> URL、大小与 SHA-256，本地产物在 `release/artifacts/`。上传为 GitHub Release 资产后才算发布。
 
 ## 2. 文件职责
 

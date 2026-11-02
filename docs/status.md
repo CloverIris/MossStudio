@@ -78,7 +78,7 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 
 ## 5. 下一轮
 
-1. 发布 1.0.2：`pnpm release:build`、上传 ZIP 与 `release.md`，tag 用 `1.0.2`（不带 `v`）。
+1. 发布 1.0.2：ZIP 与 `release.md` 已构建在 `release/artifacts/`，创建 tag `1.0.2` 的 Release 并上传。
 2. 签名安装包与 NSIS 产物、通道验证。
 3. 真实 Linux NVIDIA 远端验收：预检、system/bundled、wheels、出图。
 4. 远端 `RemoteEngineManager`：每 host 一个持久 sidecar + FIFO。
