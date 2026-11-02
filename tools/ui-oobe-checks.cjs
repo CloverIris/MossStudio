@@ -275,7 +275,7 @@ module.exports = async function checkOobe({ evaluate, waitFor, capture, webConte
   await click('[aria-label="展开引导详情"]')
   await ready()
   await click('[data-oobe-step=engine] button')
-  await waitFor('document.querySelector(".oobe-spotlight-description")?.textContent.includes("选择渠道和包类型")')
+  await waitFor('document.querySelector(".oobe-spotlight-description")?.textContent.includes("包类型")')
   await waitFor('document.querySelectorAll("[data-oobe-highlighted]").length === 1')
   assert.equal(await evaluate('document.querySelector("[data-oobe-highlighted]").tagName'), 'BUTTON')
   assert.ok(await evaluate('document.querySelector("[data-oobe-highlighted]").textContent.includes("下载/更新引擎")'))

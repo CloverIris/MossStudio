@@ -740,7 +740,7 @@ export function EnginePage(): React.JSX.Element {
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-ui font-medium">{device.name}</span>
                   {device.uuid === selectedGpuUuid ? <Pill tone="accent">{settings?.gpuSelection === 'auto' ? '性能推荐' : '默认'}</Pill> : null}
-                  {settings?.gpuProfileOverrides[device.uuid] ? <Pill tone="amber">自定义策略</Pill> : null}
+                  {settings?.gpuProfileOverrides?.[device.uuid] ? <Pill tone="amber">自定义策略</Pill> : null}
                 </div>
                 <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">
                   GPU {device.index} · SM{device.computeCapability ? `${device.computeCapability.major}${device.computeCapability.minor}` : '未知'}
@@ -794,7 +794,7 @@ export function EnginePage(): React.JSX.Element {
                     <select
                       aria-label={`${device.name} 显存模式`}
                       className="app-input w-full"
-                      value={settings?.gpuProfileOverrides[device.uuid]?.memoryMode ?? 'global'}
+                      value={settings?.gpuProfileOverrides?.[device.uuid]?.memoryMode ?? 'global'}
                       onChange={(event) => void saveGpuProfileOverride(device.uuid, 'memoryMode', event.target.value)}
                     >
                       <option value="global">{settings?.gpuProfileMode === 'auto' ? '自动建议' : '跟随全局'}</option>
@@ -808,7 +808,7 @@ export function EnginePage(): React.JSX.Element {
                     <select
                       aria-label={`${device.name} 质量档`}
                       className="app-input w-full"
-                      value={gpuRequiresBf16Tier(device) ? 'reference' : settings?.gpuProfileOverrides[device.uuid]?.tier ?? 'global'}
+                      value={gpuRequiresBf16Tier(device) ? 'reference' : settings?.gpuProfileOverrides?.[device.uuid]?.tier ?? 'global'}
                       onChange={(event) => void saveGpuProfileOverride(device.uuid, 'tier', event.target.value)}
                     >
                       <option value="reference">Reference</option>

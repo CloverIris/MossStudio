@@ -1,4 +1,4 @@
-﻿import {
+import {
   Bell,
   Copy,
   Cpu,
@@ -244,6 +244,8 @@ export function SettingsPage(): React.JSX.Element {
 
   const selected = env?.network.selected
   const active = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0]
+  /** Settings written by older builds may omit the per-role directory map. */
+  const modelDirectories = draft?.modelDirectories ?? {}
 
   return (
     <div className="flex min-h-0 flex-1 items-start gap-6 pb-16">
@@ -300,6 +302,7 @@ export function SettingsPage(): React.JSX.Element {
                 </Row>
                 <Row title="界面动效" hint="「跟随系统」会尊重系统的减少动态效果偏好。">
                   <Select
+                    aria-label="界面动效"
                     value={draft.uiAnimation}
                     onChange={(event) => patch({ uiAnimation: event.target.value as Settings['uiAnimation'] })}
                     className="w-[124px]"
@@ -403,7 +406,7 @@ export function SettingsPage(): React.JSX.Element {
   ['support', '辅助组件'],
   ['adapters', 'Adapters'],
 ] as const).map(([key, label]) => {
-  const path = draft.modelDirectories[key] ?? appInfo?.modelDirectories[key] ?? '—'
+  const path = modelDirectories[key] ?? appInfo?.modelDirectories?.[key] ?? '—'
   return (
     <Row key={key} stacked title={`${label}目录`} hint="留空则使用模型默认根目录下的分类子目录。">
       <div className="flex items-center gap-1">
@@ -413,8 +416,8 @@ export function SettingsPage(): React.JSX.Element {
         <Button tone="ghost" onClick={() => void pickModelDirectory(key, label)}>选择</Button>
         <Button
           tone="ghost"
-          disabled={!draft.modelDirectories[key]}
-          onClick={() => void persist({ modelDirectories: { ...draft.modelDirectories, [key]: null } })}
+          disabled={!modelDirectories[key]}
+          onClick={() => void persist({ modelDirectories: { ...modelDirectories, [key]: null } })}
         >
           默认
         </Button>

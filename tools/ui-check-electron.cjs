@@ -141,11 +141,20 @@ app.whenReady().then(async () => {
     await evaluate('const dialog = document.querySelector("dialog"); dialog.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); dialog.click()')
     await waitFor('!document.querySelector("dialog[open]")')
     await evaluate('document.querySelector("#view-settings").click()')
+    // Settings is split into task sections. Animation lives under 外观 (the
+    // default tab); the network fields live behind their own topic.
+    await waitFor('Boolean(document.querySelector(\'nav[aria-label="设置分区"]\'))')
+    // Clean state before anything is edited. (The network tab may legitimately show
+    // its own probing status, so `[role=status]` is not a proxy for "no draft".)
+    assert.equal(await evaluate('document.body.textContent.includes("有未保存的更改")'), false)
+    await waitFor(`Boolean(document.querySelector('select[aria-label="界面动效"]'))`)
+    await evaluate(`const animation = document.querySelector('select[aria-label="界面动效"]');
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(animation, 'off');
+      animation.dispatchEvent(new Event('change', { bubbles: true }))`)
+    await evaluate('Array.from(document.querySelectorAll(\'nav[aria-label="设置分区"] button\')).find(button => button.textContent.includes("网络")).click()')
     const hfInput = `document.querySelector('input[placeholder="https://hf-mirror.com"]')`
     await waitFor(`Boolean(${hfInput})`)
     assert.equal(await evaluate('getComputedStyle(document.querySelector(".glass")).borderRadius'), '8px')
-    assert.equal(await evaluate('document.querySelectorAll("[role=status]").length'), 0)
-    await evaluate('document.querySelector("#ui-animation").value = "off"; document.querySelector("#ui-animation").dispatchEvent(new Event("change", { bubbles: true }))')
     await evaluate(`const input = ${hfInput}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "https://draft.example.com"); input.dispatchEvent(new Event("input", { bubbles: true }))`)
     await waitFor('document.body.textContent.includes("有未保存的更改")')
     assert.equal(await evaluate('getComputedStyle(document.querySelector("[role=status]")).borderRadius'), '8px')
@@ -153,7 +162,14 @@ app.whenReady().then(async () => {
     await evaluate('document.querySelector("#toggle-sidebar").click()')
     await waitFor('JSON.parse(document.querySelector("#saved-settings").textContent).sidebarCollapsed')
     assert.equal(await evaluate(`${hfInput}.value`), 'https://draft.example.com')
+    // 恢复默认 now lives in the 图库 section and only persists its own field; it must
+    // not touch drafts belonging to other sections.
+    await evaluate('Array.from(document.querySelectorAll(\'nav[aria-label="设置分区"] button\')).find(button => button.textContent.includes("画廊")).click()')
+    await waitFor('Boolean(Array.from(document.querySelectorAll("button")).find(button => button.textContent.trim() === "恢复默认"))')
     await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent.trim() === "恢复默认").click()')
+    await waitFor('JSON.parse(document.querySelector("#saved-settings").textContent).galleryRoots.length === 0')
+    await evaluate('Array.from(document.querySelectorAll(\'nav[aria-label="设置分区"] button\')).find(button => button.textContent.includes("网络")).click()')
+    await waitFor(`Boolean(${hfInput})`)
     assert.equal(await evaluate(`${hfInput}.value`), 'https://draft.example.com')
     await evaluate('Array.from(document.querySelectorAll("header button")).find(button => button.textContent.trim() === "保存").click()')
     await waitFor('JSON.parse(document.querySelector("#saved-settings").textContent).hfEndpoint === "https://draft.example.com"')

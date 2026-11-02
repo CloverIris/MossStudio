@@ -28,6 +28,10 @@ let holdJob = false
 let releaseJob: (() => void) | undefined
 let jobRequests = 0
 let agentRequests = 0
+/** History returned to the sidebar; aiChat appends to it so refresh() keeps the reply. */
+let fixtureConversations: Array<{ id: string; title: string; providerId: string; messages: unknown[]; createdAt: string; updatedAt: string }> = [
+  { id: 'fixture-history', title: '历史对话', providerId: 'fixture-ai', messages: [], createdAt: '', updatedAt: '' },
+]
 const fixtureListeners = new Map<string, Set<(data: unknown) => void>>()
 const oobeSteps = ['device', 'engine', 'model'] as const
 function onboarding(hostId = 'local'): OnboardingStatus {
@@ -48,6 +52,8 @@ let savedSettings: Settings = {
   dismissedAnnouncements: [], dismissedUpdateVersion: null, sidebarCollapsed: false,
   onboardingState: 'dismissed', onboardingHostId: 'local',
   galleryRoots: [], homeBackground: null, trainerRoot: null, disabledDevices: [], deviceLabels: {},
+  // Real settings always carry these; the settings page indexes into them directly.
+  modelDirectories: {}, gbcRoot: null, gpuProfileOverrides: {},
 }
 window.clover = {
   platform: 'win32', version: '0.1.0', acrylic: false, windowKind: 'launcher', channel: 'dev',
@@ -61,13 +67,21 @@ window.clover = {
     if (channel === Ipc.galleryList) return { ok: true, data: { items: [], nextCursor: null, total: 0 } } as T
     if (channel === Ipc.aiProvidersList) return { ok: true, data: agentReady ? [{ id: 'fixture-ai', name: 'Fixture AI', kind: 'openai', baseUrl: 'https://example.test', model: 'fixture', temperature: 0.7, hasKey: true }] : [] } as T
     if (channel === Ipc.aiConversations) return { ok: true, data: agentReady ? [{ id: 'fixture-history', title: '历史对话', providerId: 'fixture-ai', messages: [], createdAt: '', updatedAt: '' }] : [] } as T
+    if (channel === Ipc.aiConversations) return { ok: true, data: agentReady ? [...fixtureConversations] : [] } as T
     if (channel === Ipc.aiChat) {
       document.getElementById('agent-requests')!.textContent = String(++agentRequests)
       return new Promise<T>((resolve) => {
         replyToAgent = (fail) => {
           replyToAgent = undefined
-          const input = payload as { messages: Array<{ role: string; content: string }> }
-          resolve((fail ? { ok: false, error: { code: 'E_FIXTURE', message: 'Agent fixture failure' } } : { ok: true, data: { reply: 'Fixture reply', conversation: { id: 'fixture-chat', title: 'Fixture chat', providerId: 'fixture-ai', messages: input.messages.map((message, index) => ({ ...message, id: String(index), createdAt: '' })).concat([{ id: 'reply', role: 'assistant', content: 'Fixture reply', createdAt: '' }]), createdAt: '', updatedAt: '' } } }) as T)
+          const input = payload as { message?: string; messages?: Array<{ role: string; content: string }> }
+          // The renderer sends the new turn as `message`; older callers sent `messages`.
+          const history = input.messages ?? [{ role: 'user', content: input.message ?? '' }]
+          const conversation = { id: 'fixture-chat', title: 'Fixture chat', providerId: 'fixture-ai', messages: history.map((message, index) => ({ ...message, id: String(index), createdAt: '' })).concat([{ id: 'reply', role: 'assistant', content: 'Fixture reply', createdAt: '' }]), createdAt: '', updatedAt: '' }
+          if (!fail) {
+            // Keep the history in sync: the sidebar refreshes it after every turn.
+            fixtureConversations = [conversation, ...fixtureConversations.filter((item) => item.id !== conversation.id)]
+          }
+          resolve((fail ? { ok: false, error: { code: 'E_FIXTURE', message: 'Agent fixture failure' } } : { ok: true, data: { reply: 'Fixture reply', conversation } }) as T)
         }
       })
     }
@@ -97,6 +111,24 @@ window.clover = {
       savedSettings = { ...savedSettings, ...schemas.settingsUpdate.parse(payload) }
     }
     if (channel === Ipc.backendInfo) return { ok: true, data: { ready: true, url: 'http://studio-fixture', token: 'fixture' } } as T
+    // Projects: the Studio board saves through these, and a save response with no
+    // canvases used to blank the board (and crash the fixture).
+    if (channel === Ipc.projectSave) {
+      const input = payload as { id?: string; name: string; canvases: unknown[]; selectedCanvasId?: string; seriesId?: string; page?: number }
+      const now = new Date().toISOString()
+      return { ok: true, data: { ...input, schemaVersion: 3, id: input.id ?? 'fixture-project', createdAt: now, updatedAt: now } } as T
+    }
+    if (channel === Ipc.projectGet) return { ok: true, data: null } as T
+    // The Studio board reads gpuInventory.devices while rendering cards; the generic
+    // `[]` fallback would crash the whole tree on the first Canvas.
+    if (channel === Ipc.gpuInventory) return {
+      ok: true,
+      data: {
+        scannedAt: new Date().toISOString(),
+        status: 'ok',
+        devices: [{ uuid: 'GPU-fixture', index: 0, name: 'Fixture GPU', computeCapability: { major: 8, minor: 9 }, memoryTotalBytes: 8 * 1024 ** 3, memoryFreeBytes: 7 * 1024 ** 3 }],
+      },
+    } as T
     if (channel === Ipc.windowOpen) document.getElementById('window-request')!.textContent = JSON.stringify(schemas.windowOpen.parse(payload))
     const data = channel === Ipc.settingsUpdate ? savedSettings : channel === Ipc.appInfo || channel === Ipc.envScan ? null : []
     return { ok: true, data } as T
@@ -138,9 +170,14 @@ const fixtureInstances = ['instance-a', 'instance-b'].map((id) => ({
   id, name: id, runtimeState: 'ready', placement: { kind: 'local' },
 })) as InstanceInfo[]
 
+const fixtureAdapter = {
+  id: 'fixture-lora', name: 'Fixture LoRA', provider: 'hf' as const, repo: 'fixture/lora', revision: 'main',
+  kind: 'lora' as const, license: 'Fixture', files: ['lora.safetensors'], sizeBytes: 1024, tags: [],
+  installed: true, installedBytes: 1024,
+}
 const fixtureCatalog = {
   bundles: [{ id: 'fixture-bundle', name: 'Fixture MOSS', description: '', components: { dit: 'dit', textEncoder: 'text', vae: 'vae' }, support: 'support', recommended: true }],
-  models: [], adapters: [], source: 'builtin', updatedAt: new Date().toISOString(),
+  models: [], adapters: [fixtureAdapter], source: 'builtin', updatedAt: new Date().toISOString(),
 }
 const fixtureDevices = [{ id: 'cuda:0', name: 'Fixture GPU', kind: 'cuda', detail: 'CUDA', available: true }]
 const fixtureOobeCatalog = { ...fixtureCatalog, models: ['dit', 'text', 'vae', 'support'].map((id, index) => ({
@@ -284,4 +321,8 @@ if (dpiAudit) {
   document.documentElement.dataset.uiAnimation = 'off'
   useApp.setState({ studioPrompt: '描述画面、文字、风格与布局。', catalog: fixtureOobeCatalog as never, devices: fixtureDevices as never })
 }
-createRoot(document.getElementById('root')!).render(<StrictMode>{dpiAudit ? <App /> : <MemoryRouter><Fixture /></MemoryRouter>}</StrictMode>)
+// Uncaught render errors unmount the whole tree. Report the stack so a harness
+// timeout names the failing component instead of dumping an empty #root.
+createRoot(document.getElementById('root')!, {
+  onUncaughtError: (error) => console.error('Fixture crash:', (error as Error)?.stack ?? String(error)),
+}).render(<StrictMode>{dpiAudit ? <App /> : <MemoryRouter><Fixture /></MemoryRouter>}</StrictMode>)

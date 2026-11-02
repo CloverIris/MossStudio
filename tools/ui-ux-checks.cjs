@@ -26,6 +26,17 @@ module.exports = async function checkUx({ evaluate, waitFor, capture }) {
   await waitFor('!document.querySelector("#notification-panel")')
 
   await click('#view-studio')
+  // The board starts empty; create a Canvas and load the example layout so the
+  // bbox editor has boxes to work with.
+  if (await evaluate('Boolean(document.querySelector("[data-studio-board-empty]"))')) {
+    await click('[data-studio-board-empty]')
+    await waitFor('Boolean(document.querySelector(\'select[aria-label="模型"]\'))')
+    // Creating a Canvas hydrates the sampler, which clears the prompt.
+    await input('textarea[aria-label="提示词"]', 'Fixture prompt')
+  }
+  if (!(await evaluate('Boolean(document.querySelector("[data-box-id]"))'))) {
+    await click('button[aria-label="示例布局"]')
+  }
   await waitFor('Boolean(document.querySelector("[data-box-id]"))')
   const boxes = await evaluate('document.querySelectorAll(".studio-viewport [data-box-id]").length')
   await click('button[aria-label=清空画布]')
@@ -49,14 +60,15 @@ module.exports = async function checkUx({ evaluate, waitFor, capture }) {
   assert.equal(await evaluate('document.querySelector("[data-studio-generate]").getAttribute("aria-busy")'), 'true')
   await click('#release-job')
   await waitFor('!document.querySelector("[data-studio-generate]").disabled')
+  // Keep the failing fetch installed until the toast lands: submit awaits a save
+  // before it reaches the network, so restoring it synchronously would race.
   await evaluate(`(() => {
-    const originalFetch = window.fetch
-    try {
-      window.fetch = async () => { throw new Error('Fixture submit failure') }
-      document.querySelector('[data-studio-generate]').click()
-    } finally { window.fetch = originalFetch }
+    window.__savedFetch = window.fetch
+    window.fetch = async () => { throw new Error('Fixture submit failure') }
   })()`)
+  await click('[data-studio-generate]')
   await waitFor('document.body.textContent.includes("Fixture submit failure")')
+  await evaluate('(() => { window.fetch = window.__savedFetch; delete window.__savedFetch })()')
   assert.equal(await evaluate('document.querySelector("[data-studio-generate]").disabled'), false)
   await click('[data-studio-generate]')
   await waitFor(`Number(document.querySelector('#job-requests').textContent) === ${requests + 2} && !document.querySelector('[data-studio-generate]').disabled`)
@@ -74,7 +86,8 @@ module.exports = async function checkUx({ evaluate, waitFor, capture }) {
   await waitFor('document.querySelector("#agent-requests").textContent === "1"')
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(provider)}).disabled`), true)
   assert.equal(await evaluate('document.querySelector("button[title=新对话]").disabled'), true)
-  assert.equal(await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent === "历史对话").disabled'), true)
+  // History stays reachable while a reply streams; starting a new chat does not.
+  assert.equal(await evaluate('document.querySelector("button[title=历史对话]").disabled'), false)
   await input(composer, '等待期间写的新草稿')
   await click('#agent-fail')
   await waitFor('document.querySelector("button[aria-label=发送消息]")?.disabled === false')

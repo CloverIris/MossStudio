@@ -390,8 +390,6 @@ export function StudioPage(): React.JSX.Element {
   const previewJob = previewOutput?.canvas.jobId
     ? jobs.find((item) => item.id === previewOutput.canvas.jobId)
     : undefined
-  /** Prompt the footer will send for the selected Canvas, shown as a one-line summary. */
-  const pendingPrompt = selectedCanvas ? effectivePromptFor(selectedCanvas) : { prompt: '', source: 'text' as const, regions: 0 }
 
   // Agent tools: the model drives the workbench through these, not through text alone.
   useEffect(() => installStudioToolBridge(), [])
@@ -500,6 +498,12 @@ export function StudioPage(): React.JSX.Element {
       backgroundPath: background?.path,
     }
   }, [selectedCanvas, draft, prompt, negative, seed, steps, cfg, modelBundleId, deviceId, deviceUuid, adapters, background?.path])
+  /**
+   * Prompt the footer will send, shown as a one-line summary. Read it from the live
+   * snapshot rather than the persisted Canvas: the editor state is what the next
+   * submit uses, so the primary action must enable the moment the user types.
+   */
+  const pendingPrompt = currentCanvasSnapshot ? effectivePromptFor(currentCanvasSnapshot) : { prompt: '', source: 'text' as const, regions: 0 }
   const persistedCanvases = useMemo(
     () => currentCanvasSnapshot
       ? canvases.map((canvas) => canvas.id === currentCanvasSnapshot.id ? currentCanvasSnapshot : canvas)
@@ -1082,10 +1086,12 @@ export function StudioPage(): React.JSX.Element {
         seriesId: seriesId || undefined,
         page,
       })
-      setProjectId(saved.id)
+      setProjectId(saved.id ?? projectId)
       setDraftTab(null)
-      setProjectName(saved.name)
-      setCanvases(saved.canvases)
+      setProjectName(saved.name ?? (projectName.trim() || '未命名 Project'))
+      // A malformed or older save response must not blank the board: keep what we
+      // just sent when the document comes back without canvases.
+      setCanvases(Array.isArray(saved.canvases) ? saved.canvases : canvasesToSave)
       lastSaved.current = snapshot
       setProjects(await electronStudioClient.listProjects())
       if (!auto) toast.push('Project 已保存', 'success')
@@ -1672,7 +1678,7 @@ export function StudioPage(): React.JSX.Element {
           <span className="text-caption text-[var(--color-text-tertiary)]">{prompt.length} 字符</span>
           <button type="button" onClick={() => setSegmentsOpen(true)} className="text-caption text-accent-300 hover:underline">分段 / 确认</button>
         </div>
-        <Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="描述画面、文字、风格与布局。" className="h-36 w-full resize-none leading-5" />
+        <Textarea aria-label="提示词" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="描述画面、文字、风格与布局。" className="h-36 w-full resize-none leading-5" />
         <label className="block text-caption text-[var(--color-text-tertiary)]">负面提示词</label>
         <Input value={negative} onChange={(event) => setNegative(event.target.value)} className="w-full" />
       </div>
@@ -1708,7 +1714,12 @@ export function StudioPage(): React.JSX.Element {
             <Input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} className="w-[92px] text-right font-mono" />
           ))}
           {row('模型', (
-            <Select value={modelBundleId} onChange={(event) => { setModelBundleId(event.target.value); localStorage.setItem('mossstudio.modelBundleId', event.target.value) }} className="w-[184px]">
+            <Select
+              aria-label="模型"
+              value={modelBundleId}
+              onChange={(event) => { setModelBundleId(event.target.value); localStorage.setItem('mossstudio.modelBundleId', event.target.value) }}
+              className="w-[184px]"
+            >
               {catalog?.bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}
             </Select>
           ))}

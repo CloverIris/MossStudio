@@ -34,7 +34,14 @@ try {
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
   for (const scale of dpiAudit ? ['native', 1, 1.25, 1.5, 1.75, 2] : process.argv.includes('--scaled') ? [1, 1.5, 2] : [1]) {
-    const result = spawnSync(require('electron'), [resolve(root, dpiAudit ? 'tools/ui-dpi-check-electron.cjs' : 'tools/ui-check-electron.cjs'), output], {
+    const result = spawnSync(require('electron'), [
+      resolve(root, dpiAudit ? 'tools/ui-dpi-check-electron.cjs' : 'tools/ui-check-electron.cjs'),
+      output,
+      // Hosts where the Chromium sandbox cannot start (locked-down Windows, some
+      // containers) opt out instead of crashing the harness. Off by default, and
+      // last so it never shifts the script/output arguments.
+      ...(process.env.CLOVER_UI_NO_SANDBOX === '1' ? ['--no-sandbox'] : []),
+    ], {
       env: {
         ...env,
         CLOVER_UI_SCALE: String(scale),
