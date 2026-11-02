@@ -2,10 +2,13 @@
 
 ## 引擎版本
 
-- 适配 MossInfer 2.0（owoinfer v2.0.0，server protocol 2 / ABI 1）：
+- 适配 MossInfer 2.0（上游 `owoinfer` v2.0.0，server protocol 2 / ABI 1）：
   - `hello` 发送/校验 `protocol_version: 2`（本机 `mossInfer.ts`、远端 `remoteEngine.ts`、一次性探测 `probeEngine.ts`）；
   - `load` 的 `tier` 必填且只能是 `reference | high | turbo`：设置项移除 `auto`，旧配置迁移为 `high`（上游推荐默认；bf16 bundle 的精确档为 `reference`）；
   - 下载/安装路径不变：release 资产与 CI artifact 命名在 2.0 未变（`mossinfer-<version>-<os>-cu<N>-x86_64[-system-cuda]` / `mossinfer-<platform>-cuda<N>`）。
+- 上游仓库迁移：`xycld/owoinfer` → [`mossimage-cpp/mossimage.cpp`](https://github.com/mossimage-cpp/mossimage.cpp)。
+  GitHub 对旧地址返回 301，本机与远端的版本查询、CI artifact 查询都已改用新 slug（`lib/engineAssets.ts` 的 `MOSSINFER_REPO`）；
+  Release 资产命名与 `moss-server` 协议、ABI 都没有变化，已安装引擎无需重装。
 
 ## 统一协议解码与兼容判定
 

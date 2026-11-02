@@ -129,6 +129,7 @@ SSH host → spawn ssh → remote moss-server
 
 ### 引擎包
 
+- 引擎上游：[`mossimage-cpp/mossimage.cpp`](https://github.com/mossimage-cpp/mossimage.cpp)（原 `xycld/owoinfer`，旧地址仍 301 重定向）；本机与远端都用同一个 slug（`lib/engineAssets.ts` 的 `MOSSINFER_REPO`）。
 - 两种包：`system-cuda`（小，依赖系统 cuBLASLt）和 `bundled`（+700MB，自带 CUDA 库）。
 - 本机可选择 GitHub 正式 Release；上游没有 Release 时稳定渠道回退至最新成功 CI artifact。已安装版本可在引擎页切换或删除。
 - 本机安装是目录事务：下载、CUDA 库、probe 和兼容判定都在 `.staging` 完成，安装检查通过后才晋升；current 先 shutdown 再进入 `.backup`，失败回滚，启动时按 `.pending.json` 恢复。settings 只在晋升成功后指向新 binary。

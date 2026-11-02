@@ -2,11 +2,19 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   DEFAULT_MOSSINFER_FLAVOUR,
+  MOSSINFER_REPO,
   mossInferDriverCompatibilityError,
   mossInferArchitectureForComputeCapability,
   mossInferArchiveBase,
   nvidiaDriverMajor,
 } from '../apps/desktop/src/main/lib/engineAssets.ts'
+
+test('engine lookups follow the migrated upstream repository', () => {
+  // xycld/owoinfer was renamed to mossimage-cpp/mossimage.cpp. GitHub redirects the
+  // old slug, but a redirect hides which repository answered, so both the local and
+  // the remote installer pin the canonical slug here.
+  assert.equal(MOSSINFER_REPO, 'mossimage-cpp/mossimage.cpp')
+})
 
 test('standard system-CUDA archive names remain unchanged', () => {
   assert.equal(

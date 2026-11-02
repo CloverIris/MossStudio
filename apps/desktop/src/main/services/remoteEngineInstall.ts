@@ -1,10 +1,10 @@
 import type { EngineRemoteProgress, RemoteEngineInstallOptions, TrainingHost } from '@shared/types'
-import { mossInferArchiveBase } from '../lib/engineAssets'
+import { MOSSINFER_REPO, mossInferArchiveBase } from '../lib/engineAssets'
 import { posixQuote, remoteAbsolute, sshExec, sshStream } from './ssh'
 import { getSettings } from './settings'
 import { resolveGithubToken } from './mossInferDownload'
 
-const REPO = 'xycld/owoinfer'
+const REPO = MOSSINFER_REPO
 const API = `https://api.github.com/repos/${REPO}`
 
 interface Release {

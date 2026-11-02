@@ -1,4 +1,4 @@
-﻿import { app } from 'electron'
+import { app } from 'electron'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, chmodSync, statSync, writeFileSync } from 'node:fs'
@@ -29,6 +29,7 @@ import { getLastNetwork, githubMirrorChain } from './network'
 import { assertFreeSpace } from '../lib/disk'
 import {
   DEFAULT_MOSSINFER_FLAVOUR,
+  MOSSINFER_REPO,
   mossInferArchitectureForComputeCapability,
   mossInferArchiveBase,
   mossInferDriverCompatibilityError,
@@ -39,7 +40,8 @@ import { getGpuInventory, refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 
 /**
- * Downloads the MossInfer engine package from the upstream repo xycld/owoinfer:
+ * Downloads the MossInfer engine package from the upstream repo mossimage-cpp/mossimage.cpp
+ * (formerly xycld/owoinfer; GitHub redirects the old slug):
  * - stable: the latest GitHub Release assets (sha256-verified via SHA256SUMS);
  * - dev: the latest successful `ci` run's Actions artifact (requires a token: GitHub
  *   answers 401 on artifact zips even for public repos).
@@ -47,7 +49,7 @@ import { resolveGpuSelection } from '../lib/gpuInventory'
  * installed server path is written to settings.mossInferServerPath.
  */
 
-const REPO = 'xycld/owoinfer'
+const REPO = MOSSINFER_REPO
 const API = `https://api.github.com/repos/${REPO}`
 
 let current: MossInferDownloadState | null = null

@@ -3,6 +3,17 @@ export type MossInferVariant = 'system-cuda' | 'bundled'
 export type MossInferFlavour = 'cu12' | 'cu13'
 export const DEFAULT_MOSSINFER_FLAVOUR: MossInferFlavour = 'cu13'
 
+/**
+ * Upstream repository that publishes the MossInfer engine releases.
+ *
+ * The project moved from `xycld/owoinfer` to `mossimage-cpp/mossimage.cpp`;
+ * GitHub still redirects the old slug, but the canonical one keeps the release
+ * lookup, the CI artifact lookup and the user-facing errors pointing at the
+ * repository that actually exists. Release assets keep their `mossinfer-*` names
+ * and the sidecar is still `moss-server`.
+ */
+export const MOSSINFER_REPO = 'mossimage-cpp/mossimage.cpp'
+
 export function nvidiaDriverMajor(version: string | undefined): number | null {
   const match = /^(\d+)(?:\.|$)/.exec(version?.trim() ?? '')
   if (!match) return null

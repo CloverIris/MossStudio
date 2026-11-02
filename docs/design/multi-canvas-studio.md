@@ -176,7 +176,7 @@ Canvas 底部和终端当前任务头部共同显示：
 - MossInfer 的结构化事件是主来源；优先补齐协议事件字段、Supervisor Job 更新和 UI 消费。
 - TQDM/stdout/stderr 解析仅作为旧 Runner 或第三方程序的回退。复用现有 `parseTqdm`、`LineSplitter` 和诊断管道，覆盖 carriage return、ANSI 清理、stderr 与分块输入。
 - 文本解析出不确定阶段时只更新阶段/步骤，不应覆盖可靠的结构化进度，也不能凭单条“x/y”误识别模型日志。
-- 若 OwOinfer/MossInfer 分支仍缺少阶段，优先增补稳定的机器可读 protocol event（阶段、当前步、总步、每步耗时/ETA、消息）；面向人的 stderr 日志可保留，但不作为 UI 契约。
+- 若 MossInfer 上游分支仍缺少阶段，优先增补稳定的机器可读 protocol event（阶段、当前步、总步、每步耗时/ETA、消息）；面向人的 stderr 日志可保留，但不作为 UI 契约。
 - 协议事件应对缺失/未知字段向前兼容；未知阶段落到“处理中”，而不是错误地归类为去噪。
 
 ### 5.3 可观察性
