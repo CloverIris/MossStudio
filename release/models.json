@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-19T09:48:26Z",
+  "updated_at": "2026-11-02T02:52:00Z",
   "models": [
     {
       "id": "moss-sft-dit",
@@ -488,6 +488,89 @@
         "8-step"
       ],
       "notes": "Base 版 DMD 适配器。"
+    },
+    {
+      "id": "lora-beauty",
+      "name": "Beauty LoRA（人像美化，社区）",
+      "provider": "hf",
+      "repo": "axiomofmind/Moss-image-beauty-lora",
+      "revision": "main",
+      "kind": "lora",
+      "base": "moss-sft",
+      "license": "Apache-2.0",
+      "files": [
+        "pytorch_lora_weights.safetensors"
+      ],
+      "size_bytes": 74377208,
+      "tags": [
+        "community",
+        "lora",
+        "portrait",
+        "style"
+      ],
+      "notes": "人像/美妆风格 LoRA（PEFT 格式，引擎开发期实测可加载）。触发词 moss_beauty_style，建议强度 1.0、30 步，与官方 SFT 组合最佳。"
+    },
+    {
+      "id": "lora-destripe",
+      "name": "Destripe 去色带（社区）",
+      "provider": "hf",
+      "repo": "nynxz/MOSS-Image",
+      "revision": "main",
+      "kind": "lora",
+      "base": "moss-sft",
+      "license": "Apache-2.0",
+      "files": [
+        "loras/moss_sft_destripe_top64_bf16.safetensors"
+      ],
+      "size_bytes": 1900586,
+      "tags": [
+        "community",
+        "lora",
+        "fix"
+      ],
+      "notes": "1.9 MB 修复 LoRA，去掉 SFT 在平滑区域画出的竖向色带；强度 1.0，可与其他 LoRA 叠加。"
+    },
+    {
+      "id": "lora-turbo-mfd",
+      "name": "Turbo MFD 少步（社区）",
+      "provider": "hf",
+      "repo": "congruency/MOSS-Image-Turbo-MFD",
+      "revision": "main",
+      "kind": "lora",
+      "base": "moss-sft",
+      "license": "Apache-2.0",
+      "files": [
+        "MOSS-Image-SFT-Turbo-MFD-v0.1.comfy.safetensors"
+      ],
+      "size_bytes": 75126744,
+      "tags": [
+        "community",
+        "lora",
+        "few-step",
+        "turbo"
+      ],
+      "notes": "Mean Flow Distillation 少步 LoRA（SFT 版，kohya 格式）：4–6 步、CFG 1、强度 1.0；按普通步数生成会明显掉质。"
+    },
+    {
+      "id": "lora-4step",
+      "name": "4-step 蒸馏 LoRA（社区）",
+      "provider": "hf",
+      "repo": "akhaliq/MOSS-Image-SFT-4-steps",
+      "revision": "main",
+      "kind": "lora",
+      "base": "moss-sft",
+      "license": "Apache-2.0",
+      "files": [
+        "lora.safetensors"
+      ],
+      "size_bytes": 1189176752,
+      "tags": [
+        "community",
+        "lora",
+        "few-step",
+        "distill"
+      ],
+      "notes": "Euler 原生 4 步蒸馏 LoRA（1.1 GB，DMD）：4 步、CFG 1，用普通采样器即可，不需要 data-space 采样器或额外 time embedding。"
     }
   ],
   "bundles": [

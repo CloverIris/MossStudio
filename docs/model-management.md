@@ -4,6 +4,8 @@
 
 默认组合为官方 SFT。Base、SFT 和 Diffusers FP16-fixed 复用官方 Qwen3.5 编码器与 FLUX.2 small VAE。ComfyUI 单文件按精确路径下载，界面标明仅供 ComfyUI 使用，不参与本地 Gradio 绑定。
 
+`adapters` 是可挂在 Canvas 上的 LoRA：8-step DMD 两档由专用采样档驱动，其余为普通 LoRA（人像美化 Beauty、去色带 Destripe、Turbo MFD 少步、4-step 蒸馏）。后 4 个的格式都在上游 MossInfer 开发期验证过可加载（kohya / PEFT），少步 LoRA 记得把步数与 CFG 调到各自说明的档位。
+
 ## 安装与缓存
 
 - 保留 HF `blobs` / `snapshots` / `refs` 布局，指定 revision 先解析到实际提交，文件树支持分页。

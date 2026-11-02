@@ -7,7 +7,7 @@
 - 通道：**stable**
 - 发布：2026-11-02T02:00:00Z
 - 最低版本：0.0.0
-- 模型目录：2026-10-19T09:48:26Z · `sha256:89c389b122c3…`
+- 模型目录：2026-11-02T02:52:00Z · `sha256:d23effcfe7d7…`
 
 ## 安装包
 
@@ -43,6 +43,10 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `dmd8-sft` | 8-step DMD (SFT) | `lodestones/MOSS-Image-SFT-8-steps-dmd` | dmd | moss-sft | 1.3 GB | Apache-2.0 | `lora.safetensors` `time_embedding.safetensors` `dataspace.safetensors` |
 | `dmd8-base` | 8-step DMD (Base) | `lodestones/MOSS-Image-Base-8-steps-dmd` | dmd | moss-base | 1.3 GB | Apache-2.0 | `lora.safetensors` `time_embedding.safetensors` `dataspace.safetensors` |
+| `lora-beauty` | Beauty LoRA（人像美化，社区） | `axiomofmind/Moss-image-beauty-lora` | lora | moss-sft | 71 MB | Apache-2.0 | `pytorch_lora_weights.safetensors` |
+| `lora-destripe` | Destripe 去色带（社区） | `nynxz/MOSS-Image` | lora | moss-sft | 2 MB | Apache-2.0 | `loras/moss_sft_destripe_top64_bf16.safetensors` |
+| `lora-turbo-mfd` | Turbo MFD 少步（社区） | `congruency/MOSS-Image-Turbo-MFD` | lora | moss-sft | 72 MB | Apache-2.0 | `MOSS-Image-SFT-Turbo-MFD-v0.1.comfy.safetensors` |
+| `lora-4step` | 4-step 蒸馏 LoRA（社区） | `akhaliq/MOSS-Image-SFT-4-steps` | lora | moss-sft | 1.2 GB | Apache-2.0 | `lora.safetensors` |
 
 ## 公告
 
@@ -63,6 +67,7 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
 - **兼容性以引擎为准**：引擎返回的 `supported` 是唯一权威，算力只用于选包、展示和警告，不再按显卡名称推断而误拒绝新显卡。
 - **客户端主动发现更新**：启动后按固定间隔检查，窗口重新获得焦点时也会补查；发现新版本时标题栏出现版本胶囊，并弹出更新对话框。
 - **公告与通知**：置顶公告进入通知中心，未读数显示在铃铛角标上；打开通知面板后自动标记已读。
+- **模型库新增社区 LoRA**：人像美化（Beauty）、去色带（Destripe）、Turbo MFD 少步、4-step 蒸馏，共 4 个适配器，可在 Canvas 的 LoRA 行直接下载选用。
 - 保留 1.0.1 的修复：Windows 应用内更新在解压 `resources/app.asar` 时不再失败。
 
 ## 主要功能
@@ -120,9 +125,9 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
     "subtitle": "在 MossStudio 创作，引擎与模型在管理页准备。"
   },
   "catalog": {
-    "updated_at": "2026-10-19T09:48:26Z",
+    "updated_at": "2026-11-02T02:52:00Z",
     "models_url": "https://raw.githubusercontent.com/CloverIris/MossStudio/main/release/models.json",
-    "models_sha256": "89c389b122c36126d5edd76870bd3e86d3bcfdc910bb6c3a3c90275e009146c5"
+    "models_sha256": "d23effcfe7d7103e6424a0261a9ffd715ad9e57f275cbc55e779cf5a3e204719"
   },
   "announcements": [
     {
