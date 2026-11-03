@@ -21,6 +21,7 @@ import { call, onEvent } from '../lib/api'
 import { percent } from '../lib/format'
 import { useApp } from '../store'
 import { DownloadQueue, downloadLabels as labels } from '../components/DownloadQueue'
+import { ModelDirectoriesCard } from '../components/ModelDirectoriesCard'
 import { MotionPanel } from '../components/motion'
 import {
   Button,
@@ -124,8 +125,6 @@ export function ModelsPage(): React.JSX.Element {
   const [mode, setMode] = useState<'local' | 'remote'>('local')
   const deferredQuery = useDeferredValue(query)
   const settings = useApp((s) => s.settings)
-  const [localRoot, setLocalRoot] = useState(settings?.modelsRoot ?? '')
-  const [localBusy, setLocalBusy] = useState(false)
   const [hosts, setHosts] = useState<ManagedHost[]>([])
   const [remoteHostId, setRemoteHostId] = useState('')
   const [remoteRoot, setRemoteRoot] = useState('~/.mossstudio/models')
@@ -152,7 +151,10 @@ export function ModelsPage(): React.JSX.Element {
     setInstalledOnly(false)
     setQuery('')
   }, [location.key, location.search])
-  useEffect(() => { setLocalRoot(settings?.modelsRoot ?? '') }, [settings?.modelsRoot])
+  useEffect(() => {
+    void refreshCatalog()
+    return onEvent(Events.modelsChanged, () => { void refreshCatalog() })
+  }, [refreshCatalog])
   useEffect(() => {
     const load = async (): Promise<void> => {
       const list = (await call<ManagedHost[]>(Ipc.hostsList)).filter((host) => host.kind === 'ssh')
@@ -382,26 +384,6 @@ export function ModelsPage(): React.JSX.Element {
     } catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') } finally { setRemoteBusy(false) }
   }
 
-  async function saveLocalRoot(): Promise<void> {
-    setLocalBusy(true)
-    try {
-      await call(Ipc.settingsUpdate, { modelsRoot: localRoot.trim() || null })
-      await refreshCatalog()
-      toast.push('本地模型目录已更新', 'success')
-    } catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') } finally { setLocalBusy(false) }
-  }
-  async function pickLocalRoot(): Promise<void> {
-    const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: '选择本地模型目录' })
-    if (path) setLocalRoot(path)
-  }
-  async function openLocalRoot(): Promise<void> {
-    const path = settings?.modelsRoot?.trim() || env?.device.modelsPath
-    if (!path) {
-      toast.push('模型目录路径尚未就绪，请先刷新环境检测', 'info')
-      return
-    }
-    try { await call(Ipc.openPath, { path }) } catch (error) { toast.push(error instanceof Error ? error.message : String(error), 'error') }
-  }
 
   function runtimeConfigCard(remote: boolean): React.JSX.Element | null {
     if (!runtimeConfig) return null
@@ -660,23 +642,7 @@ export function ModelsPage(): React.JSX.Element {
         </Card>
       ) : null}
 
-        <Card className="p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2"><HardDrive className="size-4 text-accent-300" /><h2 className="text-[14px] font-semibold">本地模型目录</h2></div>
-              <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">下载、导入和引用都使用这个根目录；修改后会刷新模型库。</p>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              <Button tone="ghost" onClick={() => void openLocalRoot()} disabled={localBusy}>打开目录</Button>
-              <Button tone="ghost" onClick={() => void importFolder()} disabled={busy !== null || localBusy}>导入目录</Button>
-            </div>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            <Input value={localRoot} onChange={(event) => setLocalRoot(event.target.value)} placeholder={env?.device.modelsPath ?? '默认 <userData>/models'} className="min-w-[240px] flex-1 font-mono text-caption" />
-            <Button tone="secondary" onClick={() => void pickLocalRoot()} disabled={localBusy}>选择目录</Button>
-            <Button tone="primary" onClick={() => void saveLocalRoot()} disabled={localBusy}>保存路径</Button>
-          </div>
-        </Card>
+        <ModelDirectoriesCard />
 
       <DownloadQueue tasks={active} onPause={(task) => pauseDownload(task.id)} onResume={resume} onCancel={cancel} />
 

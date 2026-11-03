@@ -11,7 +11,7 @@ import { ensureDirs, paths } from './lib/paths'
 import { openDirectoryInFileManager, revealInFileManager } from './lib/fileManager'
 import { scanEnvironment } from './services/env'
 import { getPythonInstallState, installManagedPython } from './services/managedPython'
-import { cancelDownload, getCatalog, deleteModel, importAdapterFile, importModelFolder, invalidateCatalog, listDownloads, pauseDownload, startDownload, installBundle } from './services/models'
+import { cancelDownload, cleanupEmptyModelDirs, getCatalog, deleteModel, importAdapterFile, importModelFolder, invalidateCatalog, listDownloads, pauseDownload, registerScannedModels, scanModels, startDownload, installBundle } from './services/models'
 import { galleryDetail, listGallery, revealInFolder } from './services/gallery'
 import { cancelJob, getJob, getJobLogs, inputJob, listJobs } from './services/supervisor'
 import { clearDiagnostics, dismissDiagnostic, listDiagnostics } from './services/diagnostics'
@@ -383,7 +383,11 @@ export function registerIpc(): void {
       stopBackend()
       await startBackend()
     }
+    const modelDirsChanged =
+      before.modelsRoot !== settings.modelsRoot ||
+      JSON.stringify(before.modelDirectories) !== JSON.stringify(settings.modelDirectories)
     emit(Events.settingsChanged, settings)
+    if (modelDirsChanged) emit(Events.modelsChanged, { reason: 'settings' })
     return settings
   })
 
@@ -501,7 +505,36 @@ export function registerIpc(): void {
     })
     if (result.canceled || !result.filePaths[0]) return { canceled: true, added: 0, duplicates: 0 }
     const imported = await importModelFolder(result.filePaths[0], getSettings())
+    emit(Events.modelsChanged, { reason: 'import', ...imported })
     return { canceled: false, ...imported }
+  })
+
+  // Read-only discovery for a folder the user already has (e.g. a ComfyUI models
+  // tree). Never writes into it; registration is a separate explicit call.
+  handle(Ipc.modelsScan, schemas.modelsScan, async ({ directory }) => {
+    let root = directory?.trim() ?? ''
+    if (!root) {
+      const picked = await dialog.showOpenDialog({
+        title: '选择已有模型目录',
+        buttonLabel: '扫描',
+        properties: ['openDirectory'],
+      })
+      if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
+      root = picked.filePaths[0]
+    }
+    return { canceled: false, ...(await scanModels(root)) }
+  })
+
+  handle(Ipc.modelsRegisterScan, schemas.modelsRegisterScan, async ({ items }) => {
+    const result = await registerScannedModels(getSettings(), items)
+    emit(Events.modelsChanged, { reason: 'register', ...result })
+    return result
+  })
+
+  handle(Ipc.modelsCleanupEmpty, null, async () => {
+    const removed = await cleanupEmptyModelDirs(getSettings())
+    emit(Events.modelsChanged, { reason: 'cleanup', removed: removed.length })
+    return { removed }
   })
 
   handle(Ipc.modelsImportAdapter, null, async () => {

@@ -126,6 +126,27 @@ export type ModelDirectoryId = 'dit' | 'textEncoder' | 'vae' | 'support' | 'adap
 
 export type ModelDirectories = Record<ModelDirectoryId, string | null>
 
+/** One file or diffusers folder found by a read-only directory scan. */
+export interface ScannedModel {
+  path: string
+  relativePath: string
+  name: string
+  size: number
+  mtimeMs: number
+  role: 'dit' | 'text_encoder' | 'vae' | 'support' | 'full' | 'lora'
+  layout: 'comfyui-single-file' | 'diffusers-folder' | 'unknown'
+  confidence: 'high' | 'medium' | 'low'
+  hint: string
+}
+
+export interface ModelScanResult {
+  root: string
+  scannedAt: string
+  files: number
+  candidates: ScannedModel[]
+  skipped: Array<{ path: string; reason: string }>
+}
+
 export interface Settings {
   theme: 'system' | 'light' | 'dark'
   uiAnimation: 'system' | 'on' | 'off'

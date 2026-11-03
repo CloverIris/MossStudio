@@ -104,19 +104,12 @@ export function ensureDirs(
   customModelsRoot?: string | null,
   modelDirectories?: Partial<ModelDirectories>,
 ): void {
-  const dirs = [
+  const core = [
     paths.root(),
     paths.git(),
     paths.instances(),
     paths.runtimes(),
     paths.managedPython(),
-    paths.models(customModelsRoot),
-    paths.hub(customModelsRoot),
-    ...(['dit', 'text_encoder', 'vae', 'support', 'full'] as const).map((role) =>
-      paths.roleHub(role, customModelsRoot, modelDirectories),
-    ),
-    paths.adapters(customModelsRoot, modelDirectories),
-    paths.modelImports(customModelsRoot),
     paths.downloads(),
     paths.cache(),
     paths.logs(),
@@ -125,7 +118,21 @@ export function ensureDirs(
     paths.trainerVersions(),
     paths.trainerRuntimes(),
   ]
-  for (const dir of dirs) mkdirSync(dir, { recursive: true })
+  // Model directories are only created when something is written to them. Users
+  // point these at folders they already own (a ComfyUI `models` tree, a shared
+  // drive) and an eager `hf/hub` there is both surprising and unwanted. Anything
+  // that lands inside our own data root still gets created, so the default layout
+  // is ready on first launch without touching a custom directory.
+  const model = [
+    paths.models(customModelsRoot),
+    paths.hub(customModelsRoot),
+    ...(['dit', 'text_encoder', 'vae', 'support', 'full'] as const).map((role) =>
+      paths.roleHub(role, customModelsRoot, modelDirectories),
+    ),
+    paths.adapters(customModelsRoot, modelDirectories),
+    paths.modelImports(customModelsRoot),
+  ].filter((dir) => isInside(root(), dir))
+  for (const dir of [...core, ...model]) mkdirSync(dir, { recursive: true })
 }
 
 export function isInside(base: string, target: string): boolean {

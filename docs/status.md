@@ -25,6 +25,7 @@
 | Linux SSH 远端 sidecar | 🟡 | fake SSH 出图通过；真实 Linux GPU 未验收 |
 | 远端 HF 模型准备 | 🟡 | 默认 SFT curl 下载；组件 bundle/断点续传未做 |
 | 模型库/下载 | ✅ | 组件、HF 缓存、推荐组合、本地导入 |
+| 模型目录识别 | ✅ | 模型页「模型目录」卡片：只读扫描 ComfyUI 目录、勾选登记（不复制不哈希）；目录惰性创建，可清理旧版本留下的空 `hf/hub` |
 | Agent | 🟡 | Provider、历史、分段/确认、快捷动作；真实模型调用未验收 |
 | GBC 解析桥 | 🟡 | 外部 `gbc`、导入区域；真实 GBC/GPU 未验收 |
 | Trainer | 🟡 | 独立窗口、Python/Git 环境；真实训练未验收 |

@@ -204,6 +204,26 @@ export const schemas = {
   }),
 
   modelBundle: z.object({ id: z.string().min(1).max(160) }),
+
+  modelsScan: z.object({
+    directory: z.string().trim().max(4096).optional(),
+  }),
+
+  modelsRegisterScan: z.object({
+    items: z
+      .array(
+        z.object({
+          path: pathLike,
+          role: z.enum(['dit', 'text_encoder', 'vae', 'support', 'full']),
+          name: z.string().max(260).optional(),
+          relativePath: z.string().max(4096).optional(),
+          layout: z.enum(['comfyui-single-file', 'diffusers-folder']).optional(),
+        }),
+      )
+      .min(1)
+      .max(2000),
+  }),
+
   instanceModelBinding: z.object({
     id: z.string().min(1).max(120),
     binding: z.object({ bundleId: z.string().min(1).max(160), dit: z.string().min(1).max(160), textEncoder: z.string().min(1).max(160), vae: z.string().min(1).max(160) }).nullable(),

@@ -1,6 +1,6 @@
 # 模型目录 v2：识别、就地使用、入口前移
 
-- 状态：设计中，1.0.3 实现
+- 状态：实现中（扫描 / 登记 / 惰性目录 / 模型页入口已落地；组件文件绑定待做）
 - 影响：`apps/desktop/src/main/lib/paths.ts`、`services/models.ts`、`services/modelImports.ts`、`services/modelBundles.ts`、`services/mossInfer.ts`、`pages/Models.tsx`、`pages/Settings.tsx`
 
 ## 1. 用户报告

@@ -9,6 +9,7 @@ import {
   readFile,
   rename,
   rm,
+  rmdir,
   stat,
   unlink,
   writeFile,
@@ -33,9 +34,13 @@ import packagedCatalog from '../../../../../release/models.json'
 import {
   importModelFolder as importModelDirectory,
   readImportedModels,
+  registerScannedModels as registerImportedScan,
   removeImportedModel,
   verifyImportedModelFile,
+  type RegisterScanResult,
+  type ScannedRegistration,
 } from './modelImports'
+import { scanModelDirectory, type ScanResult } from './modelScan'
 import {
   downloadFile,
   fileSize,
@@ -485,13 +490,19 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       revision: 'local',
       role: imported.role,
       precision: 'local',
-      format: 'comfyui',
+      format: imported.layout === 'diffusers-folder' ? 'diffusers' : 'comfyui',
       family: 'local',
       sizeBytes: imported.size,
       files: [imported.relativePath],
       license: 'local',
-      tags: ['local-import', 'comfyui', `sha256:${imported.sha256}`],
-      notes: `外部文件引用；移除记录不会删除原文件。SHA256 ${imported.sha256}`,
+      tags: [
+        'local-import',
+        imported.layout === 'diffusers-folder' ? 'diffusers-folder' : 'comfyui',
+        imported.sha256 ? `sha256:${imported.sha256}` : 'unhashed',
+      ],
+      notes: imported.sha256
+        ? `外部文件引用；移除记录不会删除原文件。SHA256 ${imported.sha256}`
+        : '扫描登记的外部文件；不复制、不移动，移除记录也不会删除原文件。使用前不校验哈希。',
       localPath: imported.path,
       installState: installed ? 'ready' : 'error',
       installed,
@@ -871,6 +882,50 @@ export async function importModelFolder(
   const result = await importModelDirectory(directory, importedModelsIndex(settings))
   invalidateCatalog()
   return result
+}
+
+/** Read-only discovery: never writes into the folder the user picked. */
+export async function scanModels(directory: string): Promise<ScanResult> {
+  return scanModelDirectory(directory)
+}
+
+/** Register the files the user selected from a scan; no hashing, no copying. */
+export async function registerScannedModels(
+  settings: Settings,
+  items: ScannedRegistration[],
+): Promise<RegisterScanResult> {
+  const result = await registerImportedScan(importedModelsIndex(settings), items)
+  invalidateCatalog()
+  return result
+}
+
+/**
+ * Remove the empty `hf/hub` layout folders older versions created inside model
+ * directories (including ones the user pointed at an existing ComfyUI tree).
+ * Only empty directories are removed, and only these two names per root.
+ */
+export async function cleanupEmptyModelDirs(settings: Settings): Promise<string[]> {
+  const seeds = new Set<string>([
+    paths.models(settings.modelsRoot),
+    ...(['dit', 'text_encoder', 'vae', 'support'] as const).map((role) =>
+      paths.roleRoot(role, settings.modelsRoot, settings.modelDirectories),
+    ),
+    paths.adapters(settings.modelsRoot, settings.modelDirectories),
+    paths.modelImports(settings.modelsRoot),
+  ])
+  const removed: string[] = []
+  for (const seed of seeds) {
+    for (const dir of [join(seed, 'hf', 'hub'), join(seed, 'hf')]) {
+      try {
+        if ((await readdir(dir)).length > 0) continue
+        await rmdir(dir)
+        removed.push(dir)
+      } catch {
+        // Missing, already gone, or not empty.
+      }
+    }
+  }
+  return removed
 }
 export async function installBundle(id: string, settings: Settings): Promise<DownloadTask[]> {
   const catalog = await getCatalog(settings, true)

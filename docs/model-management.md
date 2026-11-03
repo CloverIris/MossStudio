@@ -6,6 +6,13 @@
 
 `adapters` 是可挂在 Canvas 上的 LoRA：8-step DMD 两档由专用采样档驱动，其余为普通 LoRA（人像美化 Beauty、去色带 Destripe、Turbo MFD 少步、4-step 蒸馏）。后 4 个的格式都在上游 MossInfer 开发期验证过可加载（kohya / PEFT），少步 LoRA 记得把步数与 CFG 调到各自说明的档位。
 
+## 模型目录（v2，1.0.3 起）
+
+- 模型页顶部的「模型目录」卡片管理根目录和按角色覆盖的目录（DiT / 文本编码器 / VAE / Adapters / 运行配置），不再需要到设置页深处找。
+- 「识别已有模型」是只读扫描：按 ComfyUI 布局（`diffusion_models`、`text_encoders`、`vae`、`loras`）和文件名推断角色，列出候选后由用户勾选登记。扫描不写入、不复制、不哈希；登记只写 `models/imports/index.json`，记录 size + mtime，删记录也不会删除原文件。
+- 目录是**惰性创建**的：只有真正写入（下载、导入）时才在目标目录建子目录。旧版本在自定义目录里留下的空 `hf/hub` 可以用卡片上的「清理空目录」删除，它只会删空目录。
+- 设置 → 存储与画廊 仍保留目录入口，但模型页是主要入口；两边改的是同一份 `settings.modelDirectories`。
+
 ## 安装与缓存
 
 - 保留 HF `blobs` / `snapshots` / `refs` 布局，指定 revision 先解析到实际提交，文件树支持分页。

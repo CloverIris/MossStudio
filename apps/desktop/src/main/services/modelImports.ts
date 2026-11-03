@@ -10,15 +10,18 @@ export interface ImportedModelFile {
   name: string
   path: string
   relativePath: string
-  sha256: string
+  /** Missing for files registered by a directory scan: hashing 27 GB up front is unusable. */
+  sha256?: string
   size: number
   mtimeMs: number
   role: ImportedModelRole
+  /** Set by a directory scan: a diffusers folder vs a single ComfyUI weights file. */
+  layout?: 'comfyui-single-file' | 'diffusers-folder'
   importedAt: string
 }
 
 interface ImportIndex {
-  schema_version: 1
+  schema_version: 1 | 2
   models: ImportedModelFile[]
 }
 
@@ -50,13 +53,14 @@ function isImportedModelFile(value: unknown): value is ImportedModelFile {
     typeof model.name === 'string' &&
     typeof model.path === 'string' &&
     typeof model.relativePath === 'string' &&
-    typeof model.sha256 === 'string' &&
-    /^[a-f0-9]{64}$/.test(model.sha256) &&
+    (model.sha256 === undefined || /^[a-f0-9]{64}$/.test(model.sha256)) &&
     Number.isSafeInteger(model.size) &&
     (model.size ?? 0) > 0 &&
     typeof model.mtimeMs === 'number' &&
     Number.isFinite(model.mtimeMs) &&
     ['full', 'dit', 'text_encoder', 'vae', 'support'].includes(model.role ?? '') &&
+    (model.layout === undefined ||
+      ['comfyui-single-file', 'diffusers-folder'].includes(model.layout)) &&
     typeof model.importedAt === 'string'
   )
 }
@@ -70,7 +74,11 @@ export async function readImportedModels(indexFile: string): Promise<ImportedMod
     throw error
   }
   const index = JSON.parse(content) as Partial<ImportIndex>
-  if (index.schema_version !== 1 || !Array.isArray(index.models) || !index.models.every(isImportedModelFile)) {
+  if (
+    (index.schema_version !== 1 && index.schema_version !== 2) ||
+    !Array.isArray(index.models) ||
+    !index.models.every(isImportedModelFile)
+  ) {
     throw new Error('本地模型导入记录无效')
   }
   return index.models
@@ -80,7 +88,7 @@ async function writeImportedModels(indexFile: string, models: ImportedModelFile[
   await mkdir(dirname(indexFile), { recursive: true })
   const temporary = `${indexFile}.${randomUUID()}.tmp`
   try {
-    await writeFile(temporary, JSON.stringify({ schema_version: 1, models }, null, 2), 'utf8')
+    await writeFile(temporary, JSON.stringify({ schema_version: 2, models }, null, 2), 'utf8')
     await rename(temporary, indexFile)
   } finally {
     await rm(temporary, { force: true })
@@ -133,7 +141,9 @@ export async function importModelFolder(directory: string, indexFile: string): P
   if (files.length === 0) throw new Error('所选目录中没有可导入的模型文件')
 
   const models = await readImportedModels(indexFile)
-  const byHash = new Map(models.map((model) => [model.sha256, model]))
+  const byHash = new Map(
+    models.filter((model) => model.sha256).map((model) => [model.sha256 as string, model]),
+  )
   let added = 0
   let duplicates = 0
   for (const file of files) {
@@ -188,8 +198,76 @@ export async function removeImportedModel(indexFile: string, id: string): Promis
   await writeImportedModels(indexFile, next)
 }
 
+export interface ScannedRegistration {
+  path: string
+  role: ImportedModelRole
+  name?: string
+  relativePath?: string
+  layout?: 'comfyui-single-file' | 'diffusers-folder'
+}
+
+export interface RegisterScanResult {
+  added: number
+  updated: number
+  missing: string[]
+}
+
+/**
+ * Register files found by `modelScan`. No hashing and no copying: the user's
+ * ComfyUI folder is only read, and the record points at the original file.
+ * Re-registering the same path updates its role/size instead of adding a row.
+ */
+export async function registerScannedModels(
+  indexFile: string,
+  items: ScannedRegistration[],
+): Promise<RegisterScanResult> {
+  const models = await readImportedModels(indexFile)
+  const byPath = new Map(models.map((model) => [model.path.toLowerCase(), model]))
+  const result: RegisterScanResult = { added: 0, updated: 0, missing: [] }
+  for (const item of items) {
+    let path: string
+    try {
+      path = await realpath(resolve(item.path))
+    } catch {
+      result.missing.push(item.path)
+      continue
+    }
+    const info = await stat(path).catch(() => null)
+    if (!info || !info.isFile() || info.size <= 0) {
+      result.missing.push(item.path)
+      continue
+    }
+    const existing = byPath.get(path.toLowerCase())
+    const layout = item.layout ?? existing?.layout
+    const record: ImportedModelFile = {
+      id: existing?.id ?? `local-scan-${createHash('sha1').update(path.toLowerCase()).digest('hex').slice(0, 20)}`,
+      name: item.name ?? basename(path),
+      path,
+      relativePath: item.relativePath ?? basename(path),
+      size: info.size,
+      mtimeMs: info.mtimeMs,
+      role: item.role,
+      importedAt: existing?.importedAt ?? new Date().toISOString(),
+      ...(layout ? { layout } : {}),
+      ...(existing?.sha256 ? { sha256: existing.sha256 } : {}),
+    }
+    if (existing) {
+      models.splice(models.indexOf(existing), 1, record)
+      result.updated += 1
+    } else {
+      models.push(record)
+      result.added += 1
+    }
+    byPath.set(path.toLowerCase(), record)
+  }
+  if (result.added || result.updated) await writeImportedModels(indexFile, models)
+  return result
+}
+
 export async function verifyImportedModelFile(model: ImportedModelFile, sha256: string, size: number): Promise<boolean> {
-  if (model.sha256 !== sha256 || model.size !== size) return false
+  // Records registered by a scan carry no hash; they cannot be matched to an HF
+  // blob by content, so the caller falls back to downloading it.
+  if (!model.sha256 || model.sha256 !== sha256 || model.size !== size) return false
   try {
     const info = await stat(model.path)
     return info.isFile() && info.size === size && (await hashFile(model.path)) === sha256
