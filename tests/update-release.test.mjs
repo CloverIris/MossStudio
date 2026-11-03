@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compareSemver, parseReleaseMarkdown, pickLatestVersion, releaseVersionCandidates } from '../apps/desktop/src/shared/release.ts'
+import { compareSemver, findInstaller, parseReleaseMarkdown, pickLatestVersion, releaseVersionCandidates } from '../apps/desktop/src/shared/release.ts'
 
 test('manifest and GitHub release tags compare like semver', () => {
   assert.equal(compareSemver('v1.0.2', '1.0.1'), 1)
@@ -96,4 +96,19 @@ test('the self-extracting exe installer kind parses; unknown kinds are rejected'
   assert.equal(parseReleaseMarkdown(releaseDocument('exe')).document.installers[0].kind, 'exe')
   assert.equal(parseReleaseMarkdown(releaseDocument('zip')).document.installers[0].kind, 'zip')
   assert.throws(() => parseReleaseMarkdown(releaseDocument('msi')))
+})
+
+test('the setup exe is preferred over the portable zip for the same platform', () => {
+  const base = {
+    platform: 'win32',
+    arch: 'x64',
+    url: 'https://example.com/a.exe',
+    sha256: 'a'.repeat(64),
+    size_bytes: 10,
+  }
+  const zip = { ...base, kind: 'zip', url: 'https://example.com/a.zip' }
+  const exe = { ...base, kind: 'exe', url: 'https://example.com/setup.exe' }
+  assert.equal(findInstaller([zip, exe], 'win32', 'x64')?.kind, 'exe')
+  assert.equal(findInstaller([zip], 'win32', 'x64')?.kind, 'zip')
+  assert.equal(findInstaller([exe], 'win32', 'arm64'), null)
 })

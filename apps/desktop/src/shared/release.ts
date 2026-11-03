@@ -168,7 +168,15 @@ export function findInstaller(
   arch: string,
 ): ReleaseInstaller | null {
   const normalizedArch = arch === 'aarch64' ? 'arm64' : arch
-  return installers.find((item) => item.platform === platform && item.arch === normalizedArch) ?? null
+  // A release may ship both the self-extracting setup exe and a portable ZIP for
+  // the same platform. The setup exe owns install/update/uninstall, so it wins.
+  const rank = (kind: string): number =>
+    kind === 'exe' ? 0 : kind === 'nsis' ? 1 : kind === 'zip' ? 2 : 3
+  const candidates = installers.filter(
+    (item) => item.platform === platform && item.arch === normalizedArch,
+  )
+  candidates.sort((a, b) => rank(a.kind) - rank(b.kind))
+  return candidates[0] ?? null
 }
 
 /**

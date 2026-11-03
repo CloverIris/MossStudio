@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { createReadStream, existsSync } from 'node:fs'
 import { copyFile, cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { spawnSync } from 'node:child_process'
@@ -120,6 +120,41 @@ async function preparePackagerApp(stagingWorkspaceDir, desktopPackage) {
   return packagedAppDir
 }
 
+function buildSetupInstaller(version, payload) {
+  const script = join(root, 'installer', 'build.ps1')
+  assert(existsSync(script), 'installer/build.ps1 is missing.')
+  const result = spawnSync(
+    'powershell.exe',
+    [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      script,
+      '-Version',
+      version,
+      '-Payload',
+      payload,
+      '-OutDir',
+      artifactsDir,
+    ],
+    { cwd: root, encoding: 'utf8', windowsHide: true },
+  )
+  if (result.error) throw result.error
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`
+  if (result.status !== 0) throw new Error(`Building the setup installer failed:\n${output}`)
+  const read = (key) => output.match(new RegExp(`^${key}=(.+)$`, 'm'))?.[1]?.trim()
+  const path = read('setup')
+  const digest = read('sha256')
+  const size = Number(read('size'))
+  assert(path && existsSync(path), `Setup installer was not produced:\n${output}`)
+  assert(/^[a-f0-9]{64}$/.test(digest ?? ''), `Setup installer sha256 is invalid:\n${output}`)
+  assert(Number.isSafeInteger(size) && size > 0, `Setup installer size is invalid:\n${output}`)
+  return { path, sha256: digest, size }
+}
+
 function createZip(sourceDir, destination) {
   const script = [
     "$ErrorActionPreference = 'Stop'",
@@ -226,12 +261,27 @@ try {
     sha256: await sha256(artifactPath),
     size_bytes: artifactStat.size,
   }
+
+  // Self-extracting setup: the installer exe carries the portable ZIP as its
+  // payload, so it is built after the ZIP and recorded as a second asset.
+  const setup = buildSetupInstaller(version, artifactPath)
+  const setupInstaller = {
+    platform: 'win32',
+    arch: 'x64',
+    kind: 'exe',
+    url: `${assetUrl.slice(0, assetUrl.lastIndexOf('/') + 1)}MossStudio-Setup-${version}-x64.exe`,
+    sha256: setup.sha256,
+    size_bytes: setup.size,
+  }
   const installers = (originalManifest.installers ?? []).filter(
-    (item) => item.platform !== installer.platform || item.arch !== installer.arch,
+    (item) =>
+      item.platform !== installer.platform ||
+      item.arch !== installer.arch ||
+      (item.kind !== 'zip' && item.kind !== 'exe'),
   )
   const finalManifest = {
     ...originalManifest,
-    installers: [...installers, installer],
+    installers: [...installers, installer, setupInstaller],
   }
   await writeManifest(finalManifest)
   generateReleaseMarkdown()
@@ -240,9 +290,11 @@ try {
   finalized = true
 
   console.log(`Release package: ${artifactPath}`)
+  console.log(`Setup installer: ${setup.path}`)
   console.log(`Release metadata: ${join(artifactsDir, 'release.md')}`)
-  console.log(`SHA-256: ${installer.sha256}`)
-  console.log(`Size: ${installer.size_bytes} bytes`)
+  console.log(`ZIP SHA-256: ${installer.sha256}`)
+  console.log(`Setup SHA-256: ${setupInstaller.sha256}`)
+  console.log(`Size: ${installer.size_bytes} + ${setupInstaller.size_bytes} bytes`)
 } finally {
   if (!finalized) {
     await writeManifest(originalManifest)
