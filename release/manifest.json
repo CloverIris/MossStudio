@@ -3,10 +3,10 @@
   "app": {
     "name": "MossStudio",
     "channel": "stable",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "min_supported": "0.0.0",
-    "published_at": "2026-11-02T02:00:00Z",
-    "notes_url": "https://github.com/CloverIris/MossStudio/releases/tag/1.0.2",
+    "published_at": "2026-11-03T03:30:00Z",
+    "notes_url": "https://github.com/CloverIris/MossStudio/releases/tag/1.0.3",
     "rollout": 1
   },
   "home": {
@@ -16,11 +16,11 @@
   },
   "announcements": [
     {
-      "id": "2026-11-mossstudio-1.0.2",
+      "id": "2026-11-mossstudio-1.0.3",
       "level": "info",
-      "title": "MossStudio 1.0.2：LoRA 与统一引擎就绪",
-      "body_markdown": "本版为 Canvas 加入 LoRA：每张画布独立选择权重、调整强度，并可直接导入本地 safetensors。MossInfer 引擎改用统一就绪状态与原子安装，安装失败不再污染版本列表。客户端会自己发现新版本：标题栏出现版本胶囊，公告与更新进入通知中心。",
-      "starts_at": "2026-11-02T02:00:00Z",
+      "title": "MossStudio 1.0.3：安装器与模型目录重构",
+      "body_markdown": "1.0.3 改用单文件自解压安装器：安装、按版本原地更新和卸载都由安装器完成，更新失败会回滚并保留日志。模型目录移到模型页，可以直接扫描已有的 ComfyUI 目录并登记使用，不复制权重，也不会在你的目录里新建空文件夹。",
+      "starts_at": "2026-11-03T03:30:00Z",
       "ends_at": null,
       "dismissible": true,
       "pinned": true,
@@ -30,16 +30,7 @@
       }
     }
   ],
-  "installers": [
-    {
-      "platform": "win32",
-      "arch": "x64",
-      "kind": "zip",
-      "url": "https://github.com/CloverIris/MossStudio/releases/download/1.0.2/MossStudio-1.0.2-win32-x64.zip",
-      "sha256": "9d170c43e974815370605694639e5f0eb7b3a34cd44621fe2c51d7457c1e6ebe",
-      "size_bytes": 213812215
-    }
-  ],
+  "installers": [],
   "assets": [],
   "sources": {
     "git_mirrors": [

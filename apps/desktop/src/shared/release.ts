@@ -6,7 +6,7 @@ export const RELEASE_SCHEMA_VERSION = 2
 const installerSchema = z.object({
   platform: z.enum(['darwin', 'win32', 'linux']),
   arch: z.enum(['arm64', 'x64']),
-  kind: z.enum(['dmg', 'zip', 'nsis', 'appimage']),
+  kind: z.enum(['dmg', 'zip', 'nsis', 'appimage', 'exe']),
   url: z.string().url().max(4096),
   sha256: z.string().regex(/^[a-f0-9]{64}$/i),
   size_bytes: z.number().int().nonnegative(),

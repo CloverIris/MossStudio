@@ -1,7 +1,7 @@
 # 路线图
 
-- 更新：2026-11-02
-- 当前开发版本：`1.0.2`（严格 SemVer；未构建发布包）
+- 更新：2026-11-03
+- 当前开发版本：`1.0.3`（严格 SemVer；安装器与模型目录重构）
 - 更新验收基线：`1.0.1` Windows x64 便携包（GitHub Release，tag `1.0.1`）
 - 基线：[status.md](status.md)
 - 当前判断：训练器/SSH 远端代码基座、Clover HTTP/WS 基座、Project JSON/基础图层已完成；

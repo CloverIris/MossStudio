@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compareSemver, pickLatestVersion, releaseVersionCandidates } from '../apps/desktop/src/shared/release.ts'
+import { compareSemver, parseReleaseMarkdown, pickLatestVersion, releaseVersionCandidates } from '../apps/desktop/src/shared/release.ts'
 
 test('manifest and GitHub release tags compare like semver', () => {
   assert.equal(compareSemver('v1.0.2', '1.0.1'), 1)
@@ -72,4 +72,28 @@ test('no update when both sources are at or below the running version', () => {
     pickLatestVersion({ manifest: '1.0.0', github: '0.9.9', current: '1.0.0' }),
     { version: '1.0.0', updateAvailable: false, from: 'none' },
   )
+})
+
+function releaseDocument(kind) {
+  const machine = {
+    schema_version: 2,
+    app: { name: 'MossStudio', channel: 'stable', version: '1.0.3', published_at: '2026-11-03T00:00:00Z' },
+    installers: [
+      {
+        platform: 'win32',
+        arch: 'x64',
+        kind,
+        url: 'https://example.com/MossStudio-Setup-1.0.3-x64.exe',
+        sha256: 'a'.repeat(64),
+        size_bytes: 1024,
+      },
+    ],
+  }
+  return `# MossStudio 1.0.3\n\n\`\`\`json clover-release\n${JSON.stringify(machine)}\n\`\`\`\n`
+}
+
+test('the self-extracting exe installer kind parses; unknown kinds are rejected', () => {
+  assert.equal(parseReleaseMarkdown(releaseDocument('exe')).document.installers[0].kind, 'exe')
+  assert.equal(parseReleaseMarkdown(releaseDocument('zip')).document.installers[0].kind, 'zip')
+  assert.throws(() => parseReleaseMarkdown(releaseDocument('msi')))
 })

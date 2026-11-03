@@ -1,36 +1,35 @@
-# MossStudio 1.0.2 — LoRA 与统一引擎就绪
+# MossStudio 1.0.3 — 安装器与模型目录重构
 
 MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、模型管理和本机推理整合在一个应用中；推理由 MossInfer 引擎执行。
 
 ## 本次更新
 
-- **Canvas LoRA**：每张画布可单独选择 LoRA 权重、调节强度，并可直接导入本地 `.safetensors`。权重缺失或远端引擎不支持时会明确提示，不会静默丢弃。
-- **统一的引擎就绪状态**：下载、CUDA 库处理、引擎探测和兼容性判断都在暂存目录完成，检查通过的构建才进入版本列表；替换当前版本失败会回滚，设置只在成功后更新。
-- **兼容性以引擎为准**：引擎返回的 `supported` 是唯一权威，算力只用于选包、展示和警告，不再按显卡名称推断而误拒绝新显卡。
-- **客户端主动发现更新**：启动后按固定间隔检查，窗口重新获得焦点时也会补查；发现新版本时标题栏出现版本胶囊，并弹出更新对话框。
-- **公告与通知**：置顶公告进入通知中心，未读数显示在铃铛角标上；打开通知面板后自动标记已读。
-- **模型库新增社区 LoRA**：人像美化（Beauty）、去色带（Destripe）、Turbo MFD 少步、4-step 蒸馏，共 4 个适配器，可在 Canvas 的 LoRA 行直接下载选用。
-- 保留 1.0.1 的修复：Windows 应用内更新在解压 `resources/app.asar` 时不再失败。
+- **单文件自解压安装器**：`MossStudio-Setup-1.0.3-x64.exe` 集安装、原地更新与卸载于一体。更新由安装器接管：等待旧进程退出、备份程序文件、覆盖解压、失败自动回滚并写日志，成功后重新启动应用；不再依赖 PowerShell，也不会把解压产物留在磁盘上。
+- **安装记录与卸载**：安装时写入 HKCU 卸载项、桌面与开始菜单快捷方式；卸载默认保留 `data/`（模型、引擎与项目），需要彻底删除时可显式选择。
+- **模型目录移到模型页**：模型页顶部直接管理根目录与按角色覆盖的目录（DiT / 文本编码器 / VAE / Adapters / 运行配置），不用再去设置页深处找。
+- **识别已有模型（ComfyUI）**：只读扫描已有目录（按 `diffusion_models`、`text_encoders`、`vae`、`loras` 和文件名识别角色），勾选后登记为本地模型；不复制、不移动、不哈希原文件，删记录也不会删文件。
+- **不再在用户目录里建空文件夹**：模型目录改为惰性创建，只有真正下载或导入写入时才建子目录；旧版本留下的空 `hf/hub` 可在模型页「清理空目录」删除。
+- 保留 1.0.2 的能力：Canvas LoRA（每张画布独立权重与强度）、社区 LoRA 目录、统一引擎就绪状态与主动更新提示。
 
 ## 主要功能
 
 - **Canvas 创作**：多画布项目、图层与区域提示词、生成任务状态和结果管理。
 - **LoRA 适配**：按 Canvas 绑定权重与强度，训练产物与本地导入的权重统一管理。
-- **模型管理**：浏览和准备模型组件、检查本地模型，并在项目中选择模型组合。
+- **模型管理**：浏览和准备模型组件、扫描并登记已有模型、在项目中选择模型组合。
 - **MossInfer 引擎管理**：检查、安装和管理本机推理引擎版本；安装失败不会留下半成品版本。
 - **本机图像生成**：在支持的 NVIDIA 环境中运行 MOSS-Image 生成任务。
 - **Agent 与工具**：集成提示词辅助、画廊、诊断、设置及 Trainer 工作流。
-- **更新与公告**：自动检查发布公告与更新；更新包经大小和 SHA-256 校验后再解压和替换应用文件。
+- **更新与公告**：自动检查发布公告与更新；安装器负责校验、替换与重启，失败可回滚。
 
 ## 下载与安装
 
-本版本提供 **Windows x64 便携 ZIP**，暂不提供安装向导。下载并解压后运行 `MossStudio.exe`。请将应用放在当前用户可写的目录中；应用数据保存在用户数据目录，不应与程序文件混放。
+本版本提供 **Windows x64 单文件安装器** `MossStudio-Setup-1.0.3-x64.exe`，同时保留 **便携 ZIP**。安装器可以选择安装目录并创建快捷方式；便携 ZIP 解压后直接运行 `MossStudio.exe`，应用数据保存在程序旁的 `data/`。
 
-在「引擎」页安装 MossInfer，在「模型」页准备所需模型，然后即可在 Canvas 中创建并生成图像。本机推理需要兼容的 Windows x64 环境、NVIDIA GPU 和驱动；模型与推理引擎需另行下载。
+首次启动后在「引擎」页安装 MossInfer，在「模型」页准备或识别所需模型，然后即可在 Canvas 中创建并生成图像。本机推理需要兼容的 Windows x64 环境、NVIDIA GPU 和驱动；模型与推理引擎需另行下载。
 
 ## 从旧版本升级
 
-已安装 `0.1.0`、`1.0.0` 或 `1.0.1` 的用户可使用应用内更新检查升级至 `1.0.2`。应用会校验下载包大小和 SHA-256，再安全解压并替换程序文件。更新过程需要关闭应用，安装目录必须对当前用户可写；项目数据目录会保留。
+1.0.1 及更早版本的内置更新链路在“替换文件并重启”这一步不可靠，因此 **1.0.2 及更早的安装请手动下载一次 `MossStudio-Setup-1.0.3-x64.exe`**：安装器检测到已有程序目录时按“更新”处理，保留 `data/`，不需要先卸载。从 1.0.3 起，应用内更新会下载安装器并把替换工作交给它，失败会回滚。
 
 ## 已知事项
 
@@ -38,13 +37,13 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
 - 本机推理依赖兼容的 NVIDIA GPU、驱动、引擎和模型；首次使用需先完成准备。
 - 远端引擎暂不支持 LoRA：选择远端引擎时提交会给出明确提示。
 - Linux SSH 远端功能仍需在真实 GPU 主机环境中进一步验收。
-- Windows 程序尚未签名，首次启动时系统可能显示安全提示。
+- Windows 程序与安装器尚未签名，首次启动时系统可能显示安全提示。
 
 ## 发布与更新（维护者）
 
-- 这是 MossStudio 1.0.2 的拟发布正文草稿；在构建产物并上传到 GitHub Release 前，版本尚未正式发布。
-- `release/manifest.json` 的 `installers` 目前为空，由 `pnpm release:build` 在构建后写入真实 ZIP 的 URL、大小与 SHA-256。
-- 发布前在 Windows x64 运行 `pnpm release:build`，确认 `release/artifacts/` 中的 ZIP、`release.md` 与本正文一致。
-- 创建非预发布的 `1.0.2` Release（tag 必须与 `manifest.json` 中 `app.notes_url` 的 `/tag/<tag>` 一致，构建脚本用它拼接下载地址；带 `v` 的 tag 会导致 404），并设为 latest；上传 ZIP 与 `release.md` 作为附件资产。打开 `release/artifacts/README.md`，复制全文粘贴到 GitHub Release 正文框；不要只上传 README 附件。
-- ZIP 下载地址由 `release.md` 记录，资产文件名必须保持 `MossStudio-1.0.2-win32-x64.zip`；元数据附件必须精确命名为 `release.md`。
-- 不要使用此前构建的哈希或大小；构建命令会根据新 ZIP 更新 `release/manifest.json` 和 `release/release.md`。
+- 这是 MossStudio 1.0.3 的拟发布正文草稿；在构建产物并上传到 GitHub Release 前，版本尚未正式发布。
+- `release/manifest.json` 的 `installers` 由 `pnpm release:build` 回填：安装器（`kind: exe`）与便携 ZIP（`kind: zip`）各一条。
+- 发布前在 Windows x64 运行 `pnpm release:build`，确认 `release/artifacts/` 中的 `MossStudio-Setup-1.0.3-x64.exe`、ZIP、`release.md` 与本正文一致。
+- 创建非预发布的 `1.0.3` Release（tag 必须与 `manifest.json` 中 `app.notes_url` 的 `/tag/<tag>` 一致，构建脚本用它拼接下载地址；带 `v` 的 tag 会导致 404），并设为 latest；上传安装器、ZIP 与 `release.md` 作为附件资产。打开 `release/artifacts/README.md`，复制全文粘贴到 GitHub Release 正文框。
+- 资产文件名必须保持 `MossStudio-Setup-1.0.3-x64.exe`、`MossStudio-1.0.3-win32-x64.zip`；元数据附件必须精确命名为 `release.md`。
+- 不要使用此前构建的哈希或大小；构建命令会根据新产物更新 `release/manifest.json` 和 `release/release.md`。

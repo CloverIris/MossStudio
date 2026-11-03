@@ -1,4 +1,4 @@
-﻿import { app, shell } from 'electron'
+import { app, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createWriteStream, existsSync, mkdirSync, rmSync, statSync } from 'node:original-fs'
@@ -278,6 +278,26 @@ async function extractUpdateZip(zipPath: string, destination: string, signal: Ab
   })
 }
 
+function launchSetupInstaller(installer: string): Promise<void> {
+  const installDir = dirname(process.execPath)
+  if (basename(process.execPath).toLowerCase() !== 'mossstudio.exe') {
+    throw new Error('当前应用目录不支持原位更新；请从 MossStudio.exe 启动')
+  }
+  if (!existsSync(installer)) throw new Error('下载的安装器不存在')
+  return new Promise<void>((resolvePromise, rejectPromise) => {
+    const child = spawn(
+      installer,
+      ['--update', '--dir', installDir, '--pid', String(process.pid), '--relaunch'],
+      { detached: true, stdio: 'ignore', windowsHide: false },
+    )
+    child.once('error', rejectPromise)
+    child.once('spawn', () => {
+      child.unref()
+      resolvePromise()
+    })
+  })
+}
+
 function launchUpdater(stage: string, version: string): Promise<void> {
   const installDir = dirname(process.execPath)
   const updater = join(stage, 'resources', 'release', 'updater.ps1')
@@ -373,6 +393,22 @@ export async function downloadUpdate(
       speedBps: 0,
       path: target,
       updatedAt: now(),
+    }
+
+    if (installer.kind === 'exe') {
+      // The self-extracting setup owns the swap: it waits for this process, backs
+      // the old files up, extracts over them and relaunches. No PowerShell, no ZIP
+      // staging in the app, and a failure rolls back instead of leaving a half copy.
+      if (process.platform !== 'win32') throw new Error('该安装器只支持 Windows')
+      if (process.env['CLOVER_UPDATE_TEST'] === '1') {
+        return publish({ ...ready, updatedAt: now() })
+      }
+      if (!app.isPackaged) throw new Error('开发模式不能就地更新；请从已打包的 MossStudio 启动')
+      publish({ ...ready, phase: 'installing', updatedAt: now() })
+      await launchSetupInstaller(target)
+      const opened = publish({ ...ready, phase: 'opened', updatedAt: now() })
+      setTimeout(() => app.quit(), 750)
+      return opened
     }
 
     if (installer.platform === 'win32' && installer.kind === 'zip') {
