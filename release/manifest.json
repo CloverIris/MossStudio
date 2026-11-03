@@ -30,7 +30,24 @@
       }
     }
   ],
-  "installers": [],
+  "installers": [
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "kind": "zip",
+      "url": "https://github.com/CloverIris/MossStudio/releases/download/1.0.3/MossStudio-1.0.3-win32-x64.zip",
+      "sha256": "137e01238f4a5ddee29ed4c88fb87c678cadfeaac4b204a60bbf8e0b02d2e5f7",
+      "size_bytes": 213819304
+    },
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "kind": "exe",
+      "url": "https://github.com/CloverIris/MossStudio/releases/download/1.0.3/MossStudio-Setup-1.0.3-x64.exe",
+      "sha256": "fb4960c26d4d7ae56c9b156ff7a3b0f7eb3cf45a28504bf5662b1cba33f4c2b1",
+      "size_bytes": 262940211
+    }
+  ],
   "assets": [],
   "sources": {
     "git_mirrors": [

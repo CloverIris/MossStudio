@@ -1,6 +1,6 @@
 # 应用安装器与更新（1.0.3）
 
-- 状态：设计中，1.0.3 实现
+- 状态：已实现（1.0.3）：`installer/` 源码、`build.ps1`、自测 36 项；应用侧按 `kind: exe` 下载并交给 Setup
 - 影响：`tools/build-release.mjs`、`release/`、`apps/desktop/src/main/services/updateDownload.ts`、`apps/desktop/src/main/services/updates.ts`、`UpdateDialog`
 
 ## 1. 为什么换掉现在的更新流程
