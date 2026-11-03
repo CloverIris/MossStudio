@@ -31,6 +31,8 @@
 | [product-design.md](product-design.md) | 工作台信息架构、画布板、交互边界 |
 | [design/multi-canvas-studio.md](design/multi-canvas-studio.md) | Project 多 Canvas 画布板、串行生成与结果呈现（已实现，含 as-built 差异） |
 | [design/lora-support.md](design/lora-support.md) | Canvas LoRA 选择、强度、导入与生成链路（本机已实现，远端拒绝） |
+| [design/model-directories.md](design/model-directories.md) | 模型目录 v2：ComfyUI 就地识别、组件文件绑定、模型页入口（1.0.3 设计） |
+| [design/app-installer.md](design/app-installer.md) | 单文件自解压安装器：安装、原地更新、回滚、卸载（1.0.3 设计） |
 | [design/gpu-device-management.md](design/gpu-device-management.md) | GPU 枚举与兼容引擎、设备推荐、显存策略、标题栏状态及按卡调度 Canvas |
 | [mossinfer-migration.md](mossinfer-migration.md) | sidecar、远端、HF、CUDA wheel、旧链路清理 |
 | [layout-schema.md](layout-schema.md) | 画布坐标、布局编译契约 |
