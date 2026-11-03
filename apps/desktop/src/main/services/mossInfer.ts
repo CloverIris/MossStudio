@@ -35,7 +35,12 @@ interface PendingRequest {
 }
 
 interface EngineConfig {
+  /** Materialized diffusers folder; empty when loading component files. */
   model: string
+  /** Local single-file components (a user's ComfyUI tree, registered in place). */
+  ditFile?: string
+  textEncoderFile?: string
+  vaeFile?: string
   device: number
   deviceUuid: string
   mode: Settings['mossInferMemoryMode']
@@ -47,6 +52,9 @@ interface QueuedJob {
   params: JobParams
   opts: {
     model: string
+    ditFile?: string
+    textEncoderFile?: string
+    vaeFile?: string
     device: number
     deviceUuid: string
     systemDeviceIndex: number
@@ -484,15 +492,30 @@ async function ensureEngine(runtime: MossInferRuntime, config: EngineConfig, set
     throw new Error(`E_DEVICE: MossInfer 未检测到 CUDA 设备 ${config.device}`)
   }
   const device = selected.index
-  const key = JSON.stringify({ model: config.model, deviceUuid: config.deviceUuid, device, mode: config.mode, tier: config.tier })
+  const key = JSON.stringify({
+    model: config.model,
+    dit: config.ditFile,
+    te: config.textEncoderFile,
+    vae: config.vaeFile,
+    deviceUuid: config.deviceUuid,
+    device,
+    mode: config.mode,
+    tier: config.tier,
+  })
   if (key !== runtime.loadedKey) {
-    await request(runtime, 'load', {
-      model: config.model,
+    const payload: Record<string, unknown> = {
       mode: config.mode,
       device,
       tier: config.tier,
       cache_dir: join(paths.cache(), 'mossinfer'),
-    })
+    }
+    // A diffusers folder goes as `model`; scanned single files go as component
+    // files. The engine refuses a request that mixes both.
+    if (config.model) payload.model = config.model
+    if (config.ditFile) payload.dit_file = config.ditFile
+    if (config.textEncoderFile) payload.text_encoder_file = config.textEncoderFile
+    if (config.vaeFile) payload.vae_file = config.vaeFile
+    await request(runtime, 'load', payload)
     runtime.loadedKey = key
   }
   return device
@@ -505,7 +528,16 @@ async function pump(runtime: MossInferRuntime): Promise<void> {
   const { job, params, opts, sink } = next
   try {
     await ensureEngine(runtime,
-      { model: opts.model, device: opts.device, deviceUuid: opts.deviceUuid, mode: opts.settings.mossInferMemoryMode, tier: opts.settings.mossInferTier },
+      {
+        model: opts.model,
+        ditFile: opts.ditFile,
+        textEncoderFile: opts.textEncoderFile,
+        vaeFile: opts.vaeFile,
+        device: opts.device,
+        deviceUuid: opts.deviceUuid,
+        mode: opts.settings.mossInferMemoryMode,
+        tier: opts.settings.mossInferTier,
+      },
       opts.settings,
     )
     sink.event({ type: 'hello', protocol: 1, runner_version: `mossinfer-${runtime.hello?.version ?? '2.0.0'}` })
@@ -568,6 +600,9 @@ export async function runMossInferJob(
   params: JobParams,
   opts: {
     model: string
+    ditFile?: string
+    textEncoderFile?: string
+    vaeFile?: string
     device: number
     deviceUuid: string
     systemDeviceIndex: number

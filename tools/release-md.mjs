@@ -106,12 +106,13 @@ if (!Array.isArray(installers)) {
 }
 const seenInstallers = new Set()
 for (const item of installers) {
-  const key = `${item?.platform}/${item?.arch}`
+  // One platform can ship several kinds (the setup exe and the portable zip).
+  const key = `${item?.platform}/${item?.arch}/${item?.kind}`
   if (
     !item ||
     !['darwin', 'win32', 'linux'].includes(item.platform) ||
     !['arm64', 'x64'].includes(item.arch) ||
-    !['dmg', 'zip', 'nsis', 'appimage'].includes(item.kind) ||
+    !['dmg', 'zip', 'nsis', 'appimage', 'exe'].includes(item.kind) ||
     !/^https:\/\//.test(item.url ?? '') ||
     !/^[a-f0-9]{64}$/i.test(item.sha256 ?? '') ||
     !Number.isSafeInteger(item.size_bytes) ||

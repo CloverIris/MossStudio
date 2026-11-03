@@ -35,6 +35,49 @@ export async function validateBinding(
   return bundle
 }
 
+/** A model source is either one materialized diffusers folder or three files. */
+export interface PreparedModelSource {
+  model: string | null
+  ditFile?: string
+  textEncoderFile?: string
+  vaeFile?: string
+}
+
+/**
+ * Resolve a binding to what the engine can load. A bundle whose components are
+ * files registered by a directory scan (a user's ComfyUI folder) is passed as
+ * `dit_file` / `text_encoder_file` / `vae_file`; nothing is copied or linked, so
+ * the 27 GB set keeps living where the user installed it.
+ */
+export async function prepareModelSource(
+  binding: ModelBinding,
+  settings: Settings,
+): Promise<PreparedModelSource> {
+  const catalog = await getCatalog(settings)
+  const bundle = catalog.bundles.find((b) => b.id === binding.bundleId)
+  if (!bundle) throw new Error('模型组合不存在，请重新选择')
+  const entries = [binding.dit, binding.textEncoder, binding.vae].map((id) =>
+    catalog.models.find((model) => model.id === id),
+  )
+  const localCount = entries.filter((entry) => entry?.provider === 'local').length
+  if (localCount > 0) {
+    if (localCount !== 3) {
+      throw new Error('本地文件组合需要同时准备 DiT、文本编码器和 VAE 三个文件')
+    }
+    const paths = entries.map((entry) => entry?.localPath)
+    if (paths.some((path) => !path)) {
+      throw new Error('本地模型缺少文件路径，请重新扫描登记')
+    }
+    return {
+      model: null,
+      ditFile: paths[0]!,
+      textEncoderFile: paths[1]!,
+      vaeFile: paths[2]!,
+    }
+  }
+  return { model: await prepareModelBundle(binding, settings) }
+}
+
 export async function prepareModelBundle(
   binding: ModelBinding,
   settings: Settings,

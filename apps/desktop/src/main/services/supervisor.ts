@@ -17,7 +17,7 @@ import type {
 } from '@shared/types'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
-import { prepareModelBundle } from './modelBundles'
+import { prepareModelSource } from './modelBundles'
 import { legacyModelReady, resolveLegacyModelPath } from './modelReadiness'
 import { cancelMossInferJob, resolveServerPath, restartMossInfer, runMossInferJob } from './mossInfer'
 import { getSettings } from './settings'
@@ -742,20 +742,32 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
 
   let modelPath: string | undefined
   let modelSnapshot: unknown
+  let modelFiles: { ditFile?: string; textEncoderFile?: string; vaeFile?: string } = {}
   if (!input.hostId) {
     const serverPath = resolveServerPath(settings)
     if (!serverPath || !existsSync(serverPath)) throw new Error('未找到 moss-server；请先在引擎页下载或配置引擎')
     if (input.modelBinding) {
-      const bundlePath = await prepareModelBundle(input.modelBinding, settings)
-      modelPath = bundlePath
-      modelSnapshot = JSON.parse(await readFile(join(bundlePath, 'clover_model.json'), 'utf8'))
+      const source = await prepareModelSource(input.modelBinding, settings)
+      modelPath = source.model ?? undefined
+      if (modelPath) {
+        modelSnapshot = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8'))
+      } else {
+        modelSnapshot = { bundleId: input.modelBinding.bundleId, files: source }
+      }
+      modelFiles = {
+        ditFile: source.ditFile,
+        textEncoderFile: source.textEncoderFile,
+        vaeFile: source.vaeFile,
+      }
     } else {
       modelPath =
         (await resolveLegacyModelPath(
           join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'),
         )) ?? undefined
     }
-    if (!modelPath) throw new Error('模型权重尚未就绪，请先在模型库下载 MOSS-Image')
+    if (!modelPath && !modelFiles.ditFile) {
+      throw new Error('模型权重尚未就绪，请先在模型库下载 MOSS-Image，或扫描本地模型文件')
+    }
   }
 
   const localGpu = input.hostId ? null : await resolveLocalGpu(input.deviceUuid)
@@ -938,13 +950,14 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     job,
     params,
     {
-      model: modelPath!,
+      model: modelPath ?? '',
       device: 0,
       deviceUuid: localGpu!.uuid,
       systemDeviceIndex: localGpu!.index,
       loras: params.adapters ?? [],
       output,
       settings: executionSettings,
+      ...modelFiles,
     },
     {
       event: (payload) => handleRunnerEvent(job, runningJob, JSON.stringify(payload)),
