@@ -23,6 +23,7 @@ import type {
   ModelBundle,
   Settings,
 } from '@shared/types'
+import { localFilesBundle } from '@shared/localBundle'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
@@ -549,21 +550,8 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
   // A scanned ComfyUI set (DiT + text encoder + VAE registered in place) becomes a
   // selectable bundle without copying anything; the engine gets the three files.
   const bundles: ModelBundle[] = [...(raw.bundles ?? BUILTIN.bundles ?? [])]
-  const localComponent = (role: ModelEntry['role']): ModelEntry | undefined =>
-    models.find((model) => model.provider === 'local' && model.role === role && model.installed)
-  const localDit = localComponent('dit')
-  const localTextEncoder = localComponent('text_encoder')
-  const localVae = localComponent('vae')
-  if (localDit && localTextEncoder && localVae) {
-    bundles.unshift({
-      id: 'local-files',
-      name: '本地文件（扫描）',
-      description: '直接使用本地已登记的单文件组件，不复制、不下载。',
-      components: { dit: localDit.id, textEncoder: localTextEncoder.id, vae: localVae.id },
-      support: '',
-      recommended: false,
-    })
-  }
+  const localBundle = localFilesBundle(models)
+  if (localBundle) bundles.unshift(localBundle)
   catalogCache = {
     updatedAt: raw.updated_at ?? new Date().toISOString(),
     models,
