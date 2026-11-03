@@ -6,13 +6,14 @@ internal static class RegistryRegistration
 {
     public const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\MossStudio";
 
-    public static bool TryRegister(string installDirectory, string version, out string? error)
+    public static bool TryRegister(string installDirectory, string version, bool allowSystemDirectory, out string? error)
     {
         try
         {
             var executable = Path.Combine(installDirectory, "MossStudio.exe");
             var setupCopy = Path.Combine(installDirectory, "MossStudio-Setup.exe");
-            var uninstallCommand = $"\"{setupCopy}\" --uninstall --dir \"{installDirectory}\"";
+            var allowFlag = allowSystemDirectory ? " --allow-system-dir" : "";
+            var uninstallCommand = $"\"{setupCopy}\" --uninstall --dir \"{installDirectory}\"{allowFlag}";
             var quietUninstallCommand = $"{uninstallCommand} --silent";
 
             using var key = Registry.CurrentUser.CreateSubKey(UninstallKeyPath, writable: true);

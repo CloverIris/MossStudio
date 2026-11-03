@@ -81,7 +81,10 @@ internal static class Program
         }
         finally
         {
-            SelfRelocation.ScheduleSelfDelete();
+            if (options.Relocated)
+            {
+                SelfRelocation.ScheduleSelfDelete();
+            }
         }
     }
 

@@ -30,6 +30,7 @@ internal sealed class CliOptions
     public bool SkipRegistry { get; set; }
     public int? Pid { get; set; }
     public int? WaitForPid { get; set; }
+    public bool Relocated { get; set; }
     public bool ShowHelp { get; set; }
 
     public const string Usage = """
@@ -111,7 +112,6 @@ internal sealed class CliOptions
                     options.Relaunch = inlineValue is null || ParseBool(inlineValue, "--relaunch");
                     break;
                 case "--no-relaunch":
-                case "--no-relaunch-flag":
                     options.Relaunch = false;
                     break;
                 case "--keep-data":
@@ -128,6 +128,9 @@ internal sealed class CliOptions
                     break;
                 case "--skip-registry":
                     options.SkipRegistry = true;
+                    break;
+                case "--relocated":
+                    options.Relocated = true;
                     break;
                 case "--help":
                 case "-h":

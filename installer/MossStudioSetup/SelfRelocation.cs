@@ -51,6 +51,8 @@ internal static class SelfRelocation
                 startInfo.ArgumentList.Add(argument);
             }
 
+            startInfo.ArgumentList.Add("--relocated");
+
             return Process.Start(startInfo) is not null;
         }
         catch

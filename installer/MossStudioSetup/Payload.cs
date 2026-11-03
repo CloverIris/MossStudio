@@ -100,7 +100,8 @@ internal sealed class PayloadArchive : IDisposable
             throw new InstallerException("安装器 trailer 无效：payload 偏移或长度非法。");
         }
 
-        if (offset > fileLength - TrailerSize || offset + size != fileLength - TrailerSize)
+        var remaining = fileLength - TrailerSize - offset;
+        if (offset > fileLength - TrailerSize || size > remaining || size != remaining)
         {
             throw new InstallerException("安装器 trailer 无效：payload 偏移/长度与文件大小不一致。");
         }
@@ -120,7 +121,7 @@ internal sealed class PayloadArchive : IDisposable
         return new PayloadInfo(fullPath, offset, size, sha256);
     }
 
-    public PayloadExtraction ExtractTo(string installDirectory, IProgress<int>? progress = null)
+    public PayloadExtraction ExtractTo(string installDirectory, Action<int>? progress = null)
     {
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(installDirectory));
         Directory.CreateDirectory(root);
@@ -221,7 +222,12 @@ internal sealed class PayloadArchive : IDisposable
             if (File.Exists(plan.TargetPath))
             {
                 var attributes = File.GetAttributes(plan.TargetPath);
-                if ((attributes & FileAttributes.ReadOnly) != 0)
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    // Replace a file symlink instead of writing through it.
+                    File.Delete(plan.TargetPath);
+                }
+                else if ((attributes & FileAttributes.ReadOnly) != 0)
                 {
                     File.SetAttributes(plan.TargetPath, attributes & ~FileAttributes.ReadOnly);
                 }
@@ -253,7 +259,7 @@ internal sealed class PayloadArchive : IDisposable
             if (percent != lastPercent)
             {
                 lastPercent = percent;
-                progress?.Report(percent);
+                progress?.Invoke(percent);
             }
         }
 
@@ -263,7 +269,7 @@ internal sealed class PayloadArchive : IDisposable
             throw new InstallerException("解压完成后缺少 MossStudio.exe。");
         }
 
-        progress?.Report(100);
+        progress?.Invoke(100);
         return new PayloadExtraction(Info.Sha256, fileCount, processedBytes, skippedDataEntries);
     }
 
