@@ -1,8 +1,12 @@
 name: Build
 
-# Started by hand from the Actions tab (or `gh workflow run build.yml --ref <branch>`).
+# Started by hand from the Actions tab (or `gh workflow run build.yml --ref <branch>`;
+# GitHub only offers that once this file is on the default branch), and on pushes
+# to feature branches.
 on:
   workflow_dispatch:
+  push:
+    branches: ['feat/**']
 
 concurrency:
   group: build-${{ github.ref }}
