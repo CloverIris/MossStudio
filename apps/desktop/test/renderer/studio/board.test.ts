@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BOARD_GAP, BOARD_UNIT, CARD_FOOTER, CARD_HEADER, boardBounds, cardHeight, cardWidth, centerOn, fitView, nextFreeSpot, pointInCanvas, resultSpot, zoomAround, ZOOM_MAX } from '@renderer/pages/studio/board'
+import { BOARD_GAP, BOARD_UNIT, CARD_FOOTER, CARD_HEADER, boardBounds, cardHeight, cardWidth, centerOn, fitView, nextFreeSpot, pointInCanvas, resultSpot, zoomAround, ZOOM_MAX } from '@renderer/pages/studio/boardLayout'
 
 const placed = (x: number, y: number, width = 1024, height = 1024) => ({ x, y, width, height })
 

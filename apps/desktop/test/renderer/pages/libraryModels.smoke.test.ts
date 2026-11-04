@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Ipc } from '@shared/channels'
 import { galleryItemFixture } from '../../mocks/backend'
 import { flush, loadStore } from '../../helpers/renderer'
@@ -12,6 +12,16 @@ import { flush, loadStore } from '../../helpers/renderer'
 
 let root: Root | null = null
 let container: HTMLElement | null = null
+
+// These tests render whole pages; on a cold, slower CI runner the first import alone can
+// take longer than the default 5 s, and a timed-out render then bleeds into the next test.
+vi.setConfig({ testTimeout: 30_000 })
+
+beforeAll(async () => {
+  await import('@renderer/components/ui')
+  await import('@renderer/pages/Library')
+  await import('@renderer/pages/Models')
+}, 120_000)
 
 afterEach(() => {
   act(() => root?.unmount())

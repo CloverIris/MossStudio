@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { cn } from '../../components/ui'
-import { pointInCanvas } from './board'
+import { pointInCanvas } from './boardLayout'
 import { moveBox, newRegion, regionFromDrag, resizeBox } from './canvases'
 
 export const KIND_LABEL: Record<ProjectLayerKind, string> = { object: '物体', character: '人物', text: '文字' }

@@ -37,7 +37,7 @@ import {
   type TrainerAction,
   type TrainingForm,
 } from './training/trainingForm'
-import { trainingRuns } from './training/trainingRuns'
+import { trainingRuns } from './training/trainingRunsModel'
 import { useTrainerData } from './training/useTrainerData'
 
 const ACTION_LABEL: Record<TrainerAction, string> = {

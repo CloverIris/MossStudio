@@ -4,7 +4,7 @@ import { relative } from '../../lib/format'
 import { useShell } from '../../lib/shell'
 import { useApp } from '../../store'
 import { Button, EmptyState, Group, Pill, ProgressBar, Row, Section } from '../../components/ui'
-import { trainingRuns } from './trainingRuns'
+import { trainingRuns } from './trainingRunsModel'
 
 /** Real training job records for one location, with their logs one click away. */
 export function TrainingRuns({ hostId }: { hostId: string }): React.JSX.Element {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { trainingRuns } from '@renderer/pages/training/trainingRuns'
+import { trainingRuns } from '@renderer/pages/training/trainingRunsModel'
 import { jobFixture } from '../../mocks/backend'
 
 const training = (patch: Parameters<typeof jobFixture>[0]) => jobFixture({ kind: 'training', ...patch })

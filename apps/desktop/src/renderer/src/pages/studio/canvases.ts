@@ -2,7 +2,7 @@ import type { AdapterEntry, JobRecord, ProjectCanvas, ProjectLayer, ProjectLayer
 import { normalizeCanvasAdapters } from '@shared/adapters'
 import { clampBox } from '../../lib/layout'
 import type { StudioReuseRequest } from '../../lib/studioReuse'
-import { resultSpot, nextFreeSpot } from './board'
+import { resultSpot, nextFreeSpot } from './boardLayout'
 import { DEFAULT_NEGATIVE, DEFAULT_QUALITY, DEFAULT_SIZE, clampDimension, isSeedLocked, nextCanvasTitle, qualityPreset } from './defaults'
 
 /** Pure canvas and region operations. Every edit returns new objects. */

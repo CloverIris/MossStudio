@@ -4,7 +4,7 @@ import type { ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/type
 import { Button, IconButton, ProgressBar, cn } from '../../components/ui'
 import { MenuItem, Popover } from '../../components/common/Popover'
 import { cloverUrl } from '../../lib/clover'
-import { CARD_FOOTER, CARD_HEADER, cardBodyHeight, cardWidth } from './board'
+import { CARD_FOOTER, CARD_HEADER, cardBodyHeight, cardWidth } from './boardLayout'
 import type { CardJobView } from './jobStatus'
 import type { RerunCheck } from './readiness'
 import { RegionLayer, type BoardTool } from './RegionLayer'
