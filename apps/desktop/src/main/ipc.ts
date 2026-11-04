@@ -12,12 +12,13 @@ import { openDirectoryInFileManager, revealInFileManager } from './lib/fileManag
 import { scanEnvironment } from './services/env'
 import { getPythonInstallState, installManagedPython } from './services/managedPython'
 import { cancelDownload, cleanupEmptyModelDirs, getCatalog, deleteModel, importAdapterFile, importModelFolder, invalidateCatalog, listDownloads, pauseDownload, registerScannedModels, scanModels, startDownload, installBundle } from './services/models'
-import { galleryDetail, listGallery, revealInFolder } from './services/gallery'
-import { cancelJob, getJob, getJobLogs, inputJob, listJobs } from './services/supervisor'
+import { galleryDetail, listGallery, recordJobOutputs, revealInFolder, trashGalleryItem } from './services/gallery'
+import { cancelJob, getJob, getJobLogs, inputJob, listJobs, onJobCompleted } from './services/supervisor'
 import { clearDiagnostics, dismissDiagnostic, listDiagnostics } from './services/diagnostics'
 import { getSettings, updateSettings } from './services/settings'
 import { checkUpdates, dismissAnnouncement } from './services/updates'
 import { markUpdateCheck } from './services/updateWatcher'
+import { clearEngineAutoUpdateHold, recordManualEngineInstall, startEngineAutoUpdate } from './services/engineAutoUpdate'
 import { cancelUpdateDownload, downloadUpdate } from './services/updateDownload'
 import {
   cancelMossInferDownload,
@@ -44,13 +45,13 @@ import { engineReadiness, invalidateEngineReadiness } from './services/engineRea
 import { installMossInferCudaLibs } from './services/cudaWheels'
 import { saveHfToken } from './services/hfCredentials'
 import { controlRemoteDownload, listRemoteDownloads, refreshRemoteDownloads } from './services/remoteDownloads'
-import { prepareRemoteDefaultModel, prepareRemoteModel, scanRemoteModels } from './services/remoteModels'
+import { deleteRemoteModels, prepareRemoteDefaultModel, prepareRemoteModel, scanRemoteModels } from './services/remoteModels'
 import { installRemoteEngine } from './services/remoteEngineInstall'
 import { inspectRemoteResource, removeRemoteResource } from './services/remoteResources'
 import { getTrainingHost } from './services/trainingHosts'
 import { pushTestNotification } from './services/desktopNotifications'
 import { isInside } from './lib/paths'
-import { openWindow } from './windows'
+import { applyThemeSource, openWindow } from './windows'
 import { getGpuInventory, listDevices, refreshGpuInventory } from './services/devices'
 import { getOnboardingStatus } from './services/onboarding'
 import {
@@ -140,6 +141,9 @@ function runToolInRenderer(event: Electron.IpcMainInvokeEvent, call: AiToolCall)
 }
 
 export function registerIpc(): void {
+  // Keeps the engine on the newest release while settings.engineAutoUpdate is on.
+  startEngineAutoUpdate()
+
   handle(Ipc.appInfo, null, () => {
     const settings = getSettings()
     return {
@@ -377,6 +381,8 @@ export function registerIpc(): void {
     const { hfToken, ...settingsPatch } = patch
     if (hfToken !== undefined) saveHfToken('local', hfToken)
     const settings = updateSettings(settingsPatch)
+    if (before.theme !== settings.theme) applyThemeSource(settings.theme)
+    if (!before.engineAutoUpdate && settings.engineAutoUpdate) clearEngineAutoUpdateHold()
     invalidateEngineReadiness()
     ensureDirs(settings.modelsRoot, settings.modelDirectories)
     if (before.lanWebEnabled !== settings.lanWebEnabled || before.lanWebPort !== settings.lanWebPort) {
@@ -407,9 +413,12 @@ export function registerIpc(): void {
 
   handle(Ipc.updatesCancel, schemas.updatesCancel, ({ version }) => cancelUpdateDownload(version))
 
-  handle(Ipc.mossInferDownload, schemas.mossInferDownload, ({ channel, flavour, variant, cudaWheels, releaseTag, architecture }) =>
-    downloadMossInfer(channel, flavour, variant, cudaWheels, releaseTag, architecture),
-  )
+  handle(Ipc.mossInferDownload, schemas.mossInferDownload, async ({ channel, flavour, variant, cudaWheels, releaseTag, architecture }) => {
+    const state = await downloadMossInfer(channel, flavour, variant, cudaWheels, releaseTag, architecture)
+    // Choosing an older release by hand pins it, so auto-update does not undo the rollback.
+    if (state.phase === 'done' && channel === 'stable') await recordManualEngineInstall(releaseTag)
+    return state
+  })
 
   handle(Ipc.engineStatus, null, () => engineReadiness())
 
@@ -494,6 +503,14 @@ export function registerIpc(): void {
     const model = catalog.models.find((entry) => entry.id === modelId) ?? catalog.adapters.find((entry) => entry.id === modelId)
     if (!model) throw new Error('模型不存在')
     const result = await prepareRemoteModel(host, model)
+    emit(Events.hostsChanged, { id: hostId })
+    return result
+  })
+
+  handle(Ipc.modelsRemoteDelete, schemas.modelsRemoteDelete, async ({ hostId, ids }) => {
+    const host = getTrainingHost(getSettings(), hostId)
+    if (!host) throw new Error('主机不存在')
+    const result = await deleteRemoteModels(host, await getCatalog(getSettings(), true), ids)
     emit(Events.hostsChanged, { id: hostId })
     return result
   })
@@ -621,6 +638,15 @@ export function registerIpc(): void {
   handle(Ipc.galleryItem, schemas.galleryItem, ({ path }) => galleryDetail(path))
 
   handle(Ipc.galleryReveal, schemas.galleryReveal, ({ path }) => revealInFolder(path))
+
+  handle(Ipc.galleryTrash, schemas.galleryTrash, ({ path }) => trashGalleryItem(path))
+
+  // Keep each output's generation details (project, model, steps…) next to the image.
+  onJobCompleted((job) => {
+    void recordJobOutputs(job).then((changed) => {
+      if (changed) emit(Events.galleryChanged, { jobId: job.id })
+    })
+  })
 
   handle(Ipc.pickDialog, schemas.pickDialog, async ({ kind, title }) => {
     const result = await dialog.showOpenDialog({

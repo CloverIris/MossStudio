@@ -194,7 +194,7 @@ export function releaseVersionCandidates(input: {
 }): string[] {
   // Core version plus an optional prerelease marker. A bare `-win32`/`-x64` in an
   // asset name is a platform suffix, not a prerelease, so it must not be included.
-  const versionPattern = /(\d+\.\d+\.\d+(?:-(?:alpha|beta|rc|pre|dev|next)[0-9A-Za-z.-]*)?)/gi
+  const versionPattern = /(\d+\.\d+\.\d+(?:-(?:alpha|beta|rc|pre|dev|next)(?:\.?\d+)*)?)/gi
   const sources = [
     input.tag ?? '',
     input.name ?? '',

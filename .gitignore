@@ -28,6 +28,9 @@ coverage/
 models/
 outputs/
 runs/
+# ...but not source folders that happen to be called models (pages/models, test/*/models).
+!apps/desktop/src/**/models/
+!apps/desktop/test/**/models/
 .dev-data/
 *.safetensors
 *.mnn

@@ -1,19 +1,22 @@
 import { useRef } from 'react'
+import { cn } from '../ui'
 
 const MIN_WIDTH = 240
 const MAX_WIDTH = 480
 
-export function StudioDivider({ label, value, direction, onChange }: {
+/** Invisible resize handle on a panel edge; only the cursor and focus ring show it. */
+export function StudioDivider({ label, value, direction, onChange, className }: {
   label: string
   value: number
   direction: 1 | -1
   onChange: (value: number) => void
+  className?: string
 }): React.JSX.Element {
   const gesture = useRef<{ pointerId: number; x: number; width: number } | null>(null)
   const update = (width: number): void => onChange(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width)))
   return (
     <div
-      className="studio-divider"
+      className={cn('studio-divider', className)}
       role="separator"
       tabIndex={0}
       aria-label={label}

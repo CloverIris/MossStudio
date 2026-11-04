@@ -47,6 +47,7 @@ import {
   stripAnsi,
   toDiagnostic,
 } from './parsers'
+import { waitForEngineActivation } from '../lib/engineActivation'
 
 const PREFIX = '@@CLOVER@@ '
 
@@ -601,6 +602,8 @@ function gpuSnapshot(device: GpuInventoryDevice): NonNullable<JobRecord['gpuSnap
 /** Generate directly through MossInfer; no Instance, repo worktree or Python runtime. */
 export async function startEngineJob(input: StartEngineJobInput): Promise<JobRecord> {
   await loadJobs()
+  // A new engine build is being switched in (and the old one stopped): start on the new one.
+  if (!input.hostId) await waitForEngineActivation()
   if (!input.prompt.trim()) throw new Error('提示词不能为空')
   if (
     input.canvasLineage !== undefined &&

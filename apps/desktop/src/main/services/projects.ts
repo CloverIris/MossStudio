@@ -8,7 +8,11 @@ function projectsRoot(): string {
   return join(paths.root(), 'projects')
 }
 
+/** Project ids name a folder under projects/; anything else (e.g. '..') must never reach the filesystem. */
+export const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/
+
 function projectDir(id: string): string {
+  if (!PROJECT_ID_PATTERN.test(id)) throw new Error(`Invalid project id: ${JSON.stringify(id)}`)
   return join(projectsRoot(), id)
 }
 

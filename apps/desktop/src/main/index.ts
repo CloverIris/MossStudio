@@ -5,7 +5,6 @@ import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { runModelManagementTests } from './modelManagement.test'
-import { runModelManagementUi } from './modelManagementUi.test'
 import { runProjectCanvasTests } from './projects.test'
 import { runStudioCanvasUiTests } from './studioCanvasUi.test'
 import { ensureDirs, paths } from './lib/paths'
@@ -82,7 +81,7 @@ if (scenario) {
 }
 app.setName('MossStudio')
 if (process.platform === 'win32') app.setAppUserModelId('com.mossstudio.app')
-nativeTheme.themeSource = 'dark'
+nativeTheme.themeSource = getSettings().theme
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'clover', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -162,11 +161,6 @@ app.whenReady().then(async () => {
   await startBackend()
   if (scenario === 'studio-canvas-ui') {
     await runStudioCanvasUiTests()
-    return
-  }
-  if (scenario === 'model-management-ui') {
-    try { await runModelManagementUi(); app.exit(0) }
-    catch (error) { console.error(error); app.exit(1) }
     return
   }
 

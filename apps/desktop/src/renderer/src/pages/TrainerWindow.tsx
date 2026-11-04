@@ -1,420 +1,315 @@
-import { AlertTriangle, CheckCircle2, FolderOpen, GraduationCap, Play, Server, Stethoscope, Terminal } from 'lucide-react'
+import { Copy, FolderOpen, Play } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Ipc } from '@shared/channels'
-import type { JobRecord, ManagedHost, TrainerVersion } from '@shared/types'
+import type { JobRecord } from '@shared/types'
 import { call } from '../lib/api'
-import { openWindow } from '../lib/windows'
-import { announceTrainingHost, getSelectedTrainingHost, TRAINING_HOST_EVENT } from '../lib/trainingHost'
 import { useApp } from '../store'
-import { Button, Card, EmptyState, Field, IconButton, Input, Modal, Pill, ProgressBar, Select, Spinner, Textarea, useToast } from '../components/ui'
+import {
+  Advanced,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  Modal,
+  PageHeader,
+  Pill,
+  ProgressBar,
+  Section,
+  Select,
+  Spinner,
+  Textarea,
+  useCopyText,
+  useToast,
+} from '../components/ui'
+import { RUNTIME_LABEL, currentVersion, versionsAt } from './training/trainerSetup'
+import {
+  ALGOS,
+  buildTrainingCommand,
+  digitsOnly,
+  firstTrainingFormError,
+  loadTrainingForm,
+  sanitizeRunName,
+  saveTrainingForm,
+  toTrainerRunInput,
+  trainingFormErrors,
+  type TrainerAction,
+  type TrainingForm,
+} from './training/trainingForm'
+import { trainingRuns } from './training/trainingRuns'
+import { useTrainerData } from './training/useTrainerData'
 
-const ALGOS = ['lora', 'locon', 'loha', 'lokr', 'dora', 'oft', 'boft', 'ia3', 'full']
+const ACTION_LABEL: Record<TrainerAction, string> = {
+  train: '训练',
+  inspect_data: '检查数据',
+  cache_text: '缓存文本',
+  cache_latents: '缓存潜变量',
+  export: '导出',
+  sample: '采样',
+}
 
+/** A field hint that turns into the field's problem once the user tried to start. */
+function hint(error: string | undefined, normal?: string): React.ReactNode {
+  return error ? <span className="text-danger">{error}</span> : normal
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/** The separate trainer window: one form, remembered between sessions. */
 export function TrainerWindow(): React.JSX.Element {
   const toast = useToast()
+  const copyText = useCopyText()
   const env = useApp((state) => state.env)
   const jobs = useApp((state) => state.jobs)
-  const [versions, setVersions] = useState<TrainerVersion[]>([])
-  const [hosts, setHosts] = useState<ManagedHost[]>([])
-  const [selectedHostId, setSelectedHostId] = useState(getSelectedTrainingHost)
-  const [versionId, setVersionId] = useState('')
-  const [weights, setWeights] = useState('')
-  const [dataset, setDataset] = useState('')
-  const [runName, setRunName] = useState('moss-lora')
-  const [algo, setAlgo] = useState('lora')
-  const [steps, setSteps] = useState('4000')
-  const [lr, setLr] = useState('1e-4')
-  const [dim, setDim] = useState('32')
-  const [alpha, setAlpha] = useState('32')
-  const [batch, setBatch] = useState('1')
-  const [resolution, setResolution] = useState('1024')
-  const [overrides, setOverrides] = useState('')
+  const remoteHostsEnabled = useApp((state) => state.settings?.remoteHostsEnabled ?? false)
+  const { sshHosts, versions, loading, hostId, setHostId } = useTrainerData()
+  const [form, setForm] = useState<TrainingForm>(loadTrainingForm)
+  const [showErrors, setShowErrors] = useState(false)
+  const [starting, setStarting] = useState<TrainerAction | null>(null)
+  const [checking, setChecking] = useState(false)
   const [doctor, setDoctor] = useState<{ ok: boolean; output: string } | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [starting, setStarting] = useState<string | null>(null)
-  const [auxOpen, setAuxOpen] = useState<'export' | 'sample' | null>(null)
 
-  useEffect(() => {
-    void Promise.all([call<TrainerVersion[]>(Ipc.trainerAllVersions), call<ManagedHost[]>(Ipc.trainerHosts)])
-      .then(([rows, hostList]) => {
-        setVersions(rows)
-        setHosts(hostList)
-        const selected = getSelectedTrainingHost()
-        setSelectedHostId(selected)
-        setVersionId((current) => current || rows.find((item) => (item.hostId ?? 'local') === selected)?.id || rows[0]?.id || '')
-      })
-      .catch(() => undefined)
-  }, [])
-  useEffect(() => {
-    const sync = (): void => setSelectedHostId(getSelectedTrainingHost())
-    window.addEventListener(TRAINING_HOST_EVENT, sync)
-    window.addEventListener('storage', sync)
-    return () => { window.removeEventListener(TRAINING_HOST_EVENT, sync); window.removeEventListener('storage', sync) }
-  }, [])
-
-  const availableVersions = useMemo(() => versions.filter((item) => (item.hostId ?? 'local') === selectedHostId), [versions, selectedHostId])
-  const version = availableVersions.find((item) => item.id === versionId) ?? availableVersions[0]
-  const hasCuda = env?.gpu.kind === 'nvidia'
-  const remote = selectedHostId !== 'local'
+  const available = useMemo(() => versionsAt(versions, hostId), [versions, hostId])
+  const version = available.find((item) => item.id === form.versionId) ?? currentVersion(versions, hostId)
   const ready = version?.runtimeState === 'ready'
-  const canStart = Boolean(version && ready && (remote || hasCuda))
-  const trainingJob = jobs.find((job) => job.kind === 'training' && (job.hostId ?? 'local') === selectedHostId) ?? null
+  const remote = hostId !== 'local'
+  const hasGpu = remote || env?.gpu.kind === 'nvidia'
+  const latestRun = trainingRuns(jobs, hostId)[0]
+  const effective: TrainingForm = { ...form, hostId, versionId: version?.id ?? '' }
+  const errors = showErrors ? trainingFormErrors(effective) : {}
+  const command = buildTrainingCommand(effective)
 
-  useEffect(() => {
-    if (availableVersions.length && !availableVersions.some((item) => item.id === versionId)) setVersionId(availableVersions[0]!.id)
-  }, [availableVersions, versionId])
+  const snapshot = JSON.stringify(effective)
+  useEffect(() => { saveTrainingForm(JSON.parse(snapshot) as TrainingForm) }, [snapshot])
 
-  const configPath = `configs/user/${runName || 'moss-lora'}.py`
-  const overrideArgs = overrides
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.includes('=') && !line.startsWith('#'))
-    .map((line) => `--set ${line}`)
-    .join(' ')
-
-  const command = useMemo(
-    () =>
-      [
-        `kohakumoss-config new train --weights ${weights || '<weights>'} --data ${dataset || '<dataset>'} --source kohya --algo ${algo} --name ${runName || 'moss-lora'} --steps ${steps || '4000'}`,
-        `kogine run scripts/train/moss.py --config ${configPath} --set LR=${lr || '1e-4'} --set DIM=${dim || '32'} --set ALPHA=${alpha || '32'} --set MICROBATCHES=${batch || '1'} --set TARGET_AREA=${Number(resolution || '1024') ** 2}${overrideArgs ? ` ${overrideArgs}` : ''}`,
-      ].join('\n'),
-    [weights, dataset, algo, runName, steps, lr, dim, alpha, batch, resolution, configPath, overrideArgs],
-  )
-
-  async function pick(kind: 'weights' | 'dataset'): Promise<void> {
-    const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: kind === 'weights' ? '选择 MOSS 权重目录' : '选择数据集目录' })
-    if (!path) return
-    if (kind === 'weights') setWeights(path)
-    else setDataset(path)
+  function update(patch: Partial<TrainingForm>): void {
+    setForm((current) => ({ ...current, ...patch }))
   }
 
-  async function check(): Promise<void> {
-    if (!version) {
-      toast.push('先创建一个训练版本', 'error')
-      return
-    }
-    setBusy(true)
-    try {
-      const result = remote
-        ? await call<{ ok: boolean; output: string }>(Ipc.trainerRemoteDoctor, { hostId: version.hostId, versionId: version.id })
-        : await call<{ ok: boolean; output: string }>(Ipc.trainerDoctor, { id: version.id })
-      setDoctor(result)
-    } catch (error) {
-      toast.push(error instanceof Error ? error.message : String(error), 'error')
-    } finally {
-      setBusy(false)
-    }
+  async function pick(field: 'weights' | 'dataset'): Promise<void> {
+    if (remote) return
+    const path = await call<string | null>(Ipc.pickDialog, {
+      kind: 'folder',
+      title: field === 'weights' ? '选择底模权重所在的文件夹' : '选择训练图片所在的文件夹',
+    }).catch(() => null)
+    if (path) update({ [field]: path })
   }
 
-  function buildExport(): string {
-    const step = trainingJob?.metrics?.step ?? (Number(steps) || 1000)
-    return `kogine run scripts/export/export.py --set WEIGHTS=${weights || '<weights>'} --set ADAPTER=runs/moss/${runName || 'moss-lora'}/checkpoints/step_${String(step).padStart(8, '0')}/trainable.safetensors --set OUT=${runName || 'moss-lora'}.safetensors`
-  }
-
-  function buildSample(): string {
-    return `kohakumoss-config new sample --weights ${weights || '<weights>'} --adapter runs/moss/${runName || 'moss-lora'}/export/${runName || 'moss-lora'}-comfy.safetensors --name ${runName || 'moss-lora'}-sample\nkogine run scripts/sample/sample.py --config configs/user/${runName || 'moss-lora'}-sample.py --set PROMPT="a lighthouse on a rocky coast at sunset"`
-  }
-
-  async function runAction(action: 'train' | 'inspect_data' | 'cache_text' | 'cache_latents' | 'export' | 'sample'): Promise<void> {
-    if (!version) {
-      toast.push('先选择一个训练版本', 'error')
-      return
-    }
-    if (!ready) {
-      toast.push('先在训练页安装环境', 'error')
-      return
-    }
-    if (!remote && !hasCuda) {
-      toast.push('本机没有 CUDA；请切换到 SSH 训练版本，或在 NVIDIA 机器运行', 'info')
-      return
-    }
-    if (!weights || (!dataset && (action === 'train' || action === 'inspect_data' || action === 'cache_text' || action === 'cache_latents'))) {
-      toast.push(action === 'train' || action === 'inspect_data' || action === 'cache_text' || action === 'cache_latents'
-        ? '先选择 MOSS 权重目录和数据集目录'
-        : '先选择 MOSS 权重目录', 'error')
+  async function run(action: TrainerAction): Promise<void> {
+    setShowErrors(true)
+    const problem = !version ? '先在训练页准备训练器' : !ready ? '训练环境还没装好，先在训练页安装环境' : !hasGpu ? '这台电脑没有 NVIDIA 显卡，不能在本机训练' : firstTrainingFormError(effective, action)
+    if (problem) {
+      toast.push(problem, 'error')
       return
     }
     setStarting(action)
     try {
-      const job = await call<JobRecord>(Ipc.trainerRun, {
-        versionId: version.id,
-        action,
-        runName: runName || 'moss-lora',
-        weights,
-        dataset,
-        algo,
-        steps: Number(steps) || 4000,
-        lr,
-        dim,
-        alpha,
-        batch,
-        resolution: Number(resolution) || 1024,
-        overrides,
-      })
-      toast.push(`${action === 'train' ? '训练' : action} 已启动`, 'success')
-      void job
+      await call<JobRecord>(Ipc.trainerRun, toTrainerRunInput(effective, action))
+      toast.push(`${ACTION_LABEL[action]}已开始，进度在主窗口的「训练」里`, 'success')
     } catch (error) {
-      toast.push(error instanceof Error ? error.message : String(error), 'error')
+      toast.push(`${ACTION_LABEL[action]}没有开始：${errorText(error)}`, 'error')
     } finally {
       setStarting(null)
     }
   }
 
+  async function check(): Promise<void> {
+    if (!version) return
+    setChecking(true)
+    try {
+      setDoctor(remote
+        ? await call<{ ok: boolean; output: string }>(Ipc.trainerRemoteDoctor, { hostId, versionId: version.id })
+        : await call<{ ok: boolean; output: string }>(Ipc.trainerDoctor, { id: version.id }))
+    } catch (error) {
+      toast.push(`体检没有完成：${errorText(error)}`, 'error')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  function openMainWindow(): void {
+    void call(Ipc.windowOpen, { kind: 'studio', route: '/training' }).catch(() => undefined)
+  }
+
+  const pathHint = remote ? '填写远程主机上的路径' : undefined
+
   return (
-    <div className="mx-auto w-full max-w-[1080px] space-y-4 px-6 py-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-caption font-semibold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
-            <GraduationCap className="size-4" />
-            Kohaku Trainer · External
-          </div>
-          <h1 className="mt-1.5 text-[23px] font-semibold tracking-[-0.02em]">训练窗口</h1>
-          <p className="mt-1 text-ui text-[var(--color-text-secondary)]">
-            表单生成 trainer 配置；高级项直接透传 <code className="rounded bg-white/[0.05] px-1">--set KEY=VALUE</code>。
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Button tone="ghost" onClick={() => openWindow('launcher', '/training')}>
-            训练页
-          </Button>
-          <Button tone="secondary" onClick={() => void check()} disabled={busy || !ready}>
-            {busy ? <Spinner className="size-4" /> : <Stethoscope className="size-4" />}
-            环境体检
-          </Button>
-        </div>
-      </header>
+    <div className="mx-auto flex w-full max-w-[880px] flex-col gap-8 px-10 pb-16 pt-8">
+      <PageHeader
+        title="新建训练"
+        description="选好训练图片和底模，其余参数已经有合适的默认值。"
+        actions={<Button tone="ghost" onClick={openMainWindow}>在主窗口查看进度</Button>}
+      />
 
-      {!hasCuda && !remote ? (
-        <div className="flex items-start gap-2 rounded-[6px] border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-300" />
-          <p className="text-caption leading-4 text-[var(--color-text-secondary)]">
-            当前设备没有 CUDA，不能在本机启动训练。可以编辑配置、预览命令，或在训练页选择 SSH 训练版本。
-          </p>
-        </div>
-      ) : remote ? (
-        <div className="flex items-center gap-2 rounded-[6px] border border-accent-500/25 bg-accent-500/[0.06] px-3 py-2 text-caption text-[var(--color-text-secondary)]">
-          <Server className="size-4 text-accent-300" />
-          远端训练：{version?.hostName ?? version?.hostId} · 数据/权重使用远端路径
-        </div>
-      ) : null}
-
-      {availableVersions.length === 0 ? (
-        <EmptyState
-          icon={<GraduationCap className="size-8" />}
-          title="还没有训练版本"
-          description={remote ? '这个 SSH host 还没有训练版本；先去训练页拉取远端仓库并安装环境。' : '先去训练页拉取 KohakuMossTrainer 并创建一个 commit 版本。'}
-          action={
-            <Button tone="primary" onClick={() => openWindow('launcher', '/training')}>
-              去训练页
-            </Button>
-          }
-        />
+      {!loading && !version ? (
+        <Card>
+          <EmptyState
+            title={remote ? '这台主机还没有训练器' : '训练器还没准备好'}
+            description="在主窗口的「训练」页点「准备训练器」，准备好后回到这里。"
+            action={<Button onClick={openMainWindow}>打开训练页</Button>}
+          />
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-          <Card className="p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-section font-medium">训练配置</h2>
-              <Pill tone={ready ? 'accent' : 'amber'}>{ready ? '环境就绪' : '环境未就绪'}</Pill>
-              {remote ? <Pill tone="neutral">{version?.hostName ?? 'SSH'}</Pill> : null}
-            </div>
+        <>
+          {!hasGpu ? (
+            <p role="status" className="rounded-lg bg-warn-soft px-3.5 py-2.5 text-ui text-warn">
+              这台电脑没有检测到 NVIDIA 显卡，不能在本机训练。{remoteHostsEnabled && sshHosts.length ? '可以把训练位置换成一台远程主机。' : ''}
+            </p>
+          ) : version && !ready ? (
+            <p role="status" className="rounded-lg bg-warn-soft px-3.5 py-2.5 text-ui text-warn">
+              {RUNTIME_LABEL[version.runtimeState]}。在主窗口的「训练」页安装环境后才能开始。
+            </p>
+          ) : null}
 
-            <div className="mt-3 grid grid-cols-2 gap-2.5">
-              <Field label="训练主机">
-                <Select value={selectedHostId} onChange={(event) => { announceTrainingHost(event.target.value); setSelectedHostId(event.target.value) }}>
-                  {(hosts.length ? hosts : [{ id: 'local', name: '本机', kind: 'local', status: 'ok' } as ManagedHost]).map((host) => <option key={host.id} value={host.id}>{host.name}{host.kind === 'local' ? ' · 本机' : ' · SSH'}</option>)}
-                </Select>
+          <Card className="flex flex-col gap-4 p-5">
+            <div className="grid grid-cols-2 gap-4">
+              {remoteHostsEnabled && sshHosts.length ? (
+                <Field label="训练位置">
+                  <Select
+                    value={hostId}
+                    onValueChange={(id) => { setHostId(id); update({ versionId: '' }) }}
+                    options={[{ value: 'local', label: '本机' }, ...sshHosts.map((host) => ({ value: host.id, label: host.name }))]}
+                  />
+                </Field>
+              ) : null}
+              <Field label="名称" hint={hint(errors.runName, '训练出的 LoRA 用这个名字保存')}>
+                <Input
+                  value={form.runName}
+                  aria-invalid={errors.runName ? true : undefined}
+                  onChange={(event) => update({ runName: sanitizeRunName(event.target.value) })}
+                />
               </Field>
-              <Field label="训练版本">
-                <Select value={versionId} onChange={(event) => setVersionId(event.target.value)}>
-                  {availableVersions.map((item) => (
-                    <option key={item.id} value={item.id}>{item.name} · {item.shortCommit}{item.hostId !== 'local' ? ' · SSH' : ''}</option>
-                  ))}
-                </Select>
+              <Field label="训练图片" hint={hint(errors.dataset, pathHint ?? '一个放着图片和同名 .txt 描述的文件夹')} className="col-span-2">
+                <div className="flex gap-1.5">
+                  <Input
+                    value={form.dataset}
+                    aria-invalid={errors.dataset ? true : undefined}
+                    placeholder="/path/to/dataset"
+                    onChange={(event) => update({ dataset: event.target.value })}
+                    className="min-w-0 flex-1"
+                  />
+                  {!remote ? (
+                    <IconButton label="选择训练图片文件夹" onClick={() => void pick('dataset')}><FolderOpen className="size-4" /></IconButton>
+                  ) : null}
+                </div>
+              </Field>
+              <Field label="底模权重" hint={hint(errors.weights, pathHint ?? 'MOSS-Image 底模所在的文件夹')} className="col-span-2">
+                <div className="flex gap-1.5">
+                  <Input
+                    value={form.weights}
+                    aria-invalid={errors.weights ? true : undefined}
+                    placeholder="/path/to/MOSS-Image-Base"
+                    onChange={(event) => update({ weights: event.target.value })}
+                    className="min-w-0 flex-1"
+                  />
+                  {!remote ? (
+                    <IconButton label="选择底模权重文件夹" onClick={() => void pick('weights')}><FolderOpen className="size-4" /></IconButton>
+                  ) : null}
+                </div>
+              </Field>
+              <Field label="步数" hint={hint(errors.steps)}>
+                <Input inputMode="numeric" value={form.steps} onChange={(event) => update({ steps: digitsOnly(event.target.value) })} className="tabular" />
               </Field>
               <Field label="算法">
-                <Select value={algo} onChange={(event) => setAlgo(event.target.value)}>
-                  {ALGOS.map((item) => <option key={item} value={item}>{item}</option>)}
-                </Select>
-              </Field>
-              <div className="col-span-2 grid grid-cols-[1fr_auto] gap-1">
-                <Field label="MOSS 权重目录">
-                  <Input value={weights} onChange={(event) => setWeights(event.target.value)} placeholder="/path/to/MOSS-Image-Base" />
-                </Field>
-                <IconButton label="选择权重目录" onClick={() => void pick('weights')} className="mt-4">
-                  <FolderOpen className="size-4" />
-                </IconButton>
-              </div>
-              <div className="col-span-2 grid grid-cols-[1fr_auto] gap-1">
-                <Field label="数据集目录">
-                  <Input value={dataset} onChange={(event) => setDataset(event.target.value)} placeholder="/path/to/dataset（kohya 文件夹）" />
-                </Field>
-                <IconButton label="选择数据集目录" onClick={() => void pick('dataset')} className="mt-4">
-                  <FolderOpen className="size-4" />
-                </IconButton>
-              </div>
-              <Field label="Run 名称">
-                <Input value={runName} onChange={(event) => setRunName(event.target.value.replace(/[^a-zA-Z0-9_-]/g, '-'))} />
-              </Field>
-              <Field label="目标边长">
-                <Input value={resolution} onChange={(event) => setResolution(event.target.value.replace(/[^0-9]/g, ''))} />
-              </Field>
-              <Field label="Steps">
-                <Input value={steps} onChange={(event) => setSteps(event.target.value.replace(/[^0-9]/g, ''))} />
-              </Field>
-              <Field label="LR">
-                <Input value={lr} onChange={(event) => setLr(event.target.value)} />
-              </Field>
-              <Field label="Dim">
-                <Input value={dim} onChange={(event) => setDim(event.target.value.replace(/[^0-9]/g, ''))} />
-              </Field>
-              <Field label="Alpha">
-                <Input value={alpha} onChange={(event) => setAlpha(event.target.value)} />
-              </Field>
-              <Field label="Microbatch">
-                <Input value={batch} onChange={(event) => setBatch(event.target.value.replace(/[^0-9]/g, ''))} />
+                <Select value={form.algo} onValueChange={(algo) => update({ algo })} options={ALGOS.map((algo) => ({ value: algo, label: algo.toUpperCase() }))} />
               </Field>
             </div>
 
-            <Field label="高级覆盖（每行 KEY=VALUE）">
-              <Textarea
-                value={overrides}
-                onChange={(event) => setOverrides(event.target.value)}
-                placeholder={'MEMORY_PROFILE=balanced\nSAVE_EVERY=250'}
-                className="mt-0.5 h-16 w-full resize-none font-mono leading-4"
-              />
-            </Field>
+            <Advanced summary="版本、学习率、维度、批大小、分辨率、额外参数、数据预处理">
+              <div className="flex flex-col gap-4 px-3.5 pb-2 pt-2">
+                <div className="grid grid-cols-3 gap-4">
+                  <Field label="训练器版本" className="col-span-3">
+                    <Select
+                      value={version?.id ?? ''}
+                      onValueChange={(versionId) => update({ versionId })}
+                      options={available.length
+                        ? available.map((item) => ({ value: item.id, label: `${item.shortCommit} · ${item.subject.slice(0, 48)} · ${RUNTIME_LABEL[item.runtimeState]}` }))
+                        : [{ value: '', label: '没有可用的版本' }]}
+                    />
+                  </Field>
+                  <Field label="学习率" hint={hint(errors.lr)}>
+                    <Input value={form.lr} onChange={(event) => update({ lr: event.target.value.trim() })} className="font-mono" />
+                  </Field>
+                  <Field label="维度" hint={hint(errors.dim)}>
+                    <Input inputMode="numeric" value={form.dim} onChange={(event) => update({ dim: digitsOnly(event.target.value) })} />
+                  </Field>
+                  <Field label="Alpha" hint={hint(errors.alpha)}>
+                    <Input value={form.alpha} onChange={(event) => update({ alpha: event.target.value.trim() })} />
+                  </Field>
+                  <Field label="批大小" hint={hint(errors.batch)}>
+                    <Input inputMode="numeric" value={form.batch} onChange={(event) => update({ batch: digitsOnly(event.target.value) })} />
+                  </Field>
+                  <Field label="目标边长" hint={hint(errors.resolution)}>
+                    <Input inputMode="numeric" value={form.resolution} onChange={(event) => update({ resolution: digitsOnly(event.target.value) })} />
+                  </Field>
+                </div>
+                <Field label="额外参数（每行一个 KEY=VALUE）">
+                  <Textarea
+                    value={form.overrides}
+                    onChange={(event) => update({ overrides: event.target.value })}
+                    placeholder={'MEMORY_PROFILE=balanced\nSAVE_EVERY=250'}
+                    className="h-20 resize-none font-mono"
+                  />
+                </Field>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-caption font-medium text-ink-2">将要运行的命令</span>
+                    <Button tone="ghost" onClick={() => void copyText(command, '命令已复制')}><Copy className="size-4" aria-hidden="true" />复制</Button>
+                  </div>
+                  <pre className="selectable max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-well p-3 font-mono text-caption text-ink-2">{command}</pre>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-caption text-ink-2">数据预处理：</span>
+                  {(['inspect_data', 'cache_text', 'cache_latents'] as const).map((action) => (
+                    <Button key={action} onClick={() => void run(action)} disabled={starting !== null}>
+                      {starting === action ? <Spinner /> : null}
+                      {ACTION_LABEL[action]}
+                    </Button>
+                  ))}
+                  <Button tone="ghost" onClick={() => void check()} disabled={!ready || checking}>
+                    {checking ? <Spinner /> : null}
+                    环境体检
+                  </Button>
+                </div>
+              </div>
+            </Advanced>
 
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              <Button tone="primary" onClick={() => void runAction('train')} disabled={!canStart || starting !== null}>
-                <span className="inline-flex items-center gap-1.5">
-                  {starting === 'train' ? <Spinner className="size-4" /> : <Play className="size-4" />}
-                  开始训练
-                </span>
-              </Button>
-              <Button tone="secondary" onClick={() => void check()} disabled={!ready || busy}>
-                环境体检
-              </Button>
-              <Button tone="ghost" onClick={() => void runAction('inspect_data')} disabled={!canStart || starting !== null}>
-                检查数据
-              </Button>
-              <Button tone="ghost" onClick={() => void runAction('cache_text')} disabled={!canStart || starting !== null}>
-                缓存文本
-              </Button>
-              <Button tone="ghost" onClick={() => void runAction('cache_latents')} disabled={!canStart || starting !== null}>
-                缓存潜变量
-              </Button>
-              <Button tone="ghost" onClick={() => setAuxOpen('export')}>
-                导出命令
-              </Button>
-              <Button tone="ghost" onClick={() => setAuxOpen('sample')}>
-                采样命令
+            <div className="flex items-center justify-end gap-2">
+              <Button tone="primary" size="md" onClick={() => void run('train')} disabled={starting !== null || !version}>
+                {starting === 'train' ? <Spinner /> : <Play className="size-4" aria-hidden="true" />}
+                开始训练
               </Button>
             </div>
           </Card>
 
-          <div className="space-y-4">
-            {trainingJob ? (
-              <Card className="p-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-section font-medium">训练状态</h2>
-                  <Pill tone={trainingJob.state === 'failed' ? 'red' : trainingJob.state === 'succeeded' ? 'accent' : 'amber'}>
-                    {trainingJob.state}
-                  </Pill>
+          {latestRun ? (
+            <Section title="最近一次训练">
+              <Card className="flex flex-col gap-2 p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="truncate text-control text-ink">{latestRun.name}</span>
+                  <Pill tone={latestRun.tone} className="tabular">{latestRun.stateLabel}</Pill>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-caption text-[var(--color-text-secondary)]">
-                  <span>step {trainingJob.metrics?.step ?? trainingJob.progress.current} / {trainingJob.progress.total || '—'}</span>
-                  <span>loss {trainingJob.metrics?.loss !== undefined ? trainingJob.metrics.loss.toFixed(4) : '—'}</span>
-                </div>
-                <ProgressBar value={trainingJob.progress.percent} className="mt-1.5" />
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-caption text-[var(--color-text-tertiary)]">
-                    {trainingJob.error?.message ?? (trainingJob.state === 'running' ? '训练中，日志在共享终端' : '')}
-                  </span>
-                  <Button tone="ghost" onClick={() => openWindow('terminal')}>
-                    <span className="inline-flex items-center gap-1"><Terminal className="size-4" /> 终端</span>
-                  </Button>
-                </div>
+                <ProgressBar value={latestRun.percent} label="训练进度" />
+                <span className="tabular text-caption text-ink-2">{latestRun.algo} · {latestRun.progressLabel} 步</span>
               </Card>
-            ) : null}
-
-            <Card className="p-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-section font-medium">命令预览</h2>
-                <Pill tone="neutral">copy-ready</Pill>
-              </div>
-              <pre className="mt-2 max-h-[320px] overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/25 p-3 font-mono text-caption leading-5 text-[var(--color-text-secondary)]">
-                {command}
-              </pre>
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-caption text-[var(--color-text-tertiary)]">
-                  {ready ? '环境就绪；执行入口在下一阶段接入' : '先在训练页安装环境'}
-                </span>
-                <Button
-                  tone="ghost"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(command)
-                    toast.push('命令已复制', 'success')
-                  }}
-                >
-                  复制
-                </Button>
-              </div>
-            </Card>
-
-            <Card className="p-4">
-              <div className="flex items-center gap-2 text-ui font-medium">
-                <Terminal className="size-4" /> 环境体检
-              </div>
-              {doctor ? (
-                <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/25 p-2.5 font-mono text-caption leading-4 text-[var(--color-text-secondary)]">
-                  {doctor.output || '没有输出'}
-                </pre>
-              ) : (
-                <p className="mt-1 text-caption text-[var(--color-text-tertiary)]">
-                  训练页安装环境后，可以在这里运行 <code className="rounded bg-white/[0.05] px-1">kohakumoss-doctor</code>。
-                </p>
-              )}
-            </Card>
-          </div>
-        </div>
+            </Section>
+          ) : null}
+        </>
       )}
 
       <Modal
-        open={Boolean(auxOpen)}
-        onClose={() => setAuxOpen(null)}
-        title={auxOpen === 'export' ? '导出适配器命令' : '采样命令'}
-        description="命令入口；真实执行在 CUDA 主机/远端阶段接入。"
+        open={Boolean(doctor)}
+        onClose={() => setDoctor(null)}
+        title="环境体检"
+        description={doctor?.ok ? '没有发现问题。' : '发现了问题，详情见下方输出。'}
         width="max-w-3xl"
-        footer={
-          <div className="flex gap-1.5">
-            <Button tone="ghost" onClick={() => setAuxOpen(null)}>关闭</Button>
-            <Button
-              tone="primary"
-              onClick={() => {
-                const action = auxOpen
-                if (!action) return
-                setAuxOpen(null)
-                void runAction(action)
-              }}
-              disabled={starting !== null || !version || !ready}
-            >
-              {starting === auxOpen ? <Spinner className="size-4" /> : null}
-              执行
-            </Button>
-            <Button
-              tone="ghost"
-              onClick={() => {
-                void navigator.clipboard.writeText(auxOpen === 'export' ? buildExport() : buildSample())
-                toast.push('命令已复制', 'success')
-              }}
-            >
-              复制命令
-            </Button>
-          </div>
-        }
+        footer={<Button tone="secondary" size="md" onClick={() => setDoctor(null)}>关闭</Button>}
       >
-        <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/25 p-3 font-mono text-caption leading-5 text-[var(--color-text-secondary)]">
-          {auxOpen === 'export' ? buildExport() : buildSample()}
+        <pre className="selectable max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg bg-well p-3 font-mono text-caption text-ink-2">
+          {doctor?.output || '没有输出'}
         </pre>
       </Modal>
     </div>

@@ -20,6 +20,7 @@ export interface StudioClient {
   listProjects(): Promise<ProjectSummary[]>
   getProject(id: string): Promise<ProjectDocument | null>
   saveProject(input: StudioProjectInput): Promise<ProjectDocument>
+  deleteProject(id: string): Promise<void>
   backendInfo(): Promise<BackendInfo>
 }
 
@@ -27,6 +28,7 @@ export const electronStudioClient: StudioClient = {
   listProjects: () => call<ProjectSummary[]>(Ipc.projectsList),
   getProject: (id) => call<ProjectDocument | null>(Ipc.projectGet, { id }),
   saveProject: (input) => call<ProjectDocument>(Ipc.projectSave, input),
+  deleteProject: async (id) => { await call(Ipc.projectDelete, { id }) },
   backendInfo: () => call<BackendInfo>(Ipc.backendInfo),
 }
 
@@ -69,6 +71,10 @@ export class WebStudioClient implements StudioClient {
       method: 'POST',
       body: JSON.stringify(input),
     })
+  }
+
+  async deleteProject(id: string): Promise<void> {
+    await this.request<unknown>(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' })
   }
 
   async backendInfo(): Promise<BackendInfo> {

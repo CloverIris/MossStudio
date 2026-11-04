@@ -21,14 +21,19 @@ import type {
   Settings,
   UpdateState,
 } from '@shared/types'
-import type { LayoutDraft } from './lib/layout'
+import { isStudioReuseRequest, type StudioReuseRequest } from './lib/studioReuse'
 import type { UpdateDownloadState } from '@shared/release'
 import { call, onEvent } from './lib/api'
 
+export type { StudioReuseRequest } from './lib/studioReuse'
+
+export function resolveTheme(theme: Settings['theme'] | undefined): 'light' | 'dark' {
+  if (theme === 'light' || theme === 'dark') return theme
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
 function applyAppearance(settings: Settings): void {
-  // UI v0.3 is dark-gray only. The setting stays in the schema for migration,
-  // but the shell always renders the front-end frosted-glass surface.
-  document.documentElement.dataset.theme = 'dark'
+  document.documentElement.dataset.theme = resolveTheme(settings.theme)
   document.documentElement.dataset.uiAnimation = settings.uiAnimation ?? 'system'
 }
 
@@ -63,10 +68,13 @@ interface AppStore {
   launchRows: LaunchRow[]
   notifications: AppNotification[]
   notificationsOpen: boolean
-  studioPrompt: string
-  studioInstanceId: string | null
-  studioDraft: LayoutDraft | null
   studioBackground: GalleryItem | null
+  /**
+   * Library → Studio handoff for "在创作中复用": open a NEW canvas with these
+   * parameters. Set by `requestStudioReuse`, consumed once by Studio through
+   * `takeStudioReuseRequest`. See lib/studioReuse.ts for the shape.
+   */
+  studioReuseRequest: StudioReuseRequest | null
   scanning: boolean
   scanSection: string | null
   gitMessage: string | null
@@ -87,13 +95,16 @@ interface AppStore {
   pushNotification: (input: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => void
   setMossInferDownload: (state: MossInferDownloadState | null) => void
   markAllNotificationsRead: () => void
-  setStudioPrompt: (prompt: string) => void
-  setStudioInstanceId: (instanceId: string | null) => void
-  setStudioDraft: (draft: LayoutDraft | null) => void
   setStudioBackground: (item: GalleryItem | null) => void
+  /** Ask Studio to open a new canvas prefilled from an image (replaces any pending request). */
+  requestStudioReuse: (request: StudioReuseRequest) => void
+  /** Returns the pending reuse request once and clears it; null when there is none or it is malformed. */
+  takeStudioReuseRequest: () => StudioReuseRequest | null
   dismissAnnouncement: (id: string) => Promise<void>
   downloadModel: (modelId: string) => Promise<void>
   downloadAdapter: (adapterId: string) => Promise<void>
+  /** Queue every missing file of a whole model (catalog bundle) on this machine. */
+  downloadBundle: (bundleId: string) => Promise<DownloadTask[]>
   /** Pick one or more local .safetensors files and register them as LoRAs. */
   importAdapters: () => Promise<AdapterEntry[]>
   pauseDownload: (taskId: string) => Promise<void>
@@ -407,10 +418,8 @@ export const useApp = create<AppStore>((set, get) => {
     launchRows: [],
     notifications: [],
     notificationsOpen: false,
-    studioPrompt: '',
-    studioInstanceId: null,
-    studioDraft: null,
     studioBackground: null,
+    studioReuseRequest: null,
     scanning: false,
     scanSection: null,
     gitMessage: null,
@@ -450,7 +459,9 @@ export const useApp = create<AppStore>((set, get) => {
           devices: devices.status === 'fulfilled' ? devices.value : [],
           launchRows: queuedRows.status === 'fulfilled' ? queuedRows.value : [],
           mossInferDownload: engineDownload.status === 'fulfilled' ? engineDownload.value : null,
-          engineReadiness: readiness.status === 'fulfilled' ? readiness.value : null,
+          engineReadiness: readiness.status === 'fulfilled'
+            ? withEngineDownload(readiness.value, engineDownload.status === 'fulfilled' ? engineDownload.value : null)
+            : null,
           activeJobId:
             jobs.status === 'fulfilled'
               ? (jobs.value.find((job) => job.state === 'running' || job.state === 'starting')?.id ?? null)
@@ -585,19 +596,19 @@ export const useApp = create<AppStore>((set, get) => {
       }))
     },
 
-    setStudioPrompt(prompt) {
-      set({ studioPrompt: prompt })
-    },
-    setStudioInstanceId(instanceId) {
-      set({ studioInstanceId: instanceId })
-    },
-
-    setStudioDraft(draft) {
-      set({ studioDraft: draft })
-    },
-
     setStudioBackground(item) {
       set({ studioBackground: item })
+    },
+
+    requestStudioReuse(request) {
+      set({ studioReuseRequest: request })
+    },
+
+    takeStudioReuseRequest() {
+      const request = get().studioReuseRequest
+      if (request === null) return null
+      set({ studioReuseRequest: null })
+      return isStudioReuseRequest(request) ? request : null
     },
 
     async dismissAnnouncement(id) {
@@ -613,6 +624,12 @@ export const useApp = create<AppStore>((set, get) => {
     async downloadAdapter(adapterId) {
       const task = await call<DownloadTask>(Ipc.modelDownload, { kind: 'adapter', id: adapterId })
       set((state) => ({ downloads: upsertDownload(state.downloads, task) }))
+    },
+
+    async downloadBundle(bundleId) {
+      const tasks = await call<DownloadTask[]>(Ipc.modelBundleInstall, { id: bundleId })
+      set((state) => ({ downloads: tasks.reduce(upsertDownload, state.downloads) }))
+      return tasks
     },
 
     async importAdapters() {
@@ -698,7 +715,8 @@ export const useApp = create<AppStore>((set, get) => {
 
     async refreshEngineReadiness() {
       try {
-        const readiness = await call<EngineReadiness>(Ipc.engineStatus)
+        // main reports what is installed; keep the progress of an install still in flight.
+        const readiness = withEngineDownload(await call<EngineReadiness>(Ipc.engineStatus), get().mossInferDownload)
         set({ engineReadiness: readiness })
         return readiness
       } catch {

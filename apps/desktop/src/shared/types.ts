@@ -192,6 +192,12 @@ export interface Settings {
   githubToken: string | null
   disabledDevices: string[]
   deviceLabels: Record<string, string>
+  /** Optional feature: run generation/training on SSH machines. Off by default. */
+  remoteHostsEnabled: boolean
+  /** Optional feature: LoRA training. Off by default. */
+  trainingEnabled: boolean
+  /** Keep the inference engine on the latest release of its channel automatically. */
+  engineAutoUpdate: boolean
 }
 
 export type GpuSelection = 'auto' | { uuid: string }
@@ -861,6 +867,33 @@ export interface GalleryItem {
   height?: number
   prompt?: string
   seed?: number | null
+  /** Studio project the image was generated for, when known (job record or sidecar). */
+  projectId?: string
+  /** Generation job that produced the image, when known. */
+  jobId?: string
+}
+
+/** How an image was generated, from its job record or its JSON sidecar. Every field is optional. */
+export interface GalleryGeneration {
+  jobId?: string
+  projectId?: string
+  modelName?: string
+  modelBundleId?: string
+  steps?: number
+  cfg?: number
+  width?: number
+  height?: number
+  seed?: number
+  adapters?: Array<{ path: string; strength: number }>
+  /** ISO time the generation started. */
+  createdAt?: string
+  /** Where it ran, in plain words: "本机 · RTX 4090" or the SSH host's name. */
+  where?: string
+  hostId?: string
+  /** The overall description as the user wrote it (for a region layout: its caption). */
+  description?: string
+  /** Number of regions when the image came from a region layout. */
+  regions?: number
 }
 
 export interface GalleryPage {
@@ -873,6 +906,7 @@ export interface GalleryPage {
 export interface GalleryDetail extends GalleryItem {
   negativePrompt?: string
   parameters?: string
+  generation?: GalleryGeneration
 }
 
 import type { BackendInfo } from './backend'
@@ -959,6 +993,8 @@ export interface ProjectCanvas {
   error?: JobRecord['error']
   /** LoRA adapters applied when this Canvas generates. */
   adapters?: CanvasAdapter[]
+  /** Keep `seed` for the next run; otherwise every run draws a new random seed. */
+  seedLocked?: boolean
 }
 
 export interface ProjectSummary {

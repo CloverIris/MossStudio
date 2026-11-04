@@ -64,9 +64,26 @@ export function parseTrainerDeps(versionDir: string): string[] {
     const text = readFileSync(join(versionDir, 'pyproject.toml'), 'utf8')
     const project = text.match(/\[project\][\s\S]*?(?=\n\[|$)/)
     if (!project) return []
-    const declared = project[0].match(/dependencies\s*=\s*\[([\s\S]*?)\]/)
-    if (!declared) return []
-    return [...declared[1]!.matchAll(/["']([^"']+)["']/g)].map((match) => match[1]!)
+    const start = project[0].search(/dependencies\s*=\s*\[/)
+    if (start < 0) return []
+    // Walk the array: a `]` inside a quoted requirement (e.g. "diffusers[torch]") does not end it.
+    const body = project[0].slice(project[0].indexOf('[', start) + 1)
+    const deps: string[] = []
+    for (let index = 0; index < body.length; index += 1) {
+      const char = body[index]!
+      if (char === ']') break
+      if (char === '#') {
+        const newline = body.indexOf('\n', index)
+        if (newline < 0) break
+        index = newline
+      } else if (char === '"' || char === "'") {
+        const end = body.indexOf(char, index + 1)
+        if (end < 0) break
+        deps.push(body.slice(index + 1, end))
+        index = end
+      }
+    }
+    return deps
   } catch {
     return []
   }

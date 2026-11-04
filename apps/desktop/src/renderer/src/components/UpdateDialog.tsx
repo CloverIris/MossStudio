@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Download, ExternalLink, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, ExternalLink } from 'lucide-react'
 import { useMemo } from 'react'
 import { Ipc } from '@shared/channels'
 import { call } from '../lib/api'
@@ -26,7 +26,7 @@ function platformLabel(platform: string): string {
 }
 
 function archLabel(arch: string): string {
-  return arch === 'arm64' ? 'Apple Silicon' : arch === 'x64' ? 'Intel/AMD64' : arch
+  return arch === 'arm64' ? 'Apple 芯片' : arch === 'x64' ? '64 位' : arch
 }
 
 export function UpdateDialog(): React.JSX.Element | null {
@@ -86,153 +86,114 @@ export function UpdateDialog(): React.JSX.Element | null {
         if (updating) setOpen(false)
         else later()
       }}
-      title={`发现新版本 ${version}`}
-      description={`当前 ${updates.currentVersion} · ${updates.channel === 'beta' ? 'Beta' : '稳定版'}${
-        updates.publishedAt ? ` · ${new Date(updates.publishedAt).toLocaleDateString('zh-CN')}` : ''
+      title={`MossStudio ${version} 可以更新了`}
+      description={`当前版本 ${updates.currentVersion} · ${updates.channel === 'beta' ? '测试版' : '正式版'}${
+        updates.publishedAt ? ` · ${new Date(updates.publishedAt).toLocaleDateString('zh-CN')} 发布` : ''
       }`}
-      width="max-w-3xl"
+      width="max-w-2xl"
       footer={
         <>
           {cancellable ? (
-            <Button tone="ghost" className="mr-auto" onClick={() => void cancelDownload()}>
+            <Button tone="ghost" size="md" className="mr-auto" onClick={() => void cancelDownload()}>
               取消下载
             </Button>
           ) : (
-            <Button tone="ghost" className="mr-auto" onClick={later}>
+            <Button tone="ghost" size="md" className="mr-auto" onClick={later}>
               {finished ? '关闭' : '稍后'}
             </Button>
           )}
-          {updates.releaseUrl ? (
-            <Button tone="secondary" onClick={openReleasePage}>
-              <span className="inline-flex items-center gap-1.5">
-                <ExternalLink className="size-4" /> 发布页
-              </span>
+          {updates.releaseUrl && installer ? (
+            <Button size="md" onClick={openReleasePage}>
+              <ExternalLink className="size-4" />发布页
             </Button>
           ) : null}
           {installer && !finished ? (
-            <Button tone="primary" onClick={() => void begin()} disabled={updating}>
-              <span className="inline-flex items-center gap-1.5">
-                {updating ? <Spinner className="size-4" /> : <Download className="size-4" />}
-                {activeDownload?.phase === 'extracting'
-                  ? '解压中'
-                  : activeDownload?.phase === 'installing'
-                    ? '正在准备重启'
-                    : updating
-                      ? '下载中'
-                      : '下载并更新'}
-              </span>
+            <Button tone="primary" size="md" onClick={() => void begin()} disabled={updating}>
+              {updating ? <Spinner /> : <Download className="size-4" />}
+              {activeDownload?.phase === 'extracting'
+                ? '正在解压'
+                : activeDownload?.phase === 'installing'
+                  ? '正在准备重启'
+                  : updating
+                    ? '正在下载'
+                    : '下载并更新'}
             </Button>
           ) : null}
           {!installer ? (
-            <Button tone="primary" onClick={openReleasePage}>
-              打开发布页
+            <Button tone="primary" size="md" onClick={openReleasePage}>
+              <ExternalLink className="size-4" />打开发布页
             </Button>
           ) : null}
         </>
       }
     >
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-1.5">
-          <Pill tone="accent">v{version}</Pill>
-          <Pill tone="neutral">{updates.channel === 'beta' ? 'Beta' : '稳定版'}</Pill>
-          {updates.mandatory ? <Pill tone="amber">重要更新</Pill> : null}
+          {updates.mandatory ? <Pill tone="warn">重要更新</Pill> : null}
           {installer ? (
             <Pill tone="neutral">
-              {platformLabel(installer.platform)} · {archLabel(installer.arch)} · {installer.kind} ·{' '}
-              {formatBytes(installer.size_bytes)}
+              {platformLabel(installer.platform)} · {archLabel(installer.arch)} · {formatBytes(installer.size_bytes)}
             </Pill>
-          ) : (
-            <Pill tone="amber">当前平台暂无安装包</Pill>
-          )}
-          {updates.manifestSource === 'cache' ? <Pill tone="neutral">来自缓存</Pill> : null}
+          ) : null}
         </div>
 
         {!installer ? (
-          <div className="flex items-start gap-2 rounded-[5px] border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2.5 text-ui leading-5 text-amber-200">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            <span>
-              这份发布没有为你的平台提供安装包。可以打开发布页手动下载；下载/安装链路不会在缺少
-              sha256 的情况下执行。
-            </span>
+          <div className="flex items-start gap-2 rounded-lg bg-warn-soft px-3 py-2.5 text-ui text-ink">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden="true" />
+            <span>这次发布没有适合你电脑的安装包，可以打开发布页手动下载。</span>
           </div>
-        ) : (
-          <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.025] px-3 py-2.5 text-ui leading-5 text-[var(--color-text-tertiary)]">
-            下载完成后会校验文件大小与 sha256，再安全解压更新包。应用将关闭并由 updater 替换程序文件后重新启动；
-            用户数据目录不会被覆盖。
-          </div>
-        )}
+        ) : !activeDownload ? (
+          <p className="text-ui text-ink-2">
+            下载完成后会先检查安装包是否完整，然后关闭 MossStudio、替换程序并自动重新打开。你的作品、模型和设置都会保留。
+          </p>
+        ) : null}
 
         {activeDownload ? (
-          <div className="rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.03] px-3 py-3">
+          <div className="flex flex-col gap-2 rounded-lg bg-panel px-3.5 py-3">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-ui text-[var(--color-text-secondary)]">
-                {activeDownload.phase === 'downloading' ? <Spinner className="size-4" /> : null}
-                <span>
-                  {activeDownload.phase === 'downloading'
-                    ? '正在下载更新包'
-                    : activeDownload.phase === 'verifying'
-                      ? '正在校验 sha256'
-                      : activeDownload.phase === 'extracting'
-                        ? '正在安全解压更新包'
-                        : activeDownload.phase === 'installing'
-                          ? '正在启动更新程序'
-                      : activeDownload.phase === 'opened'
-                        ? '更新程序已启动，应用即将重启'
-                        : activeDownload.phase === 'ready'
-                          ? '更新包已就绪'
-                          : activeDownload.phase === 'canceled'
-                            ? '下载已取消'
-                            : '下载失败'}
-                </span>
-              </div>
-              <span className="text-caption tabular-nums text-[var(--color-text-tertiary)]">
-                {formatBytes(activeDownload.bytes)} / {formatBytes(activeDownload.totalBytes)}
+              <span className="flex items-center gap-2 text-ui text-ink">
+                {updating ? <Spinner /> : null}
+                {finished ? <CheckCircle2 className="size-4 text-ok" aria-hidden="true" /> : null}
                 {activeDownload.phase === 'downloading'
-                  ? ` · ${formatSpeed(activeDownload.speedBps)}`
-                  : ''}
+                  ? '正在下载更新'
+                  : activeDownload.phase === 'verifying'
+                    ? '正在检查安装包'
+                    : activeDownload.phase === 'extracting'
+                      ? '正在解压'
+                      : activeDownload.phase === 'installing'
+                        ? '正在启动更新程序'
+                        : activeDownload.phase === 'opened'
+                          ? '更新程序已启动，MossStudio 即将重新打开'
+                          : activeDownload.phase === 'ready'
+                            ? '更新已准备好'
+                            : activeDownload.phase === 'canceled'
+                              ? '下载已取消'
+                              : '下载失败'}
+              </span>
+              <span className="tabular text-caption text-ink-2">
+                {formatBytes(activeDownload.bytes)} / {formatBytes(activeDownload.totalBytes)}
+                {activeDownload.phase === 'downloading' ? ` · ${formatSpeed(activeDownload.speedBps)}` : ''}
               </span>
             </div>
             <ProgressBar
               value={activeDownload.percent}
               tone={activeDownload.phase === 'error' ? 'neutral' : 'accent'}
-              className="mt-2"
+              label="更新下载进度"
             />
-            {activeDownload.phase === 'ready' || activeDownload.phase === 'opened' ? (
-              <div className="mt-2 flex items-center gap-1.5 text-ui text-[var(--color-text-tertiary)]">
-                <CheckCircle2 className="size-4 text-accent-300" />
-                <span className="truncate">{activeDownload.path}</span>
-              </div>
-            ) : null}
             {activeDownload.error ? (
-              <p
-                className={cn(
-                  'mt-2 text-ui leading-5',
-                  activeDownload.phase === 'canceled' ? 'text-[var(--color-text-tertiary)]' : 'text-red-300',
-                )}
-              >
+              <p className={cn('text-ui', activeDownload.phase === 'canceled' ? 'text-ink-2' : 'text-danger')}>
                 {activeDownload.error}
               </p>
             ) : null}
           </div>
         ) : null}
 
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <h3 className="text-ui font-semibold uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
-              发布说明
-            </h3>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-caption text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
-              onClick={() => setOpen(false)}
-            >
-              <X className="size-4" /> 收起
-            </button>
-          </div>
-          <div className="max-h-[34vh] overflow-y-auto rounded-[5px] border border-[var(--color-border-subtle)] bg-black/15 px-3 py-2.5">
+        <section className="flex flex-col gap-2">
+          <h3 className="text-ui font-semibold text-ink-2">更新内容</h3>
+          <div className="max-h-[40vh] overflow-y-auto rounded-lg bg-panel px-3.5 py-3">
             <MarkdownBody>{releaseNotes}</MarkdownBody>
           </div>
-        </div>
+        </section>
       </div>
     </Modal>
   )

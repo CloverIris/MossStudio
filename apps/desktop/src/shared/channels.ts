@@ -102,6 +102,8 @@ export const Ipc = {
   modelsCleanupEmpty: 'models:cleanup-empty',
   modelsRemoteInventory: 'models:remote-inventory',
   modelsRemoteDownload: 'models:remote-download',
+  /** Delete catalog entries from an SSH host, keeping files other installed entries share. */
+  modelsRemoteDelete: 'models:remote-delete',
   remoteDownloadsRefresh: 'downloads:remote-refresh',
   remoteDownloadControl: 'downloads:remote-control',
   modelsInstalled: 'models:installed',
@@ -125,6 +127,8 @@ export const Ipc = {
   galleryList: 'gallery:list',
   galleryItem: 'gallery:item',
   galleryReveal: 'gallery:reveal',
+  /** Move one gallery image (and its JSON sidecar) to the OS trash. */
+  galleryTrash: 'gallery:trash',
   pickDialog: 'dialog:pick',
   pickImages: 'dialog:pick-images',
   openPath: 'app:open-path',
@@ -154,6 +158,8 @@ export const Events = {
   gitProgress: 'event:git-progress',
   runtimeLog: 'event:runtime-log',
   download: 'event:download',
+  /** The Library's images changed (a generation's outputs were recorded). */
+  galleryChanged: 'event:gallery-changed',
   instancesChanged: 'event:instances-changed',
   hostsChanged: 'event:hosts-changed',
   modelsChanged: 'event:models-changed',

@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node", "vite/client"],
+    "noEmit": true,
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@main/*": ["src/main/*"],
+      "@renderer/*": ["src/renderer/src/*"],
+      "@test/*": ["test/*"]
+    }
+  },
+  "include": [
+    "test/main/**/*.ts",
+    "test/shared/**/*.ts",
+    "test/setup/main.ts",
+    "test/helpers/network.ts",
+    "test/helpers/tempDir.ts",
+    "test/mocks/electron.ts",
+    "test/mocks/original-fs.ts",
+    "test/mocks/backend/fixtures.ts",
+    "src/main/remoteWorkerSource.d.ts",
+    "vitest.config.mts"
+  ]
+}

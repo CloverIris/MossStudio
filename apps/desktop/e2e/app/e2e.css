@@ -1,0 +1,4 @@
+/* The renderer's stylesheet. Tailwind scans sources from the Vite root (e2e/app),
+   so point it at the renderer explicitly. */
+@import '../../src/renderer/src/styles.css';
+@source '../../src/renderer/src';

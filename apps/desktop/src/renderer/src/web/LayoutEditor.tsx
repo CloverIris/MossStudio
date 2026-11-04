@@ -1,4 +1,4 @@
-import { Copy, Download, Plus, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import {
   clampBox,
@@ -8,11 +8,12 @@ import {
   type LayoutDraft,
   type LayoutLabel,
 } from '../lib/layout'
+import { Button, Card, Field, IconButton, Input, Modal, Segmented, Textarea, cn } from '../components/ui'
 
-const LABELS: Array<{ id: LayoutLabel; name: string; color: string }> = [
-  { id: 'object', name: '物体', color: '#8ab6ff' },
-  { id: 'character', name: '人物', color: '#b7d2ff' },
-  { id: 'text', name: '文字', color: '#f3cf8a' },
+const LABELS: Array<{ id: LayoutLabel; name: string }> = [
+  { id: 'object', name: '物体' },
+  { id: 'character', name: '人物' },
+  { id: 'text', name: '文字' },
 ]
 
 type Drag =
@@ -129,15 +130,6 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
     if (selectedId === id) setSelectedId(null)
   }
 
-  function setSize(width: number, height: number): void {
-    onChange({
-      ...draft,
-      width,
-      height,
-      items: draft.items.map((item) => ({ ...item, bbox: clampBox(item.bbox, width, height) })),
-    })
-  }
-
   function compileAndInsert(): void {
     const result = compileLayout(draft)
     if (!result.ok) {
@@ -145,7 +137,7 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
       return
     }
     onInsertPrompt(result.prompt)
-    setMessage('布局 JSON 已插入提示词')
+    setMessage('已把布局写入提示词')
   }
 
   function openJson(): void {
@@ -156,7 +148,7 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
   function applyJson(): void {
     const parsed = parseDraft(jsonText)
     if (!parsed) {
-      setMessage('JSON 解析失败：检查 width/height/items/bbox')
+      setMessage('内容无法识别，请检查格式后再试')
       return
     }
     onChange(parsed)
@@ -177,32 +169,33 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
       )
     : null
 
+  type Mode = 'select' | LayoutLabel
+  const mode: Mode = tool === 'select' ? 'select' : label
+  const modeOptions: Array<{ value: Mode; label: string }> = [
+    { value: 'select', label: '选择' },
+    ...LABELS.map((item) => ({ value: item.id as Mode, label: `+ ${item.name}` })),
+  ]
+
   return (
-    <section className="mt-4 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
+    <Card tone="surface" className="flex flex-col gap-3 p-3.5">
       <div className="flex items-center justify-between gap-2">
-        <div>
-          <div className="text-ui font-medium">布局编辑器 · Layout JSON</div>
-          <div className="mt-0.5 text-caption text-[var(--color-text-tertiary)]">拖拽框选区域；生成前编译为官方 layout JSON</div>
+        <div className="min-w-0">
+          <div className="text-control font-medium text-ink">画面布局</div>
+          <div className="mt-0.5 text-caption text-ink-2">在画布上拖出方框，标出每样东西的位置</div>
         </div>
-        <button type="button" className="text-caption text-accent-300" onClick={openJson}>JSON</button>
+        <Button tone="ghost" onClick={openJson}>查看数据</Button>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <button type="button" onClick={() => setTool('select')} className={`rounded px-2 py-1 text-caption ${tool === 'select' ? 'bg-accent-500/20 text-accent-200' : 'bg-white/[0.04] text-[var(--color-text-secondary)]'}`}>选择</button>
-        {LABELS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => { setLabel(item.id); setTool('draw') }}
-            className={`rounded px-2 py-1 text-caption ${tool === 'draw' && label === item.id ? 'bg-accent-500/20 text-accent-200' : 'bg-white/[0.04] text-[var(--color-text-secondary)]'}`}
-          >
-            + {item.name}
-          </button>
-        ))}
-        <button type="button" onClick={() => setSize(1024, 1024)} className="ml-auto rounded bg-white/[0.04] px-2 py-1 text-caption text-[var(--color-text-tertiary)]">1024²</button>
-        <button type="button" onClick={() => setSize(768, 1024)} className="rounded bg-white/[0.04] px-2 py-1 text-caption text-[var(--color-text-tertiary)]">3:4</button>
-        <button type="button" onClick={() => setSize(1024, 768)} className="rounded bg-white/[0.04] px-2 py-1 text-caption text-[var(--color-text-tertiary)]">4:3</button>
-      </div>
+      <Segmented
+        block
+        label="绘制工具"
+        value={mode}
+        options={modeOptions}
+        onChange={(value) => {
+          if (value === 'select') setTool('select')
+          else { setLabel(value); setTool('draw') }
+        }}
+      />
 
       <div
         ref={canvasRef}
@@ -210,35 +203,37 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
         onPointerMove={move}
         onPointerUp={up}
         onPointerCancel={up}
-        className="relative mt-2 w-full touch-none overflow-hidden rounded-lg border border-[var(--color-border-subtle)] bg-[#11151b]"
+        className="relative w-full touch-none overflow-hidden rounded-lg bg-well text-ink"
         style={{ aspectRatio: `${draft.width} / ${draft.height}` }}
       >
-        <div className="pointer-events-none absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.18) 1px, transparent 1px)', backgroundSize: '12.5% 12.5%' }} />
+        <div className="pointer-events-none absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)', backgroundSize: '12.5% 12.5%' }} />
         {draft.items.map((item) => {
           const meta = LABELS.find((entry) => entry.id === item.label) ?? LABELS[0]!
+          const isSelected = selectedId === item.id
           return (
             <div
               key={item.id}
               data-box-id={item.id}
-              className={`absolute cursor-move border text-caption ${item.locked ? 'cursor-not-allowed' : ''} ${selectedId === item.id ? 'ring-2 ring-white/50' : ''}`}
+              className={cn(
+                'absolute text-caption',
+                item.locked ? 'cursor-not-allowed' : 'cursor-move',
+                isSelected ? 'bg-accent-soft outline outline-2 outline-accent' : 'bg-well-strong',
+              )}
               style={{
                 left: `${(item.bbox[0] / draft.width) * 100}%`,
                 top: `${(item.bbox[1] / draft.height) * 100}%`,
                 width: `${((item.bbox[2] - item.bbox[0]) / draft.width) * 100}%`,
                 height: `${((item.bbox[3] - item.bbox[1]) / draft.height) * 100}%`,
-                borderColor: meta.color,
-                background: `${meta.color}18`,
                 opacity: item.visible === false ? 0.25 : item.opacity ?? 1,
               }}
             >
-              <span className="pointer-events-none absolute left-1 top-1 rounded px-1 py-0.5 text-micro" style={{ background: meta.color, color: '#10141c' }}>
+              <span className={cn('pointer-events-none absolute left-1 top-1 rounded-md px-1 py-0.5 text-micro', isSelected ? 'bg-accent text-on-accent' : 'bg-raised text-ink')}>
                 {meta.name}{item.text ? ` · ${item.text.slice(0, 10)}` : ''}
               </span>
               {!item.locked ? (
                 <span
                   data-resize-id={item.id}
-                  className="absolute bottom-0 right-0 size-4 cursor-nwse-resize"
-                  style={{ background: `linear-gradient(135deg, transparent 45%, ${meta.color} 45%)` }}
+                  className={cn('absolute bottom-0 right-0 size-6 cursor-nwse-resize rounded-tl-lg', isSelected ? 'bg-accent' : 'bg-ink-3')}
                 />
               ) : null}
             </div>
@@ -246,68 +241,60 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
         })}
         {drawBox ? (
           <div
-            className="pointer-events-none absolute border border-dashed border-accent-300 bg-accent-500/10"
+            className="pointer-events-none absolute bg-accent-soft outline-dashed outline-2 outline-accent"
             style={{ left: `${(drawBox[0] / draft.width) * 100}%`, top: `${(drawBox[1] / draft.height) * 100}%`, width: `${((drawBox[2] - drawBox[0]) / draft.width) * 100}%`, height: `${((drawBox[3] - drawBox[1]) / draft.height) * 100}%` }}
           />
         ) : null}
       </div>
 
-      <label className="mt-2 block space-y-1">
-        <span className="text-caption text-[var(--color-text-tertiary)]">总览描述 summary.caption</span>
-        <textarea value={draft.summary.caption} onChange={(event) => onChange({ ...draft, summary: { ...draft.summary, caption: event.target.value } })} rows={2} className="app-input w-full" placeholder="整张图的构图/风格/文字布局总览" />
-      </label>
+      <Field label="整体描述">
+        <Textarea value={draft.summary.caption} onChange={(event) => onChange({ ...draft, summary: { ...draft.summary, caption: event.target.value } })} rows={2} placeholder="整张图的构图、风格和文字位置" />
+      </Field>
 
       {selected ? (
-        <div className="mt-2 space-y-2 rounded-lg border border-[var(--color-border-subtle)] p-2.5">
+        <Card tone="panel" className="flex flex-col gap-3 p-3">
           <div className="flex items-center justify-between">
-            <span className="text-caption text-[var(--color-text-secondary)]">选中：{LABELS.find((entry) => entry.id === selected.label)?.name}</span>
-            <button type="button" onClick={() => removeItem(selected.id)} className="text-red-300"><Trash2 className="size-4" /></button>
+            <span className="text-ui font-medium text-ink-2">已选中：{LABELS.find((entry) => entry.id === selected.label)?.name}</span>
+            <IconButton label="删除这个区域" onClick={() => removeItem(selected.id)} className="size-10 text-danger">
+              <Trash2 className="size-4" />
+            </IconButton>
           </div>
-          <input value={selected.caption} onChange={(event) => updateItem(selected.id, { caption: event.target.value })} className="app-input w-full" placeholder="区域描述（生成用）" />
+          <Input value={selected.caption} onChange={(event) => updateItem(selected.id, { caption: event.target.value })} placeholder="这个区域里是什么" aria-label="区域描述" />
           {selected.label === 'text' ? (
-            <input value={selected.text ?? ''} onChange={(event) => updateItem(selected.id, { text: event.target.value })} className="app-input w-full" placeholder="图中的文字内容" />
+            <Input value={selected.text ?? ''} onChange={(event) => updateItem(selected.id, { text: event.target.value })} placeholder="图中的文字内容" aria-label="图中文字" />
           ) : null}
-          <div className="flex items-center gap-3 text-caption text-[var(--color-text-tertiary)]">
-            <label className="inline-flex items-center gap-1"><input type="checkbox" checked={selected.visible !== false} onChange={(event) => updateItem(selected.id, { visible: event.target.checked })} /> 可见</label>
-            <label className="inline-flex items-center gap-1"><input type="checkbox" checked={selected.locked === true} onChange={(event) => updateItem(selected.id, { locked: event.target.checked })} /> 锁定</label>
-            <button type="button" className="ml-auto text-accent-300" onClick={compileAndInsert}>插入 Prompt</button>
+          <div className="flex items-center gap-4 text-ui text-ink-2">
+            <label className="inline-flex min-h-10 items-center gap-2"><input type="checkbox" checked={selected.visible !== false} onChange={(event) => updateItem(selected.id, { visible: event.target.checked })} /> 显示</label>
+            <label className="inline-flex min-h-10 items-center gap-2"><input type="checkbox" checked={selected.locked === true} onChange={(event) => updateItem(selected.id, { locked: event.target.checked })} /> 锁定</label>
           </div>
-        </div>
+        </Card>
       ) : (
-        <div className="mt-2 flex items-center justify-between text-caption text-[var(--color-text-tertiary)]">
-          <span>点画布空白处开始框选</span>
-          <button type="button" className="text-accent-300" onClick={compileAndInsert} disabled={!compiled.ok}>插入 Prompt</button>
-        </div>
+        <p className="text-caption text-ink-2">在画布空白处拖动，画出一个区域。</p>
       )}
 
-      {message ? <div className="mt-2 rounded bg-accent-500/10 px-2 py-1.5 text-caption text-accent-200">{message}</div> : null}
-      {!compiled.ok ? <div className="mt-1 text-caption leading-4 text-amber-300">{compiled.errors[0]}</div> : null}
+      {message ? <div className="rounded-lg bg-accent-soft px-3 py-2 text-caption text-ink">{message}</div> : null}
+      {!compiled.ok ? <div className="text-caption leading-4 text-warn">{compiled.errors[0]}</div> : null}
 
-      <div className="mt-2 flex gap-2">
-        <button type="button" onClick={openJson} className="inline-flex flex-1 items-center justify-center gap-1 rounded border border-[var(--color-border-subtle)] px-2 py-1.5 text-caption text-[var(--color-text-secondary)]"><Copy className="size-4" /> JSON</button>
-        <button type="button" onClick={compileAndInsert} disabled={!compiled.ok} className="app-button-primary flex-1 disabled:opacity-40">插入 Prompt</button>
-        <button type="button" onClick={onSaveProject} className="inline-flex items-center justify-center gap-1 rounded border border-[var(--color-border-subtle)] px-2 py-1.5 text-caption text-[var(--color-text-secondary)]"><Download className="size-4" /> 保存</button>
+      <div className="flex gap-2">
+        <Button tone="primary" size="md" block onClick={compileAndInsert} disabled={!compiled.ok} className="h-11 flex-1">写入提示词</Button>
+        <Button size="md" onClick={onSaveProject} className="h-11">保存</Button>
       </div>
 
-      {jsonOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center" onClick={() => setJsonOpen(false)}>
-          <div className="w-full max-w-[680px] rounded-xl border border-[var(--color-border)] bg-[#1b2028] p-3 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <span className="text-ui font-medium">Layout JSON</span>
-              <button type="button" onClick={() => setJsonOpen(false)} className="text-caption text-[var(--color-text-tertiary)]">关闭</button>
-            </div>
-            <textarea value={jsonText} onChange={(event) => setJsonText(event.target.value)} rows={12} className="app-input mt-2 w-full font-mono text-caption" spellCheck={false} />
-            <div className="mt-2 flex gap-2">
-              <button type="button" onClick={() => void navigator.clipboard.writeText(jsonText)} className="flex-1 rounded border border-[var(--color-border-subtle)] px-2 py-1.5 text-caption text-[var(--color-text-secondary)]">复制</button>
-              <button type="button" onClick={applyJson} className="app-button-primary flex-1">应用到画布</button>
-              <button type="button" onClick={compileAndInsert} disabled={!compiled.ok} className="app-button-primary flex-1 disabled:opacity-40">插入 Prompt</button>
-            </div>
-            <p className="mt-2 text-caption leading-4 text-[var(--color-text-tertiary)]">
-              编辑的是可导入草稿（width/height/summary/items）；插入 Prompt 时会编译成官方 abs_centralized + yxyx。
-            </p>
-          </div>
-        </div>
-      ) : null}
-    </section>
+      <Modal
+        open={jsonOpen}
+        onClose={() => setJsonOpen(false)}
+        title="布局数据"
+        description="高级用法：可以直接编辑后应用到画布。"
+        footer={
+          <>
+            <Button onClick={() => void navigator.clipboard.writeText(jsonText)}>复制</Button>
+            <Button onClick={applyJson}>应用到画布</Button>
+            <Button tone="primary" onClick={compileAndInsert} disabled={!compiled.ok}>写入提示词</Button>
+          </>
+        }
+      >
+        <Textarea value={jsonText} onChange={(event) => setJsonText(event.target.value)} rows={12} className="font-mono text-caption" spellCheck={false} aria-label="布局数据" />
+      </Modal>
+    </Card>
   )
 }

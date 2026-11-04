@@ -1,10 +1,12 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Button } from './ui'
 
 interface State {
   error: Error | null
   componentStack: string | null
 }
 
+/** Keeps one broken page from taking down the whole window. */
 export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   state: State = { error: null, componentStack: null }
 
@@ -18,28 +20,26 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   render(): ReactNode {
-    if (this.state.error) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-3 bg-[var(--color-surface)] p-8 text-[var(--color-text)]">
-          <h1 className="text-lg font-semibold">界面出错了</h1>
-          <pre className="max-h-52 max-w-2xl overflow-auto rounded-lg bg-[var(--color-surface-secondary)] p-3 text-left text-ui leading-5">
-            {this.state.error.stack ?? this.state.error.message}
-          </pre>
-          {this.state.componentStack ? (
-            <pre className="max-h-40 max-w-2xl overflow-auto rounded-lg border border-[var(--color-border-subtle)] p-3 text-left text-ui leading-5 text-[var(--color-text-secondary)]">
-              {this.state.componentStack}
-            </pre>
-          ) : null}
-          <button
-            type="button"
-            className="rounded-full bg-accent-500 px-4 py-1.5 text-ui text-white"
-            onClick={() => window.location.reload()}
-          >
-            重新加载
-          </button>
+    const { error, componentStack } = this.state
+    if (!error) return this.props.children
+    const details = [error.stack ?? error.message, componentStack].filter(Boolean).join('\n')
+    return (
+      <div role="alert" className="flex h-full flex-col items-center justify-center gap-4 overflow-y-auto bg-surface p-8 text-ink">
+        <div className="flex max-w-xl flex-col items-center gap-1.5 text-center">
+          <h1 className="text-section font-semibold">这个页面出错了</h1>
+          <p className="text-ui text-ink-2">
+            你的作品和设置不受影响。重新加载通常就能恢复；如果反复出现，请复制下面的信息到 GitHub 或 QQ 群反馈。
+          </p>
         </div>
-      )
-    }
-    return this.props.children
+        <div className="flex gap-2">
+          <Button tone="primary" size="md" onClick={() => window.location.reload()}>重新加载</Button>
+          <Button size="md" onClick={() => void navigator.clipboard.writeText(details).catch(() => undefined)}>复制错误信息</Button>
+        </div>
+        <details className="w-full max-w-2xl">
+          <summary className="cursor-pointer text-center text-caption text-ink-2">查看错误详情</summary>
+          <pre className="selectable mt-2 max-h-72 overflow-auto rounded-lg bg-well p-3 text-left font-mono text-caption text-ink-2">{details}</pre>
+        </details>
+      </div>
+    )
   }
 }

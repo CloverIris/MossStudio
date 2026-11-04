@@ -1,0 +1,64 @@
+name: Build
+
+# Started by hand from the Actions tab (or `gh workflow run build.yml --ref <branch>`).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Typecheck, tests, build and E2E (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      E2E_SHOTS_DIR: ${{ github.workspace }}/e2e-shots
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install system packages for Electron under a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libgbm1 libasound2t64 libgtk-3-0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test:unit
+      - run: pnpm build
+      - name: End-to-end tests (mock backend, Electron)
+        run: pnpm test:e2e
+      - name: In-app scenarios (built app)
+        run: pnpm --filter @clover/desktop test:scenarios
+      - name: Upload UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: e2e-shots
+          if-no-files-found: ignore
+
+  windows:
+    name: Typecheck, unit tests and build (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test:unit
+      - run: pnpm build
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-out-windows
+          path: apps/desktop/out

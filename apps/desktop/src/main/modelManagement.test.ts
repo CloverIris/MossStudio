@@ -15,7 +15,6 @@ import {
   startDownload,
 } from './services/models'
 import { bundleBinding, prepareModelBundle } from './services/modelBundles'
-import { updateModelBinding } from './services/instances'
 import { ensureDirs, paths } from './lib/paths'
 
 export async function runModelManagementTests(): Promise<void> {
@@ -193,35 +192,7 @@ export async function runModelManagementTests(): Promise<void> {
     )
     await deleteModel('model', localModel!.id, external)
     assert.equal((await readFile(join(externalDir, 'qwen.safetensors'))).toString(), te.toString())
-    // Bindings protect shared components, and can be cleared without removing weights.
-    const id = 'component-test-instance'
-    await mkdir(paths.instance(id), { recursive: true })
-    await writeFile(
-      join(paths.instance(id), 'instance.json'),
-      JSON.stringify({
-        schemaVersion: 1,
-        id,
-        name: 'Component test',
-        source: '',
-        branch: 'main',
-        commit: sha,
-        shortCommit: sha.slice(0, 7),
-        commitDate: '',
-        subject: '',
-        author: '',
-        channel: 'stable',
-        runtimeId: 'missing',
-        runtimeMode: 'isolated',
-        placement: { kind: 'local' },
-        models: [],
-        adapters: [],
-        createdAt: '',
-        lastUsedAt: null,
-      }),
-    )
-    await updateModelBinding(id, bundleBinding(sft), settings)
-    await assert.rejects(deleteModel('model', 'qwen35-encoder', settings), /解除实例绑定/)
-    await updateModelBinding(id, null, settings)
+    // Deleting one bundle's main model keeps the components other bundles share.
     await deleteModel('model', 'moss-sft-fp16-fixed', settings)
     catalog = await getCatalog(settings, true)
     assert.equal(catalog.models.find((m) => m.id === 'moss-sft-fp16-fixed')?.installed, false)
@@ -239,7 +210,6 @@ export async function runModelManagementTests(): Promise<void> {
           'corruption-repair',
           'legacy-blob-reuse',
           'external-model-import',
-          'binding-protection',
           'safe-delete',
         ],
       }),

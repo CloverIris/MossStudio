@@ -2,12 +2,26 @@ import type { AiToolCall, AiToolResult } from '@shared/ai'
 import { Events, Ipc } from '@shared/channels'
 import { call, onEvent } from './api'
 
+/** What the assistant sees of the canvas the user is working on. */
+export interface StudioSnapshot {
+  title: string
+  description: string
+  width: number
+  height: number
+  regions: Array<{ kind: 'object' | 'character' | 'text'; caption: string; text?: string; visible: boolean }>
+}
+
 /**
  * The renderer owns the Studio state, so tool calls are executed here and the
  * result is handed back to the main process, which relays it to the model.
+ * Every method must read the Studio's live state at call time, never a value
+ * captured when the API was registered.
  */
 export interface StudioToolApi {
   readContext(): unknown
+  /** Plain snapshot of the selected canvas, or null when none is selected. */
+  snapshot(): StudioSnapshot | null
+  /** Replace the description of the selected canvas; throws when it cannot be edited. */
   setPrompt(prompt: string): unknown
   setSampler(patch: { width?: number; height?: number; steps?: number; cfg?: number; seed?: number }): unknown
   addLayer(input: {
@@ -22,6 +36,45 @@ let api: StudioToolApi | null = null
 
 export function registerStudioTools(next: StudioToolApi | null): void {
   api = next
+}
+
+/** The selected canvas as it is right now (not when a chat message was typed). */
+export function readStudioSnapshot(): StudioSnapshot | null {
+  return api?.snapshot() ?? null
+}
+
+/** Write a description into the selected canvas; false when the Studio is not ready. */
+export function applyStudioDescription(text: string): boolean {
+  if (!api || !api.snapshot()) return false
+  try {
+    api.setPrompt(text)
+    return true
+  } catch {
+    // The selected canvas is a finished result and cannot be edited.
+    return false
+  }
+}
+
+/** Context block appended to the assistant's system prompt on every turn. */
+export function formatStudioContext(snapshot: StudioSnapshot | null): string | undefined {
+  if (!snapshot) return undefined
+  const lines = [
+    `The user is working on the Studio canvas "${snapshot.title}" (${snapshot.width}×${snapshot.height}).`,
+    snapshot.description.trim()
+      ? `Its description currently reads:\n${snapshot.description.trim()}`
+      : 'Its description is empty.',
+  ]
+  if (snapshot.regions.length) {
+    lines.push('Its regions, in order:')
+    snapshot.regions.forEach((region, index) => {
+      const text = region.kind === 'text' && region.text ? ` [text: ${region.text}]` : ''
+      const hidden = region.visible ? '' : ' (hidden)'
+      lines.push(`${index + 1}. ${region.kind}: ${region.caption.trim() || '(no caption)'}${text}${hidden}`)
+    })
+  } else {
+    lines.push('It has no regions.')
+  }
+  return lines.join('\n')
 }
 
 function ok(payload: unknown): AiToolResult {

@@ -2,8 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Catalog, GalleryItem, GalleryPage, InstanceInfo, JobRecord, ProjectDocument, ProjectSummary } from '@shared/types'
 import { clampBox, createDraft, exampleDraft, type LayoutDraft } from '../lib/layout'
+import { Button, Card, EmptyState, Field, Input, Pill, ProgressBar, Select, Spinner, Textarea } from '../components/ui'
 import { LayoutEditor } from './LayoutEditor'
 import '../styles.css'
+
+const dark = window.matchMedia('(prefers-color-scheme: dark)')
+const applyTheme = (): void => { document.documentElement.dataset.theme = dark.matches ? 'dark' : 'light' }
+applyTheme()
+dark.addEventListener('change', applyTheme)
 
 const TOKEN_KEY = 'mossstudio.web.token'
 
@@ -222,89 +228,90 @@ function App(): React.JSX.Element {
 
   if (!token || !loaded) {
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 bg-[#191b1f] px-5 text-[var(--color-text)]">
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 bg-surface px-4 text-ink">
         <div>
-          <div className="text-caption font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">MossStudio · LAN</div>
-          <h1 className="mt-2 text-[24px] font-semibold">连接到桌面主机</h1>
-          <p className="mt-1 text-ui leading-5 text-[var(--color-text-secondary)]">
-            {error || '输入桌面端「设置 → 局域网 WebUI」里显示的访问令牌。'}
+          <h1 className="text-title font-semibold">连接到电脑</h1>
+          <p className="mt-2 text-ui text-ink-2">
+            {error || '请输入电脑端「设置 › 功能 › 局域网访问」里显示的访问码。'}
           </p>
         </div>
-        <input
+        <Input
           value={token}
           onChange={(event) => setToken(event.target.value.trim())}
-          placeholder="访问令牌"
-          className="app-input w-full"
+          placeholder="访问码"
+          aria-label="访问码"
+          className="h-11"
         />
-        <button type="button" onClick={() => { void load() }} className="app-button-primary">
+        <Button tone="primary" size="lg" block onClick={() => { void load() }}>
           连接
-        </button>
+        </Button>
       </main>
     )
   }
 
   const active = job && ['starting', 'running'].includes(job.state)
+  const stateText: Record<string, string> = {
+    queued: '排队中',
+    starting: '准备中',
+    running: '生成中',
+    succeeded: '已完成',
+    failed: '失败',
+    canceled: '已取消',
+  }
 
   return (
-    <main className="mx-auto min-h-dvh w-full max-w-[760px] bg-[#191b1f] px-4 pb-10 pt-5 text-[var(--color-text)]">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-caption font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">MossStudio · LAN</div>
-          <h1 className="mt-1 text-[22px] font-semibold tracking-tight">MossStudio</h1>
-        </div>
-        <span className="rounded-full border border-accent-500/30 bg-accent-500/10 px-2 py-1 text-caption text-accent-300">已连接桌面主机</span>
+    <main className="mx-auto flex min-h-dvh w-full max-w-[760px] flex-col gap-4 bg-surface px-4 pb-10 pt-5 text-ink">
+      <header className="flex items-center justify-between gap-3">
+        <h1 className="text-title font-semibold">MossStudio</h1>
+        <Pill tone="ok">已连接电脑</Pill>
       </header>
 
-      {error ? <div className="mt-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-ui leading-5 text-red-300">{error}</div> : null}
+      {error ? <div className="rounded-lg bg-danger-soft px-3 py-2 text-ui text-danger">{error}</div> : null}
 
-      <section className="mt-4 flex items-end gap-2 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3">
-        <label className="min-w-0 flex-1 space-y-1">
-          <span className="text-caption text-[var(--color-text-tertiary)]">Project</span>
-          <select
+      <Card tone="panel" className="flex flex-col gap-3 p-4">
+        <Field label="项目">
+          <Select
             value={projectId}
             onChange={(event) => { setProjectId(event.target.value); void openProject(event.target.value) }}
-            className="app-input w-full"
+            className="h-11"
           >
             <option value="">新草稿</option>
             {bootstrap?.projects.map((project) => (
               <option key={project.id} value={project.id}>{project.name}{project.page ? ` · 第${project.page}页` : ''} · {project.layerCount} 层</option>
             ))}
-          </select>
-        </label>
-        <label className="w-[110px] space-y-1">
-          <span className="text-caption text-[var(--color-text-tertiary)]">系列</span>
-          <input value={seriesId} onChange={(event) => setSeriesId(event.target.value)} placeholder="可选" className="app-input w-full" />
-        </label>
-        <span className="pb-2 text-caption text-[var(--color-text-tertiary)]">第 {page} 页</span>
-        <button
-          type="button"
-          onClick={() => { setProjectId(''); setProjectName('MossStudio Project'); setSeriesId(''); setPage(1); setPrompt(''); setNegative(''); setDraft(exampleDraft()) }}
-          className="rounded border border-[var(--color-border-subtle)] px-2.5 py-2 text-caption text-[var(--color-text-secondary)]"
-        >
-          新建
-        </button>
-        <button type="button" onClick={() => void saveProject()} className="app-button-primary px-3">保存</button>
-      </section>
+          </Select>
+        </Field>
+        <Field label="系列（可选）" hint={`第 ${page} 页`}>
+          <Input value={seriesId} onChange={(event) => setSeriesId(event.target.value)} placeholder="例如：我的绘本" className="h-11" />
+        </Field>
+        <div className="flex gap-2">
+          <Button
+            size="md"
+            className="h-11 flex-1"
+            onClick={() => { setProjectId(''); setProjectName('MossStudio Project'); setSeriesId(''); setPage(1); setPrompt(''); setNegative(''); setDraft(exampleDraft()) }}
+          >
+            新建
+          </Button>
+          <Button size="md" className="h-11 flex-1" onClick={() => void saveProject()}>保存</Button>
+        </div>
+      </Card>
 
-      <section className="mt-4 space-y-3 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
-        <label className="block space-y-1">
-          <span className="text-caption text-[var(--color-text-tertiary)]">实例</span>
-          <select value={instanceId} onChange={(event) => setInstanceId(event.target.value)} className="app-input w-full">
+      <Card tone="panel" className="flex flex-col gap-3 p-4">
+        <Field label="使用哪台引擎">
+          <Select value={instanceId} onChange={(event) => setInstanceId(event.target.value)} className="h-11">
             {bootstrap?.instances.length ? bootstrap.instances.map((instance) => (
               <option key={instance.id} value={instance.id}>{instance.name} · {instance.commit.slice(0, 7)}</option>
-            )) : <option value="">桌面端还没有实例</option>}
-          </select>
-        </label>
+            )) : <option value="">电脑上还没有可用的引擎</option>}
+          </Select>
+        </Field>
 
-        <label className="block space-y-1">
-          <span className="text-caption text-[var(--color-text-tertiary)]">提示词</span>
-          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={5} className="app-input w-full resize-y" placeholder="写下一个画面……" />
-        </label>
+        <Field label="想画什么">
+          <Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={5} placeholder="写下一个画面……" />
+        </Field>
 
-        <label className="block space-y-1">
-          <span className="text-caption text-[var(--color-text-tertiary)]">负向提示词</span>
-          <input value={negative} onChange={(event) => setNegative(event.target.value)} className="app-input w-full" placeholder="可选" />
-        </label>
+        <Field label="不想出现的内容">
+          <Input value={negative} onChange={(event) => setNegative(event.target.value)} className="h-11" placeholder="可选" />
+        </Field>
 
         <LayoutEditor
           draft={draft}
@@ -313,95 +320,81 @@ function App(): React.JSX.Element {
           onSaveProject={() => void saveProject()}
         />
 
-        <div className="grid grid-cols-2 gap-2">
-          <label className="space-y-1">
-            <span className="text-caption text-[var(--color-text-tertiary)]">尺寸</span>
-            <select
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="尺寸">
+            <Select
               value={`${draft.width}x${draft.height}`}
               onChange={(event) => {
                 const [w, h] = event.target.value.split('x').map(Number)
                 setDraft((previous) => ({
                   ...previous,
-                  width: w,
-                  height: h,
-                  items: previous.items.map((item) => ({ ...item, bbox: clampBox(item.bbox, w, h) })),
+                  width: w!,
+                  height: h!,
+                  items: previous.items.map((item) => ({ ...item, bbox: clampBox(item.bbox, w!, h!) })),
                 }))
               }}
-              className="app-input w-full"
+              className="h-11"
             >
               {SIZES.map(([label, w, h]) => <option key={label} value={`${w}x${h}`}>{label}</option>)}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-caption text-[var(--color-text-tertiary)]">Seed</span>
-            <input value={seed} onChange={(event) => setSeed(Number(event.target.value) || 0)} inputMode="numeric" className="app-input w-full" />
-          </label>
-          <label className="space-y-1">
-            <span className="text-caption text-[var(--color-text-tertiary)]">Steps</span>
-            <input value={steps} onChange={(event) => setSteps(Number(event.target.value) || 1)} inputMode="numeric" className="app-input w-full" />
-          </label>
-          <label className="space-y-1">
-            <span className="text-caption text-[var(--color-text-tertiary)]">CFG</span>
-            <input value={cfg} onChange={(event) => setCfg(Number(event.target.value) || 0)} inputMode="decimal" className="app-input w-full" />
-          </label>
+            </Select>
+          </Field>
+          <Field label="随机种子">
+            <Input value={seed} onChange={(event) => setSeed(Number(event.target.value) || 0)} inputMode="numeric" className="tabular h-11" />
+          </Field>
+          <Field label="步数">
+            <Input value={steps} onChange={(event) => setSteps(Number(event.target.value) || 1)} inputMode="numeric" className="tabular h-11" />
+          </Field>
+          <Field label="贴合度">
+            <Input value={cfg} onChange={(event) => setCfg(Number(event.target.value) || 0)} inputMode="decimal" className="tabular h-11" />
+          </Field>
         </div>
 
-        <button type="button" onClick={() => void generate()} disabled={busy || Boolean(active)} className="app-button-primary w-full disabled:opacity-50">
-          {busy || active ? '生成中…' : '开始生成'}
-        </button>
-        <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">
-          画布/布局 JSON 已可在手机端编辑；Project 全量同步与画廊仍在桌面版。
-        </p>
-      </section>
+        <Button tone="primary" size="lg" block onClick={() => void generate()} disabled={busy || Boolean(active)}>
+          {busy || active ? <><Spinner /> 生成中…</> : '开始生成'}
+        </Button>
+      </Card>
 
       {job ? (
-        <section className="mt-4 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
+        <Card tone="panel" className="flex flex-col gap-2 p-4">
           <div className="flex items-center justify-between">
-            <span className="text-ui font-medium">生成任务</span>
-            <span className="text-caption text-[var(--color-text-tertiary)]">{job.state}</span>
+            <span className="text-control font-medium">生成进度</span>
+            <Pill tone={job.state === 'failed' ? 'danger' : job.state === 'succeeded' ? 'ok' : 'neutral'}>{stateText[job.state] ?? job.state}</Pill>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-            <div className="h-full rounded-full bg-accent-500 transition-[width]" style={{ width: `${Math.max(0, Math.min(100, job.progress?.percent ?? 0))}%` }} />
-          </div>
-          <div className="mt-2 flex justify-between text-caption text-[var(--color-text-tertiary)]">
+          <ProgressBar label="生成进度" value={job.progress?.percent ?? 0} />
+          <div className="tabular flex justify-between gap-2 text-caption text-ink-2">
             <span>{job.stage} · {job.progress?.current ?? 0}/{job.progress?.total ?? steps}</span>
-            <span>{job.error?.message ?? ''}</span>
+            <span className="text-danger">{job.error?.message ?? ''}</span>
           </div>
-        </section>
+        </Card>
       ) : null}
 
-      <section className="mt-4 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
+      <Card tone="panel" className="flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between">
-          <span className="text-ui font-medium">最近结果</span>
-          <button type="button" onClick={() => void refreshGallery()} className="text-caption text-accent-300">刷新</button>
+          <span className="text-control font-medium">最近作品</span>
+          <Button tone="ghost" onClick={() => void refreshGallery()}>刷新</Button>
         </div>
         {gallery.length === 0 ? (
-          <p className="mt-2 text-caption text-[var(--color-text-tertiary)]">还没有输出；真实生成后会出现在这里。</p>
+          <EmptyState title="还没有作品" description="生成成功后会出现在这里。" className="py-8" />
         ) : (
-          <div className="mt-2 grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-3 gap-2">
             {gallery.map((item) => {
               const src = `/api/gallery/file?path=${encodeURIComponent(item.path)}&token=${encodeURIComponent(token)}`
               return (
-                <a key={item.id} href={src} target="_blank" rel="noreferrer" className="group relative overflow-hidden rounded-md border border-[var(--color-border-subtle)] bg-black/20" style={{ aspectRatio: '1 / 1' }}>
-                  <img src={src} alt={item.name} loading="lazy" className="size-full object-cover transition group-hover:scale-[1.02]" />
-                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-micro text-white/80">{item.name}</span>
+                <a key={item.id} href={src} target="_blank" rel="noreferrer" aria-label={item.name} className="block overflow-hidden rounded-lg bg-well" style={{ aspectRatio: '1 / 1' }}>
+                  <img src={src} alt={item.name} loading="lazy" className="size-full object-cover" />
                 </a>
               )
             })}
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="mt-4 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-ui font-medium">保存到 Project</span>
-          <button type="button" onClick={() => void saveProject()} className="text-caption text-accent-300">保存</button>
-        </div>
-        <input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="app-input mt-2 w-full" />
-        <div className="mt-2 text-caption text-[var(--color-text-tertiary)]">
-          {bootstrap?.projects.length ?? 0} 个桌面 Project；手机端保存为单画布草稿。
-        </div>
-      </section>
+      <Card tone="panel" className="flex flex-col gap-3 p-4">
+        <Field label="项目名称" hint={`电脑上共有 ${bootstrap?.projects.length ?? 0} 个项目；手机上保存为单画布草稿。`}>
+          <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="h-11" />
+        </Field>
+        <Button size="md" className="h-11" onClick={() => void saveProject()}>保存项目</Button>
+      </Card>
     </main>
   )
 }

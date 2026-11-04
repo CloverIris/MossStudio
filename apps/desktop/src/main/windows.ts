@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { join } from 'node:path'
 
 export type WindowKind = 'studio' | 'trainer'
@@ -13,6 +13,33 @@ const config: Record<WindowKind, { width: number; height: number; minWidth: numb
   trainer: { width: 1280, height: 840, minWidth: 980, minHeight: 640, route: '/trainer', title: 'Kohaku Trainer' },
 }
 
+
+const TITLEBAR_HEIGHT = 40
+/** Frame colours of the renderer theme; the native chrome must match them. */
+const chrome = {
+  dark: { background: '#0e0e0f', symbol: '#ededea' },
+  light: { background: '#e4e4e1', symbol: '#1c1c1e' },
+} as const
+
+function currentChrome(): (typeof chrome)['dark' | 'light'] {
+  return nativeTheme.shouldUseDarkColors ? chrome.dark : chrome.light
+}
+
+/** Follow the user's theme choice: 'system' tracks the OS, light/dark force it. */
+export function applyThemeSource(theme: 'system' | 'light' | 'dark'): void {
+  nativeTheme.themeSource = theme
+}
+
+nativeTheme.on('updated', () => {
+  const colors = currentChrome()
+  for (const win of windows.values()) {
+    if (win.isDestroyed()) continue
+    win.setBackgroundColor(colors.background)
+    if (process.platform === 'win32') {
+      win.setTitleBarOverlay({ color: '#00000000', symbolColor: colors.symbol, height: TITLEBAR_HEIGHT })
+    }
+  }
+})
 
 export function createAppWindow(kind: WindowKind, show = true): BrowserWindow {
   const existing = windows.get(kind)
@@ -36,14 +63,14 @@ export function createAppWindow(kind: WindowKind, show = true): BrowserWindow {
     title: meta.title,
     icon: iconPath,
     ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 15 } }
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 13 } }
       : process.platform === 'win32'
         ? {
             titleBarStyle: 'hidden' as const,
-            titleBarOverlay: { color: '#00000000', symbolColor: '#e9eef7', height: 44 },
+            titleBarOverlay: { color: '#00000000', symbolColor: currentChrome().symbol, height: TITLEBAR_HEIGHT },
           }
         : {}),
-    backgroundColor: '#191b1f',
+    backgroundColor: currentChrome().background,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

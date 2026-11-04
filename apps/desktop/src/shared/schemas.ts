@@ -67,6 +67,7 @@ const projectCanvasSchema = z.object({
     strength: z.number().min(0).max(2),
     path: z.string().max(4096).optional(),
   })).max(16).optional(),
+  seedLocked: z.boolean().optional(),
 })
 
 
@@ -148,6 +149,9 @@ export const schemas = {
         tier: z.enum(['reference', 'high', 'turbo']).optional(),
       })),
       githubToken: z.string().max(200).nullable(),
+      remoteHostsEnabled: z.boolean(),
+      trainingEnabled: z.boolean(),
+      engineAutoUpdate: z.boolean(),
     })
     .partial(),
 
@@ -297,6 +301,7 @@ export const schemas = {
   modelsRemoteInventory: z.object({ hostId: z.string().min(1).max(120), modelsRoot: z.string().max(4096).optional() }),
 
   modelsRemoteDownload: z.object({ hostId: z.string().min(1).max(120), modelId: z.string().min(1).max(200) }),
+  modelsRemoteDelete: z.object({ hostId: z.string().min(1).max(120), ids: z.array(z.string().min(1).max(200)).min(1).max(50) }),
   remoteDownloadsRefresh: z.object({ hostId: z.string().min(1).max(120) }),
   remoteDownloadControl: z.object({ hostId: z.string().min(1).max(120), taskId: z.string().min(1).max(400), operation: z.enum(['pause', 'resume', 'cancel']) }),
 
@@ -439,7 +444,7 @@ export const schemas = {
     title: z.string().min(1).max(120),
   }),
 
-  projectId: z.object({ id: z.string().min(1).max(120) }),
+  projectId: z.object({ id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/) }),
 
   projectLayer: z.object({
     id: z.string().min(1).max(120),
@@ -508,11 +513,17 @@ export const schemas = {
     limit: z.number().int().min(1).max(120).default(48),
     query: z.string().max(200).optional(),
     root: z.string().max(4096).optional(),
+    /** Only images generated for this Studio project. */
+    projectId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/).optional(),
+    /** Only images modified at or after this time (ms since epoch). */
+    since: z.number().int().min(0).optional(),
   }),
 
   galleryItem: z.object({ path: pathLike }),
 
   galleryReveal: z.object({ path: pathLike }),
+
+  galleryTrash: z.object({ path: pathLike }),
 
   pickImages: z.object({ title: z.string().max(120).optional() }),
 

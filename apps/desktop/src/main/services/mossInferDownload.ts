@@ -38,6 +38,7 @@ import {
 import { judgeEngineSupport, protocolCompatible } from '@shared/engineProtocol'
 import { getGpuInventory, refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
+import { activateWhenAllowed, type ActivationGate } from '../lib/engineActivation'
 
 /**
  * Downloads the MossInfer engine package from the upstream repo mossimage-cpp/mossimage.cpp
@@ -777,6 +778,8 @@ export async function downloadMossInfer(
   cudaWheels = false,
   releaseTag?: string,
   architectureInput?: ArchitectureChoice,
+  /** Background updates pass a gate so the new build is only activated while no job runs. */
+  activation?: Omit<ActivationGate, 'signal'>,
 ): Promise<MossInferDownloadState> {
   if (operationInProgress && current) return current
   if (current && !['done', 'error', 'canceled'].includes(current.phase)) return current
@@ -887,24 +890,36 @@ export async function downloadMossInfer(
         ].filter(Boolean).join(' '),
       )
     }
-    const promotion = await promoteInstall({
-      root: paths.mossinfer(),
-      stagingDir: installed.stagingDir,
-      stamp: installed.stamp,
-      currentServerPath: resolveServerPath(getSettings()),
-      beforeReplace: shutdownMossInfer,
-    })
-    pendingStagingDir = undefined
-    const serverPath = engineServerPath(promotion.installDir)
-    const update = updateSettings({
-      mossInferServerPath: serverPath,
-      mossInferChannel: channel,
-      mossInferVariant: installed.effectiveVariant,
-      mossInferArchitecture: architectureChoice,
-    })
-    emit(Events.settingsChanged, update)
-    await shutdownMossInfer() // 激活其他版本后，下一次任务也不能复用旧二进制 runtime。
-    await cleanupPromotedInstall(promotion)
+    // Activation restarts the engine: run it under the activation lock so new
+    // jobs wait for it, and (for background updates) only while no job runs.
+    const serverPath = await activateWhenAllowed(async () => {
+      const promotion = await promoteInstall({
+        root: paths.mossinfer(),
+        stagingDir: installed.stagingDir,
+        stamp: installed.stamp,
+        currentServerPath: resolveServerPath(getSettings()),
+        beforeReplace: shutdownMossInfer,
+      })
+      pendingStagingDir = undefined
+      const promotedPath = engineServerPath(promotion.installDir)
+      const update = updateSettings({
+        mossInferServerPath: promotedPath,
+        mossInferChannel: channel,
+        mossInferVariant: installed.effectiveVariant,
+        mossInferArchitecture: architectureChoice,
+      })
+      emit(Events.settingsChanged, update)
+      await shutdownMossInfer() // 激活其他版本后，下一次任务也不能复用旧二进制 runtime。
+      await cleanupPromotedInstall(promotion)
+      return promotedPath
+    }, activation ? {
+      ...activation,
+      signal: operationController.signal,
+      onWaiting: () => {
+        publish({ phase: 'verifying', note: '新版本已准备好，等正在运行的任务结束后切换' })
+        activation.onWaiting?.()
+      },
+    } : undefined)
     publish({
       phase: 'done',
       percent: 100,
