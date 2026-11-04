@@ -1,12 +1,18 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach } from 'vitest'
 
-/** Fresh directory per test, removed afterwards. Returns a getter for the path. */
+/**
+ * Fresh directory per test, removed afterwards. Returns a getter for the path.
+ *
+ * The path is canonical (realpath): os.tmpdir() can be an 8.3 short name on
+ * Windows (C:\\Users\\RUNNER~1) or a symlink on macOS (/var -> /private/var),
+ * while app code that calls realpath reports the long form.
+ */
 export function useTempDir(prefix = 'mossstudio-test-'): () => string {
   let dir = ''
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), prefix)) })
+  beforeEach(() => { dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix))) })
   afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
   return () => dir
 }

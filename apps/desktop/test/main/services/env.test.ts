@@ -84,8 +84,10 @@ describe('scanEnvironment', () => {
   })
 
   it('collects unique Python 3 interpreters from settings, PATH, uv and the managed runtime', async () => {
-    const managed = join(root(), 'runtimes', 'python', 'cpython-3.12')
-    mkdirSync(join(managed, 'bin'), { recursive: true })
+    mkdirSync(join(root(), 'runtimes', 'python', 'cpython-3.12', 'bin'), { recursive: true })
+    // env.ts appends '/<entry>/bin/python3' to the managed root with forward slashes,
+    // so on a Windows host the simulated-Linux candidate has mixed separators.
+    const managed = `${join(root(), 'runtimes', 'python')}/cpython-3.12`
     Object.assign(state.commands, {
       'which python3': { code: 0, stdout: '/usr/bin/python3\n' },
       'which python': { code: 0, stdout: '/usr/bin/python\n' },

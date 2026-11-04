@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { firstLine, run, runStream, tail } from '@main/lib/run'
 
@@ -34,8 +36,10 @@ describe('run', () => {
   })
 
   it('honours cwd', async () => {
-    const result = await run(node, script('console.log(process.cwd())'), { cwd: '/' })
-    expect(result.stdout.trim()).toBe('/')
+    // Not '/': on Windows that is the current drive's root (D:\\), not a portable value.
+    const cwd = realpathSync.native(tmpdir())
+    const result = await run(node, script('console.log(process.cwd())'), { cwd })
+    expect(realpathSync.native(result.stdout.trim())).toBe(cwd)
   })
 })
 

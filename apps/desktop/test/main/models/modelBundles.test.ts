@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelBinding, Settings } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@main/services/settings'
@@ -118,7 +118,9 @@ describe('prepareModelSource', () => {
   it('materializes a diffusers bundle for downloaded components', async () => {
     installAll()
     const source = await bundles.prepareModelSource(binding, settings)
-    expect(source.model).toMatch(new RegExp(`${join(modelsRoot(), 'bundles')}/[a-f0-9]{24}$`))
+    const bundlesDir = join(modelsRoot(), 'bundles')
+    expect(dirname(source.model!)).toBe(bundlesDir)
+    expect(basename(source.model!)).toMatch(/^[a-f0-9]{24}$/)
   })
 })
 

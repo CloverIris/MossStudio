@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, chmodSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, createReadStream, createWriteStream, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, chmodSync, statSync, writeFileSync } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { open, rename } from 'node:fs/promises'
 import { once } from 'node:events'
@@ -485,9 +485,22 @@ async function extractZip(zip: string, dest: string): Promise<void> {
   })
 }
 
+/** ZIP local-file-header signature "PK\x03\x04". */
+function isZipFile(file: string): boolean {
+  const fd = openSync(file, 'r')
+  try {
+    const head = Buffer.alloc(4)
+    return readSync(fd, head, 0, 4, 0) === 4 && head.readUInt32LE(0) === 0x04034b50
+  } finally {
+    closeSync(fd)
+  }
+}
+
 async function extractArchive(archive: string, dest: string): Promise<void> {
   mkdirSync(dest, { recursive: true })
-  if (archive.endsWith('.zip')) {
+  // Release downloads are saved as `<stamp>.download`, so the name does not say
+  // whether this is the Windows .zip or the Linux .tar.gz: check the content.
+  if (archive.endsWith('.zip') || isZipFile(archive)) {
     await extractZip(archive, dest)
     return
   }

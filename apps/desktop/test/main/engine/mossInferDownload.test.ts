@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { crc32 } from 'node:zlib'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Events } from '@shared/channels'
 import { decodeEngineHello, type EngineHello } from '@shared/engineProtocol'
 import type { GpuInventoryDevice, GpuInventorySnapshot, MossInferDownloadState, Settings } from '@shared/types'
 import { useTempDataRoot } from '@test/helpers/tempDir'
+import { setPlatform, usePlatform } from '@test/helpers/platform'
 
 const spawnSync = vi.hoisted(() => vi.fn())
 const run = vi.hoisted(() => vi.fn())
@@ -26,6 +28,10 @@ vi.mock('@main/services/mossInfer', () => ({ resolveServerPath, shutdownMossInfe
 vi.mock('@main/services/cudaWheels', () => ({ installCudaWheels }))
 vi.mock('@main/services/network', () => ({ getLastNetwork: () => null, githubMirrorChain: () => [] }))
 
+// These cases exercise the Linux package flow (tar.gz assets, `tar -xf`, a
+// `bin/moss-server` without .exe). The app picks the asset, archive format and
+// binary name from process.platform at call time, so pin it on every host.
+usePlatform('linux')
 const dataRoot = useTempDataRoot()
 let download: typeof import('@main/services/mossInferDownload')
 let settingsModule: typeof import('@main/services/settings')
@@ -33,6 +39,8 @@ let emitted: MossInferDownloadState[]
 const engineRoot = (): string => join(dataRoot(), 'mossinfer')
 const API = 'https://api.github.com/repos/mossimage-cpp/mossimage.cpp'
 const archive = Buffer.from('fake engine archive bytes')
+/** Bytes served for every release asset download; tests may swap in a real archive. */
+let payload: Buffer = archive
 const sha = (data: Buffer | string): string => createHash('sha256').update(data).digest('hex')
 
 const gpu: GpuInventoryDevice = { index: 0, uuid: 'GPU-a', name: 'RTX 4080', computeCapability: { major: 8, minor: 9 }, driverVersion: '581.15' }
@@ -45,7 +53,7 @@ const hello = (patch: Record<string, unknown> = {}, device: Record<string, unkno
   })
 
 interface Asset { name: string; size: number; browser_download_url: string }
-const asset = (name: string, size = archive.length): Asset => ({ name, size, browser_download_url: `https://github.com/dl/${name}` })
+const asset = (name: string, size = payload.length): Asset => ({ name, size, browser_download_url: `https://github.com/dl/${name}` })
 let release: { tag_name: string; assets: Asset[] }
 let sums = ''
 let requests: string[]
@@ -59,8 +67,8 @@ function stubGithub(overrides: Record<string, () => Response> = {}): void {
     if (url.endsWith('/SHA256SUMS')) return new Response(sums)
     if (url.startsWith('https://github.com/dl/')) {
       const range = /bytes=(\d+)-(\d+)/.exec(new Headers(init?.headers).get('range') ?? '')
-      if (!range) return new Response(archive)
-      return new Response(archive.subarray(Number(range[1]), Number(range[2]) + 1), { status: 206 })
+      if (!range) return new Response(payload)
+      return new Response(payload.subarray(Number(range[1]), Number(range[2]) + 1), { status: 206 })
     }
     return new Response('not found', { status: 404 })
   }))
@@ -84,6 +92,7 @@ beforeEach(async () => {
     writeFileSync(join(dest, 'mossinfer-2.1.1', 'bin', 'moss-server'), '#!')
     return { code: 0, stdout: '', stderr: '', timedOut: false }
   })
+  payload = archive
   release = { tag_name: 'v2.1.1', assets: [asset('mossinfer-2.1.1-linux-cu13-x86_64-system-cuda.tar.gz'), asset('SHA256SUMS', 100)] }
   sums = `${sha(archive)}  mossinfer-2.1.1-linux-cu13-x86_64-system-cuda.tar.gz\n`
   requests = []
@@ -316,5 +325,63 @@ describe('downloadMossInfer preflight', () => {
     const state = await download.downloadMossInfer('stable', 'cu12', 'system-cuda', false, undefined, 'standard')
     expect(state.phase).toBe('done')
     expect(existsSync(join(engineRoot(), 'stable-v2.1.1-cu12-system-cuda'))).toBe(true)
+  })
+})
+
+/** A minimal stored (uncompressed) ZIP: enough for yauzl, no zip library needed. */
+function storedZip(files: Record<string, string>): Buffer {
+  const locals: Buffer[] = []
+  const centrals: Buffer[] = []
+  let offset = 0
+  for (const [name, text] of Object.entries(files)) {
+    const data = Buffer.from(text)
+    const fileName = Buffer.from(name)
+    const crc = crc32(data)
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(fileName.length, 26)
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(fileName.length, 28)
+    central.writeUInt32LE(offset, 42)
+    locals.push(local, fileName, data)
+    centrals.push(central, fileName)
+    offset += local.length + fileName.length + data.length
+  }
+  const directory = Buffer.concat(centrals)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(Object.keys(files).length, 8); end.writeUInt16LE(Object.keys(files).length, 10)
+  end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...locals, directory, end])
+}
+
+describe('downloadMossInfer (stable) on Windows', () => {
+  const name = 'mossinfer-2.1.1-windows-cu13-x86_64-system-cuda.zip'
+  beforeEach(() => {
+    setPlatform('win32')
+    release.assets = [asset(name)]
+  })
+
+  it('extracts the release .zip itself instead of handing it to tar', async () => {
+    payload = storedZip({ 'mossinfer-2.1.1/bin/moss-server.exe': 'MZ', 'mossinfer-2.1.1/bin/cublasLt64_13.dll': 'dll' })
+    release.assets = [asset(name)]
+    sums = `${sha(payload)}  ${name}\n`
+    const state = await download.downloadMossInfer('stable', 'cu13', 'system-cuda')
+    const installDir = join(engineRoot(), 'stable-v2.1.1-cu13-system-cuda')
+    expect(state).toMatchObject({ phase: 'done', serverPath: join(installDir, 'bin', 'moss-server.exe') })
+    expect(run).not.toHaveBeenCalled()
+    expect(readFileSync(join(installDir, 'bin', 'moss-server.exe'), 'utf8')).toBe('MZ')
+    expect(readFileSync(join(installDir, 'bin', 'cublasLt64_13.dll'), 'utf8')).toBe('dll')
+  })
+
+  it('applies the ZIP path-safety checks to release downloads', async () => {
+    // yauzl already refuses '..'; an NTFS alternate data stream name is ours to catch.
+    payload = storedZip({ 'mossinfer-2.1.1/bin/moss-server.exe': 'MZ', 'mossinfer-2.1.1/bin/moss-server.exe:hidden': 'evil' })
+    release.assets = [asset(name)]
+    sums = `${sha(payload)}  ${name}\n`
+    const state = await download.downloadMossInfer('stable', 'cu13', 'system-cuda')
+    expect(state).toMatchObject({ phase: 'error', error: 'ZIP 引擎包包含不安全路径：mossinfer-2.1.1/bin/moss-server.exe:hidden' })
+    expect(settingsModule.getSettings().mossInferServerPath).toBeNull()
+    expect(run).not.toHaveBeenCalled()
   })
 })

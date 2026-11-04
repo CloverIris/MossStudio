@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   downloadFile,
@@ -349,8 +349,9 @@ describe('path and pattern helpers', () => {
   })
 
   it('safe nested paths resolve under the root', () => {
-    expect(safePath('/cache', 'a/b/c.bin')).toBe(join('/cache', 'a/b/c.bin'))
-    expect(safePath('/cache', 'a/../b')).toBe(join('/cache', 'b'))
+    // safePath resolves the root, so on Windows '/cache' gains the current drive letter.
+    expect(safePath('/cache', 'a/b/c.bin')).toBe(resolve('/cache', 'a/b/c.bin'))
+    expect(safePath('/cache', 'a/../b')).toBe(resolve('/cache', 'b'))
   })
 
   it('matchesFile treats * as any run of characters and escapes regex metacharacters', () => {

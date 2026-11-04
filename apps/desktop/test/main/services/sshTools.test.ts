@@ -1,4 +1,4 @@
-import { win32 } from 'node:path'
+import { join, win32 } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -131,7 +131,9 @@ describe('getSshTools on macOS/Linux', () => {
     const api = await tools({ platform: 'linux', env: { CLOVER_SSH_BIN: '/opt/ssh/bin/ssh' }, files: ['/opt/ssh/bin/scp'] })
     const selected = api.getSshTools()
     expect(selected.ssh).toBe('/opt/ssh/bin/ssh')
-    expect(selected.scp).toBe('/opt/ssh/bin/scp')
+    // The sibling is joined with the host's path module, so a Windows host running
+    // this simulated-Linux case sees backslashes; a real Linux host sees '/opt/ssh/bin/scp'.
+    expect(selected.scp).toBe(join('/opt/ssh/bin', 'scp'))
     expect(selected.keyscan).toBe('ssh-keyscan')
   })
 })
