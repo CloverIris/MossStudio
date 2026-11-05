@@ -1,7 +1,7 @@
 import { readdir, realpath, stat } from 'node:fs/promises'
 import { basename, extname, join, relative, resolve } from 'node:path'
 import type { ModelScanResult, ScannedModel } from '@shared/types'
-import type { ImportedModelRole } from './modelImports'
+import { diffusersFolderName, inspectDiffusersFolder, type ImportedModelRole } from './modelImports'
 
 /**
  * Read-only discovery of model files a user already has on disk.
@@ -126,14 +126,16 @@ async function walk(root: string, result: ScanResult, directory = root, depth = 
   }
   entries.sort((a, b) => a.name.localeCompare(b.name))
   if (isDiffusersFolder(entries.map((entry) => entry.name))) {
-    const relativePath = relative(root, directory) || '.'
+    // The picked folder itself: show its name, not ".".
+    const relativePath = relative(root, directory) || basename(directory)
     const info = await stat(directory).catch(() => null)
+    const folder = await inspectDiffusersFolder(directory)
     if (info) {
       result.candidates.push({
         path: directory,
         relativePath,
-        name: basename(directory),
-        size: 0,
+        name: diffusersFolderName(directory, folder?.flavor ?? null),
+        size: folder?.size ?? 0,
         mtimeMs: info.mtimeMs,
         role: 'full',
         layout: 'diffusers-folder',

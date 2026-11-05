@@ -147,6 +147,7 @@ export function StudioPage(): React.JSX.Element {
     setupDone: settings ? settings.onboardingState === 'completed' || settings.onboardingState === 'dismissed' : true,
     remote: remoteHost ? { name: remoteHost.name, modelPath: remoteHost.modelPath } : null,
     inputBlockers,
+    features: boardFeatures,
   })
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false

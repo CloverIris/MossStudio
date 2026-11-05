@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { deriveSetup, modelDownloads, setupSpaceLabel, stepsToStart, type SetupInput } from '@renderer/pages/setup/setupState'
-import type { OnboardingStatus } from '@shared/types'
+import type { LocalEngineVersion, OnboardingStatus } from '@shared/types'
+import { RELEASE_220, enginePlanFor, machineFixture, type MachineName } from '@test/mocks/backend/machines'
 import {
   FIXTURE_NOW,
   GiB,
@@ -134,5 +135,58 @@ describe('setupSpaceLabel', () => {
   it('adds the engine to what the model still needs', () => {
     expect(setupSpaceLabel(deriveSetup(input()))).toBe('约 13 GB')
     expect(setupSpaceLabel(deriveSetup(input({ engine: engineReadyFixture(), onboarding: onboarding('partial', 300 * 1024 ** 2) })))).toBe('约 300 MB')
+  })
+})
+
+describe('deriveSetup with the engine plan', () => {
+  const planFor = (name: MachineName, versions: LocalEngineVersion[] = []) =>
+    enginePlanFor(machineFixture(name), RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, versions)
+  const managed = (name: string): LocalEngineVersion => ({ id: name, name, path: `/e/${name}`, current: true, source: 'managed' })
+
+  it('keeps checking while the GPUs are being probed', () => {
+    const view = deriveSetup(input({ plan: null }))
+    expect(view.phase).toBe('checking')
+    expect(view.steps[0]).toMatchObject({ state: 'running', detail: '正在检测显卡…' })
+  })
+
+  it('lists what each GPU gets and what the download costs', () => {
+    const view = deriveSetup(input({ plan: planFor('nvidia') }))
+    expect(view.phase).toBe('idle')
+    expect(view.lines.map((line) => line.detail)).toEqual(['CUDA 13 引擎 · 352 MB'])
+    expect(view.steps[1]!.detail).toBe('MossInfer · 352 MB')
+    expect(view.engineBytes).toBe(368693986)
+  })
+
+  it('several GPUs: several packages in one install', () => {
+    const view = deriveSetup(input({ plan: planFor('multiGpu') }))
+    expect(view.steps[1]!.detail).toMatch(/^MossInfer · 3 个引擎包，共 /)
+    expect(view.lines).toHaveLength(3)
+  })
+
+  it('an AMD GPU without ROCm still prepares, with the ROCm tip as a quiet note', () => {
+    const view = deriveSetup(input({ plan: planFor('amd') }))
+    expect(view.phase).toBe('idle')
+    expect(view.lines[0]).toMatchObject({ detail: '兼容模式 · 1.2 MB', tip: expect.stringContaining('ROCm 7'), note: expect.stringContaining('只能文生图') })
+  })
+
+  it('is blocked on macOS and says why', () => {
+    const view = deriveSetup(input({ gpu: gpuInventoryFixture([]), plan: planFor('macos') }))
+    expect(view.phase).toBe('blocked')
+    expect(view.os).toBe('macos')
+    expect(view.steps[0]!.detail).toContain('macOS')
+    expect(view.lines).toEqual([])
+    expect(stepsToStart(view)).toEqual([])
+  })
+
+  it('an engine for one GPU is not done while another GPU still misses its package', () => {
+    const view = deriveSetup(input({ engine: engineReadyFixture(), plan: planFor('multiGpu', [managed('stable-v2.2.0-cu13')]) }))
+    expect(view.steps[1]).toMatchObject({ state: 'waiting', detail: expect.stringContaining('还需为其他显卡下载 2 个引擎包') })
+    expect(stepsToStart(view)).toContain('engine')
+    const all = deriveSetup(input({ engine: engineReadyFixture(), plan: planFor('multiGpu', ['stable-v2.2.0-cu13', 'stable-v2.2.0-cu12-sm70', 'stable-v2.2.0-vulkan'].map(managed)) }))
+    expect(all.steps[1]!.state).toBe('done')
+  })
+
+  it('uses the plan\'s size for the space sentence', () => {
+    expect(setupSpaceLabel(deriveSetup(input({ plan: planFor('intel'), onboarding: onboarding('partial', 300 * 1024 ** 2) })))).toBe('约 301 MB')
   })
 })

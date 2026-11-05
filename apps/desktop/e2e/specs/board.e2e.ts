@@ -262,6 +262,19 @@ describe('studio board', () => {
     await expect.poll(() => savedInputs(page).then((inputs) => inputs?.mask ?? null), { timeout: 10_000 }).toBeNull()
   })
 
+  it('a new stroke replaces the mask file it painted over (so old masks do not pile up)', async () => {
+    const page = await openBoard(app, { inputs: { init: { link: { canvasId: 'img-1' }, strength: 0.6 } } })
+    await page.getByRole('button', { name: '遮罩', exact: true }).click()
+    await paintStroke(page)
+    await expect.poll(() => savedInputs(page).then((inputs) => inputs?.mask?.path ?? null), { timeout: 10_000 }).not.toBeNull()
+    const first = await page.evaluate(() => window.__mock.callsTo('studio:save-mask')[0] as { replaces?: string })
+    expect(first.replaces).toBeUndefined()
+    await paintStroke(page)
+    await expect.poll(() => app.calls('studio:save-mask').then((calls) => calls.length), { timeout: 5_000 }).toBe(2)
+    const second = await page.evaluate(() => window.__mock.callsTo('studio:save-mask')[1] as { replaces?: string })
+    expect(second.replaces).toBe('/fixture/projects/project-1/assets/mask-canvas-1.png')
+  })
+
   it('turns the mask tool off with a reason until a start picture is linked', async () => {
     const page = await openBoard(app)
     const tool = page.getByRole('button', { name: '遮罩', exact: true })

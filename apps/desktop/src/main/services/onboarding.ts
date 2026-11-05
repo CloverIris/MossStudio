@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import type { OnboardingStatus, OnboardingStep, Settings } from '@shared/types'
 import { paths } from '../lib/paths'
-import { listDevices } from './devices'
+import { cachedGpuInventory, listDevices } from './devices'
 import { getCatalog } from './models'
 import { legacyModelReady } from './modelReadiness'
 import { engineReadiness } from './engineReadiness'
@@ -9,6 +9,8 @@ import { describeEngineReadiness } from '@shared/engineReadiness'
 import { getTrainingHost } from './trainingHosts'
 import { remoteEngineStatus } from './remoteEngine'
 import { scanRemoteModels } from './remoteModels'
+import { localEngineKinds } from './engineInstalls'
+import { cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
 
 export async function getOnboardingStatus(settings: Settings, hostId = 'local'): Promise<OnboardingStatus> {
   const catalog = await getCatalog(settings, true)
@@ -18,19 +20,26 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
   let engineStepStatus: OnboardingStep['status']
   let engineDetail: string
   let fullModelReady = false
+  // Every local GPU runs moss-infer-vulkan / moss-infer-hip: only a complete bf16 bundle works there.
+  let cliKind: CliEngineKind | null = null
 
   if (hostId === 'local') {
+    const kinds = localEngineKinds()
+    if (kinds.length > 0 && kinds.every((kind) => kind === 'vulkan' || kind === 'hip')) cliKind = kinds[0] as CliEngineKind
+    // NVIDIA from nvidia-smi; AMD / Intel GPUs from the engine's machine probe (merged into the GPU inventory).
     const gpu = listDevices(settings).find((device) => device.kind === 'cuda' && device.available)
+      ?? cachedGpuInventory()?.devices.find((device) => device.vendor && device.vendor !== 'nvidia')
     deviceReady = Boolean(gpu)
     deviceDetail = gpu?.name ?? (process.platform === 'darwin'
       ? 'macOS 请在设备页添加 Linux NVIDIA SSH 主机，并在此切换准备位置'
-      : '需要可用的 NVIDIA GPU；也可以添加 Linux NVIDIA SSH 主机')
+      : '需要一块能运行引擎的显卡（NVIDIA、AMD 或 Intel）；也可以添加 Linux NVIDIA SSH 主机')
     const readiness = await engineReadiness()
     engineStepStatus = readiness.state === 'ready'
       ? 'ok'
       : 'missing'
     engineDetail = describeEngineReadiness(readiness)
-    fullModelReady = catalog.models.some((model) => model.role === 'full' && model.installed && model.format !== 'comfyui')
+    fullModelReady = catalog.models.some((model) => model.role === 'full' && model.installed && model.format !== 'comfyui'
+      && (!cliKind || model.precision === 'bf16'))
       || await legacyModelReady(join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'))
   } else {
     const host = getTrainingHost(settings, hostId)
@@ -49,13 +58,14 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
   const score = (bundle: typeof catalog.bundles[number]): number => ids(bundle).reduce((total, id) =>
     total + (installed.has(id) ? 2 : hostId === 'local' && catalog.models.find((model) => model.id === id)?.installState === 'partial' ? 1 : 0), 0,
   )
-  const bundle = [...catalog.bundles].sort((a, b) => score(b) - score(a) || Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))[0]
+  const usable = cliKind ? catalog.bundles.filter((item) => cliBundleProblem(cliKind!, item, catalog.models) === null) : catalog.bundles
+  const bundle = [...usable].sort((a, b) => score(b) - score(a) || Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))[0]
   let modelIds = bundle ? ids(bundle) : []
   let bundleName = bundle?.name
   let modelCount = fullModelReady ? modelIds.length : modelIds.filter((id) => installed.has(id)).length
   // Single-file MossInfer overrides still need the bundle's configs and tokenizer.
   // Count the actual installed weights instead of asking for another BF16 download.
-  if (bundle && !fullModelReady && catalog.models.some((model) => model.id === 'moss-runtime-config')) {
+  if (bundle && !fullModelReady && !cliKind && catalog.models.some((model) => model.id === 'moss-runtime-config')) {
     const singleFile = (role: 'dit' | 'text_encoder') => catalog.models.find((model) =>
       installed.has(model.id) && model.role === role && model.family === 'moss-image'
       && model.format === 'comfyui' && ['bf16', 'int8', 'int4', 'w4a8'].includes(model.precision),

@@ -7,16 +7,17 @@ import { open, rename } from 'node:fs/promises'
 import { once } from 'node:events'
 import { dirname, join, resolve, sep } from 'node:path'
 import * as yauzl from 'yauzl'
-import type { MossInferDownloadState, MossInferRelease, Settings } from '@shared/types'
+import type { GpuInventoryDevice, MossInferDownloadState, MossInferRelease, Settings } from '@shared/types'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
 import { run } from '../lib/run'
-import { resolveServerPath, shutdownMossInfer } from './mossInfer'
+import { releaseStaleMossInferRuntimes, shutdownMossInfer } from './mossInfer'
+import { shutdownCliEngines } from './cliEngine'
 import { probeEngine } from '../lib/probeEngine'
 import {
   cleanupPromotedInstall,
-  engineServerPath,
+  engineBinaryPath,
   promoteInstall,
   recoverEngineInstall,
   setEngineInstallProgress,
@@ -27,17 +28,21 @@ import { installCudaWheels } from './cudaWheels'
 import { getSettings, updateSettings } from './settings'
 import { getLastNetwork, githubMirrorChain } from './network'
 import { assertFreeSpace } from '../lib/disk'
-import {
-  DEFAULT_MOSSINFER_FLAVOUR,
-  MOSSINFER_REPO,
-  mossInferArchitectureForComputeCapability,
-  mossInferArchiveBase,
-  mossInferDriverCompatibilityError,
-  type MossInferArchitecture,
-} from '../lib/engineAssets'
+import { MOSSINFER_REPO } from '../lib/engineAssets'
 import { judgeEngineSupport, protocolCompatible } from '@shared/engineProtocol'
-import { getGpuInventory, refreshGpuInventory } from './devices'
-import { resolveGpuSelection } from '../lib/gpuInventory'
+import {
+  driverMinimumLabel,
+  driverSupports,
+  engineAssetName,
+  enginePackageId,
+  enginePackageOptionLabel,
+  packageExistsFor,
+  releaseAssetVersion,
+  type EnginePackage,
+  type EnginePackageKind,
+} from '@shared/enginePackages'
+import { engineStampName, parseEngineStamp } from '@shared/engineUpdate'
+import { refreshGpuInventory } from './devices'
 import { activateWhenAllowed, type ActivationGate } from '../lib/engineActivation'
 
 /**
@@ -46,8 +51,10 @@ import { activateWhenAllowed, type ActivationGate } from '../lib/engineActivatio
  * - stable: the latest GitHub Release assets (sha256-verified via SHA256SUMS);
  * - dev: the latest successful `ci` run's Actions artifact (requires a token: GitHub
  *   answers 401 on artifact zips even for public repos).
- * The extracted tree keeps its upstream layout (bin/moss-server + lib/), and the
- * installed server path is written to settings.mossInferServerPath.
+ * Every package (a CUDA flavour/arch/runtime, Vulkan, HIP) installs side by
+ * side as `<root>/<channel>-<tag>-<packageId>` keeping its upstream layout
+ * (bin/moss-server + lib/, bin/moss-infer-vulkan, bin/moss-infer-hip); which GPU
+ * runs which install is decided in engineInstalls.ts.
  */
 
 const REPO = MOSSINFER_REPO
@@ -115,51 +122,6 @@ function isGithubFileUrl(url: string): boolean {
   return hostname === 'github.com' || hostname === 'raw.githubusercontent.com'
 }
 
-function hostLabel(url: string): string {
-  try {
-    return new URL(url).host
-  } catch {
-    return '镜像 URL'
-  }
-}
-
-async function fetchGithubFile(
-  url: string,
-  settings: Settings,
-  init: RequestInit,
-  description: string,
-): Promise<Response> {
-  // A cached "direct works" probe result must not disable mirrors. Order: an explicitly
-  // configured mirror first, otherwise direct first and the built-ins only as fallback,
-  // so a dead mirror costs one failed attempt instead of stalling every download.
-  const preferred = settings.gitMirror?.trim() || getLastNetwork()?.selected.git || null
-  // gh-proxy family takes the full absolute URL after the prefix; a bare prefix would not
-  // resolve, so build it here instead of reusing the git-clone mirror helper.
-  const mirrored = githubMirrorChain(settings).map((mirror) => `${mirror.replace(/\/$/, '')}/${url}`)
-  const candidates = isGithubFileUrl(url)
-    ? [...new Set(preferred ? [...mirrored, url] : [url, ...mirrored])]
-    : [url]
-  const failures: string[] = []
-  for (const candidate of candidates) {
-    let response: Response
-    try {
-      response = await fetch(candidate, init)
-    } catch (error) {
-      if (controller?.signal.aborted) throw new Error('已取消下载')
-      const reason = error instanceof Error ? error.message : String(error)
-      failures.push(`${hostLabel(candidate)}: ${reason}`)
-      continue
-    }
-    if (response.ok) return response
-    failures.push(`${hostLabel(candidate)}: HTTP ${response.status}`)
-    await response.body?.cancel()
-  }
-  const hint = settings.networkMode === 'direct'
-    ? '当前网络策略是「直连」，请在设置里切到「自动」或填一个 git 镜像前缀。'
-    : '直连与内置镜像都失败了：请检查网络，或在设置 › 网络与下载里填写可用的 git 镜像前缀。'
-  throw new Error(`${description}请求失败：${failures.join('；')}。${hint}`)
-}
-
 async function ghJson(path: string, token: string | null): Promise<unknown> {
   let response: Response
   try {
@@ -195,6 +157,8 @@ interface GhAsset {
   name: string
   browser_download_url: string
   size: number
+  /** `sha256:<hex>`, set by GitHub on newer uploads. */
+  digest?: string | null
 }
 
 interface GhArtifact {
@@ -204,7 +168,7 @@ interface GhArtifact {
   size_in_bytes: number
 }
 
-// Archive names: mossinfer-<version>-<os>-cu<N>-x86_64[-system-cuda].<ext>
+// Archive names (the v2.2.0 contract): see engineAssetName in shared/enginePackages.ts.
 function osToken(): 'linux' | 'windows' {
   return process.platform === 'win32' ? 'windows' : 'linux'
 }
@@ -212,10 +176,6 @@ function osToken(): 'linux' | 'windows' {
 function archiveExt(): 'tar.gz' | 'zip' {
   return process.platform === 'win32' ? 'zip' : 'tar.gz'
 }
-
-type Variant = 'system-cuda' | 'bundled'
-type Architecture = MossInferArchitecture
-type ArchitectureChoice = 'auto' | Architecture
 
 const DOWNLOAD_ATTEMPTS = 6
 
@@ -300,6 +260,7 @@ async function downloadTo(
   token: string | null,
   totalHint: number,
   settings: Settings,
+  onProgress: (bytes: number, total: number, note?: string) => void = publishProgress,
 ): Promise<string> {
   const part = `${target}.part`
   const candidates = candidateUrls(url, settings)
@@ -334,7 +295,7 @@ async function downloadTo(
   try {
     const queue: number[] = []
     for (let index = 0; index < chunks; index += 1) if (!done.has(index)) queue.push(index)
-    publishProgress(written, total, resumed ? `从 ${(written / 1024 / 1024).toFixed(1)} MB 继续` : '开始下载')
+    onProgress(written, total, resumed ? `从 ${(written / 1024 / 1024).toFixed(1)} MB 继续` : '开始下载')
 
     const worker = async (): Promise<void> => {
       for (;;) {
@@ -366,7 +327,7 @@ async function downloadTo(
               await handle.write(chunk, 0, chunk.length, position)
               position += chunk.length
               written += chunk.length
-              publishProgress(written, total)
+              onProgress(written, total)
             }
             if (position !== end + 1) throw new Error(`分段不完整（${position - start}/${expected}）`)
             done.add(index)
@@ -516,43 +477,31 @@ function singleTopDir(dir: string): string {
   return join(dir, entries[0]!.name)
 }
 
+
 async function stageTree(
   extractedRoot: string,
   stamp: string,
-): Promise<{ serverPath: string; stagingDir: string }> {
+  kind: EnginePackageKind,
+): Promise<{ binaryPath: string; stagingDir: string }> {
   const top = singleTopDir(extractedRoot)
   const stagingRoot = join(paths.mossinfer(), '.staging')
   const stagingDir = join(stagingRoot, `${stamp}-${Date.now()}`)
   mkdirSync(stagingRoot, { recursive: true })
   try {
     await rename(top, stagingDir)
-    const serverPath = engineServerPath(stagingDir)
-    if (!existsSync(serverPath)) throw new Error(`引擎包里没有 ${serverPath}`)
-    if (process.platform !== 'win32') chmodSync(serverPath, 0o755)
-    return { serverPath, stagingDir }
+    const binaryPath = engineBinaryPath(stagingDir, kind)
+    if (!existsSync(binaryPath)) throw new Error(`引擎包里没有 ${binaryPath}`)
+    if (process.platform !== 'win32') chmodSync(binaryPath, 0o755)
+    return { binaryPath, stagingDir }
   } catch (error) {
     rmSync(stagingDir, { recursive: true, force: true })
     throw error
   }
 }
 
-/**
- * The system-cuda package variant ships no CUDA libraries; the engine dlopens
- * libcublasLt.so.<major> by soname, and the executable's RUNPATH ($ORIGIN/../lib)
- * is on that search path — so installing the NVIDIA PyPI wheels' libraries into
- * the package's own lib/ satisfies it without root or system-wide changes.
- */
-interface Source {
-  url: string
-  token: string | null
-  totalHint: number
-  expectedSha: string | null // null = verify after download from a bundled .sha256 (dev artifact)
-  stamp: string
-  label: string
-  effectiveVariant: Variant
-  architecture: Architecture
-  fallbackNote?: string
-}
+/* ------------------------------------------------------------------ */
+/* Releases                                                            */
+/* ------------------------------------------------------------------ */
 
 interface GhRelease {
   tag_name: string
@@ -564,7 +513,21 @@ interface GhRelease {
   assets: GhAsset[]
 }
 
+/** One release with everything an install needs: asset URLs and the SHA256SUMS text. */
+export interface EngineRelease {
+  tag: string
+  /** `2.2.0` */
+  version: string
+  /** `sha256`: GitHub's own digest of the asset, when the API gives one. */
+  assets: Array<{ name: string; size: number; url: string; sha256?: string }>
+  /** Contents of SHA256SUMS; null when the release has none. */
+  sums: string | null
+}
+
 class MissingReleaseAssetError extends Error {}
+
+/** A release plus whether the person asked for this exact tag (then a missing asset is an error, not a CI fallback). */
+type ReleaseContext = EngineRelease & { pinned?: boolean }
 
 export async function listMossInferReleases(): Promise<MossInferRelease[]> {
   const settings = getSettings()
@@ -580,81 +543,182 @@ export async function listMossInferReleases(): Promise<MossInferRelease[]> {
     }))
 }
 
-async function queryStable(
-  flavour: 'cu12' | 'cu13',
-  variant: Variant,
-  settings: Settings,
-  releaseTag?: string,
-  architecture: Architecture = 'standard',
-): Promise<Source> {
-  if (architecture === 'sm75' && (process.platform !== 'win32' || flavour !== 'cu13')) {
-    throw new Error('上游 SM75 Release 仅提供 Windows CUDA 13 构建')
-  }
+/** The latest release (or a given tag), with its SHA256SUMS. */
+export async function fetchEngineRelease(releaseTag?: string): Promise<EngineRelease> {
+  const settings = getSettings()
   const release = (await ghJson(
     releaseTag ? `/releases/tags/${encodeURIComponent(releaseTag)}` : '/releases/latest',
     resolveGithubToken(settings),
-  )) as {
-    tag_name: string
-    assets: GhAsset[]
+  )) as GhRelease
+  const sumsAsset = release.assets.find((item) => item.name === 'SHA256SUMS')
+  // The hashes never come through a mirror (a mirror could swap archive and hash together):
+  // GitHub's own per-asset digest from api.github.com, else SHA256SUMS straight from github.com.
+  const everyDigest = release.assets.filter((item) => item.name !== 'SHA256SUMS').every((item) => digestOf(item))
+  let sums: string | null = null
+  if (sumsAsset && !everyDigest) {
+    const signal = controller
+      ? AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
+      : AbortSignal.timeout(20_000)
+    let response: Response
+    try {
+      response = await fetch(sumsAsset.browser_download_url, { headers: { 'user-agent': `MossStudio-Launcher/${app.getVersion()}` }, signal })
+    } catch (error) {
+      if (controller?.signal.aborted) throw new Error('已取消下载')
+      throw new Error(`无法从 github.com 读取 SHA256SUMS（校验值不经过镜像）：${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (!response.ok) throw new Error(`无法从 github.com 读取 SHA256SUMS：HTTP ${response.status}`)
+    sums = await response.text()
   }
-  const version = release.tag_name.replace(/^v/, '')
-  const pick = (v: Variant): GhAsset | undefined =>
-    release.assets.find((item) =>
-      item.name === `${mossInferArchiveBase(version, osToken(), flavour, v, architecture)}.${archiveExt()}`,
-    )
-  let effectiveVariant = variant
-  let asset = pick(variant)
+  return {
+    tag: release.tag_name,
+    version: releaseAssetVersion(release.tag_name, release.assets.map((item) => item.name)),
+    assets: release.assets.map((item) => ({
+      name: item.name, size: item.size, url: item.browser_download_url,
+      ...(digestOf(item) ? { sha256: digestOf(item)! } : {}),
+    })),
+    sums,
+  }
+}
+
+function digestOf(asset: GhAsset): string | null {
+  const match = /^sha256:([a-f0-9]{64})$/i.exec(asset.digest ?? '')
+  return match ? match[1]!.toLowerCase() : null
+}
+
+/** The SHA-256 SHA256SUMS lists for this asset; every release download is checked against it. */
+function expectedSha(release: EngineRelease, name: string): string {
+  const expected = release.assets.find((asset) => asset.name === name)?.sha256 ?? (release.sums ? sha256Of(release.sums, name) : null)
+  if (!expected) {
+    throw new Error(`release ${release.tag} 的 SHA256SUMS 里没有 ${name}，无法校验，未安装`)
+  }
+  return expected
+}
+
+/* ------------------------------------------------------------------ */
+/* Vulkan probe package                                                */
+/* ------------------------------------------------------------------ */
+
+let probeInFlight: Promise<string> | null = null
+
+/**
+ * A moss-infer-vulkan to run `--list-devices` with: an installed Vulkan
+ * package, or the release's 1–2 MB Vulkan package unpacked under
+ * `<engine root>/.probe/<tag>` (cached per release, SHA-256 checked).
+ */
+export async function ensureVulkanProbe(release: EngineRelease): Promise<string> {
+  const name = engineAssetName(release.version, osToken(), { kind: 'vulkan' })
+  const probeRoot = join(paths.mossinfer(), '.probe')
+  const dir = join(probeRoot, release.tag)
+  const binary = engineBinaryPath(dir, 'vulkan')
+  if (existsSync(binary)) return binary
+  if (probeInFlight) return probeInFlight
+  probeInFlight = (async () => {
+    const asset = release.assets.find((item) => item.name === name)
+    if (!asset) throw new MissingReleaseAssetError(`release ${release.tag} 里没有 ${name}`)
+    const expected = expectedSha(release, name)
+    mkdirSync(probeRoot, { recursive: true })
+    const download = join(probeRoot, `${release.tag}.download`)
+    const extract = join(probeRoot, `${release.tag}-extract`)
+    try {
+      const digest = await downloadTo(asset.url, download, null, asset.size, getSettings(), () => undefined)
+      if (digest !== expected) throw new Error('Vulkan 探测包 sha256 校验失败（SHA256SUMS 不匹配）')
+      rmSync(extract, { recursive: true, force: true })
+      await extractArchive(download, extract)
+      rmSync(dir, { recursive: true, force: true })
+      await rename(singleTopDir(extract), dir)
+      if (!existsSync(binary)) throw new Error(`Vulkan 探测包里没有 ${binary}`)
+      if (process.platform !== 'win32') chmodSync(binary, 0o755)
+      // Only the newest release's probe is kept.
+      for (const entry of readdirSync(probeRoot)) if (entry !== release.tag) rmSync(join(probeRoot, entry), { recursive: true, force: true })
+      return binary
+    } finally {
+      rmSync(download, { force: true })
+      rmSync(`${download}.part`, { force: true })
+      rmSync(`${download}.part.json`, { force: true })
+      rmSync(extract, { recursive: true, force: true })
+    }
+  })()
+  try {
+    return await probeInFlight
+  } finally {
+    probeInFlight = null
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Sources                                                             */
+/* ------------------------------------------------------------------ */
+
+interface Source {
+  url: string
+  token: string | null
+  totalHint: number
+  /** null for a CI artifact: the inner archive's .sha256 is checked after the outer zip is extracted. */
+  expectedSha: string | null
+  stamp: string
+  label: string
+  /** The package that will land (a CUDA runtime variant may fall back to the other one). */
+  package: EnginePackage
+  fallbackNote?: string
+}
+
+function otherRuntime(pkg: EnginePackage): EnginePackage | null {
+  if (pkg.kind !== 'cuda') return null
+  return { ...pkg, runtime: pkg.runtime === 'system-cuda' ? 'bundled' : 'system-cuda' }
+}
+
+function stableSource(pkg: EnginePackage, release: EngineRelease): Source {
+  if (!packageExistsFor(pkg, osToken())) {
+    throw new Error(`上游没有 ${osToken() === 'windows' ? 'Windows' : 'Linux'} 版的 ${enginePackageOptionLabel(pkg)} 引擎包`)
+  }
+  const pick = (candidate: EnginePackage) => release.assets.find((item) => item.name === engineAssetName(release.version, osToken(), candidate))
+  let effective = pkg
+  let asset = pick(pkg)
   let fallbackNote: string | undefined
-  if (!asset) {
-    const other: Variant = variant === 'system-cuda' ? 'bundled' : 'system-cuda'
+  const other = otherRuntime(pkg)
+  if (!asset && other) {
     asset = pick(other)
     if (asset) {
-      effectiveVariant = other
-      fallbackNote = `该 release 没有 ${variant} 变体，已回退到 ${other} 包`
+      effective = other
+      fallbackNote = `该 release 没有 ${pkg.kind === 'cuda' ? pkg.runtime : ''} 变体，已回退到 ${other.kind === 'cuda' ? other.runtime : ''} 包`
     }
   }
   if (!asset) {
     throw new MissingReleaseAssetError(
-      `release ${release.tag_name} 里没有 ${mossInferArchiveBase(version, osToken(), flavour, variant, architecture)}.${archiveExt()}` +
+      `release ${release.tag} 里没有 ${engineAssetName(release.version, osToken(), pkg)}` +
         (release.assets.length ? `（现有资产：${release.assets.map((a) => a.name).slice(0, 6).join(', ')}…）` : '（该 release 还没有资产）'),
     )
   }
-  const name = asset.name
-  const sumsAsset = release.assets.find((item) => item.name === 'SHA256SUMS')
-  let expected: string | null = null
-  if (sumsAsset) {
-    const signal = controller
-      ? AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
-      : AbortSignal.timeout(20_000)
-    const response = await fetchGithubFile(
-      sumsAsset.browser_download_url,
-      settings,
-      { signal },
-      'Release SHA256SUMS 校验文件',
-    )
-    expected = sha256Of(await response.text(), name)
-  }
   return {
-    url: asset.browser_download_url,
+    url: asset.url,
     token: null,
     totalHint: asset.size,
-    expectedSha: expected,
-    stamp: `stable-${release.tag_name}-${flavour}${architecture === 'sm75' ? '-sm75' : ''}${effectiveVariant === 'system-cuda' ? '-system-cuda' : ''}`,
-    label: `release ${release.tag_name}`,
-    effectiveVariant,
-    architecture,
+    expectedSha: expectedSha(release, asset.name),
+    stamp: engineStampName('stable', release.tag, effective),
+    label: `release ${release.tag}`,
+    package: effective,
     fallbackNote,
   }
 }
 
-async function queryDev(
-  flavour: 'cu12' | 'cu13',
-  variant: Variant,
-  settings: Settings,
-  architecture: Architecture = 'standard',
-): Promise<Source> {
-  if (architecture === 'sm75' && (process.platform !== 'win32' || flavour !== 'cu13')) {
-    throw new Error('上游 SM75 CI 构建仅提供 Windows CUDA 13')
+/** CI artifact names: mossinfer-<linux|windows-msvc>-<cuda13|cuda12|cuda13-sm75|cuda12-sm70>, mossinfer-vulkan-<os>, mossinfer-hip-linux. */
+function devArtifactName(pkg: EnginePackage): string {
+  if (pkg.kind === 'vulkan') return `mossinfer-vulkan-${osToken()}`
+  if (pkg.kind === 'hip') return 'mossinfer-hip-linux'
+  const platform = process.platform === 'win32' ? 'windows-msvc' : 'linux'
+  return `mossinfer-${platform}-${pkg.flavour === 'cu13' ? 'cuda13' : 'cuda12'}${pkg.arch === 'standard' ? '' : `-${pkg.arch}`}`
+}
+
+/** The archive inside a CI artifact for this package, any version. */
+function devInnerArchive(pkg: EnginePackage): RegExp {
+  const ext = archiveExt().replace('.', '\\.')
+  const name = engineAssetName('VERSION', osToken(), pkg).replace(/\./g, '\\.').replace('VERSION', '[^-]+')
+  return new RegExp(`^${name.replace(/\\\.(zip|tar\\\.gz)$/, '')}\\.${ext}$`)
+}
+
+async function devSource(pkg: EnginePackage, settings: Settings): Promise<Source> {
+  if (!packageExistsFor(pkg, osToken())) {
+    throw new Error(`上游 CI 没有 ${osToken() === 'windows' ? 'Windows' : 'Linux'} 版的 ${enginePackageOptionLabel(pkg)} 构建`)
   }
   const token = resolveGithubToken(settings)
   if (!token) {
@@ -667,51 +731,59 @@ async function queryDev(
   }
   const runInfo = runs.workflow_runs[0]
   if (!runInfo) throw new Error('main 分支上还没有成功的 ci 运行')
-  const artifacts = (await ghJson(`/actions/runs/${runInfo.id}/artifacts`, token)) as {
-    artifacts: GhArtifact[]
-  }
-  const name = `mossinfer-${process.platform === 'win32' ? 'windows-msvc' : 'linux'}-${flavour === 'cu13' ? 'cuda13' : 'cuda12'}${architecture === 'sm75' ? '-sm75' : ''}`
+  const artifacts = (await ghJson(`/actions/runs/${runInfo.id}/artifacts`, token)) as { artifacts: GhArtifact[] }
+  const name = devArtifactName(pkg)
   const artifact = artifacts.artifacts.find((item) => item.name === name)
   if (!artifact) throw new Error(`ci 运行 ${runInfo.id} 里没有构件 ${name}`)
   if (artifact.expired) throw new Error(`构件 ${name} 已过期（CI 保留 7 天）`)
+  const tag = `run${runInfo.id}-${runInfo.head_sha.slice(0, 8)}`
   return {
     url: `${API}/actions/artifacts/${artifact.id}/zip`,
     token,
     totalHint: artifact.size_in_bytes,
     expectedSha: null,
-    stamp: `dev-run${runInfo.id}-${runInfo.head_sha.slice(0, 8)}-${flavour}${architecture === 'sm75' ? '-sm75' : ''}${variant === 'system-cuda' ? '-system-cuda' : ''}`,
+    stamp: engineStampName('dev', tag, pkg),
     label: `ci run ${runInfo.id}（${runInfo.head_sha.slice(0, 8)}）`,
-    effectiveVariant: variant, // final choice made after the outer zip is extracted
-    architecture,
+    package: pkg, // final choice made after the outer zip is extracted
   }
 }
 
-async function downloadAndInstall(
+/* ------------------------------------------------------------------ */
+/* Install one package                                                 */
+/* ------------------------------------------------------------------ */
+
+interface StagedPackage {
+  binaryPath: string
+  stagingDir: string
+  stamp: string
+  package: EnginePackage
+  label: string
+  fallbackNote?: string
+}
+
+async function downloadAndStage(
   channel: 'stable' | 'dev',
-  flavour: 'cu12' | 'cu13',
-  variant: Variant,
+  pkg: EnginePackage,
   settings: Settings,
-  cudaWheels = false,
-  releaseTag?: string,
-  architecture: Architecture = 'standard',
-): Promise<{ serverPath: string; stagingDir: string; stamp: string; effectiveVariant: Variant; fallbackNote?: string }> {
+  release: ReleaseContext | null,
+  cudaWheels: boolean,
+): Promise<StagedPackage> {
   await recoverEngineInstall(paths.mossinfer())
-  let effectiveChannel: 'stable' | 'dev' = channel
+  let effectiveChannel = channel
   let source: Source
-  if (channel === 'stable') {
+  if (channel === 'stable' && release) {
     try {
-      source = await queryStable(flavour, variant, settings, releaseTag, architecture)
+      source = stableSource(pkg, release)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const noLatestRelease = !releaseTag && /\/releases\/latest 返回 HTTP 404|Not Found/i.test(message)
-      const noMatchingAsset = error instanceof MissingReleaseAssetError
-      if (releaseTag || (!noLatestRelease && !noMatchingAsset)) throw error
+      if (!(error instanceof MissingReleaseAssetError) || release.pinned) throw error
       publish({ phase: 'querying', version: '上游没有 Release，回退到最新 CI artifact' })
       effectiveChannel = 'dev'
-      source = await queryDev(flavour, variant, settings, architecture)
+      source = await devSource(pkg, settings)
     }
   } else {
-    source = await queryDev(flavour, variant, settings, architecture)
+    if (channel === 'stable') publish({ phase: 'querying', version: '上游没有 Release，回退到最新 CI artifact' })
+    effectiveChannel = 'dev'
+    source = await devSource(pkg, settings)
   }
   if (controller?.signal.aborted) throw new Error('已取消下载')
   publish({ phase: 'downloading', version: source.label, bytes: 0, totalBytes: source.totalHint })
@@ -722,45 +794,32 @@ async function downloadAndInstall(
 
   publish({ phase: 'verifying', bytes: source.totalHint, percent: 100 })
   let archivePath = downloadPath
-  let effectiveVariant = source.effectiveVariant
+  let effective = source.package
   let fallbackNote = source.fallbackNote
   if (effectiveChannel === 'dev') {
     publish({ phase: 'extracting', percent: 0 })
     // The artifact is an outer zip wrapping the CPack archives + their .sha256 files.
-    // Older CI runs predate the system-cuda variant: fall back to the bundled archive
-    // from the same artifact (no second download).
     const outerDir = join(workDir, `${source.stamp}-outer`)
     rmSync(outerDir, { recursive: true, force: true })
     await extractZip(downloadPath, outerDir)
-    rmSync(downloadPath, { force: true }) // the 800 MB artifact zip is no longer needed
-    const pick = (wantSystemCuda: boolean): string | undefined =>
-      readdirSync(outerDir).find(
-        (name) =>
-          name.endsWith(`.${archiveExt()}`) &&
-          name.startsWith('mossinfer-') &&
-          name.includes(`-${flavour}-`) &&
-          (architecture === 'sm75' ? name.includes('-sm75') : !name.includes('-sm75')) &&
-          (wantSystemCuda ? name.includes('-system-cuda') : !name.includes('-system-cuda')),
-      )
-    const wanted =
-      source.effectiveVariant === 'system-cuda'
-        ? (pick(true) ?? pick(false))
-        : pick(false)
+    rmSync(downloadPath, { force: true }) // the artifact zip is no longer needed
+    const names = readdirSync(outerDir)
+    const find = (candidate: EnginePackage): string | undefined => names.find((name) => devInnerArchive(candidate).test(name))
+    let wanted = find(pkg)
+    const other = otherRuntime(pkg)
+    if (!wanted && other && (wanted = find(other))) {
+      effective = other
+      fallbackNote = `该 CI 构件没有 ${pkg.kind === 'cuda' ? pkg.runtime : ''} 变体，已回退到 ${other.kind === 'cuda' ? other.runtime : ''} 包`
+    }
     if (!wanted) throw new Error('构件 zip 里没有找到引擎归档')
-    if (!wanted.includes('-system-cuda') && source.effectiveVariant === 'system-cuda') {
-      effectiveVariant = 'bundled'
-      fallbackNote = '该 CI 构件没有 system-cuda 变体（上游 workflow 更新前的运行），已回退到完整包'
-    }
-    // keep the install dir name honest about what actually landed
-    source.stamp = `${source.stamp.replace(/-(?:sm75-)?system-cuda$/, '').replace(/-sm75$/, '')}${architecture === 'sm75' ? '-sm75' : ''}${effectiveVariant === 'system-cuda' ? '-system-cuda' : ''}`
+    source.stamp = engineStampName('dev', parseEngineStamp(source.stamp)?.tag ?? 'run', effective)
     archivePath = join(outerDir, wanted)
-    const shaFile = readdirSync(outerDir).find((name) => name === `${wanted}.sha256`)
-    if (shaFile) {
-      const expected = readFileSync(join(outerDir, shaFile), 'utf8').trim().split(/\s+/)[0]
-      const actual = createHash('sha256').update(readFileSync(archivePath)).digest('hex')
-      if (expected && actual !== expected) throw new Error(`引擎归档 sha256 校验失败（${wanted}）`)
-    }
-  } else if (source.expectedSha && digest !== source.expectedSha) {
+    const shaFile = names.find((name) => name === `${wanted}.sha256`)
+    if (!shaFile) throw new Error(`构件里没有 ${wanted}.sha256，无法校验，未安装`)
+    const expected = readFileSync(join(outerDir, shaFile), 'utf8').trim().split(/\s+/)[0]
+    const actual = createHash('sha256').update(readFileSync(archivePath)).digest('hex')
+    if (!expected || actual !== expected) throw new Error(`引擎归档 sha256 校验失败（${wanted}）`)
+  } else if (digest !== source.expectedSha) {
     rmSync(downloadPath, { force: true })
     throw new Error('引擎包 sha256 校验失败（SHA256SUMS 不匹配）')
   }
@@ -769,39 +828,105 @@ async function downloadAndInstall(
   const extractDir = join(workDir, `${source.stamp}-extract`)
   rmSync(extractDir, { recursive: true, force: true })
   await extractArchive(archivePath, extractDir)
-  const { serverPath, stagingDir } = await stageTree(extractDir, source.stamp)
+  const { binaryPath, stagingDir } = await stageTree(extractDir, source.stamp, effective.kind)
   try {
     rmSync(archivePath, { force: true })
-    if (effectiveVariant === 'system-cuda' && cudaWheels) {
+    if (effective.kind === 'cuda' && effective.runtime === 'system-cuda' && cudaWheels) {
       publish({ phase: 'cuda_libs' })
-      await installCudaWheels(stagingDir, flavour)
-    } // free the archive before the CUDA-libs download
+      await installCudaWheels(stagingDir, effective.flavour)
+    }
     rmSync(workDir, { recursive: true, force: true })
-    return { serverPath, stagingDir, stamp: source.stamp, effectiveVariant, fallbackNote }
+    return { binaryPath, stagingDir, stamp: source.stamp, package: effective, label: source.label, fallbackNote }
   } catch (error) {
     rmSync(stagingDir, { recursive: true, force: true })
     throw error
   }
 }
 
-export async function downloadMossInfer(
-  channel: 'stable' | 'dev',
-  flavourInput?: 'cu12' | 'cu13',
-  variantInput?: Variant,
-  cudaWheels = false,
-  releaseTag?: string,
-  architectureInput?: ArchitectureChoice,
-  /** Background updates pass a gate so the new build is only activated while no job runs. */
-  activation?: Omit<ActivationGate, 'signal'>,
-): Promise<MossInferDownloadState> {
+/** A NVIDIA GPU this CUDA package is meant for, to check the build against. */
+function verificationGpu(devices: GpuInventoryDevice[], gpuIds: string[] | undefined): GpuInventoryDevice | undefined {
+  const nvidia = devices.filter((device) => (device.vendor ?? 'nvidia') === 'nvidia')
+  return nvidia.find((device) => gpuIds?.includes(device.uuid)) ?? (gpuIds?.length ? undefined : nvidia[0])
+}
+
+/** Checks a staged build before it may replace anything; returns notes for the done state. */
+async function verifyStaged(
+  staged: StagedPackage,
+  gpuIds: string[] | undefined,
+  env: Record<string, string> | undefined,
+): Promise<{ notes: string[]; recommendedFlavour?: string; cublaslt?: unknown }> {
+  const pkg = staged.package
+  if (pkg.kind !== 'cuda') {
+    // The CLIs answer --version without a GPU; a missing runtime library (ROCm) fails here.
+    const result = await run(staged.binaryPath, ['--version'], { timeoutMs: 20_000, env })
+    if (result.code !== 0) {
+      throw new Error(`${enginePackageOptionLabel(pkg)} 引擎无法启动（退出码 ${result.code}）：${(result.stderr || result.stdout).trim().slice(0, 300)}；未激活该构建`)
+    }
+    return { notes: [] }
+  }
+  const probe = await probeEngine(staged.binaryPath)
+  if (!protocolCompatible(probe)) {
+    throw new Error(`新引擎协议为 ${probe.protocol}，需要 protocol 2；未激活该构建`)
+  }
+  const notes: string[] = []
+  const recommended = probe.probe?.recommendedFlavour ?? ''
+  if (recommended && recommended !== pkg.flavour) {
+    notes.push(`引擎建议 CUDA ${recommended.slice(2)}，当前安装的是 CUDA ${pkg.flavour.slice(2)}；请按 GPU 兼容性结果更新驱动`)
+  }
+  const inventory = await refreshGpuInventory()
+  const target = verificationGpu(inventory.devices, gpuIds)
+  if (!target) throw new Error('没有可用于验证新引擎的 NVIDIA GPU；未激活该构建')
+  const verdict = judgeEngineSupport(
+    probe,
+    { index: target.index, name: target.name },
+    { expectedArchitecture: pkg.arch, inventoryCapability: target.computeCapability },
+  )
+  notes.push(...verdict.warnings)
+  if (!verdict.ok) {
+    const os = osToken()
+    const driver = target.driverVersion && !driverSupports(pkg.flavour, os, target.driverVersion)
+      ? `当前 NVIDIA 驱动为 ${target.driverVersion}，CUDA ${pkg.flavour.slice(2)} 引擎需要 ${driverMinimumLabel(pkg.flavour, os)} 或更新版本。`
+      : null
+    throw new Error(
+      [driver, verdict.reason, `新引擎未能验证 ${target.name} 对 ${enginePackageOptionLabel(pkg)} 构建的支持；未激活该构建并保留当前引擎。`]
+        .filter(Boolean).join(' '),
+    )
+  }
+  return { notes, recommendedFlavour: recommended, cublaslt: probe.probe?.cublasLt }
+}
+
+/* ------------------------------------------------------------------ */
+/* Public entry                                                        */
+/* ------------------------------------------------------------------ */
+
+export interface EngineDownloadRequest {
+  channel: 'stable' | 'dev'
+  /** Packages to install, each side by side with the others. */
+  packages: EnginePackage[]
+  releaseTag?: string
+  /** The release, when the caller already fetched it (the plan does). */
+  release?: EngineRelease | null
+  /** Download the NVIDIA CUDA runtime next to a system-CUDA package. */
+  cudaWheels?: boolean
+  /** packageId → the GPUs it is for, to verify CUDA builds against the right card. */
+  targets?: Record<string, string[]>
+  /** Extra environment per package kind for the --version check (HIP: LD_LIBRARY_PATH). */
+  env?: Partial<Record<EnginePackageKind, Record<string, string>>>
+  /** Background updates pass a gate so a new build is only activated while no job runs. */
+  activation?: Omit<ActivationGate, 'signal'>
+  /** Shown while querying, e.g. what the plan detected. */
+  note?: string
+}
+
+export async function downloadMossInfer(request: EngineDownloadRequest): Promise<MossInferDownloadState> {
   if (operationInProgress && current) return current
   if (current && !['done', 'error', 'canceled'].includes(current.phase)) return current
+  const { channel, releaseTag, activation } = request
   const settings = getSettings()
-  const variant: Variant = variantInput ?? settings.mossInferVariant
-  const architectureChoice = architectureInput ?? settings.mossInferArchitecture
   const operationController = new AbortController()
   controller = operationController
   operationInProgress = true
+  const packageIds = request.packages.map(enginePackageId)
   current = {
     channel,
     phase: 'querying',
@@ -810,138 +935,90 @@ export async function downloadMossInfer(
     totalBytes: 0,
     percent: 0,
     speedBps: 0,
+    packages: packageIds,
     updatedAt: new Date().toISOString(),
   }
-  publish({ phase: 'querying' })
-  let architectureNote: string | undefined
-  let flavourNote: string | undefined
-  let selectedGpuUuid: string | undefined
+  publish({ phase: 'querying', ...(request.note ? { note: request.note } : {}) })
   let pendingStagingDir: string | undefined
+  const installed: string[] = []
+  const landed: EnginePackage[] = []
+  const notes: string[] = []
+  let lastBinary: string | undefined
+  let recommendedFlavour: string | undefined
+  let cublaslt: unknown
   try {
-    let architecture: Architecture = architectureChoice === 'auto' ? 'standard' : architectureChoice
-    if (architectureChoice === 'auto') {
-      publish({ phase: 'querying', version: '正在独立扫描 NVIDIA GPU 架构' })
-      const inventory = await getGpuInventory()
-      const gpuSelection = settings.gpuSelection
-      const target = typeof gpuSelection === 'object'
-        ? inventory.devices.find((device) => device.uuid === gpuSelection.uuid)
-        : resolveGpuSelection(inventory.devices, 'auto')
-      if (!target) {
-        throw new Error(
-          inventory.error ??
-            (typeof settings.gpuSelection === 'object'
-              ? '所选 GPU 当前不可用；请在引擎页重新扫描或选择其他 GPU。'
-              : '没有可用于自动架构判断的 NVIDIA GPU；请手动选择架构，或先安装/修复 NVIDIA 驱动。'),
-        )
+    if (request.packages.length === 0) throw new Error('没有需要安装的引擎包')
+    let release: EngineRelease | null = request.release ?? null
+    if (channel === 'stable' && !release) {
+      try {
+        release = await fetchEngineRelease(releaseTag)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (releaseTag || !/\/releases\/latest 返回 HTTP 404|Not Found/i.test(message)) throw error
+        release = null
       }
-      if (!target.computeCapability) {
-        throw new Error(`${target.name} 的 SM 计算能力未知；自动模式不会猜测标准架构，请手动选择架构或修复 NVIDIA 驱动。`)
-      }
-      selectedGpuUuid = target.uuid
-      const recommendedArchitecture = mossInferArchitectureForComputeCapability(
-        target.computeCapability.major,
-        target.computeCapability.minor,
-      )
-      if (!recommendedArchitecture) {
-        throw new Error(
-          `${target.name} 的计算能力为 SM${target.computeCapability.major}${target.computeCapability.minor}，当前上游没有自动匹配的引擎包。`,
-        )
-      }
-      architecture = recommendedArchitecture
-      architectureNote = `按 ${target.name}（GPU ${target.index}，SM${target.computeCapability.major}${target.computeCapability.minor}）选择 ${architecture === 'sm75' ? 'SM75' : '标准'} 包`
     }
-    const inventory = await getGpuInventory()
-    const targetGpu = resolveGpuSelection(inventory.devices, settings.gpuSelection)
-    if (targetGpu) selectedGpuUuid = targetGpu.uuid
-    if (architecture === 'sm75' && process.platform !== 'win32') {
-      throw new Error('上游目前仅提供 Windows CUDA 13 的 SM75 Release，请选择标准架构或自定义引擎目录')
+    const pinnedRelease: ReleaseContext | null = release ? { ...release, pinned: Boolean(releaseTag) } : null
+    for (const [index, pkg] of request.packages.entries()) {
+      const id = enginePackageId(pkg)
+      publish({ phase: 'querying', step: { index, count: request.packages.length, packageId: id }, bytes: 0, totalBytes: 0, percent: 0 })
+      const staged = await downloadAndStage(channel, pkg, settings, pinnedRelease, request.cudaWheels === true)
+      pendingStagingDir = staged.stagingDir
+      const verified = await verifyStaged(staged, request.targets?.[id], request.env?.[staged.package.kind])
+      notes.push(...[staged.fallbackNote, ...verified.notes].filter((note): note is string => Boolean(note)))
+      if (verified.recommendedFlavour) recommendedFlavour = verified.recommendedFlavour
+      if (verified.cublaslt !== undefined) cublaslt = verified.cublaslt
+      // Activation restarts the engine: run it under the activation lock so new
+      // jobs wait for it, and (for background updates) only while no job runs.
+      const binaryPath = await activateWhenAllowed(async () => {
+        const installDir = join(paths.mossinfer(), staged.stamp)
+        const inPlace = engineBinaryPath(installDir, staged.package.kind)
+        const promotion = await promoteInstall({
+          root: paths.mossinfer(),
+          stagingDir: staged.stagingDir,
+          stamp: staged.stamp,
+          currentServerPath: existsSync(inPlace) ? inPlace : null,
+          // Replacing an install that is running: stop its processes first (moss-server, or the Vulkan / HIP CLI jobs).
+          // Only the CLI jobs that run the install being replaced.
+          beforeReplace: staged.package.kind === 'cuda'
+            ? shutdownMossInfer
+            : () => shutdownCliEngines({ kind: staged.package.kind as 'vulkan' | 'hip', binary: installDir }),
+        })
+        pendingStagingDir = undefined
+        const promotedPath = engineBinaryPath(promotion.installDir, staged.package.kind)
+        if (staged.package.kind === 'cuda') {
+          // Each GPU now runs the newest install of its own package: a pin to one moss-server is released.
+          const update = updateSettings({ mossInferServerPath: null, mossInferChannel: channel })
+          emit(Events.settingsChanged, update)
+          await shutdownMossInfer() // 激活其他版本后，下一次任务也不能复用旧二进制 runtime。
+        } else if (getSettings().mossInferChannel !== channel) {
+          emit(Events.settingsChanged, updateSettings({ mossInferChannel: channel }))
+        }
+        await cleanupPromotedInstall(promotion)
+        return promotedPath
+      }, activation ? {
+        ...activation,
+        signal: operationController.signal,
+        onWaiting: () => {
+          publish({ phase: 'verifying', note: '新版本已准备好，等正在运行的任务结束后切换' })
+          activation.onWaiting?.()
+        },
+      } : undefined)
+      installed.push(enginePackageId(staged.package))
+      landed.push(staged.package)
+      lastBinary = binaryPath
+      if (staged.package.kind === 'cuda' || !current.serverPath) current = { ...current, serverPath: binaryPath }
     }
-    let flavour = flavourInput ?? DEFAULT_MOSSINFER_FLAVOUR
-    if (architecture === 'sm75') {
-      if (variant === 'system-cuda' && flavourInput === 'cu12') {
-        throw new Error('SM75 官方包仅提供 CUDA 13；请安装 CUDA 13 cuBLASLt，或改选 bundled CUDA 包')
-      }
-      flavour = 'cu13'
-    }
-    const driverError = mossInferDriverCompatibilityError(flavour, targetGpu?.driverVersion)
-    if (driverError) throw new Error(driverError)
-    const installed = await downloadAndInstall(channel, flavour, variant, settings, cudaWheels, releaseTag, architecture)
-    pendingStagingDir = installed.stagingDir
-    const probe = await probeEngine(installed.serverPath)
-    const recommended = probe.probe?.recommendedFlavour ?? ''
-    if (recommended && recommended !== flavour) {
-      flavourNote = `引擎建议 CUDA ${recommended.slice(2)}，当前仍保留默认 CUDA ${flavour.slice(2)}；请按 GPU 兼容性结果更新驱动`
-    }
-    if (!protocolCompatible(probe)) {
-      throw new Error(`新引擎协议为 ${probe.protocol}，需要 protocol 2；未激活该构建`)
-    }
-    const validationWarnings: string[] = []
-    let verificationGpu = targetGpu
-    if (selectedGpuUuid !== undefined) {
-      const currentInventory = await refreshGpuInventory()
-      verificationGpu = currentInventory.devices.find((device) => device.uuid === selectedGpuUuid) ?? targetGpu
-    }
-    if (!verificationGpu) {
-      throw new Error('没有可用于验证新引擎的 NVIDIA GPU；未激活该构建')
-    }
-    const verdict = judgeEngineSupport(
-      probe,
-      { index: verificationGpu.index, name: verificationGpu.name },
-      {
-        expectedArchitecture: architecture,
-        inventoryCapability: verificationGpu.computeCapability,
-      },
-    )
-    validationWarnings.push(...verdict.warnings)
-    if (!verdict.ok) {
-      const driverError = mossInferDriverCompatibilityError(flavour, verificationGpu.driverVersion)
-      throw new Error(
-        [
-          driverError,
-          verdict.reason,
-          `新引擎未能验证所选 GPU 对 ${architecture} / CUDA ${flavour.slice(2)} 构建的支持；未激活该构建并保留当前引擎。`,
-        ].filter(Boolean).join(' '),
-      )
-    }
-    // Activation restarts the engine: run it under the activation lock so new
-    // jobs wait for it, and (for background updates) only while no job runs.
-    const serverPath = await activateWhenAllowed(async () => {
-      const promotion = await promoteInstall({
-        root: paths.mossinfer(),
-        stagingDir: installed.stagingDir,
-        stamp: installed.stamp,
-        currentServerPath: resolveServerPath(getSettings()),
-        beforeReplace: shutdownMossInfer,
-      })
-      pendingStagingDir = undefined
-      const promotedPath = engineServerPath(promotion.installDir)
-      const update = updateSettings({
-        mossInferServerPath: promotedPath,
-        mossInferChannel: channel,
-        mossInferVariant: installed.effectiveVariant,
-        mossInferArchitecture: architectureChoice,
-      })
-      emit(Events.settingsChanged, update)
-      await shutdownMossInfer() // 激活其他版本后，下一次任务也不能复用旧二进制 runtime。
-      await cleanupPromotedInstall(promotion)
-      return promotedPath
-    }, activation ? {
-      ...activation,
-      signal: operationController.signal,
-      onWaiting: () => {
-        publish({ phase: 'verifying', note: '新版本已准备好，等正在运行的任务结束后切换' })
-        activation.onWaiting?.()
-      },
-    } : undefined)
+    const lastCuda = [...landed].reverse().find((pkg): pkg is Extract<EnginePackage, { kind: 'cuda' }> => pkg.kind === 'cuda')
     publish({
       phase: 'done',
       percent: 100,
-      serverPath,
-      recommendedFlavour: recommended,
-      variant: installed.effectiveVariant,
-      architecture,
-      note: [installed.fallbackNote, architectureNote, flavourNote, ...validationWarnings].filter(Boolean).join('；') || undefined,
-      cublaslt: probe.probe?.cublasLt,
+      serverPath: current.serverPath ?? lastBinary,
+      packages: installed,
+      ...(recommendedFlavour ? { recommendedFlavour } : {}),
+      ...(lastCuda ? { variant: lastCuda.runtime, architecture: lastCuda.arch } : {}),
+      note: notes.join('；') || undefined,
+      cublaslt,
     })
   } catch (error) {
     if (pendingStagingDir) {
@@ -950,11 +1027,14 @@ export async function downloadMossInfer(
     }
     publish({
       phase: operationController.signal.aborted ? 'canceled' : 'error',
+      ...(installed.length ? { packages: installed } : {}),
       error: operationController.signal.aborted ? undefined : error instanceof Error ? error.message : String(error),
     })
   } finally {
     operationInProgress = false
     if (controller === operationController) controller = null
+    // A GPU that now runs another package (e.g. its new Vulkan install) frees its old moss-server's memory now.
+    if (installed.length) void releaseStaleMossInferRuntimes().catch(() => undefined)
   }
   return current
 }

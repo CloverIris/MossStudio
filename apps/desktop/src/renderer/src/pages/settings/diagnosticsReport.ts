@@ -33,9 +33,10 @@ export function diagnosticsReport(input: DiagnosticsInput, now = new Date()): st
     lines.push(`GPU 未检测到${gpu?.error ? `（${gpu.error}）` : ''}`)
   }
   lines.push(`引擎 ${engine ? describeEngineReadiness(engine) : '检测中'}`)
+  for (const device of engine?.devices ?? []) lines.push(`  ${device.name}：${device.packageId ?? '没有可用的引擎'}`)
   if (settings) {
     lines.push(
-      `引擎设置 ${settings.mossInferChannel} · ${settings.mossInferVariant} · ${settings.mossInferArchitecture} · ${settings.mossInferTier} · ${settings.mossInferMemoryMode}`,
+      `引擎设置 ${settings.mossInferChannel} · ${settings.mossInferTier} · ${settings.mossInferMemoryMode}${Object.keys(settings.engineDeviceOverrides ?? {}).length ? ` · 指定引擎 ${Object.entries(settings.engineDeviceOverrides).map(([gpu, id]) => `${gpu}=${id}`).join(', ')}` : ''}`,
       `功能 远程主机 ${settings.remoteHostsEnabled ? '开' : '关'} · 训练 ${settings.trainingEnabled ? '开' : '关'} · 局域网 ${settings.lanWebEnabled ? '开' : '关'}`,
     )
   }

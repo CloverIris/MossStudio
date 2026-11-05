@@ -73,6 +73,23 @@ describe('models', () => {
     await app.screenshot('models-advanced-light')
   })
 
+  it('高级: uses an existing model folder where it is (no copy), and says so', async () => {
+    const page = await app.open({ scenario: 'engineInstalledModelMissing', route: '/models', theme: 'light', defer: true })
+    await page.evaluate(() => {
+      window.__mock.state.localModelFolder = { path: '/workspace/Models/MOSS-Image/sft', name: 'MOSS-Image SFT（sft）', bundleId: 'moss-sft' }
+    })
+    await app.start()
+    await page.getByRole('button', { name: /高级/ }).click()
+    // The action says what it does: nothing is copied.
+    expect(await page.getByText('复制模型文件夹到模型库').count()).toBe(0)
+    const row = page.getByText('在原位置使用这个模型文件夹', { exact: true })
+    await row.scrollIntoViewIfNeeded()
+    await expect.poll(() => row.isVisible()).toBe(true)
+    await page.getByRole('button', { name: '选择文件夹' }).last().click()
+    await expect.poll(() => app.calls('models:import-folder').then((calls) => calls.length)).toBe(1)
+    await expect.poll(() => page.getByText('已在原位置使用 MOSS-Image SFT（sft）').isVisible()).toBe(true)
+  })
+
   it('shows where models live only when 远程主机 is on', async () => {
     let page = await app.open({ scenario: 'remoteHost', route: '/models' })
     await page.getByRole('heading', { name: '模型' }).first().waitFor()

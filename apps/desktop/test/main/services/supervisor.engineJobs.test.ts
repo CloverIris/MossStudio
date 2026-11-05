@@ -9,7 +9,6 @@ import { useTempDataRoot } from '@test/helpers/tempDir'
 
 const emit = vi.hoisted(() => vi.fn())
 const runMossInferJob = vi.hoisted(() => vi.fn())
-const resolveServerPath = vi.hoisted(() => vi.fn())
 const prepareModelSource = vi.hoisted(() => vi.fn())
 const refreshGpuInventory = vi.hoisted(() => vi.fn())
 const probeLocalEngineGpuCompatibility = vi.hoisted(() => vi.fn())
@@ -21,7 +20,8 @@ const getTrainingHost = vi.hoisted(() => vi.fn())
 vi.mock('@main/lib/events', () => ({ emit, onEmit: () => () => undefined }))
 vi.mock('@main/services/mossInfer', () => ({
   runMossInferJob,
-  resolveServerPath,
+  // No MOSS_SERVER / bundled / PATH moss-server: jobs must find the install this branch made.
+  resolveServerPath: () => null,
   cancelMossInferJob,
   restartMossInfer,
 }))
@@ -29,8 +29,9 @@ vi.mock('@main/services/remoteEngine', () => ({ runRemoteEngineJob, cancelRemote
 vi.mock('@main/services/trainingHosts', () => ({ getTrainingHost }))
 vi.mock('@main/services/ssh', () => ({ remoteAbsolute: async (_host: unknown, path: string) => path, sshExec: vi.fn() }))
 vi.mock('@main/services/modelBundles', () => ({ prepareModelSource }))
-vi.mock('@main/services/devices', () => ({ refreshGpuInventory }))
+vi.mock('@main/services/devices', () => ({ refreshGpuInventory, cachedGpuInventory: () => ({ devices: [gpu] }) }))
 vi.mock('@main/services/engines', () => ({ probeLocalEngineGpuCompatibility }))
+// Every GPU here runs moss-server from a real managed install (see beforeEach); supervisor.cliJobs.test.ts covers the CLI engines.
 vi.mock('@main/services/desktopNotifications', () => ({ pushLocalNotification: vi.fn() }))
 vi.mock('@main/services/diagnostics', () => ({ pushDiagnostic: vi.fn() }))
 vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async () => undefined }))
@@ -38,7 +39,7 @@ vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async ()
 const dataRoot = useTempDataRoot()
 let supervisor: typeof import('@main/services/supervisor')
 
-const gpu: GpuInventoryDevice = { uuid: 'GPU-a', index: 0, name: 'RTX Test', computeCapability: { major: 8, minor: 9 } }
+const gpu: GpuInventoryDevice = { uuid: 'GPU-a', index: 0, name: 'RTX Test', computeCapability: { major: 8, minor: 9 }, driverVersion: '590.48.01' }
 
 /** The sink of every job handed to the engine, by job id. */
 let sinks: Map<string, MossInferSink>
@@ -60,17 +61,17 @@ beforeEach(async () => {
     starts.push({ job, params, opts })
     sinks.set(job.id, sink)
   })
-  const server = join(dataRoot(), 'moss-server')
+  // What downloadMossInfer leaves behind: <engine root>/stable-<tag>-<package>/bin/moss-server, nothing in settings.
+  const server = join(dataRoot(), 'mossinfer', 'stable-v2.2.0-cu13', 'bin', 'moss-server')
+  mkdirSync(join(server, '..'), { recursive: true })
   writeFileSync(server, '#!')
-  resolveServerPath.mockReset().mockReturnValue(server)
   const bundle = join(dataRoot(), 'bundle')
   mkdirSync(bundle, { recursive: true })
   writeFileSync(join(bundle, 'clover_model.json'), JSON.stringify({ bundleId: 'b' }))
   prepareModelSource.mockReset().mockResolvedValue({ model: bundle })
   refreshGpuInventory.mockReset().mockResolvedValue({ devices: [gpu] })
-  probeLocalEngineGpuCompatibility.mockReset().mockResolvedValue({
-    hello: decodeEngineHello({ protocol_version: 2, probe: { devices: [{ index: 0, name: 'RTX Test', supported: true, compute_capability: '8.9' }] } }),
-  })
+  const hello = decodeEngineHello({ protocol_version: 2, probe: { devices: [{ index: 0, name: 'RTX Test', supported: true, compute_capability: '8.9' }] } })
+  probeLocalEngineGpuCompatibility.mockReset().mockResolvedValue({ hello, helloFor: () => hello })
   supervisor = await import('@main/services/supervisor')
 })
 
@@ -81,6 +82,21 @@ const request = (prompt: string, patch: Record<string, unknown> = {}) => ({
 /** Every job update emitted for `id`, in order. */
 const updates = (id: string): JobRecord[] =>
   emit.mock.calls.filter(([channel, job]) => channel === Events.job && (job as JobRecord).id === id).map(([, job]) => job as JobRecord)
+
+describe('engine jobs: the moss-server of the GPU\'s own install', () => {
+  it('starts on a managed install with no moss-server path in settings, and says so when there is none', async () => {
+    const { getSettings } = await import('@main/services/settings')
+    expect(getSettings().mossInferServerPath).toBeNull()
+    await supervisor.startEngineJob(request('installed'))
+    expect(runMossInferJob).toHaveBeenCalledTimes(1)
+
+    const { rmSync } = await import('node:fs')
+    rmSync(join(dataRoot(), 'mossinfer'), { recursive: true, force: true })
+    vi.resetModules()
+    supervisor = await import('@main/services/supervisor')
+    await expect(supervisor.startEngineJob(request('nothing installed'))).rejects.toThrow('未找到 moss-server')
+  })
+})
 
 describe('engine jobs: inputs', () => {
   it('carries the image inputs into the job params and to the engine', async () => {

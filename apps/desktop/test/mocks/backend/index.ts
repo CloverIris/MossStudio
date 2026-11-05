@@ -22,6 +22,7 @@ import { Events, Ipc } from '@shared/channels'
 import type { AiChatInput, AiConversationInfo, AiMessage } from '@shared/ai'
 import type { WebAccessInfo } from '@shared/backend'
 import type { EngineHello } from '@shared/engineProtocol'
+import { enginePlanFor } from './machines'
 import type {
   DownloadTask,
   EngineGpuProbeSnapshot,
@@ -191,6 +192,21 @@ function defaultHandlers(): Map<string, Handler> {
 
   // Models & downloads
   h.set(Ipc.modelsCatalog, (_, { state }) => state.catalog)
+  // 在原位置使用这个模型文件夹: like main with a MOSS-Image SFT diffusers folder picked
+  // (state.localModelFolder; null = the dialog was canceled). Its bundle's components become ready.
+  h.set(Ipc.modelsImportFolder, (_, { state }) => {
+    const folder = state.localModelFolder
+    if (!folder) return { canceled: true, added: 0, duplicates: 0 }
+    const bundle = state.catalog.bundles.find((item) => item.id === folder.bundleId)
+    const ids = new Set(bundle ? [...Object.values(bundle.components), bundle.support] : [])
+    state.catalog = {
+      ...state.catalog,
+      models: state.catalog.models.map((model) => (ids.has(model.id)
+        ? { ...model, installed: true, installState: 'ready' as const, installedBytes: model.sizeBytes, localPath: folder.path, tags: [...model.tags, 'local-folder'] }
+        : model)),
+    }
+    return { canceled: false, added: 1, duplicates: 0, folders: [folder.name] }
+  })
   h.set(Ipc.downloadsList, (_, { state }) => state.downloads)
   const beginDownload = (state: MockBackendState, kind: 'model' | 'adapter', id: string): DownloadTask => {
     const entry = kind === 'model' ? state.catalog.models.find((item) => item.id === id) : state.catalog.adapters.find((item) => item.id === id)
@@ -294,10 +310,15 @@ function defaultHandlers(): Map<string, Handler> {
   })
   h.set(Ipc.mossInferDownloadState, (_, { state }) => state.engineDownload)
   h.set(Ipc.mossInferDownload, (payload, { state }) => {
-    const input = p<{ channel?: 'stable' | 'dev' }>(payload)
-    state.engineDownload = { channel: input.channel ?? 'stable', phase: 'querying', bytes: 0, totalBytes: 0, percent: 0, speedBps: 0, updatedAt: FIXTURE_NOW }
+    const input = p<{ channel?: 'stable' | 'dev'; packages?: string[] }>(payload)
+    // Like main: without packages, whatever the plan is missing.
+    const plan = enginePlanFor(state.engineMachine, state.engineAssets, state.settings, state.engineVersions)
+    if (!input.packages && plan.blocked) throw new MockIpcError('E_ENGINE_UNSUPPORTED', plan.blocked)
+    const packages = input.packages ?? plan.missing
+    state.engineDownload = { channel: input.channel ?? 'stable', phase: 'querying', bytes: 0, totalBytes: 0, percent: 0, speedBps: 0, packages, updatedAt: FIXTURE_NOW }
     return state.engineDownload
   })
+  h.set(Ipc.enginePlan, (_, { state }) => enginePlanFor(state.engineMachine, state.engineAssets, state.settings, state.engineVersions))
   h.set(Ipc.mossInferDownloadCancel, (_, { state }) => {
     if (state.engineDownload) state.engineDownload = { ...state.engineDownload, phase: 'canceled' }
     return state.engineDownload

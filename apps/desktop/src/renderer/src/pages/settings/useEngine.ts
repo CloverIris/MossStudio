@@ -3,33 +3,28 @@ import { Ipc } from '@shared/channels'
 import type { EngineHello } from '@shared/engineProtocol'
 import type {
   EngineGpuProbeSnapshot,
+  EnginePlanView,
   GpuInventorySnapshot,
   LocalEngineVersion,
   MossInferDownloadState,
   MossInferRelease,
-  RemoteEngineInstallOptions,
 } from '@shared/types'
+import { parseEngineStamp } from '@shared/engineUpdate'
 import { call } from '../../lib/api'
-import { planEngineInstall, type SystemCudaCheck } from '../../lib/engineInstall'
 import { useApp } from '../../store'
 import { errorText } from './fields'
 
 export interface LocalInstallOptions {
   channel: 'stable' | 'dev'
-  variant: 'system-cuda' | 'bundled'
-  architecture: RemoteEngineInstallOptions['architecture']
-  flavour?: 'cu12' | 'cu13'
   releaseTag?: string
-  /** Download the CUDA runtime next to a system-CUDA package. */
-  cudaWheels?: boolean
-  /** The system CUDA check already ran for this install. */
-  preflighted?: boolean
+  /** Package ids; omitted = what the plan says this computer is missing. */
+  packages?: string[]
+  /** Reinstall every planned package (a chosen release, a channel switch). */
+  all?: boolean
 }
 
 export type InstallOutcome =
   | { kind: 'started' }
-  /** The system-CUDA package was asked for but this computer has no matching CUDA library. */
-  | { kind: 'needs-cuda'; check: SystemCudaCheck }
   | { kind: 'failed'; message: string }
 
 /**
@@ -98,40 +93,45 @@ export function useEngine(inventory: GpuInventorySnapshot | null) {
     void runProbe()
   }, [readiness?.state, readiness?.path, inventory?.scannedAt, runProbe])
 
+  const [plan, setPlan] = useState<EnginePlanView | null>(null)
+  const [planError, setPlanError] = useState<string | null>(null)
+  const [planning, setPlanning] = useState(false)
+  const loadPlan = useCallback(async (refresh = false): Promise<EnginePlanView | null> => {
+    setPlanning(true)
+    try {
+      const next = await call<EnginePlanView>(Ipc.enginePlan, { refresh })
+      setPlan(next)
+      setPlanError(null)
+      return next
+    } catch (error) {
+      setPlanError(errorText(error))
+      return null
+    } finally {
+      setPlanning(false)
+    }
+  }, [])
+  // Which package each GPU gets changes with installs and with the per-GPU choice in 高级.
+  const overrides = useApp((state) => JSON.stringify(state.settings?.engineDeviceOverrides ?? {}))
+  useEffect(() => { void loadPlan() }, [loadPlan, readiness?.path, download?.phase, overrides])
+
   const install = useCallback(async (options: LocalInstallOptions): Promise<InstallOutcome> => {
     try {
-      if (options.variant === 'system-cuda' && !options.cudaWheels && !options.preflighted) {
-        const check = await call<SystemCudaCheck>(Ipc.engineSystemCuda)
-        const plan = planEngineInstall(check)
-        if (plan.kind === 'driver') return { kind: 'failed', message: plan.message }
-        if (!check.supported) return { kind: 'needs-cuda', check }
-      }
       const pending = call<MossInferDownloadState>(Ipc.mossInferDownload, {
         channel: options.channel,
-        variant: options.variant,
-        architecture: options.architecture,
-        ...(options.flavour ? { flavour: options.flavour } : {}),
-        ...(options.cudaWheels ? { cudaWheels: true } : {}),
+        ...(options.packages?.length ? { packages: options.packages } : {}),
+        ...(options.all ? { all: true } : {}),
         ...(options.channel === 'stable' && options.releaseTag ? { releaseTag: options.releaseTag } : {}),
       })
       // Progress arrives through events; the call itself resolves when the install ends.
-      void pending.then((state) => { setDownload(state); void refreshReadiness(); void refreshVersions() }, () => undefined)
+      void pending.then((state) => { setDownload(state); void refreshReadiness(); void refreshVersions(); void loadPlan() }, () => undefined)
       return { kind: 'started' }
     } catch (error) {
       return { kind: 'failed', message: errorText(error) }
     }
-  }, [refreshReadiness, refreshVersions, setDownload])
+  }, [loadPlan, refreshReadiness, refreshVersions, setDownload])
 
-  /** The automatic choice used by 安装引擎: small package when CUDA is present, self-contained otherwise. */
-  const installRecommended = useCallback(async (): Promise<InstallOutcome> => {
-    try {
-      const plan = planEngineInstall(await call<SystemCudaCheck>(Ipc.engineSystemCuda))
-      if (plan.kind === 'driver') return { kind: 'failed', message: plan.message }
-      return install({ channel: plan.channel, variant: plan.variant, architecture: plan.architecture, preflighted: true })
-    } catch (error) {
-      return { kind: 'failed', message: errorText(error) }
-    }
-  }, [install])
+  /** 安装引擎 / 更新: whatever each GPU of this computer is missing, from the latest release. */
+  const installRecommended = useCallback((): Promise<InstallOutcome> => install({ channel: 'stable' }), [install])
 
   const cancelInstall = useCallback(async () => {
     try { await call(Ipc.mossInferDownloadCancel) } catch { /* already finished */ }
@@ -141,7 +141,9 @@ export function useEngine(inventory: GpuInventorySnapshot | null) {
     readiness,
     download,
     versions,
-    current: versions.find((version) => version.current) ?? null,
+    // Several installs can be in use (one per kind of GPU): the moss-server one names the version.
+    current: versions.find((version) => version.current && parseEngineStamp(version.name)?.package.kind === 'cuda')
+      ?? versions.find((version) => version.current) ?? null,
     releases,
     releasesError,
     loadingReleases,
@@ -155,6 +157,10 @@ export function useEngine(inventory: GpuInventorySnapshot | null) {
     installRecommended,
     cancelInstall,
     refreshVersions,
+    plan,
+    planError,
+    planning,
+    loadPlan,
   }
 }
 

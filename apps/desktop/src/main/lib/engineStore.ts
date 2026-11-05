@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { EngineInstallAttempt, EngineInstallProgress } from '@shared/types'
+import { engineBinaryName, type EnginePackageKind } from '@shared/enginePackages'
 
 export interface EngineInstallPromotion {
   installDir: string
@@ -123,6 +124,11 @@ export function isManagedEngineDirectory(name: string): boolean {
 
 export function engineServerPath(installDir: string): string {
   return join(installDir, 'bin', process.platform === 'win32' ? 'moss-server.exe' : 'moss-server')
+}
+
+/** The program a package of this kind runs: bin/moss-server, bin/moss-infer-vulkan or bin/moss-infer-hip. */
+export function engineBinaryPath(installDir: string, kind: EnginePackageKind): string {
+  return join(installDir, 'bin', engineBinaryName(kind, process.platform))
 }
 
 /** 只有完成安装检查的 staging 才能晋升；settings 由调用方在成功后更新。 */

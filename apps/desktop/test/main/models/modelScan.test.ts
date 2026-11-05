@@ -1,5 +1,5 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { isScannableWeights, scanModelDirectory } from '@main/services/modelScan'
 import { useTempDir } from '@test/helpers/tempDir'
@@ -58,7 +58,9 @@ describe('scanModelDirectory', () => {
     const root = await fixture({ 'model_index.json': 2, 'transformer/model.safetensors': 4 })
     const result = await scanModelDirectory(root)
     expect(result.candidates).toHaveLength(1)
-    expect(result.candidates[0]!.relativePath).toBe('.')
+    // Shown by its folder name, never ".".
+    expect(result.candidates[0]!.relativePath).toBe(basename(root))
+    expect(result.candidates[0]!.name).toBe(basename(root))
   })
 
   it('scanning never writes into the scanned directory', async () => {

@@ -1,6 +1,7 @@
 import { ArrowDownToLine, FolderInput, Pause, Play, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Ipc } from '@shared/channels'
+import { importFolderMessage, type ImportFolderResult } from '../../lib/modelFolder'
 import type { Catalog, DownloadTask, ModelEntry } from '@shared/types'
 import { call } from '../../lib/api'
 import { ModelDirectoriesCard } from '../../components/ModelDirectoriesCard'
@@ -225,12 +226,9 @@ function ImportFolderRow(): React.JSX.Element {
   async function importFolder(): Promise<void> {
     setBusy(true)
     try {
-      const result = await call<{ canceled: boolean; added: number; duplicates: number }>(Ipc.modelsImportFolder)
+      const result = await call<ImportFolderResult>(Ipc.modelsImportFolder)
       if (result.canceled) return
-      toast.push(
-        result.added ? `已导入 ${result.added} 个模型文件${result.duplicates ? `，${result.duplicates} 个重复的已跳过` : ''}` : '这个文件夹里的文件都已经导入过',
-        'success',
-      )
+      toast.push(importFolderMessage(result), 'success')
     } catch (cause) {
       toast.push(errorText(cause), 'error')
     } finally {
@@ -239,7 +237,7 @@ function ImportFolderRow(): React.JSX.Element {
   }
   return (
     <Group>
-      <Row title="复制模型文件夹到模型库" description="把一个模型文件夹复制进模型目录，适合从别的电脑拷来的模型。">
+      <Row title="在原位置使用这个模型文件夹" description="选一个已有的模型文件夹（例如从别的电脑拷来的 MOSS-Image）。文件留在原处，不复制、不移动。">
         <Button tone="secondary" disabled={busy} onClick={() => void importFolder()}>
           {busy ? <Spinner /> : <FolderInput className="size-4" strokeWidth={1.6} />}选择文件夹
         </Button>

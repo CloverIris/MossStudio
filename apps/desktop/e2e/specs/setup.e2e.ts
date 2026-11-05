@@ -85,9 +85,9 @@ describe('first run', () => {
     expect(await app.calls('mossinfer:download')).toHaveLength(0)
   })
 
-  it('explains a missing NVIDIA GPU and re-checks on request', async () => {
+  it('explains a missing GPU and re-checks on request', async () => {
     const page = await app.open({ scenario: 'noGpu', route: '/setup', theme: 'dark' })
-    await expect.poll(() => page.getByText('在这台电脑上生成图片需要一块 NVIDIA 显卡', { exact: false }).isVisible()).toBe(true)
+    await expect.poll(() => page.getByText('在这台电脑上没有找到能运行引擎的显卡', { exact: false }).isVisible()).toBe(true)
     expect(await page.getByRole('button', { name: '开始准备' }).isDisabled()).toBe(true)
     // Remote hosts are off: point at where to turn them on, nothing more.
     await expect.poll(() => page.getByRole('button', { name: '去开启远程主机' }).isVisible()).toBe(true)
@@ -97,11 +97,43 @@ describe('first run', () => {
       const { fixtures, state } = window.__mock
       state.gpuInventory = fixtures.gpuInventoryFixture()
       state.devices = [fixtures.launchDeviceFixture()]
+      state.engineMachine = fixtures.machineFixture('nvidia')
     })
     await page.getByRole('button', { name: '重新检测' }).click()
     await expect.poll(() => app.calls('gpu:inventory-refresh').then((calls) => calls.length)).toBeGreaterThan(0)
+    // The machine is probed again too (AMD / Intel GPUs come from there).
+    await expect.poll(() => app.calls<{ refresh?: boolean }>('engine:plan').then((calls) => calls.filter((call) => call?.refresh).length)).toBeGreaterThan(1)
     await expect.poll(() => page.getByRole('button', { name: '开始准备' }).isEnabled()).toBe(true)
-    await expect.poll(() => page.getByText('在这台电脑上生成图片需要一块 NVIDIA 显卡', { exact: false }).count()).toBe(0)
+    await expect.poll(() => page.getByText('在这台电脑上没有找到能运行引擎的显卡', { exact: false }).count()).toBe(0)
+  })
+
+  it('已有模型文件？ uses a local folder instead of the 25 GB download', async () => {
+    const page = await app.open({ scenario: 'firstRun', route: '/setup', defer: true })
+    await page.evaluate(() => {
+      window.__mock.state.localModelFolder = { path: '/workspace/Models/MOSS-Image/sft', name: 'MOSS-Image SFT（sft）', bundleId: 'moss-sft' }
+    })
+    await app.start()
+    const steps = page.getByRole('list', { name: '准备步骤' })
+    await page.getByRole('button', { name: '已有模型文件？使用本地文件夹' }).click()
+    await expect.poll(() => app.calls('models:import-folder').then((calls) => calls.length)).toBe(1)
+    await expect.poll(() => page.getByText(/已在原位置使用 MOSS-Image SFT（sft），不用再下载模型/).isVisible()).toBe(true)
+    await expect.poll(() => steps.getByText(/已就绪/).count()).toBeGreaterThan(0)
+    // The quiet action leaves once the model is there.
+    expect(await page.getByRole('button', { name: '已有模型文件？使用本地文件夹' }).count()).toBe(0)
+    await page.getByRole('button', { name: '开始准备' }).click()
+    await expect.poll(() => app.calls('mossinfer:download').then((calls) => calls.length)).toBe(1)
+    expect(await app.calls('models:download')).toEqual([])
+  })
+
+  it('a folder that is not a usable MOSS-Image keeps the download, and says why', async () => {
+    const page = await app.open({ scenario: 'firstRun', route: '/setup', defer: true })
+    await page.evaluate(() => {
+      window.__mock.state.localModelFolder = { path: '/data/my-finetune', name: 'my-finetune', bundleId: 'none' }
+    })
+    await app.start()
+    await page.getByRole('button', { name: '已有模型文件？使用本地文件夹' }).click()
+    await expect.poll(() => page.getByText(/不是可以直接使用的 MOSS-Image 模型/).isVisible()).toBe(true)
+    expect(await page.getByRole('button', { name: '已有模型文件？使用本地文件夹' }).count()).toBe(1)
   })
 
   it('sends a GPU-less user to turn on remote hosts', async () => {

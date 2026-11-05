@@ -1,5 +1,6 @@
 import type { ReleaseHomeCopy, ReleaseInstaller } from './release'
 import type { EngineComputeCapability, EngineDevice } from './engineProtocol'
+import type { EngineMachine, EnginePlan } from './engineChoice'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'unknown'
 
@@ -184,8 +185,8 @@ export interface Settings {
   mossInferMemoryMode: 'min_memory' | 'balanced' | 'max_speed'
   mossInferTier: 'reference' | 'high' | 'turbo'
   mossInferChannel: 'stable' | 'dev'
-  mossInferVariant: 'system-cuda' | 'bundled'
-  mossInferArchitecture: 'auto' | 'standard' | 'sm75'
+  /** deviceUuid → engine package id (`cu13`, `vulkan`, …) chosen in 设置 › 设备 › 高级; absent = automatic. */
+  engineDeviceOverrides: Record<string, string>
   gpuSelection: GpuSelection
   gpuProfileMode: 'auto' | 'custom'
   gpuProfileOverrides: Record<string, GpuProfileOverride>
@@ -216,6 +217,14 @@ export interface GpuInventoryDevice {
   memoryFreeBytes?: number
   utilizationPercent?: number
   driverVersion?: string
+  /** `10de:2757`. */
+  pciId?: string
+  /** Absent means NVIDIA (nvidia-smi rows); other GPUs come from the engine's Vulkan probe. */
+  vendor?: 'nvidia' | 'amd' | 'intel' | 'other'
+  /** Index of this GPU in `moss-infer-vulkan --list-devices`. */
+  vulkanIndex?: number
+  /** AMD on Linux: `gfx1100`. */
+  gfxTarget?: string
 }
 
 export interface GpuInventorySnapshot {
@@ -269,6 +278,12 @@ export interface RemoteCudaProbe {
   recommendedVariant?: 'system-cuda' | 'bundled'
   standardArchitectureSupported?: boolean
   gpuReason?: string
+  /** nvidia-smi names, one per GPU in the order of computeCapabilities. */
+  gpuNames?: string[]
+  /** PCI ids of every display device (`/sys/class/drm`), to tell a host with only AMD / Intel GPUs. */
+  pciIds?: string[]
+  /** nvidia-smi did not answer within 15 s: the GPU list is unknown, not empty. */
+  nvidiaSmiTimedOut?: boolean
   error?: string
 }
 
@@ -288,7 +303,7 @@ export interface RemoteEngineInstallOptions {
   channel?: 'stable' | 'dev'
   flavour?: 'cu12' | 'cu13'
   variant?: 'system-cuda' | 'bundled'
-  architecture?: 'auto' | 'standard' | 'sm75'
+  architecture?: 'auto' | 'standard' | 'sm75' | 'sm70'
   releaseTag?: string
 }
 
@@ -314,11 +329,31 @@ export interface MossInferDownloadState {
   serverPath?: string
   recommendedFlavour?: string
   variant?: 'system-cuda' | 'bundled'
-  architecture?: 'standard' | 'sm75'
+  architecture?: 'standard' | 'sm75' | 'sm70'
+  /** Package ids this install covers (`cu13`, `vulkan`, …); on done/error the ones that landed. */
+  packages?: string[]
+  /** Which package of a multi-package install is in progress. */
+  step?: { index: number; count: number; packageId: string }
   note?: string
   cublaslt?: unknown
   error?: string
   updatedAt: string
+}
+
+/** The engine plan for this computer (engine:plan): what was detected, which package each GPU gets, what is missing. */
+export type EnginePlanView = EnginePlan & {
+  channel: 'stable' | 'dev'
+  /** The release planned against; null offline or on the dev channel without a release. */
+  releaseTag: string | null
+  machine: EngineMachine
+  probedAt: string
+  /** Probes that failed. */
+  notes: string[]
+  /** Package ids installed (newest of each). */
+  installed: string[]
+  /** Planned package ids not installed at this release yet. */
+  missing: string[]
+  releaseError?: string
 }
 
 export interface MossInferRelease {
@@ -356,6 +391,8 @@ export interface EngineReadiness {
   state: EngineReadinessState
   path: string | null
   reason?: string
+  /** Per local GPU: the package it runs (null = nothing installed runs on it). */
+  devices?: Array<{ deviceUuid: string; name: string; packageId: string | null; path: string | null }>
   installing?: EngineInstallProgress
   lastAttempt?: EngineInstallAttempt
 }
@@ -797,6 +834,10 @@ export interface EngineFeatures {
   references: boolean
   hires: boolean
   samplers: boolean
+  /** LoRA adapters (`adapters`). */
+  lora: boolean
+  /** Set when the engine is a one-shot CLI (moss-infer-vulkan / moss-infer-hip): text to image only. */
+  cli?: 'vulkan' | 'hip'
   /** Accepted names per enum parameter, e.g. `{ sampler: ['euler', …], scheduler: [...], resize: [...] }`. */
   values: Record<string, string[]>
 }

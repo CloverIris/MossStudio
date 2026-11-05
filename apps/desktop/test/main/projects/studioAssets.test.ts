@@ -1,8 +1,10 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ProjectCanvas } from '@shared/types'
 import { readImageHeader } from '@main/services/imageHeaders'
+import { canvas } from '@test/renderer/studio/fixtures'
 import { useTempDataRoot, useTempDir } from '@test/helpers/tempDir'
 
 const dataRoot = useTempDataRoot()
@@ -213,5 +215,75 @@ describe('saveMask', () => {
     const huge = Buffer.concat([png(4, 4), Buffer.alloc(assets.MAX_MASK_BYTES)])
     await expect(assets.saveMask('project-1', 'c', huge)).rejects.toMatchObject({ code: 'E_IMAGE_TOO_LARGE' })
     await expect(assets.saveMask('a/b', 'c', png(4, 4))).rejects.toMatchObject({ code: 'E_INPUT' })
+  })
+})
+
+describe('mask cleanup', () => {
+  const strokes = [png(4, 4), png(5, 5), png(6, 6), png(7, 7)]
+  const masks = (): string[] => readdirSync(assetsDir()).filter((name) => name.startsWith('mask-')).sort()
+
+  async function project(canvases: Array<Partial<ProjectCanvas>>): Promise<void> {
+    const { saveProject } = await import('@main/services/projects')
+    saveProject({ id: 'project-1', name: 'p', canvases: canvases.map((patch) => canvas(patch)) })
+  }
+
+  beforeEach(async () => {
+    // saveProject makes a new id unless the project exists: create project-1 first.
+    mkdirSync(assetsDir(), { recursive: true })
+    writeFileSync(join(assetsDir(), '..', 'project.json'), JSON.stringify({ schemaVersion: 3, id: 'project-1', name: 'p', canvases: [], createdAt: '', updatedAt: '' }))
+  })
+
+  it('keeps only the latest mask of a canvas painted four times', async () => {
+    let previous: string | undefined
+    for (const stroke of strokes) {
+      previous = (await assets.saveMask('project-1', 'canvas-7', stroke, { replaces: previous })).path
+    }
+    expect(masks()).toEqual([previous!.split(/[\\/]/).pop()])
+  })
+
+  it('keeps the replaced mask while another canvas or a result still uses it', async () => {
+    const first = (await assets.saveMask('project-1', 'canvas-7', strokes[0]!)).path
+    await project([
+      { id: 'canvas-7', inputs: { init: { link: { canvasId: 'img' }, strength: 0.5 }, mask: { path: first } } },
+      { id: 'result-1', kind: 'result', inputs: { init: { link: { canvasId: 'img' }, strength: 0.5 }, mask: { path: first } } },
+    ])
+    await assets.saveMask('project-1', 'canvas-7', strokes[1]!, { replaces: first })
+    expect(masks()).toHaveLength(2)
+    expect(existsSync(first)).toBe(true)
+  })
+
+  it('keeps the replaced mask while a waiting or running job reads it', async () => {
+    const first = (await assets.saveMask('project-1', 'canvas-7', strokes[0]!)).path
+    await assets.saveMask('project-1', 'canvas-7', strokes[1]!, { replaces: first, inUse: [first] })
+    expect(existsSync(first)).toBe(true)
+  })
+
+  it("never deletes what is not this project's own mask file", async () => {
+    const picture = await assets.importImageBytes('project-1', png(9, 9))
+    expect(await assets.releaseMask('project-1', 'canvas-7', picture.path)).toBe(false)
+    expect(existsSync(picture.path)).toBe(true)
+    mkdirSync(join(dataRoot(), 'projects', 'project-2', 'assets'), { recursive: true })
+    const foreign = (await assets.saveMask('project-2', 'canvas-7', strokes[0]!)).path
+    expect(await assets.releaseMask('project-1', 'canvas-7', foreign)).toBe(false)
+    expect(existsSync(foreign)).toBe(true)
+    const outside = join(pictures(), 'mask-canvas-7-000000000000000000000000.png')
+    writeFileSync(outside, strokes[0]!)
+    expect(await assets.releaseMask('project-1', 'canvas-7', outside)).toBe(false)
+    expect(existsSync(outside)).toBe(true)
+  })
+
+  it('a save drops the masks no canvas references, and keeps referenced, in-use and other assets', async () => {
+    const used = (await assets.saveMask('project-1', 'canvas-1', strokes[0]!)).path
+    const byResult = (await assets.saveMask('project-1', 'canvas-2', strokes[1]!)).path
+    const byJob = (await assets.saveMask('project-1', 'canvas-3', strokes[2]!)).path
+    const orphan = (await assets.saveMask('project-1', 'canvas-4', strokes[3]!)).path
+    const picture = await assets.importImageBytes('project-1', png(9, 9))
+    const canvases = [
+      canvas({ id: 'canvas-1', inputs: { init: { link: { canvasId: 'img' }, strength: 0.5 }, mask: { path: used } } }),
+      canvas({ id: 'result-2', kind: 'result', inputs: { init: { link: { canvasId: 'img' }, strength: 0.5 }, mask: { path: byResult } } }),
+    ]
+    expect(await assets.pruneProjectMasks({ id: 'project-1', canvases }, [byJob])).toEqual([resolve(orphan)])
+    for (const kept of [used, byResult, byJob, picture.path]) expect(existsSync(kept)).toBe(true)
+    expect(existsSync(orphan)).toBe(false)
   })
 })

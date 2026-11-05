@@ -6,10 +6,11 @@ import { gpuRequiresBf16Tier } from '@shared/gpuProfile'
 import type { GpuInventorySnapshot, LocalEngineVersion, Settings } from '@shared/types'
 import { call } from '../../lib/api'
 import { dateTime } from '../../lib/format'
-import { engineDownloadActive, type SystemCudaCheck } from '../../lib/engineInstall'
+import { engineDownloadActive, packageLabel } from '../../lib/engineInstall'
+import { enginePackageOptionLabel } from '@shared/enginePackages'
 import { useApp } from '../../store'
 import { Button, ConfirmDialog, IconButton, Pill, Row, Segmented, Select, Spinner, useToast } from '../../components/ui'
-import { applyGpuOverride, type OverrideField } from './devicesModel'
+import { applyEngineOverride, applyGpuOverride, engineOverrideOptions, fixedEngineSettingsNote, type OverrideField } from './devicesModel'
 import { FolderRow, errorText, pickFolder, useSaveSettings } from './fields'
 import { useAppInfo } from './useAppInfo'
 import type { EngineState, InstallOutcome, LocalInstallOptions } from './useEngine'
@@ -71,6 +72,9 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
           {inventory!.devices.map((device) => {
             const override = settings.gpuProfileOverrides?.[device.uuid]
             const bf16Only = gpuRequiresBf16Tier(device)
+            // Vulkan / HIP engines take neither setting: one quiet line instead of the pickers.
+            const fixed = fixedEngineSettingsNote(engine.readiness, device.uuid)
+            if (fixed) return <Row key={device.uuid} title={device.name} description={fixed} />
             return (
               <Row key={device.uuid} title={device.name} description={bf16Only ? '这块显卡只能使用 Reference 档位' : `GPU ${device.index}`}>
                 <Select
@@ -94,6 +98,8 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
         </>
       ) : null}
 
+      <GpuEngines engine={engine} />
+
       <SubHeading>安装方式</SubHeading>
       <InstallOptions engine={engine} />
 
@@ -115,15 +121,63 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
   )
 }
 
+/** One GPU per row: which engine package it runs; 自动 follows the plan. */
+function GpuEngines({ engine }: { engine: EngineState }): React.JSX.Element | null {
+  const settings = useApp((state) => state.settings)!
+  const save = useSaveSettings()
+  const toast = useToast()
+  const plan = engine.plan
+  const installing = engineDownloadActive(engine.download)
+  if (!plan || plan.choices.length === 0) return null
+  const overrides = settings.engineDeviceOverrides ?? {}
+
+  async function choose(deviceUuid: string, value: string): Promise<void> {
+    await save({ engineDeviceOverrides: applyEngineOverride(overrides, deviceUuid, value) })
+  }
+
+  async function installMissing(): Promise<void> {
+    const outcome = await engine.install({ channel: settings.mossInferChannel })
+    if (outcome.kind === 'failed') toast.push(outcome.message, 'error')
+  }
+
+  return (
+    <>
+      <SubHeading>每块 GPU 的引擎</SubHeading>
+      {plan.choices.map((choice) => {
+        const options = engineOverrideOptions(plan, choice.gpuId)
+        const value = overrides[choice.gpuId] && options.some((option) => option.value === overrides[choice.gpuId]) ? overrides[choice.gpuId]! : 'auto'
+        const picked = options.find((option) => option.value === value)
+        const description = choice.package
+          ? `${value === 'auto' ? '自动：' : ''}${enginePackageOptionLabel(choice.package)}${picked?.description ? ` · ${picked.description}` : ''}`
+          : choice.reason
+        return (
+          <Row key={choice.gpuId} title={choice.gpuName} description={choice.overrideIgnored ? `${description} · 之前选的引擎不能用于这块显卡，已改回自动` : description}>
+            <Select
+              aria-label={`${choice.gpuName} 使用的引擎`}
+              className="w-56"
+              value={value}
+              disabled={options.length <= 1}
+              onValueChange={(next) => void choose(choice.gpuId, next)}
+              options={options.map(({ value: optionValue, label }) => ({ value: optionValue, label }))}
+            />
+          </Row>
+        )
+      })}
+      {plan.missing.length > 0 ? (
+        <Row title="所选引擎还没有安装" description={plan.missing.map((id) => packageLabel(id) ?? id).join('、')}>
+          <Button onClick={() => void installMissing()} disabled={installing}>安装</Button>
+        </Row>
+      ) : null}
+    </>
+  )
+}
+
 function InstallOptions({ engine }: { engine: EngineState }): React.JSX.Element {
   const settings = useApp((state) => state.settings)!
   const toast = useToast()
   const [channel, setChannel] = useState<LocalInstallOptions['channel']>(settings.mossInferChannel)
-  const [variant, setVariant] = useState<LocalInstallOptions['variant']>(settings.mossInferVariant)
-  const [architecture, setArchitecture] = useState<Settings['mossInferArchitecture']>(settings.mossInferArchitecture)
   const [releaseTag, setReleaseTag] = useState('')
   const [starting, setStarting] = useState(false)
-  const [needsCuda, setNeedsCuda] = useState<SystemCudaCheck | null>(null)
   const installing = engineDownloadActive(engine.download)
   const { releases, loadReleases } = engine
 
@@ -131,17 +185,15 @@ function InstallOptions({ engine }: { engine: EngineState }): React.JSX.Element 
     if (channel === 'stable' && releases === null) void loadReleases()
   }, [channel, releases, loadReleases])
 
-  async function run(options: Partial<LocalInstallOptions> = {}): Promise<void> {
+  async function run(): Promise<void> {
     setStarting(true)
-    setNeedsCuda(null)
-    const outcome: InstallOutcome = await engine.install({ channel, variant, architecture, releaseTag: releaseTag || undefined, ...options })
+    // Every GPU's package from this channel / release, side by side with what is installed.
+    const outcome: InstallOutcome = await engine.install({ channel, releaseTag: releaseTag || undefined, all: true })
     setStarting(false)
-    if (outcome.kind === 'needs-cuda') setNeedsCuda(outcome.check)
     if (outcome.kind === 'failed') toast.push(outcome.message, 'error')
-    const tag = options.releaseTag ?? releaseTag
     const latest = [...(releases ?? [])].sort((a, b) => compareEngineTags(b.tag, a.tag))[0]
-    if (outcome.kind === 'started' && channel === 'stable' && tag && latest && compareEngineTags(latest.tag, tag) > 0) {
-      toast.push(`装好后会一直使用 ${tag}，自动更新会跳过它。想恢复时在「引擎」里点更新，或把「自动更新」关掉再打开。`, 'info')
+    if (outcome.kind === 'started' && channel === 'stable' && releaseTag && latest && compareEngineTags(latest.tag, releaseTag) > 0) {
+      toast.push(`装好后会一直使用 ${releaseTag}，自动更新会跳过它。想恢复时在「引擎」里点更新，或把「自动更新」关掉再打开。`, 'info')
     }
   }
 
@@ -176,39 +228,8 @@ function InstallOptions({ engine }: { engine: EngineState }): React.JSX.Element 
           />
         </Row>
       ) : null}
-      <Row title="CUDA 包类型" description="系统 CUDA 包更小，需要电脑上已有 CUDA 13 运行库；内置 CUDA 包自带运行库。">
-        <Select
-          aria-label="CUDA 包类型"
-          className="w-40"
-          value={variant}
-          onValueChange={(value) => setVariant(value as LocalInstallOptions['variant'])}
-          options={[{ value: 'system-cuda', label: '系统 CUDA' }, { value: 'bundled', label: '内置 CUDA' }]}
-        />
-      </Row>
-      <Row title="GPU 架构" description="自动会按默认 GPU 选择。SM75（RTX 20 系列）包只有 Windows 版。">
-        <Select
-          aria-label="GPU 架构"
-          className="w-40"
-          value={architecture}
-          onValueChange={(value) => setArchitecture(value as Settings['mossInferArchitecture'])}
-          options={[
-            { value: 'auto', label: '自动' },
-            { value: 'standard', label: '标准（SM80+）' },
-            { value: 'sm75', label: 'SM75' },
-          ]}
-        />
-      </Row>
-      {needsCuda ? (
-        <Row
-          title="这台电脑没有找到 CUDA 13 运行库"
-          description={needsCuda.error ?? '可以先下载运行库再安装，或改用自带运行库的内置 CUDA 包。'}
-        >
-          <Button onClick={() => void run({ cudaWheels: true })} disabled={starting || installing}>下载运行库并安装</Button>
-          <Button onClick={() => { setVariant('bundled'); void run({ variant: 'bundled' }) }} disabled={starting || installing}>改用内置 CUDA</Button>
-        </Row>
-      ) : null}
-      <Row title="按以上选项安装" description="安装成功后会切换到新版本；失败时继续使用当前版本。">
-        <Button onClick={() => void run()} disabled={starting || installing}>
+      <Row title="按以上选项安装" description="为每块显卡安装它使用的引擎；成功后切换到新版本，失败时继续使用当前版本。">
+        <Button onClick={() => void run()} disabled={starting || installing || Boolean(engine.plan?.blocked)}>
           {starting ? <Spinner /> : null}安装
         </Button>
       </Row>

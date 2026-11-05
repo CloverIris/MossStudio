@@ -19,6 +19,26 @@ const base = [put('ROOT', '/home/moss/.mossstudio/engine'), put('ENGINE', 'yes')
 beforeEach(() => sshExec.mockClear())
 
 describe('probeRemoteCuda', () => {
+  it('gives nvidia-smi 15 s and reports a timeout instead of an empty GPU list', async () => {
+    reply([...base, put('GPU_CSV', ''), put('SMI_EXIT', '124')])
+    const status = await probeRemoteCuda(host)
+    expect(status.cuda).toMatchObject({ nvidiaSmiTimedOut: true, computeCapabilities: [] })
+    expect(sshExec.mock.calls[0]![3]).toContain('timeout 15 nvidia-smi')
+    reply([...base, put('GPU_CSV', 'RTX 4090, 24564 MiB, 590.48.01, 8.9'), put('SMI_EXIT', '0')])
+    expect((await probeRemoteCuda(host)).cuda!.nvidiaSmiTimedOut).toBeUndefined()
+  })
+
+  it('reads every display device from DRM and the nvidia-smi names, for the engine chooser', async () => {
+    reply([...base,
+      put('GPU_CSV', 'Tesla V100-PCIE-32GB, 32768 MiB, 550.163.01, 7.0'),
+      put('DRM', '0x1a03:0x2000\n0x10de:0x1db6\n0x1002:0x744c\n'),
+    ])
+    const status = await probeRemoteCuda(host)
+    expect(status.cuda).toMatchObject({ gpuNames: ['Tesla V100-PCIE-32GB'], pciIds: ['1a03:2000', '10de:1db6', '1002:744c'], standardArchitectureSupported: false })
+    expect(status.cuda!.gpuReason).toContain('SM70 引擎包')
+    expect(sshExec.mock.calls[0]![3]).toContain('/sys/class/drm/card[0-9]/device')
+  })
+
   it('decodes engine state, GPU rows, driver and passing libraries', async () => {
     reply([...base,
       put('DRIVER', 'NVRM version: NVIDIA UNIX x86_64 Kernel Module  580.82.07  Wed'),
@@ -35,7 +55,7 @@ describe('probeRemoteCuda', () => {
       recommendedFlavour: 'cu13', recommendedVariant: 'system-cuda', standardArchitectureSupported: true, error: undefined,
     })
     expect(status.cuda!.libraries[0]).toEqual({ path: '/usr/lib/libcublasLt.so.13.0.2', major: 13, versionText: '13.0.2', dependencyCheck: 'passed', error: undefined })
-    expect(sshExec).toHaveBeenCalledWith(host, 'bash -s', 12_000, expect.stringContaining("root='~/.mossstudio/engine'"))
+    expect(sshExec).toHaveBeenCalledWith(host, 'bash -s', 30_000, expect.stringContaining("root='~/.mossstudio/engine'"))
   })
 
   it('flags a library whose real file does not match its link major', async () => {

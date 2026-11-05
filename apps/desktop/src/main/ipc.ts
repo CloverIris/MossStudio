@@ -13,7 +13,7 @@ import { scanEnvironment } from './services/env'
 import { getPythonInstallState, installManagedPython } from './services/managedPython'
 import { cancelDownload, cleanupEmptyModelDirs, getCatalog, deleteModel, importAdapterFile, importModelFolder, invalidateCatalog, listDownloads, pauseDownload, registerScannedModels, scanModels, startDownload, installBundle } from './services/models'
 import { galleryDetail, listGallery, recordJobOutputs, revealInFolder, trashGalleryItem } from './services/gallery'
-import { cancelJob, getJob, getJobLogs, inputJob, listJobs, onJobCompleted } from './services/supervisor'
+import { activeJobInputPaths, cancelJob, getJob, getJobLogs, inputJob, listJobs, onJobCompleted } from './services/supervisor'
 import { clearDiagnostics, dismissDiagnostic, listDiagnostics } from './services/diagnostics'
 import { getSettings, updateSettings } from './services/settings'
 import { checkUpdates, dismissAnnouncement } from './services/updates'
@@ -22,7 +22,6 @@ import { clearEngineAutoUpdateHold, recordManualEngineInstall, startEngineAutoUp
 import { cancelUpdateDownload, downloadUpdate } from './services/updateDownload'
 import {
   cancelMossInferDownload,
-  downloadMossInfer,
   getMossInferDownloadState,
   listMossInferReleases,
 } from './services/mossInferDownload'
@@ -47,13 +46,15 @@ import { saveHfToken } from './services/hfCredentials'
 import { controlRemoteDownload, listRemoteDownloads, refreshRemoteDownloads } from './services/remoteDownloads'
 import { deleteRemoteModels, prepareRemoteDefaultModel, prepareRemoteModel, scanRemoteModels } from './services/remoteModels'
 import { installRemoteEngine } from './services/remoteEngineInstall'
+import { getEnginePlan, installEnginePlan, packagesFromIds, startupEnginePlan } from './services/enginePlan'
+import { releaseAfterSettingsChange } from './services/engineInstalls'
 import { inspectRemoteResource, removeRemoteResource } from './services/remoteResources'
 import { getTrainingHost } from './services/trainingHosts'
 import { pushTestNotification } from './services/desktopNotifications'
 import { isInside } from './lib/paths'
 import { errorCode } from './lib/codedError'
 import { getEngineFeatures } from './services/engineFeatures'
-import { importImageBytes, importImageFile, saveMask } from './services/studioAssets'
+import { importImageBytes, importImageFile, pruneProjectMasks, saveMask } from './services/studioAssets'
 import { addControlAdapter, listControlAdapters, removeControlAdapter } from './services/controlAdapters'
 import { applyThemeSource, openWindow } from './windows'
 import { getGpuInventory, listDevices, refreshGpuInventory } from './services/devices'
@@ -147,6 +148,8 @@ function runToolInRenderer(event: Electron.IpcMainInvokeEvent, call: AiToolCall)
 export function registerIpc(): void {
   // Keeps the engine on the newest release while settings.engineAutoUpdate is on.
   startEngineAutoUpdate()
+  // Learn which GPUs this computer has (AMD / Intel via the small Vulkan probe) without blocking start-up.
+  void startupEnginePlan().catch((error: unknown) => console.warn('[engine-plan]', error instanceof Error ? error.message : error))
 
   handle(Ipc.appInfo, null, () => {
     const settings = getSettings()
@@ -385,6 +388,8 @@ export function registerIpc(): void {
     const { hfToken, ...settingsPatch } = patch
     if (hfToken !== undefined) saveHfToken('local', hfToken)
     const settings = updateSettings(settingsPatch)
+    // A GPU switched to another engine frees its old moss-server's memory now, not at its next job.
+    releaseAfterSettingsChange(before, settings)
     if (before.theme !== settings.theme) applyThemeSource(settings.theme)
     if (!before.engineAutoUpdate && settings.engineAutoUpdate) clearEngineAutoUpdateHold()
     invalidateEngineReadiness()
@@ -417,14 +422,17 @@ export function registerIpc(): void {
 
   handle(Ipc.updatesCancel, schemas.updatesCancel, ({ version }) => cancelUpdateDownload(version))
 
-  handle(Ipc.mossInferDownload, schemas.mossInferDownload, async ({ channel, flavour, variant, cudaWheels, releaseTag, architecture }) => {
-    const state = await downloadMossInfer(channel, flavour, variant, cudaWheels, releaseTag, architecture)
+  handle(Ipc.mossInferDownload, schemas.mossInferDownload, async ({ channel, packages, cudaWheels, releaseTag, all }) => {
+    // Without packages: whatever the plan says this computer is missing (one package per kind of GPU).
+    const state = await installEnginePlan({ channel, releaseTag, cudaWheels, packages: packagesFromIds(packages), all })
     // Choosing an older release by hand pins it, so auto-update does not undo the rollback.
     if (state.phase === 'done' && channel === 'stable') await recordManualEngineInstall(releaseTag)
     return state
   })
 
   handle(Ipc.engineStatus, null, () => engineReadiness())
+
+  handle(Ipc.enginePlan, schemas.enginePlan, (options) => getEnginePlan(options ?? {}))
 
   handle(Ipc.engineVersions, null, () => localEngineVersions())
 
@@ -445,7 +453,8 @@ export function registerIpc(): void {
   handle(Ipc.studioImportImage, schemas.studioImportImage, ({ projectId, path, bytes }) =>
     bytes ? importImageBytes(projectId, bytes) : importImageFile(projectId, path!))
 
-  handle(Ipc.studioSaveMask, schemas.studioSaveMask, ({ projectId, canvasId, png }) => saveMask(projectId, canvasId, png))
+  handle(Ipc.studioSaveMask, schemas.studioSaveMask, ({ projectId, canvasId, png, replaces }) =>
+    saveMask(projectId, canvasId, png, { replaces, inUse: activeJobInputPaths() }))
 
   handle(Ipc.controlAdaptersList, null, () => listControlAdapters())
 
@@ -498,7 +507,12 @@ export function registerIpc(): void {
 
   handle(Ipc.projectGet, schemas.projectId, ({ id }) => getProject(id))
 
-  handle(Ipc.projectSave, schemas.projectSave, (input) => saveProject(input))
+  handle(Ipc.projectSave, schemas.projectSave, (input) => {
+    const saved = saveProject(input)
+    // Masks painted over or cleared are no longer referenced: drop them (never one a job still reads).
+    void pruneProjectMasks(saved, activeJobInputPaths()).catch(() => undefined)
+    return saved
+  })
 
   handle(Ipc.projectDelete, schemas.projectId, ({ id }) => {
     deleteProject(id)

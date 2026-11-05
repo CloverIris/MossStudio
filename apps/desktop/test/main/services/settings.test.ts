@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useTempDataRoot } from '@test/helpers/tempDir'
@@ -72,12 +72,65 @@ describe('getSettings', () => {
     expect(getSettings().gpuSelection).toEqual({ uuid: 'GPU-1234' })
   })
 
-  it('migrates the retired sm75 variant to system-cuda + sm75 architecture', async () => {
-    writeSettings({ mossInferVariant: 'sm75', mossInferArchitecture: 'auto' })
+  it('drops the old global package type and architecture, and releases a managed pin once', async () => {
+    const managed = join(root(), 'mossinfer', 'stable-v2.1.1-cu13-sm75', 'bin', 'moss-server')
+    writeSettings({ mossInferVariant: 'sm75', mossInferArchitecture: 'sm75', mossInferServerPath: managed })
     const { getSettings } = await load()
-    const settings = getSettings()
-    expect(settings.mossInferVariant).toBe('system-cuda')
-    expect(settings.mossInferArchitecture).toBe('sm75')
+    const settings = getSettings() as unknown as Record<string, unknown>
+    expect(settings).not.toHaveProperty('mossInferVariant')
+    expect(settings).not.toHaveProperty('mossInferArchitecture')
+    expect(settings['engineDeviceOverrides']).toEqual({})
+    expect(settings['mossInferServerPath']).toBeNull()
+  })
+
+  it('keeps a deliberate rollback: a managed pin older than another install of its package stays', async () => {
+    const install = (name: string): string => {
+      const path = join(root(), 'mossinfer', name, 'bin', 'moss-server')
+      mkdirSync(join(path, '..'), { recursive: true })
+      writeFileSync(path, '#!')
+      return path
+    }
+    const old = install('stable-v2.1.1-cu13')
+    install('stable-v2.2.0-cu13')
+    install('stable-v2.3.0-cu12')
+    writeSettings({ mossInferVariant: 'system-cuda', mossInferArchitecture: 'auto', mossInferServerPath: old })
+    expect((await load()).getSettings().mossInferServerPath).toBe(old)
+    vi.resetModules()
+    const newest = join(root(), 'mossinfer', 'stable-v2.2.0-cu13', 'bin', 'moss-server')
+    writeSettings({ mossInferVariant: 'system-cuda', mossInferArchitecture: 'auto', mossInferServerPath: newest })
+    expect((await load()).getSettings().mossInferServerPath).toBeNull()
+  })
+
+  it('remembers an explicit 「内置 CUDA」 until the GPUs are known', async () => {
+    writeSettings({ mossInferVariant: 'bundled', mossInferArchitecture: 'auto' })
+    const settings = await load()
+    settings.getSettings()
+    expect(settings.legacyEngineVariant(join(root(), 'mossinfer'))).toBe('bundled')
+    vi.resetModules()
+    rmSync(join(root(), 'mossinfer', 'legacy-engine-variant.json'), { force: true })
+    writeSettings({ mossInferVariant: 'system-cuda', mossInferArchitecture: 'auto' })
+    const other = await load()
+    other.getSettings()
+    expect(other.legacyEngineVariant(join(root(), 'mossinfer'))).toBeNull()
+  })
+
+  it('keeps a custom moss-server outside the managed folder pinned', async () => {
+    const custom = join(root(), 'my-build', 'bin', 'moss-server')
+    writeSettings({ mossInferVariant: 'bundled', mossInferArchitecture: 'auto', mossInferServerPath: custom })
+    expect((await load()).getSettings().mossInferServerPath).toBe(custom)
+  })
+
+  it('keeps a managed pin chosen after the upgrade (no legacy fields left)', async () => {
+    const managed = join(root(), 'mossinfer', 'stable-v2.2.0-cu12', 'bin', 'moss-server')
+    writeSettings({ mossInferServerPath: managed, engineDeviceOverrides: { 'GPU-1': 'vulkan' } })
+    const settings = (await load()).getSettings()
+    expect(settings.mossInferServerPath).toBe(managed)
+    expect(settings.engineDeviceOverrides).toEqual({ 'GPU-1': 'vulkan' })
+  })
+
+  it('replaces a malformed engineDeviceOverrides with an empty map', async () => {
+    writeSettings({ engineDeviceOverrides: ['vulkan'] })
+    expect((await load()).getSettings().engineDeviceOverrides).toEqual({})
   })
 
   it('maps the removed auto tier to high and keeps valid tiers', async () => {

@@ -28,7 +28,7 @@ function server(): string {
 describe('engineReadiness', () => {
   it('reports missing when no server resolves or the resolved path is gone', async () => {
     expect(await readiness.engineReadiness()).toEqual({
-      state: 'missing', path: null, reason: '未找到 moss-server；请下载引擎或设置路径', installing: undefined, lastAttempt: undefined,
+      state: 'missing', path: null, reason: '未找到 moss-server；请下载引擎或设置路径', devices: [], installing: undefined, lastAttempt: undefined,
     })
     resolveServerPath.mockReturnValue(join(dataRoot(), 'nope'))
     readiness.invalidateEngineReadiness()
