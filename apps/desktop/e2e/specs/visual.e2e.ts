@@ -109,7 +109,7 @@ const STOPS: Stop[] = [
   { page: 'settings', state: 'storage', open: { scenario: 'ready', route: '/settings/storage' } },
   { page: 'settings', state: 'network', open: { scenario: 'ready', route: '/settings/network' } },
   { page: 'settings', state: 'features', open: { scenario: 'ready', route: '/settings/features', settings: ALL_FEATURES } },
-  { page: 'settings', state: 'updates', open: { scenario: 'updateAvailable', route: '/settings/updates', settings: { autoCheckUpdates: false } } },
+  { page: 'settings', state: 'updates', open: { scenario: 'updateAvailable', route: '/settings/updates' } },
   { page: 'settings', state: 'about', open: { scenario: 'ready', route: '/settings/about' } },
   {
     page: 'activity', state: 'jobs', open: { scenario: 'ready', route: '/studio' }, seed: seedJobs,

@@ -6,9 +6,9 @@ import { DEFAULT_SETTINGS } from '@main/services/settings'
 import { useTempDataRoot } from '@test/helpers/tempDir'
 import { cacheDirFor, installOnDisk, rawModel, sha256, testSettings, vaeFiles, writeCatalog } from './modelFixtures'
 
-const localReleaseDir = vi.hoisted(() => vi.fn<() => string | null>())
+const contentDir = vi.hoisted(() => vi.fn<() => string | null>())
 const listJobs = vi.hoisted(() => vi.fn<() => Promise<Array<{ state: string }>>>())
-vi.mock('@main/services/updates', () => ({ localReleaseDir }))
+vi.mock('@main/lib/content', () => ({ contentDir }))
 vi.mock('@main/services/supervisor', () => ({ listJobs }))
 vi.mock('@main/services/network', () => ({ getLastNetwork: () => null }))
 vi.mock('@main/services/hfNetwork', () => ({ fetchHf: (url: string) => fetch(url) }))
@@ -29,7 +29,7 @@ const bundle = {
 
 beforeEach(async () => {
   vi.resetModules()
-  localReleaseDir.mockReset().mockImplementation(() => releaseDir())
+  contentDir.mockReset().mockImplementation(() => releaseDir())
   listJobs.mockReset().mockResolvedValue([])
   models = await import('@main/services/models')
   settings = testSettings(DEFAULT_SETTINGS, { modelsRoot: modelsRoot(), hfEndpoint: 'http://127.0.0.1:9' })
@@ -64,15 +64,15 @@ describe('getCatalog sources', () => {
   })
 
   it('falls back to the packaged catalog when the remote one is unreachable', async () => {
-    localReleaseDir.mockReturnValue(null)
+    contentDir.mockReturnValue(null)
     const catalog = await models.getCatalog(settings)
     expect(catalog.source).toBe('builtin')
   })
 
   it('uses the remote catalog when reachable', async () => {
-    localReleaseDir.mockReturnValue(null)
+    contentDir.mockReturnValue(null)
     const fetch = vi.fn(async (url: string) => {
-      expect(url).toBe('https://raw.githubusercontent.com/CloverIris/MossStudio/main/release/models.json')
+      expect(url).toBe('https://raw.githubusercontent.com/CloverIris/MossStudio/main/apps/desktop/resources/models.json')
       return new Response(JSON.stringify({ schema_version: 2, models: [vae] }))
     })
     vi.stubGlobal('fetch', fetch)

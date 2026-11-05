@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AdapterEntry, Catalog, EngineReadiness, ModelBundle, ModelEntry } from '@shared/types'
-import { bundleInstalled, deriveReadiness, installedBundles, rerunEligibility, resolveBundle, type ReadinessInput } from '@renderer/pages/studio/readiness'
+import { bundleInstalled, deriveReadiness, installedBundles, rerunEligibility, resolveBundle, updateRequiredReason, type ReadinessInput } from '@renderer/pages/studio/readiness'
 import { canvas, layer } from './fixtures'
 
 const model = (id: string, installed = true): ModelEntry => ({
@@ -138,3 +138,50 @@ describe('studio/readiness input blockers', () => {
     expect(deriveReadiness(input({ canvas: null, inputBlockers: [{ id: 'input-invalid', message: 'x' }] })).blockers).toEqual([])
   })
 })
+
+describe('update-required blocker', () => {
+  it('blocks 生成 first when this version may no longer generate, opening the update popover', () => {
+    const readiness = deriveReadiness(input({ update: { supported: true, required: true, minimumVersion: '1.2.0' } }))
+    expect(readiness.blockers[0]).toEqual({
+      id: 'update-required',
+      message: '必须更新到 1.2.0 才能继续生成',
+      action: { label: '更新', to: '/settings/updates', opens: 'update' },
+    })
+  })
+
+  it('sends a copy that cannot update itself to 设置 instead, and words a missing minimum plainly', () => {
+    const readiness = deriveReadiness(input({ update: { supported: false, required: true, minimumVersion: null } }))
+    expect(readiness.blockers[0]).toEqual({ id: 'update-required', message: '必须更新后才能继续生成', action: { label: '查看', to: '/settings/updates' } })
+  })
+
+  it('adds nothing when the update is not required or the state is unknown', () => {
+    expect(deriveReadiness(input({ update: { supported: true, required: false, minimumVersion: '1.0.0' } })).blockers).toEqual([])
+    expect(deriveReadiness(input({ update: null })).blockers).toEqual([])
+    expect(deriveReadiness(input()).blockers).toEqual([])
+  })
+})
+
+describe('studio/readiness rerunEligibility with a required update', () => {
+  const card = canvas({ prompt: 'a street' })
+
+  it('disables the rerun with the same reason as 生成, before anything else', () => {
+    const update = { supported: true, required: true, minimumVersion: '1.2.0' }
+    expect(rerunEligibility(card, { busy: false, submitting: false, update })).toEqual({ ok: false, reason: '必须更新到 1.2.0 才能继续生成' })
+    // Even while busy or submitting, the update is the reason that matters.
+    expect(rerunEligibility(card, { busy: true, submitting: true, update }).reason).toBe('必须更新到 1.2.0 才能继续生成')
+    expect(rerunEligibility(card, { busy: false, submitting: false, update: { ...update, minimumVersion: null } }).reason).toBe('必须更新后才能继续生成')
+  })
+
+  it('reruns as before when no update is required or the state is unknown', () => {
+    expect(rerunEligibility(card, { busy: false, submitting: false, update: { supported: true, required: false, minimumVersion: '1.0.0' } })).toEqual({ ok: true })
+    expect(rerunEligibility(card, { busy: false, submitting: false, update: null })).toEqual({ ok: true })
+    expect(rerunEligibility(card, { busy: false, submitting: false })).toEqual({ ok: true })
+  })
+
+  it('updateRequiredReason is the one wording for both', () => {
+    expect(updateRequiredReason({ supported: false, required: true, minimumVersion: '2.0.0' })).toBe('必须更新到 2.0.0 才能继续生成')
+    expect(updateRequiredReason({ supported: true, required: false, minimumVersion: '2.0.0' })).toBeNull()
+    expect(updateRequiredReason(undefined)).toBeNull()
+  })
+})
+

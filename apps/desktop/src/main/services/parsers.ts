@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Diagnostic, DiagnosticSolution, JobProgress, JobStage } from '@shared/types'
-import { localReleaseDir } from './updates'
+import { contentDir } from '../lib/content'
 
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g
 
@@ -162,7 +162,7 @@ let cached: { at: number; rules: ErrorRule[] } | null = null
 export function loadRules(): ErrorRule[] {
   if (cached && Date.now() - cached.at < 30_000) return cached.rules
   let raw = FALLBACK
-  const local = localReleaseDir()
+  const local = contentDir()
   if (local) {
     try {
       const parsed = JSON.parse(readFileSync(join(local, 'rules.json'), 'utf8')) as { rules?: RawRule[] }

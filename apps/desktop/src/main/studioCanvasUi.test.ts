@@ -14,7 +14,6 @@ export async function runStudioCanvasUiTests(): Promise<void> {
     ipcMain.handle(channel, () => ({ ok: true, data }))
   }
   mock(Ipc.envScan, null)
-  mock(Ipc.updatesCheck, null)
   // One installed model and a ready engine, so the 生成 button is only ever
   // disabled by the job state this test drives.
   const installed = (id: string): Record<string, unknown> => ({ id, name: id, role: 'dit', installed: true, installedBytes: 1, sizeBytes: 1, tags: [] })

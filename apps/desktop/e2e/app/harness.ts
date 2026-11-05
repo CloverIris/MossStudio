@@ -13,6 +13,7 @@
 import { Events, Ipc } from '@shared/channels'
 import type { JobRecord, Settings } from '@shared/types'
 import * as fixtures from '../../test/mocks/backend/fixtures'
+import * as installFixtures from '../../test/mocks/backend/install'
 import { createMockBackend, type MockBackend, type MockBackendState, type ScenarioName } from '../../test/mocks/backend'
 import { startTelemetry } from './telemetry'
 
@@ -38,6 +39,8 @@ export interface E2eMock {
   /** Drive a submitted job part-way (running, denoise at half). */
   progressJob(id: string): JobRecord
   fixtures: typeof fixtures
+  /** Setup/uninstall window fixtures and scenarios (test/mocks/backend/install.ts). */
+  installFixtures: typeof installFixtures
   Ipc: typeof Ipc
   Events: typeof Events
   /** Mount the app (only needed with `defer=1`). */
@@ -137,6 +140,7 @@ export function installHarness(mount: () => void): E2eMock {
       return step
     },
     fixtures,
+    installFixtures,
     Ipc,
     Events,
     started: false,

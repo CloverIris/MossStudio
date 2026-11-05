@@ -79,7 +79,7 @@ export type FeedAsset = z.infer<typeof asset>
 
 /** One platform's downloads for one version. */
 export const feedPlatformSchema = z.object({
-  /** Zip of the app folder (Win/Linux: the contents of app-<version>; macOS: MossStudio.app). Symlinks preserved. */
+  /** Zip of the app folder (Win/Linux: the contents of app-<version>; macOS: the contents of MossStudio.app, i.e. Contents/...). Symlinks preserved. */
   full: asset,
   /** JSON file list of the full package: FileList. Used to verify and to build from deltas. */
   files: asset,
@@ -147,6 +147,36 @@ export const fileListSchema = z.object({
 export type FileList = z.infer<typeof fileListSchema>
 
 /**
+ * delta.json at the root of MossStudio-<from>-to-<to>-<platform>.delta.zip. Every new or changed
+ * entry of the target FileList (files-<to>-<platform>.json) is stored in the zip as
+ * `files/<path>` (symlinks as symlink entries, as in the full zip). To materialize app-<to>: for
+ * each entry of the target FileList take `files/<path>` when the path is in `changed`, else copy
+ * it from app-<from>; then verify every entry against the target FileList. `removed` lists the
+ * paths of `from` that `to` no longer has (they are simply not copied).
+ */
+export const deltaManifestSchema = z.object({
+  schema: z.literal(1),
+  platform: z.enum(PLATFORM_KEYS),
+  from: semver,
+  to: semver,
+  /** sha256/size of the exact files-<to>-<platform>.json bytes this delta was built against. */
+  files: z.object({ sha256, size: z.number().int().positive() }),
+  changed: z.array(z.string().min(1)),
+  removed: z.array(z.string().min(1)),
+})
+export type DeltaManifest = z.infer<typeof deltaManifestSchema>
+export const DELTA_MANIFEST_NAME = 'delta.json'
+export const DELTA_FILES_PREFIX = 'files/'
+
+/** R/portable.json (macOS: next to MossStudio.app): marks a portable root. Written by the pipeline. */
+export const portableMarkerSchema = z.object({
+  schema: z.literal(1),
+  /** The version the package shipped with (app-<version>/); install.json is written on first start. */
+  version: semver,
+})
+export type PortableMarker = z.infer<typeof portableMarkerSchema>
+
+/**
  * Where feeds live: a rolling GitHub release tagged `updates` whose assets are replaced on
  * every release. Version artifacts live in that version's own release `v<version>`.
  */
@@ -170,6 +200,41 @@ export const SILENT_ARG = '--moss-silent'
 export const INSTALL_TO_ARG = '--moss-install-to'
 export const LAUNCHED_ARG = '--moss-launched'
 export const UNINSTALL_ARG = '--moss-uninstall'
+export const FINISH_UNINSTALL_ARG = '--finish-uninstall'
+
+/**
+ * The uninstall plan the app writes for `<temp launcher copy> --finish-uninstall=<plan.json>`
+ * (plan.json and the launcher copy share one fresh temp folder, removed last). The launcher
+ * waits for every process whose executable is under `root` to exit, then deletes exactly the
+ * `remove` entries (directories recursively, missing ones skipped), deletes `registryKeys`,
+ * removes each `removeEmptyDirs` entry only if it is empty, and touches nothing else.
+ */
+export const uninstallPlanSchema = z.object({
+  schema: z.literal(1),
+  platform: z.enum(PLATFORM_KEYS),
+  /** Install root R. */
+  root: absPath,
+  dataRoot: absPath,
+  /** The user ticked 同时删除我的数据: dataRoot itself is then in `remove`. */
+  removeData: z.boolean(),
+  /**
+   * Exact files or folders to delete, in order. Each is inside root or dataRoot, or is one of
+   * the shortcut, .desktop, icon or locator files the install created.
+   */
+  remove: z.array(absPath),
+  /** Windows: registry keys to delete (`reg delete <key> /f`); always under HKCU. */
+  registryKeys: z.array(z.string().regex(/^HKCU\\/)).default([]),
+  /** Removed afterwards only when empty (never recursively): R, the locator's folder. */
+  removeEmptyDirs: z.array(absPath).default([]),
+  /**
+   * Windows/Linux, only with removeData: Electron's profile folder (app.getPath('userData'):
+   * %APPDATA%\MossStudio, ${XDG_CONFIG_HOME:-~/.config}/MossStudio), deleted recursively after
+   * `remove`. Basename exactly MossStudio, outside R; the launcher accepts only that OS folder.
+   */
+  profileDir: absPath.optional(),
+  createdAt: z.string(),
+})
+export type UninstallPlan = z.infer<typeof uninstallPlanSchema>
 
 /** The app calls confirm after its window has been shown and stayed up this long. */
 export const HEALTH_CONFIRM_MS = 8_000

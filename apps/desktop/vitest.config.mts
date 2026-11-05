@@ -8,6 +8,7 @@ const r = (p: string) => resolve(import.meta.dirname, p)
  *  - main:     Node, with `electron` replaced by test/mocks/electron.ts
  *  - shared:   Node, pure helpers and zod schemas
  *  - renderer: happy-dom, non-UI renderer modules driven through the mock backend
+ *  - tools:    Node, the release pipeline scripts (tools/release)
  *
  * src/main/*.test.ts are NOT Vitest files: main/index.ts imports them for the
  * in-Electron `--smoke` run, so they are excluded here.
@@ -48,6 +49,24 @@ export default defineConfig({
           name: 'shared',
           environment: 'node',
           include: ['test/shared/**/*.test.ts', 'test/mocks/**/*.test.ts'],
+        },
+      },
+      {
+        // tools/release (the release pipeline, plain .mjs) checked against the app's own
+        // contract schemas and updater code; electron is aliased in case those import it.
+        extends: true,
+        resolve: {
+          alias: {
+            electron: r('test/mocks/electron.ts'),
+            // update/* does app-folder IO through Electron's asar-unaware original-fs.
+            'node:original-fs': r('test/mocks/original-fs.ts'),
+            'original-fs': r('test/mocks/original-fs.ts'),
+          },
+        },
+        test: {
+          name: 'tools',
+          environment: 'node',
+          include: ['test/tools/**/*.test.mjs'],
         },
       },
       {

@@ -95,6 +95,7 @@ export function StudioPage(): React.JSX.Element {
   const catalog = useApp((state) => state.catalog)
   const settings = useApp((state) => state.settings)
   const engineReadiness = useApp((state) => state.engineReadiness)
+  const update = useApp((state) => state.update)
   const importAdapters = useApp((state) => state.importAdapters)
   const cancelJob = useApp((state) => state.cancelJob)
   const studioBackground = useApp((state) => state.studioBackground)
@@ -147,6 +148,7 @@ export function StudioPage(): React.JSX.Element {
     setupDone: settings ? settings.onboardingState === 'completed' || settings.onboardingState === 'dismissed' : true,
     remote: remoteHost ? { name: remoteHost.name, modelPath: remoteHost.modelPath } : null,
     inputBlockers,
+    update,
   })
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false
@@ -484,6 +486,7 @@ export function StudioPage(): React.JSX.Element {
           jobs={jobs}
           busyIds={busyIds}
           submitting={submitting}
+          update={update}
           tool={tool}
           onTool={setTool}
           regionKind={regionKind}

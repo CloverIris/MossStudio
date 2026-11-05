@@ -13,6 +13,11 @@ import { checkBareMirror } from './gitHealth'
 export const TRAINER_SOURCE = 'https://github.com/KohakuBlueleaf/KohakuMossTrainer'
 const ensuring = new Map<string, Promise<void>>()
 
+/** Mirror clones/fetches running right now (the app updater will not restart through them). */
+export function mirrorOperationsInFlight(): number {
+  return ensuring.size
+}
+
 function root(settings: Settings): string {
   return paths.trainerRoot(settings.trainerRoot)
 }

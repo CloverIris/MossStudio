@@ -21,6 +21,7 @@
     "test/mocks/original-fs.ts",
     "test/mocks/backend/fixtures.ts",
     "src/main/remoteWorkerSource.d.ts",
+    "src/main/env.d.ts",
     "vitest.config.mts"
   ]
 }

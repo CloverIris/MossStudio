@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { assertSafeSteps, ownedPaths, planRemoteDelete, type RemoteEntryFiles } from '@main/services/remoteModelDelete'
-import catalog from '../../../../../release/models.json'
+import catalog from '../../../resources/models.json'
 
 const ROOT = '/home/u/.mossstudio/models'
 const SFT = `${ROOT}/hf/hub/models--OpenMOSS-Team--MOSS-Image-SFT/snapshots/abc`

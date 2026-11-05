@@ -7,6 +7,7 @@ import { pickJobInputs, validateJobInputs } from './jobInputs'
 import { PROJECT_ID_PATTERN, projectAssetsDir } from './projects'
 import { getSettings } from './settings'
 import { startEngineJob } from './supervisor'
+import { assertGenerationAllowed } from '../update/gate'
 
 const INPUT_KEYS = new Set(['initImage', 'mask', 'control', 'references', 'sampling'])
 
@@ -14,11 +15,14 @@ const text = (value: unknown): string | undefined => (typeof value === 'string' 
 
 /**
  * The one way a generation request from outside main (IPC, the local HTTP
- * backend the Studio and the LAN web UI post to) becomes a job: LoRA ids are
+ * backend the Studio and the LAN web UI post to) becomes a job: blocked while an
+ * update is required (minimumVersion), then LoRA ids are
  * resolved to files, and image inputs are validated and canonicalized before
  * anything is queued.
  */
 export async function startRequestedEngineJob(raw: Record<string, unknown>): Promise<JobRecord> {
+  // Clients below the feed's minimumVersion must update first (必须更新).
+  assertGenerationAllowed()
   const settings = getSettings()
   const hostId = text(raw['hostId'])
   const adapters = await resolveCanvasAdapters(settings, raw['adapters'], { hostId })

@@ -141,7 +141,9 @@ export function useApp(): E2eApp {
 export async function waitForApp(page: Page): Promise<void> {
   await page.waitForFunction(() => {
     const root = document.getElementById('root')
-    return Boolean(root && root.children.length > 0 && window.__mock.calls.some((call) => call.channel === 'settings:get'))
+    // The setup and uninstall windows (data-standalone) never load settings.
+    const loaded = window.__mock.calls.some((call) => call.channel === 'settings:get') || Boolean(document.querySelector('[data-standalone]'))
+    return Boolean(root && root.children.length > 0 && loaded)
   })
   await settle(page)
 }

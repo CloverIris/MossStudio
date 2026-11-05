@@ -45,15 +45,6 @@ const canvas = {
 
 const host = { host: 'gpu.example.com', user: 'root', trainerRoot: '/opt/trainer' }
 
-const installer = {
-  platform: 'win32',
-  arch: 'x64',
-  kind: 'exe',
-  url: 'https://example.com/setup.exe',
-  sha256: SHA,
-  size_bytes: 10,
-}
-
 const trainerRun = {
   versionId: 'v1',
   action: 'train',
@@ -125,7 +116,7 @@ const cases = {
       'overlong device label key': { deviceLabels: { [long(201)]: 'x' } },
       'overlong github token': { githubToken: long(201) },
       'numeric hfEndpoint': { hfEndpoint: 1 },
-      'non-boolean flag': { autoCheckUpdates: 'yes' },
+      'non-boolean flag': { autoDownloadUpdates: 'yes' },
       'non-boolean feature toggle': { remoteHostsEnabled: 1 },
       'null engine auto-update': { engineAutoUpdate: null },
     },
@@ -319,16 +310,15 @@ const cases = {
     rejects: { 'overlong text': { text: long(4097) }, 'missing text': {} },
   },
 
-  updatesDownload: {
-    valid: { version: '1.0.3', installer },
-    rejects: {
-      'empty version': { version: '', installer },
-      'bad installer digest': { version: '1.0.3', installer: { ...installer, sha256: 'x' } },
-      'unknown installer kind': { version: '1.0.3', installer: { ...installer, kind: 'msi' } },
-    },
+  updateSetChannel: {
+    valid: { channel: 'beta' },
+    rejects: { 'unknown channel': { channel: 'nightly' }, 'missing channel': {} },
   },
 
-  updatesCancel: { valid: { version: '1.0.3' }, rejects: { 'empty version': { version: '' }, 'overlong version': { version: long(81) } } },
+  updateToggle: {
+    valid: { enabled: false },
+    rejects: { 'string flag': { enabled: 'yes' }, 'missing flag': {} },
+  },
 
   trainerCommits: {
     valid: { branch: 'main' },

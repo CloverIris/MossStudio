@@ -1,5 +1,6 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { join } from 'node:path'
+import { applyAppDetails } from './install/identity'
 
 export type WindowKind = 'studio' | 'trainer'
 
@@ -84,6 +85,7 @@ export function createAppWindow(kind: WindowKind, show = true): BrowserWindow {
     },
   })
 
+  applyAppDetails(win)
   win.once('ready-to-show', () => {
     if (!show) return
     win.show()

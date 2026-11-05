@@ -16,8 +16,8 @@ import {
   scenario,
   localAdapterFixture,
   updateAvailableFixture,
-  updateDownloadFixture,
-  updateStateFixture,
+  updateReadyFixture,
+  updaterStateFixture,
 } from '../mocks/backend'
 import { flush, loadStore } from '../helpers/renderer'
 
@@ -117,7 +117,7 @@ describe('environment and catalog refresh', () => {
 
   it.each([
     ['refreshCatalog', Ipc.modelsCatalog, 'catalog'],
-    ['refreshUpdates', Ipc.updatesCheck, 'updates'],
+    ['refreshUpdate', Ipc.updateState, 'update'],
     ['refreshJobs', Ipc.jobList, 'jobs'],
     ['refreshDiagnostics', Ipc.diagnosticsList, 'diagnostics'],
     ['refreshDevices', Ipc.devicesList, 'devices'],
@@ -177,70 +177,96 @@ describe('environment and catalog refresh', () => {
 describe('updates', () => {
   it('checkForUpdates stores and announces, returning the state', async () => {
     const { backend, store } = await ready()
-    backend.state.updates = updateAvailableFixture('1.2.0')
+    backend.state.update = updateAvailableFixture('1.2.0')
     const result = await store().checkForUpdates()
-    expect(result!.latestVersion).toBe('1.2.0')
-    expect(store().updateDialogOpen).toBe(true)
+    expect(result!.available!.version).toBe('1.2.0')
+    expect(store().update!.phase).toBe('available')
+    expect(store().notifications).toMatchObject([{ title: '发现新版本', message: expect.stringContaining('1.2.0') }])
+    // The same version again stays quiet.
+    await store().checkForUpdates()
     expect(store().notifications).toHaveLength(1)
   })
 
   it('checkForUpdates returns null and keeps state on failure', async () => {
     const { backend, store } = await ready()
-    const before = store().updates
-    backend.fail(Ipc.updatesCheck)
+    const before = store().update
+    backend.fail(Ipc.updateCheck)
     expect(await store().checkForUpdates()).toBeNull()
-    expect(store().updates).toBe(before)
+    expect(store().update).toBe(before)
   })
 
-  it('startUpdateDownload refuses without an installer for this platform', async () => {
-    const { backend, store, useApp } = await ready()
-    useApp.setState({ updates: updateAvailableFixture('1.2.0', { installer: null }) })
-    await expect(store().startUpdateDownload()).rejects.toThrow('当前平台没有可用的安装包')
-    useApp.setState({ updates: updateStateFixture({ latestVersion: null }) })
-    await expect(store().startUpdateDownload()).rejects.toThrow('当前平台没有可用的安装包')
-    expect(backend.callsTo(Ipc.updatesDownload)).toEqual([])
-  })
-
-  it('startUpdateDownload sends the version and installer', async () => {
+  it('downloadUpdate and cancelUpdateDownload store what main answers', async () => {
     const { backend, store } = await ready('updateAvailable')
-    await store().startUpdateDownload()
-    expect(backend.callsTo(Ipc.updatesDownload)).toEqual([{ version: '1.1.0', installer: backend.state.updates.installer }])
-    expect(store().updateDownload).toMatchObject({ version: '1.1.0', phase: 'downloading' })
+    await store().downloadUpdate()
+    expect(backend.callsTo(Ipc.updateDownload)).toEqual([undefined])
+    expect(store().update).toMatchObject({ phase: 'downloading', progress: { percent: 0 } })
+    await store().cancelUpdateDownload()
+    expect(store().update).toMatchObject({ phase: 'available', progress: null })
   })
 
-  it('cancelUpdateDownload is a no-op without a known version and keeps state when main returns null', async () => {
-    const { backend, store, useApp } = await ready('updateAvailable')
-    useApp.setState({ updateDownload: updateDownloadFixture({ version: '1.1.0' }) })
-    backend.handle(Ipc.updatesCancel, () => null)
-    await store().cancelUpdateDownload()
-    expect(store().updateDownload!.phase).toBe('downloading')
-    useApp.setState({ updates: null })
-    await store().cancelUpdateDownload()
-    expect(backend.callsTo(Ipc.updatesCancel)).toEqual([{ version: '1.1.0' }])
+  it('downloadUpdate rejects with main\'s message', async () => {
+    const { backend, store } = await ready()
+    backend.fail(Ipc.updateDownload, { message: '没有可以下载的新版本' })
+    await expect(store().downloadUpdate()).rejects.toThrow('没有可以下载的新版本')
   })
 
-  it('cancelUpdateDownload stores the canceled state', async () => {
-    const { store } = await ready('updateAvailable')
-    await store().startUpdateDownload()
-    await store().cancelUpdateDownload()
-    expect(store().updateDownload!.phase).toBe('canceled')
+  it('restartToUpdate restarts when nothing is busy', async () => {
+    const { backend, store } = await ready(scenario('ready', { update: updateReadyFixture('1.1.0') }))
+    expect(await store().restartToUpdate()).toEqual({ status: 'restarting' })
+    expect(store().updatePopoverOpen).toBe(false)
+    expect(backend.callsTo(Ipc.updateRestart)).toHaveLength(1)
   })
 
-  it('dismissAnnouncement records the dismissal and refreshes updates', async () => {
+  it('restartToUpdate asks in the popover when work would be interrupted, and 空闲后自动重启 arms it', async () => {
     const { backend, store } = await ready(scenario('ready', {
-      updates: updateStateFixture({ announcements: [{ id: 'a1', level: 'info', title: 'A', body: '', dismissible: true, pinned: false }] }),
+      update: updateReadyFixture('1.1.0'),
+      jobs: [jobFixture({ id: 'job-live', state: 'running' })],
+    }))
+    const result = await store().restartToUpdate()
+    expect(result).toMatchObject({ status: 'busy', busy: [{ kind: 'inference', count: 1 }] })
+    expect(store().updatePopoverOpen).toBe(true)
+    expect(store().updateBusy).toMatchObject([{ label: '1 个生成任务' }])
+    await store().setRestartWhenIdle(true)
+    expect(backend.callsTo(Ipc.updateRestartWhenIdle)).toEqual([{ enabled: true }])
+    expect(store().update).toMatchObject({ phase: 'waiting-idle', restartWhenIdle: true })
+    expect(store().updateBusy).toEqual([])
+    await store().setRestartWhenIdle(false)
+    expect(store().update).toMatchObject({ phase: 'ready', restartWhenIdle: false })
+  })
+
+  it('closing the popover forgets the busy answer', async () => {
+    const { store, useApp } = await ready()
+    useApp.setState({ updatePopoverOpen: true, updateBusy: [{ kind: 'inference', count: 1, label: '1 个生成任务' }] })
+    store().setUpdatePopoverOpen(false)
+    expect(store()).toMatchObject({ updatePopoverOpen: false, updateBusy: [] })
+    store().setUpdatePopoverOpen(true)
+    expect(store().updatePopoverOpen).toBe(true)
+  })
+
+  it('rollbackUpdate, channel and auto-download go to main', async () => {
+    const { backend, store } = await ready(scenario('ready', { update: updaterStateFixture({ previous: '1.0.2', canRollback: true }) }))
+    await store().setUpdateChannel('beta')
+    await store().setAutoDownloadUpdates(false)
+    expect(backend.callsTo(Ipc.updateSetChannel)).toEqual([{ channel: 'beta' }])
+    expect(backend.callsTo(Ipc.updateSetAutoDownload)).toEqual([{ enabled: false }])
+    expect(store().update).toMatchObject({ channel: 'beta', autoDownload: false })
+    expect(await store().rollbackUpdate()).toEqual({ status: 'restarting' })
+  })
+
+  it('unskipUpdate offers the version skipped by a rollback again', async () => {
+    const { backend, store } = await ready(scenario('ready', { update: updaterStateFixture({ skippedVersion: '1.1.0' }) }))
+    await store().unskipUpdate()
+    expect(backend.callsTo(Ipc.updateUnskip)).toEqual([undefined])
+    expect(store().update!.skippedVersion).toBeNull()
+  })
+
+  it('dismissAnnouncement records the dismissal and refreshes the update state', async () => {
+    const { backend, store } = await ready(scenario('ready', {
+      update: updaterStateFixture({ announcements: [{ id: 'a1', level: 'info', title: 'A', body: '' }] }),
     }))
     await store().dismissAnnouncement('a1')
     expect(backend.callsTo(Ipc.announcementsDismiss)).toEqual([{ id: 'a1' }])
-    expect(store().updates!.announcements).toEqual([])
-  })
-
-  it('setUpdateDialogOpen toggles the dialog', async () => {
-    const { store } = await ready()
-    store().setUpdateDialogOpen(true)
-    expect(store().updateDialogOpen).toBe(true)
-    store().setUpdateDialogOpen(false)
-    expect(store().updateDialogOpen).toBe(false)
+    expect(store().update!.announcements).toEqual([])
   })
 })
 

@@ -11,7 +11,7 @@ import { LinkMenu } from './LinkMenu'
 import { controlKindLabel, linkSourceImage, roleLabel, type LinkRole, type PickTarget } from './links'
 import { BRUSH_DEFAULT, maskAvailability, startPictureSize } from './mask'
 import type { MaskBrush, MaskCommand } from './MaskLayer'
-import { rerunEligibility } from './readiness'
+import { rerunEligibility, type ReadinessInput } from './readiness'
 import type { BoardTool } from './RegionLayer'
 import { MaskBar, Toolbar } from './Toolbar'
 import { useCardDrag } from './useCardDrag'
@@ -35,6 +35,8 @@ export interface BoardProps {
   jobs: readonly JobRecord[]
   busyIds: ReadonlySet<string>
   submitting: boolean
+  /** The app update state: a required update blocks reruns (see readiness.ts). */
+  update?: ReadinessInput['update']
   tool: BoardTool
   onTool: (tool: BoardTool) => void
   regionKind: ProjectLayerKind
@@ -334,7 +336,7 @@ export function Board(props: BoardProps): React.JSX.Element {
               tool={props.tool}
               regionKind={props.regionKind}
               selectedRegionId={props.selectedRegionId}
-              rerun={rerunEligibility(canvas, { busy, submitting: props.submitting })}
+              rerun={rerunEligibility(canvas, { busy, submitting: props.submitting, update: props.update })}
               initPicture={initPath ? { path: initPath, resize: init?.resize, size: startPictureSize(canvas, props.canvases) } : null}
               mask={showMask ? {
                 interactive: props.tool === 'mask' && mask.enabled,

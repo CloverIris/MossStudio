@@ -26,6 +26,7 @@ import {
 import { canvasDescription, withDescription, type CompiledPrompt } from './prompt'
 import { installedBundles, type Blocker, type BundleChoice } from './readiness'
 import { resizeCanvas } from './canvases'
+import { useApp } from '../../store'
 import { ImageCardPanel } from './ImageCardPanel'
 import { InputsSection, type InputsWiring } from './InputsSection'
 import { SamplingSection } from './SamplingSection'
@@ -135,6 +136,7 @@ function CanvasParams({
   inputs,
 }: ParamsPanelProps & { canvas: ProjectCanvas }): React.JSX.Element {
   const copyText = useCopyText()
+  const openUpdate = useApp((state) => state.setUpdatePopoverOpen)
   const readOnly = canvas.kind === 'result'
   const [customSize, setCustomSize] = useState(false)
   const [promptOpen, setPromptOpen] = useState(false)
@@ -387,7 +389,14 @@ function CanvasParams({
                   <li key={`${blocker.id}-${index}`} className="flex items-center gap-2 text-caption text-ink-2">
                     <span className="min-w-0 flex-1">{blocker.message}</span>
                     {blocker.action ? (
-                      <Button tone="secondary" size="sm" className="h-7 px-2.5" onClick={() => onNavigate(blocker.action!.to)}>{blocker.action.label}</Button>
+                      <Button
+                        tone="secondary"
+                        size="sm"
+                        className="h-7 px-2.5"
+                        onClick={() => blocker.action!.opens === 'update' ? openUpdate(true) : onNavigate(blocker.action!.to)}
+                      >
+                        {blocker.action.label}
+                      </Button>
                     ) : null}
                   </li>
                 ))}

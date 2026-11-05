@@ -15,6 +15,8 @@ export async function buildE2eApp(outDir: string): Promise<string> {
     logLevel: 'warn',
     root: r('e2e/app'),
     base: './',
+    // The app icon and other static files, served next to index.html as in the real build.
+    publicDir: r('src/renderer/public'),
     mode: 'production',
     resolve: {
       alias: { '@renderer': r('src/renderer/src'), '@shared': r('src/shared') },

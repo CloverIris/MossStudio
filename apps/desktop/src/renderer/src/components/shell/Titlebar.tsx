@@ -1,4 +1,3 @@
-import { ArrowUpCircle } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
@@ -6,6 +5,7 @@ import type { GpuTelemetryDevice, GpuTelemetrySnapshot, JobRecord, Settings } fr
 import { useShell } from '../../lib/shell'
 import { useApp } from '../../store'
 import { cn } from '../cn'
+import { UpdateChip } from '../update/UpdateChip'
 
 const GIB = 1024 ** 3
 
@@ -139,24 +139,6 @@ export function PerfMonitor(): React.JSX.Element {
   )
 }
 
-function UpdateButton(): React.JSX.Element | null {
-  const updates = useApp((state) => state.updates)
-  const setUpdateDialogOpen = useApp((state) => state.setUpdateDialogOpen)
-  if (!updates?.updateAvailable || !updates.latestVersion) return null
-  return (
-    <button
-      type="button"
-      data-update-chip
-      title={`MossStudio ${updates.latestVersion} 可用`}
-      onClick={() => setUpdateDialogOpen(true)}
-      className="no-drag flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption text-ink transition-colors hover:bg-well"
-    >
-      <ArrowUpCircle className="size-3.5 text-accent" aria-hidden="true" />
-      更新到 {updates.latestVersion}
-    </button>
-  )
-}
-
 export function TitlebarFrame({ children, className }: { children: ReactNode; className?: string }): React.JSX.Element {
   return (
     <header
@@ -176,7 +158,7 @@ export function Titlebar({ appName = 'MossStudio', monitor = true }: { appName?:
       {/* Pages render their own context here, e.g. the Studio project switcher. */}
       <div ref={setTitlebarSlot} className="no-drag flex min-w-0 items-center gap-1" />
       <div className="min-w-0 flex-1" />
-      <UpdateButton />
+      <UpdateChip />
       {monitor ? <PerfMonitor /> : null}
     </TitlebarFrame>
   )

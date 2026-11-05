@@ -10,7 +10,6 @@ const state = {
   handler: (() => undefined) as Handler,
   calls: [] as string[][],
   health: [] as Array<{ healthy: boolean; branches: number; detail?: string }>,
-  recommended: null as string | null,
   events: [] as Array<{ phase: string; message: string }>,
 }
 vi.mock('@main/lib/run', async (importOriginal) => ({
@@ -23,7 +22,6 @@ vi.mock('@main/lib/run', async (importOriginal) => ({
 vi.mock('@main/lib/gitBinary', () => ({ gitBinary: () => 'git' }))
 vi.mock('@main/lib/events', () => ({ emit: (_channel: string, payload: { phase: string; message: string }) => state.events.push(payload) }))
 vi.mock('@main/services/gitHealth', () => ({ checkBareMirror: async () => state.health.shift() ?? { healthy: true, branches: 1 } }))
-vi.mock('@main/services/updates', () => ({ getRecommendedCommit: () => state.recommended }))
 vi.mock('@main/services/network', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@main/services/network')>()),
   getLastNetwork: () => null,
@@ -36,7 +34,7 @@ const mirror = () => join(root(), 'git', 'moss-image.git')
 
 beforeEach(() => {
   vi.resetModules()
-  Object.assign(state, { handler: () => undefined, calls: [], health: [], recommended: null, events: [] })
+  Object.assign(state, { handler: () => undefined, calls: [], health: [], events: [] })
 })
 const load = () => import('@main/services/git')
 
@@ -55,15 +53,7 @@ describe('listBranches', () => {
     expect(state.calls[0]).toEqual(['-C', mirror(), 'for-each-ref', '--format=%(refname:short)|%(objectname)|%(HEAD)', 'refs/heads'])
   })
 
-  it('treats main as stable when it matches the recommended commit prefix', async () => {
-    state.recommended = 'dead'
-    state.handler = (args) => args.includes('for-each-ref') ? { stdout: `main|deadbeef|\n` } : { code: 128, stdout: '' }
-    const [main] = await (await load()).listBranches()
-    expect(main!.isStable).toBe(true)
-  })
-
-  it('uses a per-source mirror and ignores the recommended commit for other sources', async () => {
-    state.recommended = 'dead'
+  it('uses a per-source mirror for other sources', async () => {
     state.handler = (args) => args.includes('for-each-ref') ? { stdout: 'main|deadbeef|\n' } : { code: 128 }
     const { listBranches } = await load()
     const [main] = await listBranches('https://example.com/fork.git')

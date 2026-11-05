@@ -7,7 +7,12 @@ import {
   launchRowFixture,
   scenario,
   settingsFixture,
+  diagnosticFixture,
+  engineDownloadFixture,
   updateAvailableFixture,
+  updateDownloadingFixture,
+  updateReadyFixture,
+  updaterStateFixture,
 } from '../mocks/backend'
 import { flush, loadStore } from '../helpers/renderer'
 
@@ -25,7 +30,7 @@ describe('store.init', () => {
     expect(state.devices).toEqual(backend.state.devices)
     expect(state.engineReadiness).toEqual(backend.state.engineReadiness)
     expect(state.env).toEqual(backend.state.env)
-    expect(state.updates).toEqual(backend.state.updates)
+    expect(state.update).toEqual(backend.state.update)
     expect(backend.unhandled).toEqual([])
   })
 
@@ -106,7 +111,7 @@ describe('store.init', () => {
     const { backend, store } = await loadStore('ready')
     await store().init()
     for (const event of [Events.download, Events.job, Events.jobLog, Events.diagnostic, Events.gpuTelemetry, Events.settingsChanged,
-      Events.updateDownload, Events.updatesChanged, Events.mossInferDownload, Events.envProgress, Events.gitProgress, Events.runtimeLog]) {
+      Events.updateState, Events.mossInferDownload, Events.envProgress, Events.gitProgress, Events.runtimeLog]) {
       expect(backend.listenerCount(event), event).toBe(1)
     }
   })
@@ -153,66 +158,96 @@ describe('store.init', () => {
   })
 
   describe('startup update announcement', () => {
-    it('notifies and opens the dialog for an available update after onboarding', async () => {
-      const { store } = await loadStore('updateAvailable')
+    it('reads the update state (not a new check) and notifies about an available version', async () => {
+      const { backend, store } = await loadStore('updateAvailable')
       await store().init()
-      expect(store().updateDialogOpen).toBe(true)
+      expect(backend.callsTo(Ipc.updateState)).toHaveLength(1)
+      expect(backend.callsTo(Ipc.updateCheck)).toHaveLength(0)
+      expect(store().updatePopoverOpen).toBe(false)
       expect(store().notifications).toHaveLength(1)
       expect(store().notifications[0]).toMatchObject({ tone: 'info', title: '发现新版本', read: false })
       expect(store().notifications[0]!.message).toContain('1.1.0')
-    })
-
-    it('does not interrupt a pending onboarding with the dialog, but still notifies', async () => {
-      const { store } = await loadStore(scenario('updateAvailable', { settings: settingsFixture({ onboardingState: 'pending' }) }))
-      await store().init()
-      expect(store().updateDialogOpen).toBe(false)
-      expect(store().notifications).toHaveLength(1)
-    })
-
-    it('respects autoCheckUpdates=false for the dialog', async () => {
-      const { store } = await loadStore(scenario('updateAvailable', { settings: settingsFixture({ onboardingState: 'completed', autoCheckUpdates: false }) }))
-      await store().init()
-      expect(store().updateDialogOpen).toBe(false)
-      expect(store().notifications).toHaveLength(1)
-    })
-
-    it('stays silent for a version the user dismissed', async () => {
-      const { store } = await loadStore(scenario('updateAvailable', { settings: settingsFixture({ onboardingState: 'completed', dismissedUpdateVersion: '1.1.0' }) }))
-      await store().init()
-      expect(store().updateDialogOpen).toBe(false)
-      expect(store().notifications).toEqual([])
     })
 
     it('surfaces at most three announcements with tone mapping and markdown stripped', async () => {
       const announcements = [
         announcementFixture({ id: 'a', level: 'critical', title: 'A' }),
         announcementFixture({ id: 'b', level: 'warning', title: 'B', body: '' }),
-        announcementFixture({ id: 'c', level: 'success', title: 'C', body: `# Title\n\n> ${'x'.repeat(400)}` }),
+        announcementFixture({ id: 'c', level: 'info', title: 'C', body: `# Title\n\n> ${'x'.repeat(400)}` }),
         announcementFixture({ id: 'd', level: 'info', title: 'D' }),
       ]
-      const { store } = await loadStore(scenario('ready', { updates: { ...scenario('ready').updates, announcements } }))
+      const { store } = await loadStore(scenario('ready', { update: updaterStateFixture({ announcements }) }))
       await store().init()
       const byTitle = Object.fromEntries(store().notifications.map((item) => [item.title, item]))
       expect(Object.keys(byTitle).sort()).toEqual(['A', 'B', 'C'])
       expect(byTitle['A']).toMatchObject({ tone: 'error', message: 'MossStudio 发布了新的 模型。' })
       expect(byTitle['B']).toMatchObject({ tone: 'warning', message: '打开通知面板查看公告详情。' })
-      expect(byTitle['C']!.tone).toBe('success')
+      expect(byTitle['C']!.tone).toBe('info')
       expect(byTitle['C']!.message).toHaveLength(180)
       expect(byTitle['C']!.message.startsWith('Title x')).toBe(true)
     })
 
     it('does not repeat an announcement or version on later checks', async () => {
       const { backend, store } = await loadStore(scenario('updateAvailable', {
-        updates: updateAvailableFixture('1.1.0', { announcements: [announcementFixture()] }),
+        update: updateAvailableFixture('1.1.0', { announcements: [announcementFixture()] }),
       }))
       await store().init()
       expect(store().notifications).toHaveLength(2)
-      store().setUpdateDialogOpen(false)
       await store().checkForUpdates()
-      backend.emit(Events.updatesChanged, backend.state.updates)
+      backend.emit(Events.updateState, backend.state.update)
       await flush()
       expect(store().notifications).toHaveLength(2)
-      expect(store().updateDialogOpen).toBe(false)
+    })
+  })
+
+  describe('events that arrive while the startup snapshots are in flight', () => {
+    it('keeps an update event over the older update:state answer (a slow envScan holds every snapshot)', async () => {
+      const { backend, store } = await loadStore(scenario('ready', { update: updateDownloadingFixture('1.0.4', 100, { phase: 'installing' }) }))
+      const env = backend.hold(Ipc.envScan)
+      const starting = store().init()
+      await env.called
+      await flush()
+      // main finished materializing while envScan was still probing the GPU
+      backend.emit(Events.updateState, updateReadyFixture('1.0.4'))
+      await env.release()
+      await starting
+      expect(store().update).toMatchObject({ phase: 'ready', pending: '1.0.4' })
+      expect(store().notifications.map((item) => item.title)).toContain('更新已准备好')
+    })
+
+    it('still takes the snapshot when no event came in', async () => {
+      const { backend, store } = await loadStore(scenario('ready', { update: updateReadyFixture('1.0.4') }))
+      const env = backend.hold(Ipc.envScan)
+      const starting = store().init()
+      await env.called
+      await env.release()
+      await starting
+      expect(store().update).toMatchObject({ phase: 'ready' })
+    })
+
+    it('keeps job, diagnostic and engine-download events over their snapshots', async () => {
+      const { backend, store } = await loadStore(scenario('ready', {
+        jobs: [jobFixture({ id: 'job-a', state: 'running' }), jobFixture({ id: 'job-b', state: 'queued' })],
+        diagnostics: [diagnosticFixture({ id: 'diag-a', title: 'old' })],
+        engineDownload: engineDownloadFixture({ phase: 'downloading', percent: 10 }),
+      }))
+      const env = backend.hold(Ipc.envScan)
+      const starting = store().init()
+      await env.called
+      await flush()
+      backend.emit(Events.job, jobFixture({ id: 'job-a', state: 'succeeded', stage: 'ready' }))
+      backend.emit(Events.diagnostic, diagnosticFixture({ id: 'diag-a', title: 'new' }))
+      backend.emit(Events.mossInferDownload, engineDownloadFixture({ phase: 'downloading', percent: 80 }))
+      await env.release()
+      await starting
+      expect(store().jobs.find((job) => job.id === 'job-a')!.state).toBe('succeeded')
+      expect(store().jobs.find((job) => job.id === 'job-b')!.state).toBe('queued')
+      expect(store().jobs).toHaveLength(2)
+      expect(store().diagnostics.find((item) => item.id === 'diag-a')!.title).toBe('new')
+      expect(store().mossInferDownload!.percent).toBe(80)
+      expect(store().engineReadiness!.installing).toMatchObject({ percent: 80 })
+      // job-a is done, so the active job is no longer it.
+      expect(store().activeJobId).toBeNull()
     })
   })
 })

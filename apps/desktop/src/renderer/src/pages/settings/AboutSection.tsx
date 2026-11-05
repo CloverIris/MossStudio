@@ -6,6 +6,7 @@ import { useApp } from '../../store'
 import { Advanced, Button, Group, IconButton, Row, Section, Spinner, StatusDot, useCopyText } from '../../components/ui'
 import { SectionBody } from './fields'
 import { diagnosticsReport } from './diagnosticsReport'
+import { UninstallRow } from './UninstallRow'
 import { useAppInfo } from './useAppInfo'
 
 const REPOSITORY = 'https://github.com/CloverIris/MossStudio'
@@ -39,6 +40,7 @@ export function AboutSection(): React.JSX.Element {
           <Row title="QQ 交流群" description={QQ_GROUP}>
             <IconButton label="复制群号" onClick={() => void copyText(QQ_GROUP, '群号已复制')}><Copy className="size-4" /></IconButton>
           </Row>
+          <UninstallRow />
         </Group>
       </Section>
 
