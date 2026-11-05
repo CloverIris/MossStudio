@@ -92,7 +92,7 @@ describe('studio/mask pixels', () => {
 
 describe('studio/mask availability', () => {
   const features = (patch: Partial<EngineFeatures> = {}): EngineFeatures => ({
-    preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, values: {}, ...patch,
+    preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true, values: {}, ...patch,
   })
   const withInit = canvas({ inputs: { init: { link: { canvasId: 'a' }, strength: 0.6 } } })
 

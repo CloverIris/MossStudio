@@ -1,5 +1,6 @@
-import type { AdapterEntry, Catalog, EngineReadiness, ModelBundle, ModelEntry, ProjectCanvas } from '@shared/types'
+import type { AdapterEntry, Catalog, EngineFeatures, EngineReadiness, ModelBundle, ModelEntry, ProjectCanvas } from '@shared/types'
 import { adapterStatuses, normalizeCanvasAdapters } from '@shared/adapters'
+import { CLI_ENGINE_LABEL, cliBundleProblem } from '@shared/cliEngine'
 import { compileCanvasPrompt, type CompiledPrompt } from './prompt'
 
 /** Problems with a canvas's pictures and sampling choices (see jobInputs.ts). */
@@ -12,7 +13,7 @@ export type InputBlockerId = 'input-source' | 'input-adapter' | 'input-unsupport
  */
 
 export interface Blocker {
-  id: 'update-required' | 'model-none' | 'model-missing' | 'engine' | 'remote-path' | 'adapters' | 'remote-adapters' | 'prompt' | InputBlockerId
+  id: 'update-required' | 'model-none' | 'model-missing' | 'model-engine' | 'engine' | 'remote-path' | 'adapters' | 'remote-adapters' | 'lora-unsupported' | 'prompt' | InputBlockerId
   message: string
   /** Where the fix lives; `opens: 'update'` opens the title bar update popover instead of going to `to`. */
   action?: { label: string; to: string; opens?: 'update' }
@@ -74,6 +75,8 @@ export interface ReadinessInput {
   inputBlockers?: readonly Blocker[]
   /** The app update state: this version may be too old to generate (main refuses it too). */
   update?: { supported: boolean; required: boolean; minimumVersion: string | null } | null
+  /** What the engine this run goes to can do; undefined while reading, null when none is usable. */
+  features?: EngineFeatures | null
 }
 
 export interface Readiness {
@@ -109,6 +112,13 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
     }
   }
 
+  // A CLI engine (兼容模式 / AMD 原生) reads a bf16 bundle folder only.
+  const cli = input.remote ? undefined : input.features?.cli
+  if (cli && input.catalog && input.bundle.bundle && input.bundle.installed) {
+    const problem = cliBundleProblem(cli, input.bundle.bundle, input.catalog.models)
+    if (problem) blockers.push({ id: 'model-engine', message: problem, action: toModels })
+  }
+
   if (input.remote) {
     if (!input.remote.modelPath?.trim()) {
       blockers.push({ id: 'remote-path', message: `「${input.remote.name}」还没有设置模型位置`, action: { label: '去设置', to: '/settings/devices' } })
@@ -137,6 +147,9 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
   }
   if (input.remote && adapters.length) {
     blockers.push({ id: 'remote-adapters', message: '在其他电脑上运行时暂不支持 LoRA，请移除 LoRA 或改回这台电脑' })
+  } else if (adapters.length && input.features && !input.features.lora) {
+    const engine = input.features.cli ? `${CLI_ENGINE_LABEL[input.features.cli]}引擎` : '这台设备上的引擎'
+    blockers.push({ id: 'lora-unsupported', message: `${engine}不支持 LoRA，请移除 LoRA 后再生成` })
   }
 
   if (input.canvas) blockers.push(...(input.inputBlockers ?? []))

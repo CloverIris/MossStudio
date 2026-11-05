@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectCanvas } from '@shared/types'
+import { cliEngineFeatures } from '@shared/cliEngine'
 import { resolveJobInputs, type JobInputContext } from '@renderer/pages/studio/jobInputs'
 import { controlAdapterFixture, engineFeaturesFixture } from '@test/mocks/backend'
 import { canvas } from './fixtures'
@@ -132,5 +133,37 @@ describe('studio/jobInputs resolution', () => {
     expect(resolved.params.sampling).toEqual({ hires: { width: 2048, height: 1536, strength: 0.3 } })
     const rerun = resolveJobInputs(target({ kind: 'result', width: 2048, height: 1536, baseSize: { width: 1024, height: 768 }, sampling: { hires: { width: 2048, height: 1536 } } }), context())
     expect(rerun.size).toEqual({ width: 1024, height: 768 })
+  })
+})
+
+describe('studio/jobInputs on a CLI engine (兼容模式 / AMD 原生)', () => {
+  it('blocks every picture input and sampling choice it cannot do, naming the engine', () => {
+    const resolved = resolveJobInputs(target({
+      inputs: {
+        init: { link: { canvasId: 'img' }, strength: 0.6 },
+        references: { links: [{ canvasId: 'img' }] },
+      },
+      sampling: { sampler: 'heun', hires: { width: 2048, height: 2048 }, stepCache: 'fbcache', cfgTruncation: 0.5 },
+    }), context({ features: cliEngineFeatures('vulkan') }))
+    expect(resolved.blockers.map((blocker) => blocker.message)).toEqual([
+      '兼容模式引擎只能文生图，不支持起始图，请移除后再生成',
+      '兼容模式引擎只能文生图，不支持参考图，请移除后再生成',
+      '兼容模式引擎只能文生图，不支持更换采样器，请移除后再生成',
+      '兼容模式引擎只能文生图，不支持高清修复，请移除后再生成',
+      '兼容模式引擎只能文生图，不支持步缓存，请移除后再生成',
+      '兼容模式引擎只能文生图，不支持CFG 截断，请移除后再生成',
+    ])
+  })
+
+  it('lets an explicit euler sampler and moss scheduler through: that is what the CLI runs', () => {
+    const resolved = resolveJobInputs(target({ sampling: { sampler: 'euler', scheduler: 'moss' } }), context({ features: cliEngineFeatures('vulkan') }))
+    expect(resolved.blockers).toEqual([])
+    expect(resolved.params.sampling).toEqual({ sampler: 'euler', scheduler: 'moss' })
+  })
+
+  it('lets shift and step cache off through', () => {
+    const resolved = resolveJobInputs(target({ sampling: { shift: 4, stepCache: 'off' } }), context({ features: cliEngineFeatures('hip') }))
+    expect(resolved.blockers).toEqual([])
+    expect(resolved.params.sampling).toEqual({ shift: 4, stepCache: 'off' })
   })
 })

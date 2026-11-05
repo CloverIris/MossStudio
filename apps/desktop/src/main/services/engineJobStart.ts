@@ -1,4 +1,6 @@
+import { CLI_ENGINE_LABEL } from '@shared/cliEngine'
 import type { JobRecord } from '@shared/types'
+import { codedError } from '../lib/codedError'
 import { resolveCanvasAdapters } from './adapterResolution'
 import { listControlAdapters } from './controlAdapters'
 import { getEngineFeatures } from './engineFeatures'
@@ -27,12 +29,19 @@ export async function startRequestedEngineJob(raw: Record<string, unknown>): Pro
   const hostId = text(raw['hostId'])
   const adapters = await resolveCanvasAdapters(settings, raw['adapters'], { hostId })
   const base = Object.fromEntries(Object.entries(raw).filter(([key]) => !INPUT_KEYS.has(key)))
-  if (!Object.keys(pickJobInputs(raw)).length) return startEngineJob({ ...base, adapters } as never)
+  const wantsInputs = Object.keys(pickJobInputs(raw)).length > 0
+  // A plain job asks the engine nothing; LoRAs and pictures are checked against what it can do.
+  if (!wantsInputs && !adapters.length) return startEngineJob({ ...base, adapters } as never)
+  const features = await getEngineFeatures({ deviceUuid: text(raw['deviceUuid']), hostId }).catch(() => null)
+  if (adapters.length && features && !features.lora) {
+    const engine = features.cli ? `${CLI_ENGINE_LABEL[features.cli]}引擎` : '当前引擎'
+    throw codedError('E_NOT_SUPPORTED', `${engine}不支持 LoRA，请移除 LoRA 后再生成`)
+  }
+  if (!wantsInputs) return startEngineJob({ ...base, adapters } as never)
 
   const projectId = text(raw['projectId'])
   const imageRoots = await galleryRoots(settings)
   if (projectId && PROJECT_ID_PATTERN.test(projectId)) imageRoots.push(projectAssetsDir(projectId))
-  const features = await getEngineFeatures({ deviceUuid: text(raw['deviceUuid']), hostId }).catch(() => null)
   const inputs = await validateJobInputs(raw, {
     imageRoots,
     controlAdapters: listControlAdapters(),

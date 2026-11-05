@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { paths } from '../lib/paths'
 
@@ -15,7 +15,9 @@ export function archiveLegacyInferenceData(): { archived: boolean; archive?: str
     ['runtimes', paths.runtimes()],
     ['git', paths.git()],
   ] as const
-  const present = items.filter(([, path]) => existsSync(path))
+  // Only folders that hold a file: a fresh data root has just the empty skeleton
+  // (instances/, git/, runtimes/python/), which is not worth an archive.
+  const present = items.filter(([, path]) => holdsFile(path))
   if (present.length) {
     const archive = join(paths.root(), `legacy-inference-${new Date().toISOString().slice(0, 10)}`)
     mkdirSync(archive, { recursive: true })
@@ -29,3 +31,15 @@ export function archiveLegacyInferenceData(): { archived: boolean; archive?: str
   writeFileSync(marker, JSON.stringify({ archivedAt: new Date().toISOString() }, null, 2), 'utf8')
   return { archived: false }
 }
+
+function holdsFile(path: string, depth = 0): boolean {
+  if (depth > 32) return true
+  let entries
+  try {
+    entries = readdirSync(path, { withFileTypes: true })
+  } catch {
+    return false
+  }
+  return entries.some((entry) => !entry.isDirectory() || holdsFile(join(path, entry.name), depth + 1))
+}
+

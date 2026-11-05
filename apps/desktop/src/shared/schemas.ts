@@ -238,8 +238,10 @@ export const schemas = {
       mossInferMemoryMode: z.enum(['min_memory', 'balanced', 'max_speed']),
       mossInferTier: z.enum(['reference', 'high', 'turbo']),
       mossInferChannel: z.enum(['stable', 'dev']),
-      mossInferVariant: z.enum(['system-cuda', 'bundled']),
-      mossInferArchitecture: z.enum(['auto', 'standard', 'sm75']),
+      engineDeviceOverrides: z.record(
+        z.string().min(1).max(200),
+        z.string().regex(/^(?:(?:cu12|cu13)(?:-sm75|-sm70)?(?:-system-cuda)?|vulkan|hip)$/),
+      ).refine((value) => Object.keys(value).length <= 64, '最多 64 块 GPU'),
       gpuSelection: z.union([
         z.literal('auto'),
         z.object({ uuid: z.string().min(1).max(200) }),
@@ -258,12 +260,19 @@ export const schemas = {
 
   mossInferDownload: z.object({
     channel: z.enum(['stable', 'dev']),
-    flavour: z.enum(['cu12', 'cu13']).optional(),
-    variant: z.enum(['system-cuda', 'bundled']).optional(),
-    architecture: z.enum(['auto', 'standard', 'sm75']).optional(),
+    /** Package ids to install; omitted = what the plan says is missing. */
+    packages: z.array(z.string().regex(/^(?:(?:cu12|cu13)(?:-sm75|-sm70)?(?:-system-cuda)?|vulkan|hip)$/)).min(1).max(8).optional(),
+    /** Reinstall every planned package. */
+    all: z.boolean().optional(),
     cudaWheels: z.boolean().optional(),
     releaseTag: z.string().min(1).max(120).optional(),
   }),
+
+  enginePlan: z.object({
+    refresh: z.boolean().optional(),
+    channel: z.enum(['stable', 'dev']).optional(),
+    releaseTag: z.string().min(1).max(120).optional(),
+  }).optional(),
 
   engineVersionId: z.object({ id: z.string().min(1).max(240) }),
   engineSelectDirectory: z.object({ path: pathLike }),
@@ -495,7 +504,7 @@ export const schemas = {
     channel: z.enum(['stable', 'dev']).optional(),
     flavour: z.enum(['cu12', 'cu13']).optional(),
     variant: z.enum(['system-cuda', 'bundled']).optional(),
-    architecture: z.enum(['auto', 'standard', 'sm75']).optional(),
+    architecture: z.enum(['auto', 'standard', 'sm75', 'sm70']).optional(),
     releaseTag: z.string().min(1).max(120).optional(),
   }),
 
@@ -616,6 +625,8 @@ export const schemas = {
     projectId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/, 'Project 无效'),
     canvasId: z.string().min(1).max(120),
     png: z.instanceof(Uint8Array),
+    /** The mask this one replaces on the canvas (deleted when nothing else uses it). */
+    replaces: z.string().min(1).max(4096).optional(),
   }),
 
   controlAdapterAdd: z.object({ path: pathLike }),

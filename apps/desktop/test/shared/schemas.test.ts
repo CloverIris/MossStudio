@@ -98,6 +98,8 @@ const cases = {
       'null LAN port': { lanWebPort: null },
       'concurrency 1': { modelDownloadConcurrency: 1 },
       'feature toggles': { remoteHostsEnabled: true, trainingEnabled: false, engineAutoUpdate: true },
+      'per-GPU engines': { engineDeviceOverrides: { 'GPU-1': 'cu13-sm75-system-cuda', 'vk-1002-744c-0': 'hip', 'vk-8086-56a0-0': 'vulkan' } },
+      'no per-GPU engines': { engineDeviceOverrides: {} },
     },
     rejects: {
       'unknown theme': { theme: 'blue' },
@@ -119,16 +121,23 @@ const cases = {
       'non-boolean flag': { autoDownloadUpdates: 'yes' },
       'non-boolean feature toggle': { remoteHostsEnabled: 1 },
       'null engine auto-update': { engineAutoUpdate: null },
+      'unknown engine package': { engineDeviceOverrides: { 'GPU-1': 'cu11' } },
+      'engine package for no GPU': { engineDeviceOverrides: { '': 'vulkan' } },
+      '65 per-GPU engines': { engineDeviceOverrides: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`GPU-${i}`, 'vulkan'])) },
     },
   },
 
   mossInferDownload: {
     valid: { channel: 'stable' },
-    accepts: { 'every option': { channel: 'dev', flavour: 'cu12', variant: 'bundled', architecture: 'sm75', cudaWheels: true, releaseTag: 'v2.1.1' } },
+    accepts: {
+      'every option': { channel: 'dev', packages: ['cu13-sm75-system-cuda', 'vulkan', 'hip', 'cu12-sm70'], all: true, cudaWheels: true, releaseTag: 'v2.1.1' },
+      'the old flavour fields are ignored': { channel: 'stable', flavour: 'cu12', variant: 'bundled' },
+    },
     rejects: {
       'missing channel': {},
       'unknown channel': { channel: 'nightly' },
-      'unknown flavour': { channel: 'stable', flavour: 'cu11' },
+      'unknown package': { channel: 'stable', packages: ['cu11'] },
+      'empty package list': { channel: 'stable', packages: [] },
       'empty release tag': { channel: 'stable', releaseTag: '' },
       'overlong release tag': { channel: 'stable', releaseTag: long(121) },
     },
@@ -517,8 +526,17 @@ const cases = {
 
   engineInstallRemote: {
     valid: { hostId: 'h1' },
-    accepts: { 'every option': { hostId: 'h1', channel: 'dev', flavour: 'cu13', variant: 'system-cuda', architecture: 'standard', releaseTag: 'v2' } },
+    accepts: {
+      'every option': { hostId: 'h1', channel: 'dev', flavour: 'cu13', variant: 'system-cuda', architecture: 'standard', releaseTag: 'v2' },
+      'the Volta / Turing build': { hostId: 'h1', flavour: 'cu12', architecture: 'sm70' },
+    },
     rejects: { 'unknown variant': { hostId: 'h1', variant: 'docker' }, 'empty tag': { hostId: 'h1', releaseTag: '' } },
+  },
+
+  enginePlan: {
+    valid: undefined,
+    accepts: { 'every option': { refresh: true, channel: 'dev', releaseTag: 'v2.2.0' }, empty: {} },
+    rejects: { 'unknown channel': { channel: 'nightly' }, 'empty tag': { releaseTag: '' } },
   },
 
   engineSystemCuda: {

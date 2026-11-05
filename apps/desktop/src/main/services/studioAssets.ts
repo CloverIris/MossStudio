@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import { nativeImage } from 'electron'
 import { codedError } from '../lib/codedError'
 import { readImageHeader, isPng, type ImageHeader } from './imageHeaders'
-import { PROJECT_ID_PATTERN, projectAssetsDir } from './projects'
+import { PROJECT_ID_PATTERN, getProject, projectAssetsDir } from './projects'
+import type { ProjectDocument } from '@shared/types'
 
 /**
  * Pictures a Studio project takes in: images brought onto the board and the
@@ -105,8 +106,34 @@ export async function importImageFile(projectId: string, path: string): Promise<
   return importImageBytes(projectId, await readFile(path))
 }
 
+export interface MaskOptions {
+  /** The mask this one replaces on the canvas; deleted when nothing else uses it. */
+  replaces?: string
+  /** Files queued or running jobs read (they must stay until the job is done). */
+  inUse?: Iterable<string>
+}
+
+const MASK_FILE = /^mask-[A-Za-z0-9_-]+-[0-9a-f]{24}\.png$/
+
+/** A mask this module wrote for `projectId`: directly in its assets folder, with a mask file name. */
+function isOwnMask(projectId: string, path: string): boolean {
+  return resolve(dirname(path)) === resolve(assetsDirFor(projectId)) && MASK_FILE.test(basename(path))
+}
+
+/** Every string anywhere in `value` (canvas inputs, result canvases, layers…), resolved as a path. */
+function referencedPaths(value: unknown, out = new Set<string>()): Set<string> {
+  if (typeof value === 'string') {
+    if (value) out.add(resolve(value))
+  } else if (Array.isArray(value)) {
+    for (const item of value) referencedPaths(item, out)
+  } else if (value && typeof value === 'object') {
+    for (const item of Object.values(value)) referencedPaths(item, out)
+  }
+  return out
+}
+
 /** Write a painted mask (PNG, white = repaint) for one canvas: `mask-<canvas>-<hash>.png`. */
-export async function saveMask(projectId: string, canvasId: string, png: Uint8Array): Promise<{ path: string }> {
+export async function saveMask(projectId: string, canvasId: string, png: Uint8Array, options: MaskOptions = {}): Promise<{ path: string }> {
   const dir = assetsDirFor(projectId)
   if (!png.byteLength || !isPng(png)) throw codedError('E_IMAGE_FORMAT', '遮罩必须是 PNG 图片')
   if (png.byteLength > MAX_MASK_BYTES) throw codedError('E_IMAGE_TOO_LARGE', '遮罩文件太大了')
@@ -115,5 +142,49 @@ export async function saveMask(projectId: string, canvasId: string, png: Uint8Ar
   await mkdir(dir, { recursive: true })
   const target = join(dir, `mask-${safeCanvas}-${hashOf(png)}.png`)
   await writeOnce(target, png)
+  if (options.replaces && resolve(options.replaces) !== resolve(target)) {
+    await releaseMask(projectId, canvasId, options.replaces, options.inUse)
+  }
   return { path: target }
+}
+
+/**
+ * Deletes a mask the canvas `canvasId` no longer uses, unless another canvas of
+ * the saved project (a result included) or a waiting/running job still reads
+ * it. Only this project's own mask files are ever deleted.
+ */
+export async function releaseMask(projectId: string, canvasId: string, path: string, inUse: Iterable<string> = []): Promise<boolean> {
+  if (!isOwnMask(projectId, path)) return false
+  const target = resolve(path)
+  if ([...inUse].some((item) => resolve(item) === target)) return false
+  const others = getProject(projectId)?.canvases.filter((canvas) => canvas.id !== canvasId) ?? []
+  if (referencedPaths(others).has(target)) return false
+  await rm(target, { force: true })
+  return true
+}
+
+/**
+ * After a save: deletes the project's mask files no canvas references any more
+ * (masks painted over, cleared, or of deleted canvases), keeping those a job
+ * still reads. Returns the files deleted.
+ */
+export async function pruneProjectMasks(project: Pick<ProjectDocument, 'id' | 'canvases'>, inUse: Iterable<string> = []): Promise<string[]> {
+  const dir = assetsDirFor(project.id)
+  let names: string[]
+  try {
+    names = await readdir(dir)
+  } catch {
+    return []
+  }
+  const keep = referencedPaths(project.canvases)
+  for (const item of inUse) keep.add(resolve(item))
+  const removed: string[] = []
+  for (const name of names) {
+    if (!MASK_FILE.test(name)) continue
+    const file = resolve(join(dir, name))
+    if (keep.has(file)) continue
+    await rm(file, { force: true })
+    removed.push(file)
+  }
+  return removed
 }

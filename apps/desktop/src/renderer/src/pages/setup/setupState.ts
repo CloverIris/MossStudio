@@ -1,12 +1,21 @@
 import type {
   DownloadTask,
+  EnginePlanView,
   EngineReadiness,
   GpuInventorySnapshot,
   GpuSelection,
   MossInferDownloadState,
   OnboardingStatus,
 } from '@shared/types'
-import { engineDownloadActive, engineDownloadLabel, engineDownloadPercent, engineInstallError } from '../../lib/engineInstall'
+import {
+  engineDownloadActive,
+  engineDownloadLabel,
+  engineDownloadPercent,
+  engineInstallError,
+  planLines,
+  planMissingBytes,
+  type PlanLine,
+} from '../../lib/engineInstall'
 import { bytes } from '../../lib/format'
 import { defaultGpuUuid, gpuMemoryLabel } from '../settings/devicesModel'
 
@@ -27,7 +36,7 @@ export interface SetupStep {
  * - idle: ready for 开始准备
  * - running: something is being installed or downloaded
  * - done: everything is in place, 开始创作 is available
- * - blocked: no NVIDIA GPU, nothing can be prepared here
+ * - blocked: no GPU the engine runs on (or macOS), nothing can be prepared here
  * - error: a step failed and needs 重试
  */
 export type SetupPhase = 'checking' | 'idle' | 'running' | 'done' | 'blocked' | 'error'
@@ -36,6 +45,8 @@ export interface SetupInput {
   gpu: GpuInventorySnapshot | null
   gpuSelection?: GpuSelection
   engine: EngineReadiness | null
+  /** What the machine probe found and which package each GPU gets; null while it runs, undefined when it failed. */
+  plan?: EnginePlanView | null
   engineDownload: MossInferDownloadState | null
   /** Failure before the download started (e.g. outdated driver) or of the IPC call itself. */
   engineError?: string | null
@@ -49,6 +60,12 @@ export interface SetupView {
   phase: SetupPhase
   /** Bytes still to download for the recommended model. */
   modelBytes: number
+  /** Bytes still to download for the engine packages (an estimate before the plan is known). */
+  engineBytes: number
+  /** One line per GPU: what runs on it and what will be downloaded. */
+  lines: PlanLine[]
+  /** From the plan; macOS never runs the engine locally. */
+  os?: EnginePlanView['os']
 }
 
 /** Rough size of an engine package, for the "需要约 N GB" sentence. */
@@ -56,8 +73,9 @@ export const ENGINE_ESTIMATE_BYTES = 400 * 1024 ** 2
 
 function gpuStep(input: SetupInput): SetupStep {
   const base = { id: 'gpu' as const, title: '检测 GPU' }
-  const { gpu } = input
-  if (!gpu) return { ...base, state: 'running', detail: '正在检测显卡…' }
+  const { gpu, plan } = input
+  if (plan?.blocked) return { ...base, state: 'blocked', detail: plan.blocked }
+  if (!gpu || plan === null) return { ...base, state: 'running', detail: '正在检测显卡…' }
   if (gpu.status === 'ok' && gpu.devices.length > 0) {
     const uuid = defaultGpuUuid(gpu, input.gpuSelection)
     const device = gpu.devices.find((item) => item.uuid === uuid) ?? gpu.devices[0]!
@@ -82,12 +100,21 @@ function engineStep(input: SetupInput, gpuReady: boolean): SetupStep {
       ...(percent === null ? {} : { percent }),
     }
   }
-  if (input.engine?.state === 'ready') return { ...base, state: 'done', detail: 'MossInfer 已安装' }
+  const missing = input.plan?.missing ?? []
+  if (input.engine?.state === 'ready' && missing.length === 0) return { ...base, state: 'done', detail: 'MossInfer 已安装' }
   const error = input.engineError ?? engineInstallError(input.engine, download)
-  if (error) return { ...base, state: 'error', detail: error }
-  if (download?.phase === 'canceled') return { ...base, state: 'error', detail: '安装已取消' }
+  if (error && input.engine?.state !== 'ready') return { ...base, state: 'error', detail: error }
+  if (download?.phase === 'canceled' && input.engine?.state !== 'ready') return { ...base, state: 'error', detail: '安装已取消' }
   if (!input.engine) return { ...base, state: 'waiting', detail: '正在检查…' }
-  return { ...base, state: gpuReady ? 'waiting' : 'blocked', detail: '推理引擎 MossInfer，会按你的显卡自动选择版本' }
+  const plan = input.plan
+  let detail = '推理引擎 MossInfer，会按你的显卡自动选择版本'
+  if (plan && missing.length > 0) {
+    const size = bytes(planMissingBytes(plan))
+    detail = input.engine.state === 'ready'
+      ? `还需为其他显卡下载 ${missing.length} 个引擎包 · ${size}`
+      : missing.length === 1 ? `MossInfer · ${size}` : `MossInfer · ${missing.length} 个引擎包，共 ${size}`
+  }
+  return { ...base, state: gpuReady ? 'waiting' : 'blocked', detail }
 }
 
 /** Downloads that belong to the recommended local model. */
@@ -126,21 +153,23 @@ export function deriveSetup(input: SetupInput): SetupView {
   const gpuReady = gpu.state === 'done'
   const steps = [gpu, engineStep(input, gpuReady), modelStep(input, gpuReady)]
   const modelBytes = input.onboarding?.steps.find((step) => step.id === 'model')?.sizeBytes ?? 0
+  const engineBytes = input.plan ? planMissingBytes(input.plan) : ENGINE_ESTIMATE_BYTES
+  const lines = input.plan && !input.plan.blocked ? planLines(input.plan) : []
   let phase: SetupPhase
   if (steps.every((step) => step.state === 'done')) phase = 'done'
   else if (gpu.state === 'blocked') phase = 'blocked'
   // Detecting the GPU is part of checking; only installs and downloads count as running.
   else if (steps.some((step) => step.id !== 'gpu' && step.state === 'running')) phase = 'running'
   else if (steps.some((step) => step.state === 'error')) phase = 'error'
-  else if (!input.gpu || !input.onboarding || !input.engine) phase = 'checking'
+  else if (!input.gpu || input.plan === null || !input.onboarding || !input.engine) phase = 'checking'
   else phase = 'idle'
-  return { steps, phase, modelBytes }
+  return { steps, phase, modelBytes, engineBytes, lines, ...(input.plan ? { os: input.plan.os } : {}) }
 }
 
 /** "需要约 13 GB 空间" — counts only what is still missing. */
 export function setupSpaceLabel(view: SetupView): string | null {
   const engineMissing = view.steps.find((step) => step.id === 'engine')?.state !== 'done'
-  const total = view.modelBytes + (engineMissing ? ENGINE_ESTIMATE_BYTES : 0)
+  const total = view.modelBytes + (engineMissing ? view.engineBytes : 0)
   if (total <= 0) return null
   const gb = total / 1024 ** 3
   return gb >= 1 ? `约 ${Math.ceil(gb)} GB` : `约 ${Math.ceil(total / 1024 ** 2)} MB`

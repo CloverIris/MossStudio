@@ -22,7 +22,7 @@ function put(path: string, data: Buffer = PNG): string {
 }
 
 const features = (patch: Partial<EngineFeatures> = {}): EngineFeatures => ({
-  preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true,
+  preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true,
   values: { sampler: ['euler', 'heun'], scheduler: ['karras'], resize: ['crop', 'fit', 'stretch'], step_cache: ['off', 'fbcache'] },
   ...patch,
 })

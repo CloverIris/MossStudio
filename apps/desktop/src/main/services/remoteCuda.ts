@@ -1,6 +1,40 @@
 import { posix } from 'node:path'
 import type { RemoteCudaProbe, RemoteEngineInfo, TrainingHost } from '@shared/types'
 import { posixQuote, sshExec } from './ssh'
+import { drmPciId } from '../lib/amdGpus'
+import type { EngineMachine, EngineMachineGpu } from '@shared/engineChoice'
+
+/**
+ * The host as the engine chooser sees it: one NVIDIA GPU per nvidia-smi row
+ * (compute capability, driver) and the non-NVIDIA display devices from DRM.
+ * Hosts only run moss-server, so the chooser is asked for CUDA builds only.
+ */
+export function remoteMachine(info: Pick<RemoteEngineInfo, 'cuda' | 'gpu'>): EngineMachine {
+  const cuda = info.cuda
+  const gpus: EngineMachineGpu[] = []
+  const names = cuda?.gpuNames ?? []
+  const capabilities = cuda?.computeCapabilities ?? []
+  const count = Math.max(names.length, capabilities.length)
+  for (let index = 0; index < count; index += 1) {
+    const match = /^(\d+)\.(\d+)$/.exec(capabilities[index] ?? '')
+    gpus.push({
+      id: `remote-nvidia-${index}`,
+      name: names[index] || `NVIDIA GPU ${index}`,
+      vendor: 'nvidia',
+      ...(match ? { computeCapability: { major: Number(match[1]), minor: Number(match[2]) } } : {}),
+      ...(cuda?.driverVersion ? { driverVersion: cuda.driverVersion } : {}),
+    })
+  }
+  const ordinals = new Map<string, number>()
+  for (const pciId of cuda?.pciIds ?? []) {
+    if (pciId.startsWith('10de:')) continue
+    const ordinal = ordinals.get(pciId) ?? 0
+    ordinals.set(pciId, ordinal + 1)
+    const vendor = pciId.startsWith('1002:') ? 'amd' : pciId.startsWith('8086:') ? 'intel' : 'other'
+    gpus.push({ id: `remote-${pciId}-${ordinal}`, name: vendor === 'amd' ? 'AMD 显卡' : vendor === 'intel' ? 'Intel 显卡' : '显卡', vendor, pciId })
+  }
+  return { os: 'linux', gpus, systemCuda: cuda?.flavours ?? [], rocm7: false, vulkanProbed: true }
+}
 
 function driverAllows(version: string | undefined, flavour: 'cu12' | 'cu13'): boolean {
   const parts = version?.split('.').map(Number)
@@ -32,8 +66,12 @@ gpu=$(for info in /proc/driver/nvidia/gpus/*/information; do
   test -r "$info" && awk '/^Model:/ {sub(/^Model:[[:space:]]*/, "");print}' "$info"
 done)
 put GPU "$gpu"
+put DRM "$(for card in /sys/class/drm/card[0-9]/device /sys/class/drm/card[0-9][0-9]/device; do test -r "$card/vendor" && printf '%s:%s\\n' "$(cat "$card/vendor")" "$(cat "$card/device" 2>/dev/null)"; done)"
 if command -v nvidia-smi >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
-  put GPU_CSV "$(timeout 3 nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv,noheader 2>/dev/null || true)"
+  # A busy or just-woken GPU can take seconds to answer; 124 = timed out.
+  csv=$(timeout 15 nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv,noheader 2>/dev/null); smi=$?
+  put GPU_CSV "$csv"
+  put SMI_EXIT "$smi"
 fi
 seen='|'; count=0
 library() {
@@ -66,7 +104,8 @@ while IFS= read -r directory; do
 done < <({ printf '%s' "$LD_LIBRARY_PATH" | tr ':' '\\n' | head -n 12; printf '\\n/usr/lib/x86_64-linux-gnu\\n/usr/lib64\\n/usr/lib\\n'; })
 ` : ''}
 true`
-  const response = await sshExec(host, 'bash -s', 12_000, script)
+  // nvidia-smi alone may take up to 15 s.
+  const response = await sshExec(host, 'bash -s', scanCuda ? 30_000 : 12_000, script)
   const checkedAt = new Date().toISOString()
   const fields = new Map<string, string>()
   const libraries: RemoteCudaProbe['libraries'] = []
@@ -105,11 +144,23 @@ true`
     const compatible = (['cu13', 'cu12'] as const).filter((flavour) => driverAllows(driverVersion, flavour))
     const recommendedFlavour = compatible.find((flavour) => flavours.includes(flavour)) ?? compatible[0]
     const standardArchitectureSupported = computeCapabilities.length ? computeCapabilities.some((cap) => Number(cap) >= 8) : undefined
+    // Linux has the CUDA 12 SM70 build for Volta and Turing; below 7.0 nothing runs.
+    const anyCudaBuild = computeCapabilities.length ? computeCapabilities.some((cap) => Number(cap) >= 7) : undefined
+    const pciIds = (fields.get('DRM') ?? '').split(/\r?\n/).map((row) => {
+      const [vendor, device] = row.split(':')
+      return vendor && device ? drmPciId(vendor, device) : null
+    }).filter((id): id is string => Boolean(id))
+    const nvidiaSmiTimedOut = fields.get('SMI_EXIT') === '124'
     status.cuda = { checkedAt, durationMs: Date.now() - started, driverVersion, computeCapabilities, libraries, flavours,
+      ...(nvidiaSmiTimedOut ? { nvidiaSmiTimedOut } : {}),
+      gpuNames: rows.map((row) => row[0] ?? '').filter(Boolean),
+      pciIds,
       foundFlavours: [...new Set(libraries.map((lib) => `cu${lib.major}` as 'cu12' | 'cu13'))], recommendedFlavour,
       recommendedVariant: recommendedFlavour ? flavours.includes(recommendedFlavour) ? 'system-cuda' : 'bundled' : undefined,
       standardArchitectureSupported,
-      gpuReason: standardArchitectureSupported === false ? `检测到 ${[...new Set(computeCapabilities)].map((cap) => `SM${cap.replace('.', '')}`).join(' / ')}；当前官方 Linux 引擎包要求 SM80 或更新架构。` : undefined,
+      gpuReason: standardArchitectureSupported === false
+        ? `检测到 ${[...new Set(computeCapabilities)].map((cap) => `SM${cap.replace('.', '')}`).join(' / ')}；${anyCudaBuild ? '将使用 CUDA 12 的 SM70 引擎包（需要 525.60.13 或更新的驱动）。' : '没有对应的 Linux CUDA 引擎包（需要 SM70 或更新架构）。'}`
+        : undefined,
       error: !libraries.length ? '未发现系统 cuBLASLt 12/13。' : !flavours.length ? '已发现库文件，但依赖检查未通过或不可用；引擎加载时仍需验证实际兼容性。' : undefined }
   }
   return status

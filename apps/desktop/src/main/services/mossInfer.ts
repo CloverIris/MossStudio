@@ -1,7 +1,7 @@
 import { spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import type { JobParams, JobRecord, JobStage, Settings } from '@shared/types'
 import {
   decodeEngineHello,
@@ -12,6 +12,8 @@ import {
 } from '@shared/engineProtocol'
 import { paths } from '../lib/paths'
 import { spawnEngineServer } from '../lib/probeEngine'
+import { resolveDeviceEngine } from './engineInstalls'
+import { getSettings } from './settings'
 import { jobInputsSidecar } from './galleryMeta'
 import { buildGenerateParams, outputSizeOf, previewEveryFor } from './generateParams'
 import { LineSplitter } from './parsers'
@@ -81,6 +83,8 @@ interface MossInferRuntime {
   deviceUuid: string
   child: ChildProcessWithoutNullStreams | null
   boundDeviceUuid: string | null
+  /** The moss-server binary this runtime's process runs (its GPU's package when it was spawned). */
+  binaryPath: string | null
   hello: EngineHello | null
   loadedKey: string | null
   reqSeq: number
@@ -102,6 +106,7 @@ function runtimeFor(deviceUuid: string): MossInferRuntime {
       deviceUuid,
       child: null,
       boundDeviceUuid: null,
+      binaryPath: null,
       hello: null,
       loadedKey: null,
       reqSeq: 0,
@@ -407,6 +412,7 @@ function handleExit(
   }`
   runtime.child = null
   runtime.boundDeviceUuid = null
+  runtime.binaryPath = null
   runtime.hello = null
   runtime.loadedKey = null
   for (const [, entry] of runtime.pending) {
@@ -425,7 +431,9 @@ function handleExit(
 }
 
 function spawnServer(runtime: MossInferRuntime, settings: Settings, deviceUuid: string): void {
-  const serverPath = resolveServerPath(settings)
+  // Each GPU runs the moss-server of its own package (engineInstalls.ts); a CLI package never gets here.
+  const own = resolveDeviceEngine(deviceUuid)
+  const serverPath = own?.package.kind === 'cuda' ? own.binaryPath : resolveServerPath(settings)
   if (!serverPath) throw new Error('未找到 moss-server 可执行文件')
   runtime.stderrRing.length = 0
   const proc = spawnEngineServer(serverPath, ['--parent-pid', String(process.pid)], {
@@ -433,6 +441,7 @@ function spawnServer(runtime: MossInferRuntime, settings: Settings, deviceUuid: 
   })
   runtime.child = proc
   runtime.boundDeviceUuid = deviceUuid
+  runtime.binaryPath = serverPath
   proc.stdout.setEncoding('utf8')
   proc.stderr.setEncoding('utf8')
   proc.stdout.on('data', (chunk: string) => {
@@ -457,6 +466,8 @@ function spawnServer(runtime: MossInferRuntime, settings: Settings, deviceUuid: 
 }
 
 async function ensureEngine(runtime: MossInferRuntime, config: EngineConfig, settings: Settings): Promise<number> {
+  // The GPU now runs another package (another CUDA build installed or picked): start that one.
+  if (runtime.child && isStale(runtime, settings)) await stopRuntime(runtime)
   if (runtime.child && runtime.boundDeviceUuid !== config.deviceUuid) {
     const previous = runtime.child
     await new Promise<void>((resolvePromise, rejectPromise) => {
@@ -712,23 +723,58 @@ export async function restartMossInfer(deviceUuid?: string): Promise<void> {
   }
 }
 
-export async function shutdownMossInfer(): Promise<void> {
-  await Promise.all([...runtimes.values()].map(async (runtime) => {
-    if (!runtime.child) return
-    const proc = runtime.child
+/** The moss-server a GPU's runtime should run now; null when it runs a CLI package (no server). */
+function wantedServerPath(deviceUuid: string, settings: Settings): string | null {
+  const own = resolveDeviceEngine(deviceUuid)
+  if (own) return own.package.kind === 'cuda' ? own.binaryPath : null
+  return resolveServerPath(settings)
+}
+
+/** A running moss-server whose GPU no longer runs that binary (switched to Vulkan/HIP or another CUDA build). */
+function isStale(runtime: MossInferRuntime, settings: Settings): boolean {
+  if (!runtime.child || !runtime.binaryPath) return false
+  const wanted = wantedServerPath(runtime.deviceUuid, settings)
+  return !wanted || resolve(wanted) !== resolve(runtime.binaryPath)
+}
+
+/** Asks one runtime's moss-server to exit (its GPU memory with it); kills it after 3 s. */
+async function stopRuntime(runtime: MossInferRuntime): Promise<void> {
+  if (!runtime.child) return
+  const proc = runtime.child
+  const exited = new Promise<void>((resolvePromise) => proc.once('close', () => resolvePromise()))
+  try {
+    const response = request(runtime, 'shutdown', {})
+    const done = await Promise.race([
+      response.then(() => exited),
+      new Promise<null>((resolvePromise) => setTimeout(() => resolvePromise(null), 3000)),
+    ])
+    if (done === null) proc.kill('SIGKILL')
+  } catch {
     try {
-      const response = request(runtime, 'shutdown', {})
-      const exited = await Promise.race([
-        response.then(() => new Promise<void>((resolve) => proc.once('close', () => resolve()))),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
-      ])
-      if (exited === null) proc.kill('SIGKILL')
+      proc.kill('SIGKILL')
     } catch {
-      try {
-        proc.kill('SIGKILL')
-      } catch {
-        // already gone
-      }
+      // already gone
     }
-  }))
+  }
+  await Promise.race([exited, new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 5000))])
+}
+
+/**
+ * Stops the idle moss-servers whose GPU switched engines (a Vulkan / HIP
+ * package, another CUDA build, or nothing installed any more), so the GPU's
+ * memory is free for what runs there now. A server with a job keeps running;
+ * its next job restarts it (ensureEngine). Returns the GPUs released.
+ */
+export async function releaseStaleMossInferRuntimes(deviceUuid?: string): Promise<string[]> {
+  const targets = deviceUuid
+    ? [runtimes.get(deviceUuid)].filter((runtime): runtime is MossInferRuntime => Boolean(runtime))
+    : [...runtimes.values()]
+  const settings = getSettings()
+  const stale = targets.filter((runtime) => !runtime.busy && !runtime.active && !runtime.queue.length && isStale(runtime, settings))
+  await Promise.all(stale.map((runtime) => stopRuntime(runtime)))
+  return stale.map((runtime) => runtime.deviceUuid)
+}
+
+export async function shutdownMossInfer(): Promise<void> {
+  await Promise.all([...runtimes.values()].map((runtime) => stopRuntime(runtime)))
 }

@@ -6,6 +6,7 @@ import { featureVisibility } from '../../lib/features'
 import { useApp } from '../../store'
 import { Button, ProgressBar, Spinner, cn, useToast } from '../../components/ui'
 import { useAppInfo } from '../settings/useAppInfo'
+import type { PlanLine } from '../../lib/engineInstall'
 import { setupSpaceLabel, stepsToStart, type SetupStep } from './setupState'
 import { useSetup } from './useSetup'
 
@@ -54,6 +55,25 @@ function StepRow({ step, index }: { step: SetupStep; index: number }): React.JSX
   )
 }
 
+/** What was detected and what each GPU will run, one line per GPU; tips stay quiet. */
+function PlanLines({ lines }: { lines: PlanLine[] }): React.JSX.Element | null {
+  if (lines.length === 0) return null
+  return (
+    <ul className="flex flex-col gap-1 rounded-xl bg-surface px-4 py-3" aria-label="检测到的显卡">
+      {lines.map((line) => (
+        <li key={line.gpuId} className="flex flex-col gap-0.5 py-1.5">
+          <span className="flex flex-wrap items-baseline gap-x-2 text-ui">
+            <span className="font-medium text-ink">{line.gpu}</span>
+            <span className={cn('tabular', line.supported || line.skipped ? 'text-ink-2' : 'text-danger')}>{line.detail}</span>
+          </span>
+          {line.note ? <span className="text-caption text-ink-2">{line.note}</span> : null}
+          {line.tip ? <span className="text-caption text-ink-2">{line.tip}</span> : null}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 /**
  * First run: one screen that prepares the computer — GPU check, engine, and
  * the recommended model — behind a single 开始准备 button.
@@ -64,10 +84,19 @@ export function SetupPage(): React.JSX.Element {
   const settings = useApp((state) => state.settings)
   const saveSettings = useApp((state) => state.saveSettings)
   const info = useAppInfo()
-  const { view, starting, start, gpu } = useSetup()
+  const { view, starting, start, redetect, redetecting, chooseModelFolder, usingFolder } = useSetup()
   const [leaving, setLeaving] = useState(false)
   const space = setupSpaceLabel(view)
   const { remoteHosts } = featureVisibility(settings)
+
+  async function pickLocalFolder(): Promise<void> {
+    try {
+      const outcome = await chooseModelFolder()
+      if (outcome) toast.push(outcome.message, outcome.ready ? 'success' : 'info')
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    }
+  }
 
   async function leave(state: Settings['onboardingState'], to: string): Promise<void> {
     setLeaving(true)
@@ -84,6 +113,8 @@ export function SetupPage(): React.JSX.Element {
   const running = view.phase === 'running'
   const done = view.phase === 'done'
   const pending = stepsToStart(view)
+  const mac = view.os === 'macos'
+  const modelStep = view.steps.find((step) => step.id === 'model')
 
   return (
     <div className="flex h-full justify-center overflow-y-auto bg-panel px-6 pb-16 pt-[clamp(32px,12vh,120px)]">
@@ -101,10 +132,14 @@ export function SetupPage(): React.JSX.Element {
           {view.steps.map((step, index) => <StepRow key={step.id} step={step} index={index} />)}
         </ol>
 
+        {done ? null : <PlanLines lines={view.lines} />}
+
         {view.phase === 'blocked' ? (
           <div className="flex flex-col gap-3 rounded-xl bg-surface px-4 py-4">
             <p className="text-ui text-ink">
-              在这台电脑上生成图片需要一块 NVIDIA 显卡。如果显卡已经装好，请更新 NVIDIA 显卡驱动后重新检测。
+              {mac
+                ? '这台 Mac 不能在本机运行推理引擎。'
+                : '在这台电脑上没有找到能运行引擎的显卡。如果显卡已经装好，请更新显卡驱动后重新检测。'}
             </p>
             <p className="text-ui text-ink-2">
               {remoteHosts
@@ -112,9 +147,11 @@ export function SetupPage(): React.JSX.Element {
                 : '也可以使用一台装有 NVIDIA 显卡的远程主机：在 设置 › 功能 中开启「远程主机」。'}
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void gpu.refresh()} disabled={gpu.refreshing}>
-                {gpu.refreshing ? <Spinner /> : <RefreshCw className="size-4" />}重新检测
-              </Button>
+              {mac ? null : (
+                <Button onClick={() => void redetect()} disabled={redetecting}>
+                  {redetecting ? <Spinner /> : <RefreshCw className="size-4" />}重新检测
+                </Button>
+              )}
               <Button onClick={() => void leave('active', remoteHosts ? '/settings/devices' : '/settings/features')} disabled={leaving}>
                 {remoteHosts ? '添加远程主机' : '去开启远程主机'}
               </Button>
@@ -123,7 +160,12 @@ export function SetupPage(): React.JSX.Element {
         ) : null}
 
         <div className="flex flex-wrap items-center gap-3">
-          {info?.modelsPath && !done ? (
+          {modelStep && modelStep.state !== 'done' && modelStep.state !== 'running' && view.phase !== 'blocked' ? (
+            // Quiet: most people download; someone with the files already can point at them.
+            <Button tone="ghost" size="sm" disabled={usingFolder} onClick={() => void pickLocalFolder()}>
+              {usingFolder ? <Spinner /> : null}已有模型文件？使用本地文件夹
+            </Button>
+          ) : info?.modelsPath && !done ? (
             <span className="min-w-0 truncate text-ui text-ink-2" title={info.modelsPath}>模型保存到 {info.modelsPath}</span>
           ) : null}
           <span className="flex-1" />

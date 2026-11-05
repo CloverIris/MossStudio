@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
+import { compareEngineTags, parseEngineStamp } from '@shared/engineUpdate'
 import { hasHfToken } from './hfCredentials'
 import type { Settings } from '@shared/types'
-import { paths, setEngineRoot } from '../lib/paths'
+import { isInside, paths, setEngineRoot } from '../lib/paths'
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -47,8 +48,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mossInferMemoryMode: 'balanced',
   mossInferTier: 'high',
   mossInferChannel: 'stable',
-  mossInferVariant: 'system-cuda',
-  mossInferArchitecture: 'auto',
+  engineDeviceOverrides: {},
   gpuSelection: 'auto',
   gpuProfileMode: 'auto',
   gpuProfileOverrides: {},
@@ -86,10 +86,7 @@ export function getSettings(): Settings {
     // them visible for anyone who was using them before the switch existed.
     if (parsed.remoteHostsEnabled === undefined) cache.remoteHostsEnabled = hasConfiguredRemoteHosts()
     if (parsed.trainingEnabled === undefined) cache.trainingEnabled = hasTrainerInstall(parsed.trainerRoot ?? null)
-    if ((cache.mossInferVariant as string) === 'sm75') {
-      cache.mossInferVariant = 'system-cuda'
-      cache.mossInferArchitecture = 'sm75'
-    }
+    migrateLegacyEngineSettings(cache, parsed as Record<string, unknown>)
     // MossInfer 2.0 (server protocol 2) removed the auto tier: load requires
     // reference | high | turbo. Map legacy configs to the recommended default.
     if ((cache.mossInferTier as string) === 'auto') cache.mossInferTier = 'high'
@@ -98,7 +95,87 @@ export function getSettings(): Settings {
   }
   cache.hasHfToken = hasHfToken()
   setEngineRoot(cache.engineRoot)
+  if (legacyEnginePin(cache)) cache.mossInferServerPath = null
+  if (legacyBundledPending) {
+    legacyBundledPending = false
+    writeLegacyEngineVariant(paths.mossinfer(), 'bundled')
+  }
   return cache
+}
+
+let legacyPinPending = false
+let legacyBundledPending = false
+
+/**
+ * The old global 「内置 CUDA」 choice, kept until the machine probe knows the
+ * NVIDIA GPUs and turns it into their engineDeviceOverrides (enginePlan.ts).
+ */
+const LEGACY_VARIANT_FILE = 'legacy-engine-variant.json'
+
+export function writeLegacyEngineVariant(root: string, variant: 'bundled'): void {
+  try {
+    mkdirSync(root, { recursive: true })
+    writeFileSync(join(root, LEGACY_VARIANT_FILE), JSON.stringify({ variant }), 'utf8')
+  } catch (error) {
+    console.warn('[settings] legacy engine variant', error)
+  }
+}
+
+/** The pending old 「内置 CUDA」 choice, if any; `take` removes it. */
+export function legacyEngineVariant(root: string, take = false): 'bundled' | null {
+  const file = join(root, LEGACY_VARIANT_FILE)
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as { variant?: unknown }
+    if (take) rmSync(file, { force: true })
+    return raw.variant === 'bundled' ? 'bundled' : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Engine packages are chosen per GPU now (engineDeviceOverrides). The old
+ * global package type / architecture are dropped: the installed packages keep
+ * them (a bundled or SM75 install stays the one that GPU runs, and auto-update
+ * keeps the same package current). The old downloader also wrote every
+ * managed install into mossInferServerPath; that pin is released once so each
+ * GPU uses its own package, but only when it is the newest install of its
+ * package: an older one was a deliberate rollback and stays. A custom
+ * (external) moss-server stays pinned. An explicit 「内置 CUDA」 becomes a
+ * per-GPU override once the GPUs are known.
+ */
+export function migrateLegacyEngineSettings(settings: Settings, parsed: Record<string, unknown>): void {
+  const legacy = settings as Settings & { mossInferVariant?: unknown; mossInferArchitecture?: unknown }
+  const hadLegacy = 'mossInferVariant' in parsed || 'mossInferArchitecture' in parsed
+  delete legacy.mossInferVariant
+  delete legacy.mossInferArchitecture
+  if (!settings.engineDeviceOverrides || typeof settings.engineDeviceOverrides !== 'object' || Array.isArray(settings.engineDeviceOverrides)) {
+    settings.engineDeviceOverrides = {}
+  }
+  legacyPinPending = hadLegacy
+  legacyBundledPending = parsed['mossInferVariant'] === 'bundled'
+}
+
+function legacyEnginePin(settings: Settings): boolean {
+  if (!legacyPinPending) return false
+  legacyPinPending = false
+  const pinned = settings.mossInferServerPath
+  if (!pinned || !isInside(paths.mossinfer(), pinned)) return false
+  return isNewestManagedInstall(paths.mossinfer(), pinned)
+}
+
+/** Whether `<root>/<stamp>/bin/moss-server` is the newest stable install of its package (no newer tag next to it). */
+export function isNewestManagedInstall(root: string, serverPath: string): boolean {
+  const name = relative(root, serverPath).split(/[\\/]/)[0] ?? ''
+  const stamp = parseEngineStamp(name)
+  if (!stamp) return true
+  if (stamp.channel !== 'stable') return true
+  let siblings: string[] = []
+  try { siblings = readdirSync(root) } catch { return true }
+  return !siblings.some((other) => {
+    const candidate = parseEngineStamp(other)
+    return candidate?.channel === 'stable' && candidate.packageId === stamp.packageId && compareEngineTags(candidate.tag, stamp.tag) > 0
+  })
 }
 
 /**

@@ -6,6 +6,9 @@
  */
 import type { AiConversationInfo, AiProviderInfo } from '@shared/ai'
 import type { UpdaterState } from '@shared/update'
+import { cliEngineFeatures } from '@shared/cliEngine'
+import type { EngineAssetList, EngineMachine } from '@shared/engineChoice'
+import { RELEASE_220, inventoryDevicesFor, machineFixture, type MachineName } from './machines'
 import type {
   Catalog,
   Diagnostic,
@@ -41,6 +44,7 @@ import {
   engineVersionFixture,
   envReportFixture,
   galleryItemFixture,
+  gpuDeviceFixture,
   gpuInventoryFixture,
   jobFixture,
   launchDeviceFixture,
@@ -75,6 +79,12 @@ export interface MockBackendState {
   projects: ProjectDocument[]
   aiProviders: AiProviderInfo[]
   conversations: AiConversationInfo[]
+  /** The folder 「使用本地文件夹」 picks (models:import-folder); null = the dialog is canceled. */
+  localModelFolder: { path: string; name: string; bundleId: string } | null
+  /** What the engine's machine probe found (engine:plan runs the real chooser over it). */
+  engineMachine: EngineMachine
+  /** The release engine:plan plans against. */
+  engineAssets: EngineAssetList
   /** What `engine:features` answers; null = no usable engine. */
   engineFeatures: EngineFeatures | null
   controlAdapters: ControlAdapterEntry[]
@@ -92,6 +102,19 @@ export type ScenarioName =
   | 'jobFailure'
   | 'updateAvailable'
   | 'remoteHost'
+  | MachineScenario
+  | 'vulkanOnly'
+
+/** First runs on the machines of ./machines.ts (old NVIDIA driver, Turing, Volta, AMD with/without ROCm, Intel, several GPUs, macOS). */
+export type MachineScenario =
+  | 'machineOldDriver'
+  | 'machineTuring'
+  | 'machineVolta'
+  | 'machineAmdRocm'
+  | 'machineAmd'
+  | 'machineIntel'
+  | 'machineMultiGpu'
+  | 'machineMac'
 
 /** Fresh state for a scenario; `patch` replaces top-level keys. */
 export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBackendState> = {}): MockBackendState {
@@ -120,6 +143,9 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     engineFeatures: engineFeaturesFixture(),
     controlAdapters: [],
     install: installStateFixture(),
+    engineMachine: machineFixture('nvidia'),
+    engineAssets: RELEASE_220,
+    localModelFolder: null,
   }
 
   const firstRun = (): Partial<MockBackendState> => ({
@@ -131,11 +157,11 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     gallery: [],
   })
 
-  const variants: Record<ScenarioName, () => Partial<MockBackendState>> = {
+  const variants: Record<Exclude<ScenarioName, MachineScenario>, () => Partial<MockBackendState>> = {
     /** Nothing installed: onboarding pending, no engine, no model, a usable GPU. */
     firstRun,
     /** First run on a machine without an NVIDIA GPU. */
-    noGpu: () => ({ ...firstRun(), devices: [launchDeviceFixture({ id: 'cpu', name: 'CPU', kind: 'cpu', detail: 'Fixture CPU', memoryBytes: undefined })], gpuInventory: gpuInventoryFixture([]) }),
+    noGpu: () => ({ ...firstRun(), devices: [launchDeviceFixture({ id: 'cpu', name: 'CPU', kind: 'cpu', detail: 'Fixture CPU', memoryBytes: undefined })], gpuInventory: gpuInventoryFixture([]), engineMachine: { ...machineFixture('nvidia'), gpus: [] } }),
     /** First run with the engine download in flight. */
     engineInstalling: () => ({
       ...firstRun(),
@@ -162,7 +188,33 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     updateAvailable: () => ({ update: updateAvailableFixture('1.1.0') }),
     /** Ready locally plus one SSH host with a GPU. */
     remoteHost: () => ({ hosts: [sshHostFixture()] }),
+    /** Ready on an Intel Arc that only moss-infer-vulkan runs (兼容模式): text to image only, no LoRA. */
+    vulkanOnly: () => ({
+      gpuInventory: gpuInventoryFixture([gpuDeviceFixture({
+        uuid: 'vk-8086-56a0-0', name: 'Intel(R) Arc(TM) A770 Graphics', vendor: 'intel', pciId: '8086:56a0', vulkanIndex: 0,
+        computeCapability: undefined, driverVersion: undefined, utilizationPercent: undefined, memoryFreeBytes: undefined,
+        memoryTotalBytes: 16 * 1024 ** 3,
+      })]),
+      engineFeatures: cliEngineFeatures('vulkan'),
+    }),
   }
 
-  return { ...base, ...variants[name](), ...patch }
+  /** First run on each kind of machine the engine chooser knows. */
+  const onMachine = (machine: MachineName) => (): Partial<MockBackendState> => {
+    const engineMachine = machineFixture(machine)
+    return { ...firstRun(), engineMachine, gpuInventory: gpuInventoryFixture(inventoryDevicesFor(engineMachine)) }
+  }
+  const machines: Record<MachineScenario, () => Partial<MockBackendState>> = {
+    machineOldDriver: onMachine('nvidiaOldDriver'),
+    machineTuring: onMachine('turing'),
+    machineVolta: onMachine('volta'),
+    machineAmdRocm: onMachine('amdRocm'),
+    machineAmd: onMachine('amd'),
+    machineIntel: onMachine('intel'),
+    machineMultiGpu: onMachine('multiGpu'),
+    machineMac: onMachine('macos'),
+  }
+
+  const variant = name in machines ? machines[name as MachineScenario] : variants[name as Exclude<ScenarioName, MachineScenario>]
+  return { ...base, ...variant(), ...patch }
 }

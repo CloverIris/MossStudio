@@ -196,6 +196,8 @@ export function engineFeaturesOf(hello: EngineHello): EngineFeatures {
     references: on('references'),
     hires: on('hires'),
     samplers: on('samplers'),
+    // Every moss-server since protocol 2 loads LoRAs; only an explicit `false` says otherwise.
+    lora: hello.capabilities['lora'] !== false,
     values,
   }
 }
@@ -231,7 +233,7 @@ export function judgeEngineSupport(
   gpu: { index?: number; name?: string },
   options: {
     indexOnly?: boolean
-    expectedArchitecture?: 'standard' | 'sm75'
+    expectedArchitecture?: 'standard' | 'sm75' | 'sm70'
     inventoryCapability?: { major: number; minor: number } | null
   } = {},
 ): EngineSupportVerdict {
@@ -261,6 +263,9 @@ export function judgeEngineSupport(
   }
   if (capability && options.expectedArchitecture === 'sm75' && (capability.major !== 7 || capability.minor !== 5)) {
     warnings.push(`SM75 构建报告 ${label} 算力为 ${capability.major}.${capability.minor}；以引擎 supported 结论为准`)
+  }
+  if (capability && options.expectedArchitecture === 'sm70' && capability.major < 7) {
+    warnings.push(`SM70 构建报告 ${label} 算力为 ${capability.major}.${capability.minor}；以引擎 supported 结论为准`)
   }
   if (capability && options.expectedArchitecture === 'standard' && capability.major < 8) {
     warnings.push(`标准构建报告 ${label} 算力为 ${capability.major}.${capability.minor}；以引擎 supported 结论为准`)

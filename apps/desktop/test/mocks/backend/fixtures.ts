@@ -84,8 +84,7 @@ export function settingsFixture(patch: Partial<Settings> = {}): Settings {
     mossInferMemoryMode: 'balanced',
     mossInferTier: 'high',
     mossInferChannel: 'stable',
-    mossInferVariant: 'system-cuda',
-    mossInferArchitecture: 'auto',
+    engineDeviceOverrides: {},
     gpuSelection: 'auto',
     gpuProfileMode: 'auto',
     gpuProfileOverrides: {},
@@ -567,6 +566,7 @@ export function engineFeaturesFixture(patch: Partial<EngineFeatures> = {}): Engi
     references: true,
     hires: true,
     samplers: true,
+    lora: true,
     values: {
       sampler: ['euler', 'ab2', 'euler_ancestral', 'heun', 'dpmpp_2m', 'dpmpp_2m_sde', 'er_sde', 'res_multistep'],
       scheduler: ['moss', 'simple', 'normal', 'karras', 'exponential', 'beta', 'sgm_uniform'],
@@ -590,3 +590,6 @@ export function controlAdapterFixture(patch: Partial<ControlAdapterEntry> = {}):
     ...patch,
   }
 }
+
+/** Machines for the engine chooser (./machines.ts), here so E2E specs reach them through `__mock.fixtures`. */
+export { machineFixture, inventoryDevicesFor } from './machines'

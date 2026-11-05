@@ -161,6 +161,7 @@ export const Ipc = {
   enginePrepareRemoteModel: 'engine:prepare-remote-model',
   engineInstallRemote: 'engine:install-remote',
   engineSystemCuda: 'engine:system-cuda',
+  enginePlan: 'engine:plan',
   mossInferCudaLibs: 'engine:install-cuda-wheels',
   /** EngineFeatures of the engine a job would run on: `{ deviceUuid?, hostId? }` → EngineFeatures | null. */
   engineFeatures: 'engine:features',

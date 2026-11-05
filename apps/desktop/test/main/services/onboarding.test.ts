@@ -16,6 +16,9 @@ interface Options {
   legacy?: boolean
   noGpu?: boolean
   offline?: boolean
+  amd?: boolean
+  /** Engine kinds the local GPUs run (default: CUDA). */
+  kinds?: Array<'cuda' | 'vulkan' | 'hip'>
 }
 const state: { options: Options } = { options: {} }
 
@@ -23,7 +26,11 @@ vi.mock('@main/services/devices', () => ({
   listDevices: (): LaunchDevice[] => state.options.noGpu
     ? [{ id: 'mps', name: 'Apple', kind: 'mps', detail: '', available: true }]
     : [{ id: 'cuda:0', name: 'NVIDIA', kind: 'cuda', detail: '', available: true }],
+  cachedGpuInventory: () => state.options.amd
+    ? { scannedAt: '', status: 'ok', devices: [{ uuid: 'vk-1002-744c-0', index: 0, name: 'AMD Radeon RX 7900 XTX', vendor: 'amd' }] }
+    : null,
 }))
+vi.mock('@main/services/engineInstalls', () => ({ localEngineKinds: () => state.options.kinds ?? ['cuda'] }))
 vi.mock('@main/services/models', () => ({
   getCatalog: async (): Promise<Catalog> => catalogFixture({ installed: state.options.installed, partial: state.options.partial ? [state.options.partial] : [] }),
 }))
@@ -48,6 +55,7 @@ useTempDataRoot()
 const settings = settingsFixture()
 const sft = [...SFT_BUNDLE_IDS]
 const originalPlatform = process.platform
+const result = (value: Awaited<ReturnType<typeof status>>): string | undefined => value.bundleName
 
 async function status(options: Options = {}, hostId?: string, platform: NodeJS.Platform = 'win32') {
   state.options = options
@@ -117,7 +125,12 @@ describe('getOnboardingStatus (local)', () => {
 
   it('explains the missing GPU differently off macOS', async () => {
     const result = await status({ noGpu: true }, undefined, 'linux')
-    expect(step(result, 'device').detail).toBe('需要可用的 NVIDIA GPU；也可以添加 Linux NVIDIA SSH 主机')
+    expect(step(result, 'device').detail).toBe('需要一块能运行引擎的显卡（NVIDIA、AMD 或 Intel）；也可以添加 Linux NVIDIA SSH 主机')
+  })
+
+  it('an AMD or Intel GPU found by the engine probe counts as a local device', async () => {
+    const result = await status({ noGpu: true, amd: true }, undefined, 'linux')
+    expect(step(result, 'device')).toMatchObject({ status: 'ok', detail: 'AMD Radeon RX 7900 XTX' })
   })
 
   it('counts single-file ComfyUI weights with the runtime config instead of asking for BF16 diffusers', async () => {
@@ -126,6 +139,19 @@ describe('getOnboardingStatus (local)', () => {
     expect(result.bundleName).toBe('MossInfer 单文件组合')
     expect(step(result, 'model').modelIds).toEqual(installed)
     expect(result.ready).toBe(true)
+  })
+
+  it('a Vulkan / HIP-only machine needs the bf16 bundle: no fp16 DiT, no single-file combination', async () => {
+    const fp16 = ['moss-sft-fp16-fixed', 'qwen35-encoder', 'flux2-vae-small', 'moss-pipeline']
+    const cuda = await status({ engine: true, installed: fp16 })
+    expect(result(cuda)).toBe('SFT · FP16-fixed')
+    const vulkan = await status({ engine: true, installed: fp16, kinds: ['vulkan'] })
+    expect(step(vulkan, 'model').modelIds).toEqual(sft)
+    expect(vulkan.ready).toBe(false)
+    const single = ['moss-sft-comfy-int8_convrot', 'qwen35-comfy-w4a8_gptq', 'flux2-vae-small', 'moss-runtime-config']
+    expect((await status({ engine: true, installed: single, kinds: ['hip'] })).bundleName).not.toBe('MossInfer 单文件组合')
+    // A machine with a CUDA GPU next to a Vulkan one keeps every bundle.
+    expect(result(await status({ engine: true, installed: fp16, kinds: ['cuda', 'vulkan'] }))).toBe('SFT · FP16-fixed')
   })
 
   it('keeps the regular bundle when single-file weights would not cover more components', async () => {

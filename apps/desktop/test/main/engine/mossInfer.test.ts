@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,11 @@ import { useTempDataRoot } from '@test/helpers/tempDir'
 const spawnEngineServer = vi.hoisted(() => vi.fn())
 const spawnSync = vi.hoisted(() => vi.fn())
 vi.mock('@main/lib/probeEngine', () => ({ spawnEngineServer }))
+// Which package each GPU runs; null = none installed for it (the configured moss-server serves it).
+const resolveDeviceEngine = vi.hoisted(() => vi.fn())
+const getSettings = vi.hoisted(() => vi.fn())
+vi.mock('@main/services/engineInstalls', () => ({ resolveDeviceEngine }))
+vi.mock('@main/services/settings', async (importOriginal) => ({ ...(await importOriginal<object>()), getSettings }))
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>()
   return { ...actual, spawnSync, default: { ...actual, spawnSync } }
@@ -106,6 +111,8 @@ beforeEach(async () => {
   serverPath = join(dataRoot(), 'moss-server')
   writeFileSync(serverPath, '#!')
   settings = { ...DEFAULT_SETTINGS, mossInferServerPath: serverPath }
+  resolveDeviceEngine.mockReset().mockReturnValue(null)
+  getSettings.mockReset().mockImplementation(() => settings)
   mossInfer = await import('@main/services/mossInfer')
 })
 afterEach(async () => {
@@ -478,5 +485,61 @@ describe('runningEngineHello / requestRunningEngine', () => {
     await expect(mossInfer.requestRunningEngine('inspect', { path: '/missing' })).rejects.toThrow('io: cannot open')
     await expect(mossInfer.requestRunningEngine('status', {}, 20)).rejects.toThrow('请求超时')
     expect(servers[0]!.killed).toEqual([])
+  })
+})
+
+describe('a GPU that switches engines', () => {
+  const cuda = (binaryPath: string) => ({ package: { kind: 'cuda', flavour: 'cu13', arch: 'standard', runtime: 'bundled' }, binaryPath })
+
+  it('switched to Vulkan: its idle moss-server is shut down and its GPU memory freed; other GPUs keep theirs', async () => {
+    expect(await run('job-a').done).toBe(0)
+    expect(await run('job-b', { deviceUuid: 'GPU-b' }).done).toBe(0)
+    const [a, b] = servers
+    resolveDeviceEngine.mockImplementation((uuid: string) => (uuid === 'GPU-a' ? { package: { kind: 'vulkan' }, binaryPath: '/e/moss-infer-vulkan' } : null))
+    expect(await mossInfer.releaseStaleMossInferRuntimes()).toEqual(['GPU-a'])
+    expect(a!.methods()).toContain('shutdown')
+    expect(a!.closed).toBe(true)
+    expect(b!.closed).toBe(false)
+    expect(mossInfer.runningEngineHello('GPU-a')).not.toBeNull() // the hello left is GPU-b's
+    expect(await mossInfer.releaseStaleMossInferRuntimes('GPU-a')).toEqual([])
+  })
+
+  it('never stops a server that is running a job; its next job is the one that switches', async () => {
+    reply = (request, server) => {
+      if (request.method === 'generate') return // never finishes
+      happy(request, server)
+    }
+    const job = run('job-long')
+    await vi.waitFor(() => expect(servers[0]!.methods()).toContain('generate'))
+    resolveDeviceEngine.mockReturnValue({ package: { kind: 'vulkan' }, binaryPath: '/e/moss-infer-vulkan' })
+    expect(await mossInfer.releaseStaleMossInferRuntimes('GPU-a')).toEqual([])
+    expect(servers[0]!.closed).toBe(false)
+    mossInfer.cancelMossInferJob('job-long')
+    await mossInfer.restartMossInfer('GPU-a')
+    await job.done
+  })
+
+  it('switched to another CUDA build: the next job restarts the server on the new binary', async () => {
+    expect(await run('job-1').done).toBe(0)
+    expect(spawnEngineServer.mock.calls[0]![0]).toBe(serverPath)
+    const cu12 = join(dataRoot(), 'cu12', 'moss-server')
+    mkdirSync(join(cu12, '..'), { recursive: true })
+    writeFileSync(cu12, '#!')
+    resolveDeviceEngine.mockReturnValue(cuda(cu12))
+    expect(await run('job-2').done).toBe(0)
+    expect(servers[0]!.closed).toBe(true)
+    expect(spawnEngineServer.mock.calls[1]![0]).toBe(cu12)
+    // Same binary again: the server and its loaded model are reused.
+    expect(await run('job-3').done).toBe(0)
+    expect(servers).toHaveLength(2)
+    expect(servers[1]!.methods().filter((method) => method === 'load')).toHaveLength(1)
+  })
+
+  it('a server on the binary its GPU still runs is left alone', async () => {
+    expect(await run('job-1').done).toBe(0)
+    expect(await mossInfer.releaseStaleMossInferRuntimes()).toEqual([])
+    resolveDeviceEngine.mockReturnValue(cuda(serverPath))
+    expect(await mossInfer.releaseStaleMossInferRuntimes()).toEqual([])
+    expect(servers[0]!.closed).toBe(false)
   })
 })

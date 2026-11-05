@@ -15,16 +15,23 @@ import type {
   GpuInventoryDevice,
   WorkspaceKind,
 } from '@shared/types'
+import { cliUnsupported } from '../lib/cliProtocol'
+import { codedError } from '../lib/codedError'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
 import { prepareModelSource } from './modelBundles'
 import { legacyModelReady, resolveLegacyModelPath } from './modelReadiness'
-import { cancelMossInferJob, resolveServerPath, restartMossInfer, runMossInferJob } from './mossInfer'
+import { cancelMossInferJob, releaseStaleMossInferRuntimes, restartMossInfer, runMossInferJob } from './mossInfer'
+import { cancelCliJob, cliBundleDtypeProblem, hipDeviceIndex, runCliJob, type HipIndexResult } from './cliEngine'
+import { currentEngineMachine, localServerPath, resolveDeviceEngine, type DeviceEngine } from './engineInstalls'
+import { getCatalog } from './models'
 import { getSettings } from './settings'
 import { refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 import { selectAutomaticGpu } from '@shared/gpuScheduling'
 import { judgeEngineSupport } from '@shared/engineProtocol'
+import { CLI_ENGINE_LABEL, cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
+import { isCliEngine } from '@shared/enginePackages'
 import { canvasBranchesConflict } from '@shared/canvasJobBranch'
 import { resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
 import { probeLocalEngineGpuCompatibility } from './engines'
@@ -49,6 +56,7 @@ import {
 } from './parsers'
 import { waitForEngineActivation } from '../lib/engineActivation'
 import { jobPreviewPath, previewsDir, PreviewThrottle, queuePositions } from './jobPreview'
+import { jobInputFiles } from './generateParams'
 
 const PREFIX = '@@CLOVER@@ '
 
@@ -67,6 +75,8 @@ interface RunningJob {
   lastLines: string[]
   cancelRequested: boolean
   cancelCommand?: { command: string; args: string[]; env?: NodeJS.ProcessEnv }
+  /** Runs on a CLI engine (moss-infer-vulkan / moss-infer-hip), possibly not handed to it yet. */
+  cli?: boolean
 }
 
 const jobs = new Map<string, JobRecord>()
@@ -519,6 +529,33 @@ function restartOwnRuntime(job: JobRecord): void {
   void restartMossInfer(job.deviceUuid)
 }
 
+/** moss-infer-hip's index of this AMD GPU: among the cards of its gfx target, in inventory order. */
+async function hipIndexOf(engine: DeviceEngine, gpu: GpuInventoryDevice): Promise<HipIndexResult> {
+  const gfxTarget = gpu.gfxTarget ?? engine.gfxTarget
+  if (!gfxTarget) return { ok: true }
+  const inventory = await refreshGpuInventory().catch(() => null)
+  const same = (inventory?.devices ?? []).filter((device) => device.vendor === 'amd' && device.gfxTarget === gfxTarget)
+  const ordinal = same.findIndex((device) => device.uuid === gpu.uuid)
+  // Not in the inventory with this gfx target: only a lone card of it can be told apart.
+  if (ordinal < 0 && same.length > 1) {
+    return { ok: false, message: `分不清 ${gpu.name} 是 ${same.length} 张 ${gfxTarget} 显卡中的哪一张，请到 设置 › 设备 重新检测显卡后再试` }
+  }
+  return hipDeviceIndex(engine.binaryPath, { name: gpu.name, gfxTarget }, Math.max(0, ordinal), engine.env)
+}
+
+/** An integrated GPU by the machine's Vulkan probe (unknown counts as discrete). */
+function integratedGpu(uuid: string): boolean {
+  return currentEngineMachine().machine.gpus.find((gpu) => gpu.id === uuid)?.vulkan?.discrete === false
+}
+
+/** The installed CLI engine (moss-infer-vulkan / moss-infer-hip) this GPU runs, if it runs one. */
+function cliEngineOf(deviceUuid: string | undefined): (DeviceEngine & { kind: CliEngineKind }) | null {
+  if (!deviceUuid) return null
+  const engine = resolveDeviceEngine(deviceUuid)
+  if (!engine || !isCliEngine(engine.package)) return null
+  return { ...engine, kind: engine.package.kind as CliEngineKind }
+}
+
 /** The JobParams of an engine request; image inputs only when set. */
 function paramsOf(input: StartEngineJobInput): JobParams {
   return {
@@ -583,25 +620,43 @@ async function pumpEngineQueue(slot: string): Promise<void> {
 
 async function resolveLocalGpu(
   deviceUuid: string | undefined,
+  /** What the job asks for: a job a CLI engine cannot run never goes to a CLI GPU. */
+  params: JobParams,
 ): Promise<GpuInventoryDevice> {
   const settings = getSettings()
   const inventory = await refreshGpuInventory()
   if (!deviceUuid && settings.gpuSelection === 'auto') {
-    let probe
-    try {
-      probe = await probeLocalEngineGpuCompatibility()
-    } catch (error) {
-      throw new Error(`自动分配无法验证引擎与 GPU 的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备，或手动指定 GPU。`)
-    }
-    const compatibleUuids = new Set(
-      inventory.devices
-        .filter((device) => judgeEngineSupport(
-          probe.hello,
+    // GPUs that run a CLI engine (兼容模式 / AMD 原生) are judged by their package, not by moss-server.
+    const cliGpus = inventory.devices.filter((device) => cliEngineOf(device.uuid))
+    const cliUuids = new Set(cliGpus.map((device) => device.uuid))
+    const cudaGpus = inventory.devices.filter((device) => !cliUuids.has(device.uuid) && (device.vendor ?? 'nvidia') === 'nvidia')
+    let cudaUuids = new Set<string>()
+    if (cudaGpus.length) {
+      let probe: Awaited<ReturnType<typeof probeLocalEngineGpuCompatibility>>
+      try {
+        probe = await probeLocalEngineGpuCompatibility()
+      } catch (error) {
+        throw new Error(`自动分配无法验证引擎与 GPU 的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备，或手动指定 GPU。`)
+      }
+      cudaUuids = new Set(cudaGpus
+        .filter((device) => probe.helloFor(device.uuid) && judgeEngineSupport(
+          probe.helloFor(device.uuid)!,
           { index: device.index, name: device.name },
           { inventoryCapability: device.computeCapability },
         ).ok)
-        .map((device) => device.uuid),
-    )
+        .map((device) => device.uuid))
+    }
+    // Automatic assignment prefers the full engine: CLI GPUs only on a machine without a CUDA one,
+    // and only for plain text to image; integrated GPUs only when there is no discrete one.
+    const needsCuda = cliUnsupported(cliEngineOf(cliGpus[0]?.uuid)?.kind ?? 'vulkan', params)
+    let compatibleUuids = cudaUuids
+    if (!cudaGpus.length && !needsCuda && cliUuids.size) {
+      const discrete = [...cliUuids].filter((uuid) => !integratedGpu(uuid))
+      compatibleUuids = new Set(discrete.length ? discrete : cliUuids)
+    }
+    if (needsCuda && !cudaUuids.size && cliUuids.size) {
+      throw codedError('E_NOT_SUPPORTED', `${needsCuda}（这台电脑上没有能运行完整引擎的显卡）`)
+    }
     const loads: Record<string, { runningTasks: number; queuedTasks: number }> = {}
     for (const job of jobs.values()) {
       if (!job.deviceUuid || job.hostId || job.engine !== 'mossinfer') continue
@@ -646,15 +701,23 @@ async function resolveLocalGpu(
     }
     throw new Error(inventory.error ?? '没有可用的 NVIDIA GPU；请在引擎页检查设备或选择远端推理引擎。')
   }
-  if (settings.gpuSelection !== 'auto' || deviceUuid) {
+  const pickedCli = cliEngineOf(device.uuid)
+  if (pickedCli) {
+    // Picked by hand (canvas or default GPU): the job must be one this GPU's CLI engine can run.
+    const unsupported = cliUnsupported(pickedCli.kind, params)
+    if (unsupported) throw codedError('E_NOT_SUPPORTED', `${device.name}：${unsupported}`)
+  }
+  if ((settings.gpuSelection !== 'auto' || deviceUuid) && !pickedCli) {
     let probe
     try {
       probe = await probeLocalEngineGpuCompatibility()
     } catch (error) {
       throw new Error(`无法确认所选 GPU 与当前引擎的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备后重试。`)
     }
+    const hello = probe.helloFor(device.uuid)
+    if (!hello) throw new Error(`没有为 ${device.name} 安装可用的引擎；请在引擎页安装引擎后重试。`)
     const verdict = judgeEngineSupport(
-      probe.hello,
+      hello,
       { index: device.index, name: device.name },
       { inventoryCapability: device.computeCapability },
     )
@@ -739,7 +802,7 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
     if (input.hostId) {
       assignedInput = { ...input, deviceUuid: undefined }
     } else {
-      assignedGpu = await resolveLocalGpu(input.deviceUuid)
+      assignedGpu = await resolveLocalGpu(input.deviceUuid, paramsOf(input))
       if (!input.deviceUuid && settings.gpuSelection === 'auto') pendingAutoUuid = assignedGpu.uuid
       assignedInput = { ...input, deviceUuid: assignedGpu.uuid, deviceId: `cuda:${assignedGpu.index}` }
     }
@@ -812,9 +875,19 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
   let modelPath: string | undefined
   let modelSnapshot: unknown
   let modelFiles: { ditFile?: string; textEncoderFile?: string; vaeFile?: string } = {}
+  const cliEngine = input.hostId ? null : cliEngineOf(input.deviceUuid)
   if (!input.hostId) {
-    const serverPath = resolveServerPath(settings)
-    if (!serverPath || !existsSync(serverPath)) throw new Error('未找到 moss-server；请先在引擎页下载或配置引擎')
+    if (input.modelBinding && cliEngine) {
+      // A CLI engine reads a bf16 bundle folder: say so before anything is materialized or started.
+      const catalog = await getCatalog(settings)
+      const bundle = catalog.bundles.find((item) => item.id === input.modelBinding!.bundleId)
+      const problem = cliBundleProblem(
+        cliEngine.kind,
+        { name: bundle?.name ?? input.modelName ?? input.modelBinding.bundleId, components: input.modelBinding },
+        catalog.models,
+      )
+      if (problem) throw codedError('E_MODEL', problem)
+    }
     if (input.modelBinding) {
       const source = await prepareModelSource(input.modelBinding, settings)
       modelPath = source.model ?? undefined
@@ -837,9 +910,19 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     if (!modelPath && !modelFiles.ditFile) {
       throw new Error('模型权重尚未就绪，请先在模型库下载 MOSS-Image，或扫描本地模型文件')
     }
+    if (cliEngine && modelPath) {
+      // The catalog may not describe every file: the weights themselves must be bf16.
+      const dtypeProblem = await cliBundleDtypeProblem(cliEngine.kind, modelPath)
+      if (dtypeProblem) throw codedError('E_MODEL', dtypeProblem)
+    }
   }
 
-  const localGpu = input.hostId ? null : await resolveLocalGpu(input.deviceUuid)
+  const localGpu = input.hostId ? null : await resolveLocalGpu(input.deviceUuid, paramsOf(input))
+  if (localGpu && !cliEngineOf(localGpu.uuid)) {
+    // Each GPU runs the moss-server of its own package (engineInstalls.ts).
+    const serverPath = localServerPath(localGpu.uuid)
+    if (!serverPath || !existsSync(serverPath)) throw new Error('未找到 moss-server；请先在引擎页下载或配置引擎')
+  }
   const resolvedDeviceId = localGpu ? `cuda:${localGpu.index}` : input.deviceId
   const gpuProfile = localGpu
     ? queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu)
@@ -1000,6 +1083,57 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
   }
   running.set(job.id, runningJob)
   const output = join(outputDir, `${job.id}-1.png`)
+  const sink = {
+    event: (payload: Record<string, unknown>) => handleRunnerEvent(job, runningJob, JSON.stringify(payload)),
+    stderr: (line: string) => appendLog(job, 'stderr', line, runningJob),
+    done: (code: number) => finish(job, runningJob, code),
+  }
+  if (cliEngine) {
+    const gpu = localGpu!
+    const gfxTarget = gpu.gfxTarget ?? cliEngine.gfxTarget
+    runningJob.cli = true
+    appendLog(job, 'system', `引擎：${CLI_ENGINE_LABEL[cliEngine.kind]}（${cliEngine.binaryPath}，${cliEngine.version}）`, runningJob)
+    void (async () => {
+      // A moss-server left from when this GPU ran CUDA would hold its memory through the whole job.
+      const released = await releaseStaleMossInferRuntimes(gpu.uuid)
+      if (released.length) appendLog(job, 'system', '已停止这张显卡上之前的 CUDA 引擎，释放显存', runningJob)
+      let cliDeviceIndex = cliEngine.kind === 'vulkan' ? cliEngine.vulkanIndex : undefined
+      if (cliEngine.kind === 'hip') {
+        const found = await hipIndexOf(cliEngine, gpu)
+        if (!found.ok) {
+          handleRunnerEvent(job, runningJob, JSON.stringify({ type: 'error', code: 'E_DEVICE', message: found.message, fatal: true }))
+          finish(job, runningJob, 1)
+          return
+        }
+        cliDeviceIndex = found.index
+      }
+      // Canceled while the device was being looked up: the program is never started.
+      if (runningJob.cancelRequested) {
+        handleRunnerEvent(job, runningJob, JSON.stringify({ type: 'canceled', at_stage: 'idle' }))
+        finish(job, runningJob, 130)
+        return
+      }
+      await runCliJob(job, params, {
+        kind: cliEngine.kind,
+        binary: cliEngine.binaryPath,
+        version: cliEngine.version,
+        model: modelPath ?? '',
+        output,
+        deviceUuid: gpu.uuid,
+        cliDeviceIndex,
+        // Vulkan prints the name its own --list-devices gave that index; HIP its own name, checked with the gfx target.
+        expectedDevice: {
+          name: (cliEngine.kind === 'vulkan' ? cliEngine.expectedVulkanName : undefined) ?? gpu.name,
+          ...(gfxTarget ? { gfxTarget } : {}),
+        },
+        ...(cliEngine.env ? { env: cliEngine.env } : {}),
+      }, sink)
+    })().catch((error: unknown) => {
+      handleRunnerEvent(job, runningJob, JSON.stringify({ type: 'error', code: 'E_ENGINE', message: String(error instanceof Error ? error.message : error), fatal: true }))
+      finish(job, runningJob, -1)
+    })
+    return snapshot(job)
+  }
   void runMossInferJob(
     job,
     params,
@@ -1014,11 +1148,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       settings: executionSettings,
       ...modelFiles,
     },
-    {
-      event: (payload) => handleRunnerEvent(job, runningJob, JSON.stringify(payload)),
-      stderr: (line) => appendLog(job, 'stderr', line, runningJob),
-      done: (code) => finish(job, runningJob, code),
-    },
+    sink,
   ).catch((error: unknown) => {
     handleRunnerEvent(
       job,
@@ -1196,6 +1326,9 @@ export async function cancelJob(id: string): Promise<JobRecord | null> {
     cancelRemoteEngineJob(job.id)
     return snapshot(job)
   }
+  // A CLI engine terminates its own process (then kills it after a grace period).
+  // Not handed to the CLI engine yet (device lookup): the dispatch sees cancelRequested and never starts it.
+  if (job.engine === 'mossinfer' && (cancelCliJob(job.id) || runningJob.cli)) return snapshot(job)
   if (job.engine === 'mossinfer') {
     cancelMossInferJob(job.id)
     // server 卡死兜底：5 秒后仍无 done-cancelled 则重启该 GPU 的引擎，exit 处理会失败活动任务
@@ -1274,6 +1407,13 @@ export async function purgeLegacySimulationJobs(): Promise<number> {
   }
   if (removed) await saveJobs()
   return removed
+}
+
+/** Every input picture a waiting or running job will read (masks, start pictures…): they must stay on disk. */
+export function activeJobInputPaths(): string[] {
+  return [...jobs.values()]
+    .filter((job) => job.state === 'queued' || job.state === 'starting' || job.state === 'running')
+    .flatMap((job) => jobInputFiles(job.params).map((file) => file.path))
 }
 
 export async function listJobs(): Promise<JobRecord[]> {

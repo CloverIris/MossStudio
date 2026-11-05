@@ -4,32 +4,71 @@ import {
   engineDownloadLabel,
   engineDownloadPercent,
   engineInstallError,
-  planEngineInstall,
-  type SystemCudaCheck,
+  packageLabel,
+  planLines,
+  planMissingBytes,
 } from '@renderer/lib/engineInstall'
-import type { MossInferDownloadState } from '@shared/types'
+import type { LocalEngineVersion, MossInferDownloadState } from '@shared/types'
+import { RELEASE_220, enginePlanFor, machineFixture, type MachineName } from '../../mocks/backend/machines'
 import { engineDownloadFixture, engineMissingFixture, engineReadyFixture } from '../../mocks/backend'
 
-const cuda = (patch: Partial<SystemCudaCheck> = {}): SystemCudaCheck => ({ supported: true, gpu: 'RTX 4090', cublasLt: ['cublasLt64_13.dll'], ...patch })
+const plan = (machine: MachineName, versions: LocalEngineVersion[] = [], overrides: Record<string, string> = {}) =>
+  enginePlanFor(machineFixture(machine), RELEASE_220, { engineDeviceOverrides: overrides, mossInferChannel: 'stable' }, versions)
+const managed = (name: string): LocalEngineVersion => ({ id: name, name, path: `/e/${name}`, current: true, source: 'managed' })
 
-describe('lib/engineInstall planEngineInstall', () => {
-  it('uses the small system-CUDA package when CUDA is present', () => {
-    expect(planEngineInstall(cuda())).toEqual({ kind: 'install', channel: 'stable', architecture: 'auto', variant: 'system-cuda' })
+describe('lib/engineInstall planLines', () => {
+  it('one line per GPU with the package and its size', () => {
+    expect(planLines(plan('nvidia'))).toEqual([
+      { gpuId: 'GPU-00000000-1111-2222-3333-444444444444', gpu: 'NVIDIA GeForce RTX 4090', detail: 'CUDA 13 引擎 · 352 MB', supported: true },
+    ])
   })
 
-  it('falls back to the bundled package when CUDA is missing or unknown', () => {
-    expect(planEngineInstall(cuda({ supported: false }))).toMatchObject({ kind: 'install', variant: 'bundled' })
-    expect(planEngineInstall(null)).toMatchObject({ kind: 'install', variant: 'bundled' })
+  it('explains the compatibility mode and passes the tip on', () => {
+    const [line] = planLines(plan('nvidiaOldDriver'))
+    expect(line).toMatchObject({ detail: 'CUDA 12 引擎 · 492 MB', tip: expect.stringContaining('R580') })
+    const [vulkan] = planLines(plan('intel'))
+    expect(vulkan).toMatchObject({ detail: '兼容模式 · 599 KB', note: expect.stringContaining('只能文生图') })
+    const [amd] = planLines(plan('amd'))
+    expect(amd!.tip).toContain('ROCm 7')
   })
 
-  it('asks for a driver update when the driver is too old, naming the version when known', () => {
-    expect(planEngineInstall(cuda({ driverCompatible: false, driverVersion: '531.18' }))).toEqual({
-      kind: 'driver', message: '显卡驱动版本过旧（当前 531.18）。请先到 NVIDIA 官网更新显卡驱动，然后重试。',
-    })
-    expect(planEngineInstall(cuda({ driverCompatible: false }))).toEqual({
-      kind: 'driver', message: '显卡驱动版本过旧。请先到 NVIDIA 官网更新显卡驱动，然后重试。',
-    })
-    expect(planEngineInstall(cuda({ driverCompatible: true }))).toMatchObject({ kind: 'install' })
+  it('says when the package uses the CUDA runtime already on the computer', () => {
+    const machine = { ...machineFixture('nvidia'), systemCuda: ['cu13' as const] }
+    const view = enginePlanFor(machine, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, [])
+    expect(planLines(view)[0]!.detail).toBe('CUDA 13 引擎（使用系统 CUDA 运行库） · 22 MB')
+  })
+
+  it('starts the download line at 0 MB of the known size, not 未知', () => {
+    expect(engineDownloadLabel(engineDownloadFixture({ phase: 'downloading', bytes: 0, totalBytes: 24 * 1024 ** 2 }))).toBe('正在下载 0 MB / 24 MB')
+  })
+
+  it('names a package shared by several GPUs once and marks installed ones', () => {
+    const lines = planLines(plan('multiGpu', [managed('stable-v2.2.0-cu13')]))
+    expect(lines.map((line) => line.detail)).toEqual(['CUDA 13 引擎 · 已安装', 'CUDA 12 引擎 · 530 MB', '兼容模式 · 1.2 MB'])
+  })
+
+  it('macOS has no lines and is blocked', () => {
+    expect(planLines(plan('macos'))).toEqual([])
+    expect(plan('macos').blocked).toContain('远程主机')
+  })
+
+  it('counts only what is still missing', () => {
+    expect(planMissingBytes(plan('multiGpu'))).toBe(386148983 + 556009175 + 1280514)
+    expect(planMissingBytes(plan('multiGpu', [managed('stable-v2.2.0-cu13'), managed('stable-v2.2.0-cu12-sm70'), managed('stable-v2.2.0-vulkan')]))).toBe(0)
+  })
+
+  it('labels package ids plainly', () => {
+    expect(packageLabel('cu13-system-cuda')).toBe('CUDA 13')
+    expect(packageLabel('vulkan')).toBe('兼容模式')
+    expect(packageLabel('hip')).toBe('AMD 原生')
+    expect(packageLabel('custom')).toBe('自定义引擎')
+    expect(packageLabel(null)).toBeNull()
+  })
+
+  it('says which package of several is installing', () => {
+    const state = engineDownloadFixture({ phase: 'downloading', bytes: 0, totalBytes: 0, step: { index: 1, count: 2, packageId: 'vulkan' } })
+    expect(engineDownloadLabel(state)).toBe('兼容模式（2/2）· 正在下载')
+    expect(engineDownloadLabel({ ...state, step: { index: 0, count: 1, packageId: 'cu13' } })).toBe('正在下载')
   })
 })
 

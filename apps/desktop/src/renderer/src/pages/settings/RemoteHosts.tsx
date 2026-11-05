@@ -116,7 +116,7 @@ export function RemoteHosts(): React.JSX.Element {
       let engine = await checkEngine(host.id, true)
       if (!engine?.available) {
         markBusy(host.id, '正在安装引擎…')
-        const result = await call<{ version: string }>(Ipc.engineInstallRemote, { hostId: host.id, ...remoteInstallOptions(engine) })
+        const result = await call<{ version: string }>(Ipc.engineInstallRemote, { hostId: host.id, ...remoteInstallOptions() })
         toast.push(`${host.name} 已安装引擎 ${result.version}`, 'success')
         engine = await checkEngine(host.id)
       }

@@ -6,10 +6,12 @@ import { useTempDataRoot, useTempDir } from '@test/helpers/tempDir'
 
 const requestEngineOnce = vi.hoisted(() => vi.fn())
 const requestRunningEngine = vi.hoisted(() => vi.fn())
-const resolveServerPath = vi.hoisted(() => vi.fn())
+/** The moss-server inspect asks: engineInstalls.localServerPath (the first GPU's own CUDA install). */
+const localServerPath = vi.hoisted(() => vi.fn())
 const emit = vi.hoisted(() => vi.fn())
 vi.mock('@main/lib/probeEngine', () => ({ requestEngineOnce }))
-vi.mock('@main/services/mossInfer', () => ({ requestRunningEngine, resolveServerPath }))
+vi.mock('@main/services/mossInfer', () => ({ requestRunningEngine }))
+vi.mock('@main/services/engineInstalls', () => ({ localServerPath }))
 vi.mock('@main/lib/events', () => ({ emit }))
 
 const dataRoot = useTempDataRoot()
@@ -35,7 +37,7 @@ beforeEach(async () => {
   vi.resetModules()
   requestEngineOnce.mockReset()
   requestRunningEngine.mockReset().mockReturnValue(null)
-  resolveServerPath.mockReset().mockReturnValue('/engine/bin/moss-server')
+  localServerPath.mockReset().mockReturnValue('/engine/bin/moss-server')
   emit.mockReset()
   registry = await import('@main/services/controlAdapters')
 })
@@ -99,9 +101,9 @@ describe('control adapter registry', () => {
   it('explains a missing file, a missing engine, an old engine and an unreadable file', async () => {
     await expect(registry.addControlAdapter({ path: join(models(), 'gone.safetensors') })).rejects.toMatchObject({ code: 'E_INPUT_PATH' })
     const path = file('x.safetensors')
-    resolveServerPath.mockReturnValue(null)
+    localServerPath.mockReturnValue(null)
     await expect(registry.addControlAdapter({ path })).rejects.toMatchObject({ code: 'E_ENGINE', message: '需要先准备 MossInfer 引擎，才能识别控制适配器' })
-    resolveServerPath.mockReturnValue('/engine/bin/moss-server')
+    localServerPath.mockReturnValue('/engine/bin/moss-server')
     requestEngineOnce.mockRejectedValue(new Error('method_not_found: unknown method "inspect"'))
     await expect(registry.addControlAdapter({ path })).rejects.toMatchObject({ code: 'E_NOT_SUPPORTED' })
     requestEngineOnce.mockResolvedValue({ hello: hello({ inspect: false }), result: {} })

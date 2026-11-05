@@ -19,8 +19,7 @@ function deps(patch: Partial<EngineAutoUpdateDeps> = {}, initial: EngineAutoUpda
   let state = initial
   const install = vi.fn(async (_request: InstallRequest) => engineDownloadFixture({ phase: 'done' }))
   const value: EngineAutoUpdateDeps = {
-    // The settings value is deliberately different from the installed build's architecture.
-    getSettings: () => settingsFixture({ engineAutoUpdate: true, mossInferArchitecture: 'auto' }),
+    getSettings: () => settingsFixture({ engineAutoUpdate: true }),
     engineReady: async () => true,
     versions: () => [{ id: 'stable-v1.0.3-cu13-sm75-system-cuda', name: 'stable-v1.0.3-cu13-sm75-system-cuda', path: '/e/bin/moss-server', current: true, source: 'managed' }],
     releases: async () => [release('v1.1.0'), release('v1.0.3')],
@@ -40,8 +39,39 @@ describe('runEngineAutoUpdate', () => {
     const { deps: d, install } = deps()
     await expect(runEngineAutoUpdate(d)).resolves.toBe('updated')
     expect(install).toHaveBeenCalledWith(expect.objectContaining({
-      flavour: 'cu13', variant: 'system-cuda', architecture: 'sm75', releaseTag: 'v1.1.0',
+      packages: [{ kind: 'cuda', flavour: 'cu13', arch: 'sm75', runtime: 'system-cuda' }], releaseTag: 'v1.1.0',
     }))
+  })
+
+  it('keeps every installed package kind in use current, once each', async () => {
+    const managed = (name: string) => ({ id: name, name, path: `/e/${name}`, current: true, source: 'managed' as const })
+    const { deps: d, install } = deps({
+      versions: () => [
+        managed('stable-v1.0.3-cu13'),
+        managed('stable-v1.0.3-cu12-sm70-system-cuda'),
+        managed('stable-v1.0.3-vulkan'),
+        managed('stable-v1.1.0-hip'),
+        { id: 'stable-v1.0.2-cu13', name: 'stable-v1.0.2-cu13', path: '/old', current: false, source: 'managed' },
+      ],
+    })
+    await expect(runEngineAutoUpdate(d)).resolves.toBe('updated')
+    expect(install).toHaveBeenCalledTimes(1)
+    expect(install.mock.calls[0]![0].packages).toEqual([
+      { kind: 'cuda', flavour: 'cu13', arch: 'standard', runtime: 'bundled' },
+      { kind: 'cuda', flavour: 'cu12', arch: 'sm70', runtime: 'system-cuda' },
+      { kind: 'vulkan' },
+    ])
+  })
+
+  it('leaves a CI build in use alone but still updates the stable packages next to it', async () => {
+    const { deps: d, install } = deps({
+      versions: () => [
+        { id: 'dev-run9-abcdef12-cu13', name: 'dev-run9-abcdef12-cu13', path: '/d', current: true, source: 'managed' },
+        { id: 'stable-v1.0.3-vulkan', name: 'stable-v1.0.3-vulkan', path: '/v', current: true, source: 'managed' },
+      ],
+    })
+    await expect(runEngineAutoUpdate(d)).resolves.toBe('updated')
+    expect(install.mock.calls[0]![0].packages).toEqual([{ kind: 'vulkan' }])
   })
 
   it('does nothing when the setting is off, before Setup installed an engine, or for a custom engine', async () => {

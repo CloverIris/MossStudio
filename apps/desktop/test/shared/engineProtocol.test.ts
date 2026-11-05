@@ -448,14 +448,14 @@ describe('engineFeaturesOf', () => {
   it('reads the generation capabilities and the enum names of a 2.2 engine', () => {
     const features = engineFeaturesOf(decodeEngineHello(hello22))
     expect(features).toEqual({
-      preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true,
+      preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true,
       values: hello22.values,
     })
   })
 
   it('treats an engine without these capabilities (older than 2.2) as supporting none of them', () => {
     const features = engineFeaturesOf(decodeEngineHello({ protocol_version: 2, version: '2.1.1', capabilities: { tiers: true, lora: true } }))
-    expect(features).toEqual({ preview: false, imageInput: false, control: false, references: false, hires: false, samplers: false, values: {} })
+    expect(features).toEqual({ preview: false, imageInput: false, control: false, references: false, hires: false, samplers: false, lora: true, values: {} })
   })
 
   it('counts only a literal true, and keeps only string names', () => {

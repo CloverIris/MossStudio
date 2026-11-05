@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { ModelBinding, ModelBundle, Settings } from '@shared/types'
 import { paths } from '../lib/paths'
 import { componentSnapshot, getCatalog } from './models'
-import { fileSize, materialize, safePath } from './modelFiles'
+import { fileSize, linkInPlace, materialize, safePath } from './modelFiles'
 
 export function bundleBinding(bundle: ModelBundle): ModelBinding {
   return { bundleId: bundle.id, ...bundle.components }
@@ -100,8 +100,8 @@ export async function prepareModelBundle(
   const key = createHash('sha256').update(text).digest('hex').slice(0, 24)
   const root = join(paths.models(settings.modelsRoot), 'bundles')
   let target = join(root, key)
-  const expected: Array<{ source: string; path: string }> = []
-  for (const { model, record, root: snapshot } of components) {
+  const expected: Array<{ source: string; path: string; local?: boolean }> = []
+  for (const { model, record, root: snapshot, local } of components) {
     for (const file of record.entries) {
       let path: string
       if (model.role === 'support') path = file.path
@@ -113,7 +113,7 @@ export async function prepareModelBundle(
           model.role === 'dit' ? 'transformer' : model.role === 'vae' ? 'vae' : 'text_encoder'
         path = `${folder}/${file.path.slice(prefix.length)}`
       }
-      expected.push({ source: safePath(snapshot, file.path), path })
+      expected.push({ source: safePath(snapshot, file.path), path, ...(local ? { local } : {}) })
     }
   }
   const candidates = await readdir(root).catch(() => [] as string[])
@@ -143,7 +143,8 @@ export async function prepareModelBundle(
   const staging = join(root, `${key}.tmp-${randomUUID()}`)
   await mkdir(staging)
   try {
-    for (const file of expected) await materialize(file.source, safePath(staging, file.path))
+    // Files of a registered local folder are linked, never copied.
+    for (const file of expected) await (file.local ? linkInPlace : materialize)(file.source, safePath(staging, file.path))
     await writeFile(join(staging, 'clover_model.json'), text)
     // Existing immutable bundles may still be open in another process. Leave them alone.
     try {
