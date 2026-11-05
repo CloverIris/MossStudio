@@ -1,5 +1,6 @@
 import { Brush, ImageOff, Plus, X } from 'lucide-react'
 import type { CanvasImageLink, ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
+import { cliEngineNote } from '@shared/cliEngine'
 import { MenuItem, Popover } from '../../components/common/Popover'
 import { Advanced, Button, IconButton, Segmented, Select } from '../../components/ui'
 import { cloverUrl } from '../../lib/clover'
@@ -162,7 +163,11 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
   const showInit = !known || features!.imageInput || Boolean(inputs?.init)
   const showControl = !known || features!.control || Boolean(inputs?.control)
   const showReferences = !known || features!.references || Boolean(inputs?.references?.links.length)
-  if (!showInit && !showControl && !showReferences) return null
+  // A CLI engine (兼容模式 / AMD 原生) only does text to image: say so quietly where the inputs would be.
+  const cliNote = features?.cli ? (
+    <p className="text-caption text-ink-2" data-cli-engine-note>{cliEngineNote(features.cli)}</p>
+  ) : null
+  if (!showInit && !showControl && !showReferences) return cliNote
 
   const picking = wiring.pickTarget?.canvasId === canvas.id ? wiring.pickTarget : null
   const adapter = inputs?.control ? wiring.controlAdapters.find((item) => item.id === inputs.control!.adapterId) : undefined
@@ -178,6 +183,7 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
     <section aria-label="输入" className="flex flex-col gap-2.5" data-inputs-section>
       <FieldLabel>输入</FieldLabel>
       {unavailable ? <p className="text-caption text-ink-2">{unavailable}</p> : null}
+      {cliNote}
       {picking ? (
         <p role="status" className="rounded-lg bg-accent-soft px-3 py-2 text-caption text-ink">
           在画板上点一张有图片的卡片作为{picking.role === 'control' ? `控制图 · ${controlKindLabel(picking.kind ?? '')}` : roleLabel(picking.role)}，按 Esc 取消

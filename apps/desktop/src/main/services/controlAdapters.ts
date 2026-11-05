@@ -7,7 +7,8 @@ import { codedError, errorCode } from '../lib/codedError'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
 import { requestEngineOnce } from '../lib/probeEngine'
-import { requestRunningEngine, resolveServerPath } from './mossInfer'
+import { requestRunningEngine } from './mossInfer'
+import { localServerPath } from './engineInstalls'
 import { getSettings } from './settings'
 
 /**
@@ -57,7 +58,7 @@ const WRONG_KIND: Record<string, string> = {
 async function inspectFile(path: string): Promise<Record<string, unknown>> {
   const running = requestRunningEngine('inspect', { path })
   if (running) return running
-  const serverPath = resolveServerPath(getSettings())
+  const serverPath = localServerPath()
   if (!serverPath) throw codedError('E_ENGINE', '需要先准备 MossInfer 引擎，才能识别控制适配器')
   const { hello, result } = await requestEngineOnce(serverPath, 'inspect', { path })
   if (hello.capabilities['inspect'] === false) {

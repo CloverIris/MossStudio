@@ -1,15 +1,18 @@
-import type { EngineRemoteProgress, RemoteEngineInstallOptions, TrainingHost } from '@shared/types'
-import { MOSSINFER_REPO, mossInferArchiveBase } from '../lib/engineAssets'
+import type { EngineRemoteProgress, RemoteEngineInfo, RemoteEngineInstallOptions, TrainingHost } from '@shared/types'
+import { chooseEnginePackages, type EngineAssetList } from '@shared/engineChoice'
+import { engineAssetName, enginePackageOptionLabel, releaseAssetVersion, type EnginePackage } from '@shared/enginePackages'
+import { MOSSINFER_REPO } from '../lib/engineAssets'
 import { posixQuote, remoteAbsolute, sshExec, sshStream } from './ssh'
 import { getSettings } from './settings'
 import { resolveGithubToken } from './mossInferDownload'
+import { probeRemoteCuda, remoteMachine } from './remoteCuda'
 
 const REPO = MOSSINFER_REPO
 const API = `https://api.github.com/repos/${REPO}`
 
 interface Release {
   tag_name?: string
-  assets?: Array<{ name?: string; browser_download_url?: string; size?: number }>
+  assets?: Array<{ name?: string; browser_download_url?: string; size?: number; digest?: string | null }>
 }
 
 interface Artifact {
@@ -26,27 +29,85 @@ interface EngineSource {
   name: string
   kind: 'release' | 'artifact'
   totalBytes: number
+  /** SHA-256 from the release's SHA256SUMS; the host checks the archive against it before unpacking. */
+  sha256?: string
 }
 
-function pickAsset(release: Release, options: RemoteEngineInstallOptions): { name: string; url: string; totalBytes: number } {
-  const assets = release.assets ?? []
-  const name = `${mossInferArchiveBase(String(release.tag_name ?? '').replace(/^v/, ''), 'linux', options.flavour ?? 'cu13', options.variant ?? 'bundled', 'standard')}.tar.gz`
-  const candidate = assets.find((asset) => asset.name === name)
-  if (!candidate?.browser_download_url || !candidate.name) throw new Error(`上游 Release 没有所选 Linux 引擎包：${name}`)
-  return { name: candidate.name, url: candidate.browser_download_url, totalBytes: candidate.size ?? 0 }
+/** The hash SHA256SUMS lists for one file name. */
+export function sha256FromSums(sums: string, name: string): string | null {
+  for (const line of sums.split(/\r?\n/)) {
+    const match = /^([a-f0-9]{64})\s+\*?(\S+)$/.exec(line.trim())
+    if (match && (match[2] === name || match[2]!.endsWith(`/${name}`))) return match[1]!
+  }
+  return null
 }
 
-async function releaseSource(options: RemoteEngineInstallOptions): Promise<EngineSource | null> {
+type CudaPackage = Extract<EnginePackage, { kind: 'cuda' }>
+
+/** The package given explicitly by the caller (flavour + runtime + arch), if any. */
+function explicitPackage(options: RemoteEngineInstallOptions): CudaPackage | null {
+  if (!options.flavour && !options.variant && (!options.architecture || options.architecture === 'auto')) return null
+  return {
+    kind: 'cuda',
+    flavour: options.flavour ?? 'cu13',
+    runtime: options.variant ?? 'bundled',
+    arch: options.architecture && options.architecture !== 'auto' ? options.architecture : 'standard',
+  }
+}
+
+/**
+ * The CUDA package for this host from its probe, through the same chooser as
+ * the local machine (CUDA builds only: a host runs moss-server). A host with
+ * only AMD / Intel GPUs, or NVIDIA GPUs no CUDA build runs on, says so.
+ */
+export function chooseRemotePackage(info: Pick<RemoteEngineInfo, 'cuda' | 'gpu'>, release: EngineAssetList): CudaPackage {
+  if (info.cuda?.nvidiaSmiTimedOut && !(info.cuda.computeCapabilities.length)) {
+    throw new Error('远程主机上的 nvidia-smi 15 秒内没有响应，无法确认显卡；请稍后重试，或在主机上检查 nvidia-smi 是否卡住')
+  }
+  const plan = chooseEnginePackages(remoteMachine(info), release, { cudaOnly: true })
+  if (plan.choices.length === 0) throw new Error('远程主机上没有检测到显卡；请确认 NVIDIA 驱动已安装（nvidia-smi 可用）')
+  // The newest-flavour package that serves the most NVIDIA GPUs.
+  const best = [...plan.packages].sort((a, b) => b.gpuIds.length - a.gpuIds.length)[0]
+  if (!best) {
+    const nvidia = plan.choices.find((choice) => choice.gpuName && !choice.reason.includes('不是 NVIDIA'))
+    throw new Error(nvidia
+      ? `${nvidia.reason}：主机的 NVIDIA 驱动或显卡太旧（${info.cuda?.driverVersion ?? '驱动版本未知'}）`
+      : '这台主机只有非 NVIDIA 显卡；远程主机只能运行 CUDA 引擎，请换一台装有 NVIDIA 显卡的主机')
+  }
+  return best.package as CudaPackage
+}
+
+/** The version in the asset names (a `v2.2.0-rc1` tag still ships `mossinfer-2.2.0-…`). */
+function releaseVersion(release: Release): string {
+  return releaseAssetVersion(String(release.tag_name ?? ''), (release.assets ?? []).map((asset) => asset.name ?? ''))
+}
+
+async function fetchRelease(options: RemoteEngineInstallOptions): Promise<Release | null> {
   const suffix = options.releaseTag ? `/releases/tags/${encodeURIComponent(options.releaseTag)}` : '/releases/latest'
   const response = await fetch(`${API}${suffix}`, { headers: { 'user-agent': 'MossStudio' }, signal: AbortSignal.timeout(30_000) })
   if (response.status === 404 && !options.releaseTag) return null
   if (!response.ok) throw new Error(`GitHub Release ${response.status}`)
-  const release = (await response.json()) as Release
-  const asset = pickAsset(release, options)
-  return { version: String(release.tag_name ?? 'artifact').replace(/^v/, ''), url: asset.url, name: asset.name, kind: 'release', totalBytes: asset.totalBytes }
+  return (await response.json()) as Release
 }
 
-async function artifactSource(options: RemoteEngineInstallOptions): Promise<EngineSource> {
+async function releaseSource(release: Release, pkg: CudaPackage): Promise<EngineSource> {
+  const version = releaseVersion(release)
+  const name = engineAssetName(version, 'linux', pkg)
+  const candidate = (release.assets ?? []).find((asset) => asset.name === name)
+  if (!candidate?.browser_download_url || !candidate.name) throw new Error(`上游 Release 没有所选 Linux 引擎包：${name}`)
+  // GitHub's own digest first; SHA256SUMS straight from github.com otherwise. Never through a mirror.
+  const digest = /^sha256:([a-f0-9]{64})$/i.exec(candidate.digest ?? '')?.[1]?.toLowerCase()
+  if (digest) return { version, url: candidate.browser_download_url, name: candidate.name, kind: 'release', totalBytes: candidate.size ?? 0, sha256: digest }
+  const sumsUrl = (release.assets ?? []).find((asset) => asset.name === 'SHA256SUMS')?.browser_download_url
+  if (!sumsUrl) throw new Error(`release ${release.tag_name} 没有 SHA256SUMS，无法校验引擎包，未安装`)
+  const sums = await fetch(sumsUrl, { headers: { 'user-agent': 'MossStudio' }, signal: AbortSignal.timeout(30_000) })
+  if (!sums.ok) throw new Error(`下载 SHA256SUMS 失败：HTTP ${sums.status}`)
+  const sha256 = sha256FromSums(await sums.text(), name)
+  if (!sha256) throw new Error(`SHA256SUMS 里没有 ${name}，无法校验，未安装`)
+  return { version, url: candidate.browser_download_url, name: candidate.name, kind: 'release', totalBytes: candidate.size ?? 0, sha256 }
+}
+
+async function artifactSource(pkg: CudaPackage): Promise<EngineSource> {
   const settings = getSettings()
   const token = resolveGithubToken(settings)
   if (!token) {
@@ -66,7 +127,7 @@ async function artifactSource(options: RemoteEngineInstallOptions): Promise<Engi
   })
   if (!artifactsResponse.ok) throw new Error(`查询 artifacts 失败：HTTP ${artifactsResponse.status}`)
   const data = (await artifactsResponse.json()) as { artifacts?: Artifact[] }
-  const artifactName = `mossinfer-linux-${options.flavour === 'cu12' ? 'cuda12' : 'cuda13'}`
+  const artifactName = `mossinfer-linux-${pkg.flavour === 'cu12' ? 'cuda12' : 'cuda13'}${pkg.arch === 'standard' ? '' : `-${pkg.arch}`}`
   const artifact = data.artifacts?.find((item) => item.name === artifactName && !item.expired)
   if (!artifact?.archive_download_url) throw new Error('最新 ci 运行没有 Linux 引擎 artifact')
   // Resolve the authenticated API URL to its short-lived signed blob URL locally;
@@ -86,13 +147,26 @@ export async function installRemoteEngine(host: TrainingHost, progress?: (phase:
   const root = (await remoteAbsolute(host, host.engineRoot || '~/.mossstudio/engine')).replace(/\/$/, '')
   if (!root) throw new Error('远端引擎目录不能是文件系统根目录')
   progress?.('checking', '检查远端 Linux/curl/tar/flock…', 5)
-  const remote = await sshExec(host, 'set -e; uname -s -m; command -v curl >/dev/null 2>&1; command -v tar >/dev/null 2>&1; command -v flock >/dev/null 2>&1; echo READY', 20_000)
+  const remote = await sshExec(host, 'set -e; uname -s -m; command -v curl >/dev/null 2>&1; command -v tar >/dev/null 2>&1; command -v flock >/dev/null 2>&1; command -v sha256sum >/dev/null 2>&1; echo READY', 20_000)
   if (!/Linux\s+x86_64/i.test(remote.stdout) || !remote.stdout.includes('READY')) {
-    throw new Error('远端引擎安装只支持 Linux x86_64，且需要 curl/tar/flock；CI 构件还需要 unzip')
+    throw new Error('远端引擎安装只支持 Linux x86_64，且需要 curl/tar/flock/sha256sum；CI 构件还需要 unzip')
   }
   progress?.('querying', '查询上游 Release / CI artifact…', 15)
-  const source = options.channel === 'dev' ? await artifactSource(options)
-    : (await releaseSource(options)) ?? (await artifactSource(options))
+  const release = options.channel === 'dev' ? null : await fetchRelease(options)
+  let pkg = explicitPackage(options)
+  if (!pkg) {
+    progress?.('checking', '检测远端显卡与驱动…', 10)
+    const info = await probeRemoteCuda(host, true)
+    if (!info.online) throw new Error(info.error ?? '无法连接远程主机')
+    const assets: EngineAssetList = release
+      ? { version: releaseVersion(release), assets: (release.assets ?? []).map((asset) => ({ name: asset.name ?? '', size: asset.size ?? 0 })) }
+      : { version: 'dev', assets: (['cu13', 'cu12'] as const).flatMap((flavour) => (['standard', 'sm70'] as const).flatMap((arch) =>
+          (['bundled', 'system-cuda'] as const).map((runtime) => ({ name: engineAssetName('dev', 'linux', { kind: 'cuda', flavour, arch, runtime }), size: 0 }))))
+          .filter((asset) => !asset.name.includes('cu13-x86_64-sm70')) }
+    pkg = chooseRemotePackage(info, assets)
+    progress?.('querying', `为这台主机选择 ${enginePackageOptionLabel(pkg)} 引擎`, 15)
+  }
+  const source = release ? await releaseSource(release, pkg) : await artifactSource(pkg)
   progress?.('downloading', `下载 ${source.name}…`, 25)
   const staging = `${root}.staging`
   const archive = `${staging}.download`
@@ -101,8 +175,8 @@ export async function installRemoteEngine(host: TrainingHost, progress?: (phase:
   const proxy = host.downloadProxy?.trim()
   if (proxy && /[\x00-\x1f\x7f]/.test(proxy)) throw new Error('代理地址包含无效控制字符')
   const curlConfig = proxy ? `proxy = "${proxy.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"\nnoproxy = ""\n` : ''
-  const variant = options.variant ?? 'bundled'
-  const innerPattern = `mossinfer-*linux-${options.flavour ?? 'cu13'}-x86_64${variant === 'system-cuda' ? '-system-cuda' : ''}.tar.gz`
+  const variant = pkg.runtime
+  const innerPattern = `mossinfer-*linux-${pkg.flavour}-x86_64${pkg.arch === 'standard' ? '' : `-${pkg.arch}`}${variant === 'system-cuda' ? '-system-cuda' : ''}.tar.gz`
   const extract = source.kind === 'release'
     ? [`tar -xzf ${posixQuote(archive)} -C ${posixQuote(`${staging}/engine`)}`]
     : [
@@ -138,6 +212,7 @@ export async function installRemoteEngine(host: TrainingHost, progress?: (phase:
     'done',
     'wait "$download_pid"',
     `printf '__MOSS_ENGINE_BYTES__:%s\\n' "$(stat -c %s ${posixQuote(archive)})"`,
+    ...(source.sha256 ? [`printf '%s  %s\\n' ${posixQuote(source.sha256)} ${posixQuote(archive)} | sha256sum -c --status - || { rm -f ${posixQuote(archive)}; echo ${posixQuote(`引擎包 sha256 校验失败（${source.name}）`)} >&2; exit 1; }`] : []),
     "printf '__MOSS_ENGINE_PHASE__:extracting\\n'",
     `mkdir -p ${posixQuote(`${staging}/engine`)}`,
     ...extract,
@@ -148,7 +223,7 @@ export async function installRemoteEngine(host: TrainingHost, progress?: (phase:
     `rm -rf ${posixQuote(root)}`,
     `mv "$top" ${posixQuote(root)}`,
     `chmod +x ${posixQuote(`${root}/bin/moss-server`)}`,
-    `printf '%s\\n' ${posixQuote(JSON.stringify({ version: source.version, asset: source.name, variant, channel: options.channel ?? 'stable' }))} > ${posixQuote(`${root}/.mossstudio-engine.json`)}`,
+    `printf '%s\\n' ${posixQuote(JSON.stringify({ version: source.version, asset: source.name, variant, package: `${pkg.flavour}${pkg.arch === 'standard' ? '' : `-${pkg.arch}`}`, channel: options.channel ?? 'stable' }))} > ${posixQuote(`${root}/.mossstudio-engine.json`)}`,
     `rm -rf ${posixQuote(staging)} ${posixQuote(archive)} ${posixQuote(identityFile)}`,
   ].join('\n')
   let previousBytes: number | undefined

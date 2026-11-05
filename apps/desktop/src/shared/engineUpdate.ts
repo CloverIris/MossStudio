@@ -1,34 +1,35 @@
 import type { LocalEngineVersion, MossInferRelease } from './types'
+import { enginePackageId, parseEnginePackageId, type EnginePackage } from './enginePackages'
 
 /**
  * What a managed engine folder name says about the build inside it.
  *
  * Managed installs live in `<root>/<stamp>` where the stamp is written by the
- * downloader: `stable-<tag>-<cu12|cu13>[-sm75][-system-cuda]` for releases and
- * `dev-run<id>-<sha>-<flavour>[-sm75][-system-cuda]` for CI artifacts.
+ * downloader: `stable-<tag>-<packageId>` for releases and
+ * `dev-run<id>-<sha>-<packageId>` for CI artifacts, the package id being
+ * `cu13`, `cu13-sm75-system-cuda`, `cu12-sm70`, `vulkan`, `hip` (enginePackages.ts).
  */
 export interface EngineStamp {
   channel: 'stable' | 'dev'
   /** Release tag (`v1.0.3`) or CI run label (`run42-abcdef12`). */
   tag: string
-  flavour: 'cu12' | 'cu13'
-  architecture: 'standard' | 'sm75'
-  variant: 'system-cuda' | 'bundled'
+  packageId: string
+  package: EnginePackage
 }
 
-const STAMP = /^(stable|dev)-(.+?)-(cu12|cu13)(-sm75)?(-system-cuda)?$/
+const STAMP = /^(stable|dev)-(.+?)-((?:cu12|cu13)(?:-sm75|-sm70)?(?:-system-cuda)?|vulkan|hip)$/
 
 export function parseEngineStamp(name: string): EngineStamp | null {
   const match = STAMP.exec(name.trim())
   if (!match) return null
-  const [, channel, tag, flavour, sm75, systemCuda] = match
-  return {
-    channel: channel as EngineStamp['channel'],
-    tag: tag!,
-    flavour: flavour as EngineStamp['flavour'],
-    architecture: sm75 ? 'sm75' : 'standard',
-    variant: systemCuda ? 'system-cuda' : 'bundled',
-  }
+  const [, channel, tag, id] = match
+  const pkg = parseEnginePackageId(id!)
+  if (!pkg) return null
+  return { channel: channel as EngineStamp['channel'], tag: tag!, packageId: enginePackageId(pkg), package: pkg }
+}
+
+export function engineStampName(channel: 'stable' | 'dev', tag: string, pkg: EnginePackage): string {
+  return `${channel}-${tag}-${enginePackageId(pkg)}`
 }
 
 /** Numeric parts of a tag like `v1.10.2-rc1` → [1, 10, 2]. Null when it has none. */

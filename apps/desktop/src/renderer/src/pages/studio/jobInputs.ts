@@ -1,4 +1,5 @@
 import type { ControlAdapterEntry, EngineFeatures, JobControlImage, JobParams, ProjectCanvas } from '@shared/types'
+import { CLI_ENGINE_LABEL, cliSamplingAccepted } from '@shared/cliEngine'
 import { ACTIVE_JOB_STATES } from './jobStatus'
 import { controlKindLabel, linkSourceCanvas, canvasPicture, MAX_REFERENCES } from './links'
 import type { Blocker } from './readiness'
@@ -53,7 +54,10 @@ export function resolveJobInputs(
   const features = context.features ?? null
   const inputs = canvas.inputs
   const unsupported = (what: string): void => {
-    blockers.push({ id: 'input-unsupported', message: `这台设备上的引擎不支持${what}，请移除后再生成` })
+    const message = features?.cli
+      ? `${CLI_ENGINE_LABEL[features.cli]}引擎只能文生图，不支持${what}，请移除后再生成`
+      : `这台设备上的引擎不支持${what}，请移除后再生成`
+    blockers.push({ id: 'input-unsupported', message })
   }
   const source = (link: { canvasId: string; output?: number }, what: string): string | null => {
     const check = sourcePicture(context.canvases, link, what)
@@ -128,7 +132,8 @@ export function resolveJobInputs(
   if (sampling) {
     params.sampling = sampling
     if (features) {
-      if (!features.samplers && (sampling.sampler || sampling.scheduler)) unsupported('更换采样器')
+      const samplerChange = features.cli ? !cliSamplingAccepted(sampling) : Boolean(sampling.sampler || sampling.scheduler)
+      if (!features.samplers && samplerChange) unsupported('更换采样器')
       if (!features.hires && sampling.hires) unsupported('高清修复')
       const check = (param: 'sampler' | 'scheduler' | 'step_cache', value: string | undefined, what: string): void => {
         const allowed = features.values?.[param]
@@ -142,6 +147,11 @@ export function resolveJobInputs(
         check('scheduler', sampling.scheduler, '调度器')
       }
       check('step_cache', sampling.stepCache, '步缓存')
+      // A CLI engine takes steps, CFG and shift, nothing else of the sampling.
+      if (features.cli) {
+        if (sampling.stepCache && sampling.stepCache !== 'off') unsupported('步缓存')
+        if (sampling.cfgTruncation !== undefined) unsupported('CFG 截断')
+      }
     }
   }
 

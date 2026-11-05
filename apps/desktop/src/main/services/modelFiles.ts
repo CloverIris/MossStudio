@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, link, mkdir, open, readFile, rename, rm, stat, statfs } from 'node:fs/promises'
+import { copyFile, link, mkdir, open, readFile, rename, rm, stat, statfs, symlink } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 
 export interface ModelFile {
@@ -132,6 +132,25 @@ export async function materialize(source: string, target: string): Promise<void>
     if (Number(space.bavail) * Number(space.bsize) < (await stat(source)).size + 64 * 1024 ** 2)
       throw new Error('创建本地组合时磁盘空间不足')
     await copyFile(source, target)
+  }
+}
+
+/**
+ * Like materialize, for a file in the user's own model folder: a hard link,
+ * else a symbolic link. Never a copy (that folder can be 27 GB on another disk).
+ */
+export async function linkInPlace(source: string, target: string): Promise<void> {
+  await mkdir(dirname(target), { recursive: true })
+  try {
+    await link(source, target)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return
+    try {
+      await symlink(source, target)
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === 'EEXIST') return
+      throw cause
+    }
   }
 }
 

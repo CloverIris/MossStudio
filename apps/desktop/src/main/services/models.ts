@@ -34,7 +34,9 @@ import { listJobs } from './supervisor'
 import packagedCatalog from '../../../../../release/models.json'
 import {
   importModelFolder as importModelDirectory,
+  inspectDiffusersFolder,
   readImportedModels,
+  type DiffusersFolderInfo,
   registerScannedModels as registerImportedScan,
   removeImportedModel,
   verifyImportedModelFile,
@@ -408,6 +410,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
   if (runtimeConfig && !raw.models.some((model) => model.id === runtimeConfig.id)) {
     raw = { ...raw, models: [...raw.models, runtimeConfig] }
   }
+  const folders = await localDiffusersFolders(settings)
   const models: ModelEntry[] = await Promise.all(
     raw.models.map(async (model) => {
       const entry: ModelEntry = {
@@ -434,6 +437,18 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       const record = location?.record
       entry.installed = Boolean(record)
       entry.installedBytes = record?.entries.reduce((n, f) => n + f.size, 0) ?? 0
+      // A registered diffusers folder of the same model counts as this component, used where it is.
+      const local = record ? null : await localFolderInstall(entry, folders)
+      if (local) {
+        entry.installed = true
+        entry.installedBytes = local.record.entries.reduce((n, f) => n + f.size, 0)
+        entry.localPath = local.root
+        entry.tags = [...entry.tags, 'local-folder']
+        entry.notes = `使用本地文件夹 ${local.root} 里的文件，不复制、不移动。`
+        entry.installState = 'ready'
+        entry.resolvedRevision = local.record.sha
+        return entry
+      }
       const task = tasks.get(`model:${entry.id}`)
       const locations = cacheLocations(settings, entry.repo, entry.role)
       let partial = locations.some((dir) =>
@@ -477,11 +492,19 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
   )
   for (const imported of await readImportedModels(importedModelsIndex(settings))) {
     let installed = false
-    try {
-      const info = await stat(imported.path)
-      installed = info.isFile() && info.size === imported.size && info.mtimeMs === imported.mtimeMs
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    let precision = 'local'
+    if (imported.layout === 'diffusers-folder') {
+      // A folder: still complete and the same size as when it was registered.
+      const folder = folders.find((item) => item.path === imported.path)?.info ?? null
+      installed = folder?.size === imported.size
+      precision = folder?.dtype ?? 'local'
+    } else {
+      try {
+        const info = await stat(imported.path)
+        installed = info.isFile() && info.size === imported.size && info.mtimeMs === imported.mtimeMs
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
     }
     models.push({
       id: imported.id,
@@ -490,7 +513,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       repo: imported.path,
       revision: 'local',
       role: imported.role,
-      precision: 'local',
+      precision,
       format: imported.layout === 'diffusers-folder' ? 'diffusers' : 'comfyui',
       family: 'local',
       sizeBytes: imported.size,
@@ -501,7 +524,9 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
         imported.layout === 'diffusers-folder' ? 'diffusers-folder' : 'comfyui',
         imported.sha256 ? `sha256:${imported.sha256}` : 'unhashed',
       ],
-      notes: imported.sha256
+      notes: imported.layout === 'diffusers-folder'
+        ? '在原位置使用的模型文件夹；不复制、不移动，移除记录也不会删除原文件夹。'
+        : imported.sha256
         ? `外部文件引用；移除记录不会删除原文件。SHA256 ${imported.sha256}`
         : '扫描登记的外部文件；不复制、不移动，移除记录也不会删除原文件。使用前不校验哈希。',
       localPath: imported.path,
@@ -881,10 +906,25 @@ export async function startDownload(
   return beginDownload(kind, entry, settings)
 }
 
+/**
+ * 在原位置使用这个模型文件夹: a diffusers folder (or several inside the one
+ * picked) is registered in place as one model each, nothing copied or hashed.
+ * A folder of loose weight files keeps the old per-file import.
+ */
 export async function importModelFolder(
   directory: string,
   settings: Settings,
-): Promise<{ added: number; duplicates: number }> {
+): Promise<{ added: number; duplicates: number; folders?: string[] }> {
+  const scan = await scanModelDirectory(directory)
+  const folders = scan.candidates.filter((candidate) => candidate.layout === 'diffusers-folder')
+  if (folders.length) {
+    const result = await registerImportedScan(importedModelsIndex(settings), folders.map((candidate) => ({
+      path: candidate.path, role: 'full', layout: 'diffusers-folder', name: candidate.name, relativePath: candidate.relativePath,
+    })))
+    invalidateCatalog()
+    if (result.added + result.updated === 0) throw new Error('这个文件夹不是完整的模型文件夹（需要 model_index.json、transformer、text_encoder 和 vae）')
+    return { added: result.added, duplicates: result.updated, folders: folders.map((candidate) => candidate.name) }
+  }
   const result = await importModelDirectory(directory, importedModelsIndex(settings))
   invalidateCatalog()
   return result
@@ -988,16 +1028,78 @@ export function pauseDownload(id: string): void {
 export async function componentSnapshot(
   id: string,
   settings: Settings,
-): Promise<{ model: ModelEntry; record: InstallRecord; root: string }> {
+): Promise<{ model: ModelEntry; record: InstallRecord; root: string; local?: boolean }> {
   const model = (await getCatalog(settings)).models.find((m) => m.id === id)
   if (!model) throw new Error(`组件不存在：${id}`)
   const location = await findInstall(settings, model)
-  if (!location) throw new Error(`组件未就绪：${model.name}。请在模型库补齐组件。`)
+  if (!location) {
+    const local = await localFolderInstall(model, await localDiffusersFolders(settings))
+    if (local) return { model, record: local.record, root: local.root, local: true }
+    throw new Error(`组件未就绪：${model.name}。请在模型库补齐组件。`)
+  }
   return {
     model,
     record: location.record,
     root: join(location.dir, 'snapshots', location.record.sha),
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Registered diffusers folders as catalog components                  */
+/* ------------------------------------------------------------------ */
+
+interface LocalFolder {
+  path: string
+  info: DiffusersFolderInfo
+}
+
+/** The registered diffusers folders that are still complete. */
+async function localDiffusersFolders(settings: Settings): Promise<LocalFolder[]> {
+  const imported = await readImportedModels(importedModelsIndex(settings)).catch(() => [])
+  const folders: LocalFolder[] = []
+  for (const item of imported) {
+    if (item.layout !== 'diffusers-folder') continue
+    const info = await inspectDiffusersFolder(item.path)
+    if (info) folders.push({ path: item.path, info })
+  }
+  return folders
+}
+
+const MOSS_REPOS: Record<string, 'sft' | 'base'> = {
+  'OpenMOSS-Team/MOSS-Image-SFT': 'sft',
+  'OpenMOSS-Team/MOSS-Image-Base': 'base',
+}
+
+/**
+ * A catalog component served by a registered MOSS-Image diffusers folder: the
+ * DiT must be the same flavour (SFT / Base); the text encoder, VAE and
+ * pipeline files are shared by both. The files are checked like a download
+ * (sizes, configs, shard indexes) by validateSnapshot.
+ */
+export async function localFolderInstall(
+  model: Pick<ModelEntry, 'id' | 'repo' | 'revision' | 'role' | 'format' | 'subfolder' | 'files' | 'provider'>,
+  folders: LocalFolder[],
+): Promise<{ record: InstallRecord; root: string } | null> {
+  const flavor = MOSS_REPOS[model.repo]
+  if (model.provider !== 'hf' || model.format === 'comfyui' || !flavor || model.role === 'full') return null
+  for (const folder of folders) {
+    if (!folder.info.flavor || (model.role === 'dit' && folder.info.flavor !== flavor)) continue
+    let entries: ModelFile[]
+    try {
+      entries = selectFiles(folder.info.files.map((file) => ({ ...file, oid: null })), model.files)
+    } catch {
+      continue
+    }
+    if (!(await validateSnapshot(folder.path, entries, model.role, model.subfolder))) continue
+    return {
+      root: folder.path,
+      record: {
+        version: 2, id: model.id, repo: model.repo, revision: model.revision,
+        sha: createHash('sha1').update(folder.path).digest('hex'), entries, owned: [],
+      },
+    }
+  }
+  return null
 }
 
 export async function deleteModel(

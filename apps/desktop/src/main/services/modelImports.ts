@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 
 export type ImportedModelRole = 'full' | 'dit' | 'text_encoder' | 'vae' | 'support'
@@ -191,6 +191,120 @@ export async function importModelFolder(directory: string, indexFile: string): P
   return { added, duplicates }
 }
 
+/* ------------------------------------------------------------------ */
+/* Diffusers folders, registered in place                              */
+/* ------------------------------------------------------------------ */
+
+export interface DiffusersFolderInfo {
+  /** Bytes of every file in the folder (what the registration checks later). */
+  size: number
+  mtimeMs: number
+  /** Which MOSS-Image this is, from README's title or the folder name; null when unknown. */
+  flavor: 'sft' | 'base' | null
+  /** Weight dtype read from the transformer's safetensors header: `bf16`, `fp16`, `fp32`. */
+  dtype: string | null
+  /** Every file, relative to the folder, with its size (what the catalog components are matched against). */
+  files: Array<{ path: string; size: number }>
+}
+
+const DTYPES: Record<string, string> = { BF16: 'bf16', F16: 'fp16', F32: 'fp32' }
+
+/** The dtype of the first tensor in a safetensors file: 8-byte header length, then a JSON header. */
+async function safetensorsDtype(file: string): Promise<string | null> {
+  try {
+    const handle = await open(file, 'r')
+    try {
+      const head = Buffer.alloc(8)
+      await handle.read(head, 0, 8, 0)
+      const length = Number(head.readBigUInt64LE(0))
+      if (!Number.isSafeInteger(length) || length <= 0 || length > 64 * 1024 * 1024) return null
+      const json = Buffer.alloc(length)
+      await handle.read(json, 0, length, 8)
+      const header = JSON.parse(json.toString('utf8')) as Record<string, { dtype?: string; data_offsets?: [number, number] }>
+      // The dtype holding most of the bytes (norms and scales are often kept in fp32).
+      const bytes = new Map<string, number>()
+      for (const [name, tensor] of Object.entries(header)) {
+        if (name === '__metadata__' || !tensor?.dtype) continue
+        const [start, end] = tensor.data_offsets ?? [0, 0]
+        bytes.set(tensor.dtype, (bytes.get(tensor.dtype) ?? 0) + Math.max(0, end - start))
+      }
+      const top = [...bytes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+      return top ? DTYPES[top] ?? top.toLowerCase() : null
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    return null
+  }
+}
+
+async function listFolder(root: string): Promise<Array<{ path: string; size: number; mtimeMs: number }>> {
+  const files: Array<{ path: string; size: number; mtimeMs: number }> = []
+  async function visit(directory: string, depth: number): Promise<void> {
+    if (depth > 4) return
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const absolute = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith('.') && !skippedDirectories.has(entry.name.toLowerCase())) await visit(absolute, depth + 1)
+      } else if (entry.isFile()) {
+        const info = await stat(absolute)
+        files.push({ path: relative(root, absolute).split(/[\\/]/).join('/'), size: info.size, mtimeMs: info.mtimeMs })
+      }
+      if (files.length > maxFiles) throw new Error(`模型文件夹里的文件超过 ${maxFiles} 个`)
+    }
+  }
+  await visit(root, 0)
+  return files
+}
+
+/**
+ * A complete diffusers folder: model_index.json, and transformer/,
+ * text_encoder/ and vae/ each with config.json and safetensors weights.
+ * Null for anything else.
+ */
+export async function inspectDiffusersFolder(directory: string): Promise<DiffusersFolderInfo | null> {
+  let files: Array<{ path: string; size: number; mtimeMs: number }>
+  try {
+    if (!(await stat(directory)).isDirectory()) return null
+    files = await listFolder(directory)
+  } catch {
+    return null
+  }
+  const has = (path: string): boolean => files.some((file) => file.path === path && file.size > 0)
+  if (!has('model_index.json')) return null
+  for (const part of ['transformer', 'text_encoder', 'vae']) {
+    if (!has(`${part}/config.json`)) return null
+    if (!files.some((file) => file.path.startsWith(`${part}/`) && file.path.endsWith('.safetensors') && file.size > 0)) return null
+  }
+  let flavor: DiffusersFolderInfo['flavor'] = null
+  try {
+    const title = /^#\s+(.+)$/m.exec(await readFile(join(directory, 'README.md'), 'utf8'))?.[1] ?? ''
+    if (/MOSS-Image-SFT/i.test(title)) flavor = 'sft'
+    else if (/MOSS-Image-Base/i.test(title)) flavor = 'base'
+  } catch { /* no README */ }
+  if (!flavor) {
+    const name = basename(directory).toLowerCase()
+    if (/(^|[^a-z])sft([^a-z]|$)/.test(name)) flavor = 'sft'
+    else if (/(^|[^a-z])base([^a-z]|$)/.test(name)) flavor = 'base'
+  }
+  const shard = files.filter((file) => file.path.startsWith('transformer/') && file.path.endsWith('.safetensors')).sort((a, b) => a.path.localeCompare(b.path))[0]
+  const index = files.find((file) => file.path === 'model_index.json')!
+  return {
+    size: files.reduce((sum, file) => sum + file.size, 0),
+    mtimeMs: index.mtimeMs,
+    flavor,
+    dtype: shard ? await safetensorsDtype(join(directory, shard.path)) : null,
+    files: files.map(({ path, size }) => ({ path, size })),
+  }
+}
+
+/** What people see for a diffusers folder: the MOSS-Image it is, or the folder name. */
+export function diffusersFolderName(directory: string, flavor: DiffusersFolderInfo['flavor']): string {
+  if (flavor === 'sft') return `MOSS-Image SFT（${basename(directory)}）`
+  if (flavor === 'base') return `MOSS-Image Base（${basename(directory)}）`
+  return basename(directory)
+}
+
 export async function removeImportedModel(indexFile: string, id: string): Promise<void> {
   const models = await readImportedModels(indexFile)
   const next = models.filter((model) => model.id !== id)
@@ -232,20 +346,38 @@ export async function registerScannedModels(
       result.missing.push(item.path)
       continue
     }
-    const info = await stat(path).catch(() => null)
-    if (!info || !info.isFile() || info.size <= 0) {
-      result.missing.push(item.path)
-      continue
-    }
     const existing = byPath.get(path.toLowerCase())
     const layout = item.layout ?? existing?.layout
+    // A diffusers folder is one model, used where it is (nothing copied); a weights file is one file.
+    let size: number
+    let mtimeMs: number
+    let name = item.name
+    if (layout === 'diffusers-folder') {
+      const folder = await inspectDiffusersFolder(path)
+      if (!folder) {
+        result.missing.push(item.path)
+        continue
+      }
+      size = folder.size
+      mtimeMs = folder.mtimeMs
+      if (!name || name === '.') name = diffusersFolderName(path, folder.flavor)
+    } else {
+      const info = await stat(path).catch(() => null)
+      if (!info || !info.isFile() || info.size <= 0) {
+        result.missing.push(item.path)
+        continue
+      }
+      size = info.size
+      mtimeMs = info.mtimeMs
+    }
+    const relativePath = item.relativePath && item.relativePath !== '.' ? item.relativePath : basename(path)
     const record: ImportedModelFile = {
       id: existing?.id ?? `local-scan-${createHash('sha1').update(path.toLowerCase()).digest('hex').slice(0, 20)}`,
-      name: item.name ?? basename(path),
+      name: name ?? basename(path),
       path,
-      relativePath: item.relativePath ?? basename(path),
-      size: info.size,
-      mtimeMs: info.mtimeMs,
+      relativePath,
+      size,
+      mtimeMs,
       role: item.role,
       importedAt: existing?.importedAt ?? new Date().toISOString(),
       ...(layout ? { layout } : {}),

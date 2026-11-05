@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EngineFeatures } from '@shared/types'
+import { cliEngineFeatures } from '@shared/cliEngine'
 import { codedError, errorCode } from '@main/lib/codedError'
 import { useTempDataRoot } from '@test/helpers/tempDir'
 
@@ -16,7 +17,7 @@ const dataRoot = useTempDataRoot()
 let start: typeof import('@main/services/engineJobStart')
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-const features: EngineFeatures = { preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, values: {} }
+const features: EngineFeatures = { preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true, values: {} }
 
 function put(path: string): string {
   mkdirSync(join(path, '..'), { recursive: true })
@@ -36,10 +37,47 @@ beforeEach(async () => {
 const base = { prompt: 'a cat', width: 1024, height: 1024, steps: 20, cfg: 4, seed: 1, projectId: 'project-1', adapters: [{ id: 'lora', strength: 1 }] }
 
 describe('startRequestedEngineJob', () => {
-  it('resolves LoRAs and starts a plain job without asking the engine anything', async () => {
-    await start.startRequestedEngineJob(base)
-    expect(startEngineJob).toHaveBeenCalledWith({ ...base, adapters: [{ path: '/m/lora.safetensors', strength: 1 }] })
+  it('starts a plain job without LoRAs without asking the engine anything', async () => {
+    resolveCanvasAdapters.mockResolvedValue([])
+    await start.startRequestedEngineJob({ ...base, adapters: [] })
+    expect(startEngineJob).toHaveBeenCalledWith({ ...base, adapters: [] })
     expect(getEngineFeatures).not.toHaveBeenCalled()
+  })
+
+  it('resolves LoRAs and checks the target engine takes them', async () => {
+    await start.startRequestedEngineJob({ ...base, deviceUuid: 'GPU-a' })
+    expect(startEngineJob).toHaveBeenCalledWith({ ...base, deviceUuid: 'GPU-a', adapters: [{ path: '/m/lora.safetensors', strength: 1 }] })
+    expect(getEngineFeatures).toHaveBeenCalledWith({ deviceUuid: 'GPU-a', hostId: undefined })
+  })
+
+  it('refuses LoRAs on a CLI engine (兼容模式 / AMD 原生) and never queues the job', async () => {
+    getEngineFeatures.mockResolvedValue(cliEngineFeatures('vulkan'))
+    await expect(start.startRequestedEngineJob({ ...base, deviceUuid: 'vk-1002-744c-0' }))
+      .rejects.toMatchObject({ code: 'E_NOT_SUPPORTED', message: '兼容模式引擎不支持 LoRA，请移除 LoRA 后再生成' })
+    getEngineFeatures.mockResolvedValue(cliEngineFeatures('hip'))
+    await expect(start.startRequestedEngineJob({ ...base, deviceUuid: 'vk-1002-744c-0' }))
+      .rejects.toMatchObject({ code: 'E_NOT_SUPPORTED', message: 'AMD 原生引擎不支持 LoRA，请移除 LoRA 后再生成' })
+    expect(startEngineJob).not.toHaveBeenCalled()
+  })
+
+  it('refuses pictures and sampling a CLI engine cannot do, saying an update will not help', async () => {
+    resolveCanvasAdapters.mockResolvedValue([])
+    getEngineFeatures.mockResolvedValue(cliEngineFeatures('vulkan'))
+    const init = put(join(dataRoot(), 'projects', 'project-1', 'assets', 'init.png'))
+    await expect(start.startRequestedEngineJob({ ...base, adapters: [], initImage: { path: init, strength: 0.5 } }))
+      .rejects.toMatchObject({ code: 'E_NOT_SUPPORTED', message: '兼容模式引擎只能文生图，不支持起始图，请移除后再生成' })
+    await expect(start.startRequestedEngineJob({ ...base, adapters: [], sampling: { cfgTruncation: 0.4 } }))
+      .rejects.toMatchObject({ code: 'E_NOT_SUPPORTED', message: '兼容模式引擎只能文生图，不支持CFG 截断，请移除后再生成' })
+    await expect(start.startRequestedEngineJob({ ...base, adapters: [], sampling: { stepCache: 'fbcache' } }))
+      .rejects.toMatchObject({ code: 'E_NOT_SUPPORTED', message: '兼容模式引擎只能文生图，不支持步缓存，请移除后再生成' })
+    expect(startEngineJob).not.toHaveBeenCalled()
+    await expect(start.startRequestedEngineJob({ ...base, adapters: [], sampling: { sampler: 'heun' } }))
+      .rejects.toMatchObject({ code: 'E_NOT_SUPPORTED', message: '兼容模式引擎只能文生图，不支持更换采样器，请移除后再生成' })
+    expect(startEngineJob).not.toHaveBeenCalled()
+    // Shift is a CLI flag, and euler / moss are what the CLI runs: they go through.
+    await start.startRequestedEngineJob({ ...base, adapters: [], sampling: { shift: 4 } })
+    await start.startRequestedEngineJob({ ...base, adapters: [], sampling: { sampler: 'euler', scheduler: 'moss' } })
+    expect(startEngineJob).toHaveBeenCalledTimes(2)
   })
 
   it('accepts pictures from the project assets and the outputs, checked against the target engine', async () => {

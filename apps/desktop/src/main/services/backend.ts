@@ -5,10 +5,10 @@ import { app, utilityProcess, type UtilityProcess } from 'electron'
 import type { BackendInfo, WebAccessInfo } from '@shared/backend'
 import type { JobRecord } from '@shared/types'
 import { onEmit } from '../lib/events'
-import { cancelJob, getJob, listJobs } from './supervisor'
+import { activeJobInputPaths, cancelJob, getJob, listJobs } from './supervisor'
 import { errorCode } from '../lib/codedError'
 import { startRequestedEngineJob } from './engineJobStart'
-import { importImageBytes, saveMask } from './studioAssets'
+import { importImageBytes, pruneProjectMasks, saveMask } from './studioAssets'
 import { getCatalog } from './models'
 import { listGallery, readGalleryFile } from './gallery'
 import { deleteProject, getProject, listProjects, saveProject } from './projects'
@@ -50,7 +50,9 @@ function handleRpc(message: Record<string, unknown>): void {
       } else if (method === 'getProject') {
         respond(getProject(String(params['id'] ?? '')))
       } else if (method === 'saveProject') {
-        respond(saveProject(params as never))
+        const saved = saveProject(params as never)
+        void pruneProjectMasks(saved, activeJobInputPaths()).catch(() => undefined)
+        respond(saved)
       } else if (method === 'deleteProject') {
         deleteProject(String(params['id'] ?? ''))
         respond(true)

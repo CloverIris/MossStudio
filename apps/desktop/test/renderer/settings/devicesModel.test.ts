@@ -7,9 +7,16 @@ import {
   hostSummary,
   remoteInstallOptions,
   savedGpuMissing,
+  applyEngineOverride,
+  engineInUseLabel,
+  engineOverrideOptions,
+  fixedEngineSettingsNote,
+  gpuEngineInfo,
 } from '@renderer/pages/settings/devicesModel'
-import type { EngineGpuProbeSnapshot, RemoteEngineInfo } from '@shared/types'
-import { FIXTURE_NOW, GPU_RTX_3060, gpuDeviceFixture, gpuInventoryFixture, gpuTelemetryFixture, sshHostFixture } from '@test/mocks/backend/fixtures'
+import { RELEASE_220, enginePlanFor, inventoryDevicesFor, machineFixture } from '@test/mocks/backend/machines'
+import { planLines } from '@renderer/lib/engineInstall'
+import type { EngineGpuProbeSnapshot, LocalEngineVersion, RemoteEngineInfo } from '@shared/types'
+import { FIXTURE_NOW, GPU_RTX_3060, engineMissingFixture, engineReadyFixture, gpuDeviceFixture, gpuInventoryFixture, gpuTelemetryFixture, sshHostFixture } from '@test/mocks/backend/fixtures'
 
 const rtx4090 = gpuDeviceFixture()
 const rtx3060 = GPU_RTX_3060()
@@ -59,8 +66,83 @@ describe('gpuRows', () => {
   it('explains an empty list in plain words', () => {
     expect(gpuRows(null, null, null, 'auto')).toEqual([])
     expect(gpuEmptyMessage(null)).toMatch(/正在检测/)
-    expect(gpuEmptyMessage(gpuInventoryFixture([]))).toMatch(/NVIDIA/)
+    expect(gpuEmptyMessage(gpuInventoryFixture([]))).toMatch(/没有找到能运行引擎的显卡/)
     expect(gpuEmptyMessage({ scannedAt: FIXTURE_NOW, status: 'error', devices: [], error: 'nvidia-smi failed' })).toMatch(/nvidia-smi failed/)
+  })
+})
+
+describe('engine per GPU', () => {
+  const managed = (name: string): LocalEngineVersion => ({ id: name, name, path: `/e/${name}`, current: true, source: 'managed' })
+  const multi = machineFixture('multiGpu')
+  const plan = (overrides: Record<string, string> = {}, versions: LocalEngineVersion[] = []) =>
+    enginePlanFor(multi, RELEASE_220, { engineDeviceOverrides: overrides, mossInferChannel: 'stable' }, versions)
+  const readiness = engineReadyFixture({
+    devices: [
+      { deviceUuid: multi.gpus[0]!.id, name: multi.gpus[0]!.name, packageId: 'cu13', path: '/e/cu13' },
+      { deviceUuid: multi.gpus[1]!.id, name: multi.gpus[1]!.name, packageId: null, path: null },
+      { deviceUuid: multi.gpus[2]!.id, name: multi.gpus[2]!.name, packageId: 'vulkan', path: '/e/vk' },
+    ],
+  })
+
+  it('shows which engine each GPU runs, with the plan\'s tips', () => {
+    const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(multi)), null, null, 'auto', gpuEngineInfo(readiness, plan()))
+    expect(rows.map((row) => row.engine)).toEqual(['CUDA 13', undefined, '兼容模式 · 只能文生图'])
+    expect(rows[2]).toMatchObject({ status: 'ok', statusLabel: '正常', tip: expect.stringContaining('ROCm 7') })
+    // The CUDA probe has not run yet for the NVIDIA cards.
+    expect(rows[0]!.statusLabel).toBe('待检测')
+  })
+
+  it('marks a GPU nothing runs on as unusable, with the plan\'s reason', () => {
+    const intel = machineFixture('intel')
+    const broken = { ...intel, gpus: [{ ...intel.gpus[0]!, vulkan: { index: 0, usable: false, discrete: true, reason: 'no shaderInt64' } }] }
+    const unusable = enginePlanFor(broken, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, [])
+    const [row] = gpuRows(gpuInventoryFixture(inventoryDevicesFor(broken)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), unusable))
+    expect(row).toMatchObject({ status: 'error', statusLabel: '不能使用', reason: expect.stringContaining('no shaderInt64') })
+  })
+
+  it('replaces the memory mode / tier pickers of a Vulkan or HIP GPU with one quiet line', () => {
+    expect(fixedEngineSettingsNote(readiness, multi.gpus[2]!.id)).toBe('兼容模式引擎使用固定设置')
+    const hip = engineReadyFixture({ devices: [{ deviceUuid: 'vk-1002-744c-0', name: 'RX 7900 XTX', packageId: 'hip', path: '/e/hip' }] })
+    expect(fixedEngineSettingsNote(hip, 'vk-1002-744c-0')).toBe('AMD 原生引擎使用固定设置')
+    // CUDA GPUs, GPUs with nothing installed, unknown GPUs and no readiness keep their pickers.
+    expect(fixedEngineSettingsNote(readiness, multi.gpus[0]!.id)).toBeNull()
+    expect(fixedEngineSettingsNote(readiness, multi.gpus[1]!.id)).toBeNull()
+    expect(fixedEngineSettingsNote(readiness, 'GPU-gone')).toBeNull()
+    expect(fixedEngineSettingsNote(null, multi.gpus[2]!.id)).toBeNull()
+  })
+
+  it('an integrated GPU next to a discrete one is quietly unused, not broken', () => {
+    const base = machineFixture('nvidia')
+    const igpu = { id: 'vk-8086-46a6-0', name: 'Intel(R) UHD Graphics', vendor: 'intel' as const, vulkan: { index: 1, usable: true, discrete: false } }
+    const laptop = { ...base, gpus: [...base.gpus, igpu] }
+    const p = enginePlanFor(laptop, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, [])
+    const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(laptop)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), p))
+    expect(rows[1]).toMatchObject({ status: 'unknown', statusLabel: '未使用', reason: expect.stringContaining('集成显卡') })
+    expect(planLines(p)[1]).toMatchObject({ detail: '不使用（已有独立显卡）', skipped: true })
+  })
+
+  it('labels the engine in use', () => {
+    expect(engineInUseLabel('cu12-sm70-system-cuda')).toBe('CUDA 12')
+    expect(engineInUseLabel('hip')).toBe('AMD 原生 · 只能文生图')
+    expect(engineInUseLabel('custom')).toBe('自定义引擎')
+    expect(engineInUseLabel(null)).toBeUndefined()
+  })
+
+  it('offers 自动 plus only the packages that run on that GPU', () => {
+    const p = plan()
+    expect(engineOverrideOptions(p, multi.gpus[1]!.id).map((option) => option.value)).toEqual(['auto', 'cu12-sm70', 'cu12-sm70-system-cuda', 'vulkan'])
+    expect(engineOverrideOptions(p, multi.gpus[2]!.id)).toEqual([
+      { value: 'auto', label: '自动' },
+      { value: 'vulkan', label: '兼容模式（Vulkan）', description: expect.stringContaining('只能文生图') },
+    ])
+    expect(engineOverrideOptions(null, 'x')).toEqual([{ value: 'auto', label: '自动' }])
+  })
+
+  it('stores and clears one GPU\'s choice', () => {
+    const one = applyEngineOverride({}, 'GPU-a', 'vulkan')
+    expect(one).toEqual({ 'GPU-a': 'vulkan' })
+    expect(applyEngineOverride(one, 'GPU-a', 'auto')).toEqual({})
+    expect(applyEngineOverride(one, 'GPU-a', 'cu11')).toBe(one)
   })
 })
 
@@ -93,12 +175,7 @@ describe('remote hosts', () => {
     expect(hostSummary(sshHostFixture({ status: 'unchecked' }), undefined).statusLabel).toBe('未测试')
   })
 
-  it('picks remote install options from the CUDA check', () => {
-    expect(remoteInstallOptions(undefined)).toEqual({ channel: 'stable', flavour: 'cu13', variant: 'bundled', architecture: 'auto' })
-    const cuda = { checkedAt: FIXTURE_NOW, durationMs: 1, computeCapabilities: [], libraries: [], flavours: ['cu12' as const], recommendedFlavour: 'cu12' as const }
-    expect(remoteInstallOptions({ online: true, available: false, path: '', root: '', gpu: '', checkedAt: FIXTURE_NOW, cuda }))
-      .toMatchObject({ flavour: 'cu12', variant: 'system-cuda' })
-    expect(remoteInstallOptions({ online: true, available: false, path: '', root: '', gpu: '', checkedAt: FIXTURE_NOW, cuda: { ...cuda, recommendedVariant: 'bundled' } }))
-      .toMatchObject({ variant: 'bundled' })
+  it('leaves the remote package choice to the main process (it probes the host)', () => {
+    expect(remoteInstallOptions()).toEqual({ channel: 'stable' })
   })
 })

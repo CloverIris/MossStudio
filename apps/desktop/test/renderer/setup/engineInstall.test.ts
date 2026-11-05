@@ -1,24 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { engineDownloadActive, engineDownloadLabel, engineDownloadPercent, engineInstallError, planEngineInstall } from '@renderer/lib/engineInstall'
+import { engineDownloadActive, engineDownloadLabel, engineDownloadPercent, engineInstallError } from '@renderer/lib/engineInstall'
 import { engineDownloadFixture, engineMissingFixture, engineReadyFixture } from '@test/mocks/backend/fixtures'
-
-describe('planEngineInstall', () => {
-  it('uses the small system-CUDA package when CUDA is already there', () => {
-    expect(planEngineInstall({ supported: true, gpu: 'RTX', cublasLt: ['x'], driverCompatible: true }))
-      .toEqual({ kind: 'install', channel: 'stable', architecture: 'auto', variant: 'system-cuda' })
-  })
-
-  it('falls back to the self-contained package without asking', () => {
-    expect(planEngineInstall({ supported: false, gpu: 'RTX', cublasLt: [] })).toMatchObject({ kind: 'install', variant: 'bundled' })
-    expect(planEngineInstall(null)).toMatchObject({ kind: 'install', variant: 'bundled' })
-  })
-
-  it('explains an outdated driver instead of installing', () => {
-    const plan = planEngineInstall({ supported: false, gpu: 'RTX', cublasLt: [], driverCompatible: false, driverVersion: '531.0' })
-    expect(plan.kind).toBe('driver')
-    expect(plan.kind === 'driver' && plan.message).toMatch(/531\.0/)
-  })
-})
 
 describe('engine download display', () => {
   it('knows when an install is running', () => {

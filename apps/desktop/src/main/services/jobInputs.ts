@@ -1,5 +1,6 @@
 import { open, realpath, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
+import { CLI_ENGINE_LABEL, cliSamplingAccepted } from '@shared/cliEngine'
 import { jobInputsSchema } from '@shared/schemas'
 import type { ControlAdapterEntry, EngineFeatures, JobParams } from '@shared/types'
 import { codedError } from '../lib/codedError'
@@ -76,12 +77,20 @@ function unsupported(message: string): Error {
 
 function checkFeatures(inputs: JobInputs, features: EngineFeatures, remote: boolean): void {
   const where = remote ? '这台电脑上的引擎' : '当前引擎'
-  if ((inputs.initImage || inputs.mask) && !features.imageInput) throw unsupported(`${where}不支持起始图，请更新 MossInfer`)
-  if (inputs.control && !features.control) throw unsupported(`${where}不支持控制图，请更新 MossInfer`)
-  if (inputs.references && !features.references) throw unsupported(`${where}不支持参考图，请更新 MossInfer`)
+  // A CLI engine never gains these with an update: it only does text to image.
+  const missing = (what: string): Error => features.cli
+    ? unsupported(`${CLI_ENGINE_LABEL[features.cli]}引擎只能文生图，不支持${what}，请移除后再生成`)
+    : unsupported(`${where}不支持${what}，请更新 MossInfer`)
+  if ((inputs.initImage || inputs.mask) && !features.imageInput) throw missing('起始图')
+  if (inputs.control && !features.control) throw missing('控制图')
+  if (inputs.references && !features.references) throw missing('参考图')
   const sampling = inputs.sampling
-  if (sampling?.hires && !features.hires) throw unsupported(`${where}不支持高清修复，请更新 MossInfer`)
-  if ((sampling?.sampler || sampling?.scheduler) && !features.samplers) throw unsupported(`${where}不支持更换采样器，请更新 MossInfer`)
+  if (sampling?.hires && !features.hires) throw missing('高清修复')
+  // A CLI engine runs euler with the MOSS schedule: naming exactly those is not a change.
+  const samplerChange = features.cli ? !cliSamplingAccepted(sampling) : Boolean(sampling?.sampler || sampling?.scheduler)
+  if (samplerChange && !features.samplers) throw missing('更换采样器')
+  if (features.cli && sampling?.stepCache && sampling.stepCache !== 'off') throw missing('步缓存')
+  if (features.cli && sampling?.cfgTruncation !== undefined) throw missing('CFG 截断')
   const oneOf = (param: string, value: string | undefined, label: string): void => {
     const names = features.values[param]
     if (value === undefined || !names?.length || names.includes(value)) return

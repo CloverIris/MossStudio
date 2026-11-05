@@ -15,8 +15,12 @@ import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
 import { probeEngine } from '../lib/probeEngine'
-import { isManagedEngineDirectory } from '../lib/engineStore'
-import { resolveServerPath, shutdownMossInfer } from './mossInfer'
+import { engineBinaryPath, isManagedEngineDirectory } from '../lib/engineStore'
+import { parseEngineStamp } from '@shared/engineUpdate'
+import { deviceEngines, localServerPath } from './engineInstalls'
+import { shutdownCliEngines } from './cliEngine'
+import { isCliEngine } from '@shared/enginePackages'
+import { releaseStaleMossInferRuntimes, resolveServerPath, shutdownMossInfer } from './mossInfer'
 import { getSettings, updateSettings } from './settings'
 import { getGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
@@ -65,59 +69,105 @@ function binaryIn(directory: string): string | null {
   return [join(directory, 'bin', serverName()), join(directory, serverName())].find(existsSync) ?? null
 }
 
-function isCurrent(path: string): boolean {
-  const currentPath = resolveServerPath(getSettings())
-  return currentPath !== null && resolve(currentPath) === resolve(path)
+/** A managed folder holds one package: moss-server, moss-infer-vulkan or moss-infer-hip. */
+function managedBinaryIn(directory: string, name: string): string | null {
+  const stamp = parseEngineStamp(name)
+  if (stamp && stamp.package.kind !== 'cuda') {
+    const path = engineBinaryPath(directory, stamp.package.kind)
+    return existsSync(path) ? path : null
+  }
+  return binaryIn(directory)
 }
 
-let gpuProbeCache: { fingerprint: string; createdAt: number; snapshot: EngineGpuProbeSnapshot; hello: EngineHello } | null = null
-let gpuProbePending: { fingerprint: string; promise: Promise<EngineHello> } | null = null
-
-function mapGpuProbe(
-  inventory: Awaited<ReturnType<typeof getGpuInventory>>['devices'],
-  hello: EngineHello,
-  enginePath: string,
-): EngineGpuProbeSnapshot {
-  return mapEngineGpuProbe(inventory, hello.probe?.devices ?? [], enginePath, hello.version)
+/** Binaries some GPU runs right now (each GPU's package, a pinned moss-server). */
+function pathsInUse(): Set<string> {
+  const used = new Set(deviceEngines().flatMap(({ engine }) => (engine ? [resolve(engine.binaryPath)] : [])))
+  if (used.size === 0) {
+    const legacy = resolveServerPath(getSettings())
+    if (legacy) used.add(resolve(legacy))
+  }
+  return used
 }
 
-export async function probeLocalEngineGpuCompatibility(
-  force = false,
-): Promise<{ snapshot: EngineGpuProbeSnapshot; hello: EngineHello }> {
-  const path = resolveServerPath(getSettings())
-  if (!path || !existsSync(path)) throw new Error('未找到 moss-server')
-  const fingerprint = `${resolve(path)}:${statSync(path).mtimeMs}`
-  if (!force && gpuProbeCache?.fingerprint === fingerprint && Date.now() - gpuProbeCache.createdAt < 30_000) {
-    const inventory = await getGpuInventory()
-    const snapshot = mapGpuProbe(inventory.devices, gpuProbeCache.hello, path)
-    gpuProbeCache.snapshot = snapshot
-    return { snapshot, hello: gpuProbeCache.hello }
+/** One probe per moss-server binary (several GPUs can run different CUDA packages). */
+const helloCache = new Map<string, { fingerprint: string; createdAt: number; hello: EngineHello }>()
+const helloPending = new Map<string, { fingerprint: string; promise: Promise<EngineHello> }>()
+
+async function helloOf(path: string, force: boolean): Promise<EngineHello> {
+  const key = resolve(path)
+  const fingerprint = `${key}:${statSync(path).mtimeMs}`
+  const cached = helloCache.get(key)
+  if (!force && cached?.fingerprint === fingerprint && Date.now() - cached.createdAt < 30_000) return cached.hello
+  const pending = helloPending.get(key)
+  if (pending?.fingerprint === fingerprint) return pending.promise
+  const entry = { fingerprint, promise: probeEngine(path) }
+  helloPending.set(key, entry)
+  try {
+    const hello = await entry.promise
+    helloCache.set(key, { fingerprint, createdAt: Date.now(), hello })
+    return hello
+  } finally {
+    if (helloPending.get(key) === entry) helloPending.delete(key)
   }
-  let hello: EngineHello
-  if (gpuProbePending?.fingerprint === fingerprint) {
-    hello = await gpuProbePending.promise
-  } else {
-    const pending = { fingerprint, promise: probeEngine(path) }
-    gpuProbePending = pending
-    try {
-      hello = await pending.promise
-    } finally {
-      if (gpuProbePending === pending) gpuProbePending = null
-    }
+}
+
+export interface LocalGpuProbe {
+  /** Every inventory GPU judged by the moss-server it runs. */
+  snapshot: EngineGpuProbeSnapshot
+  /** The default GPU's (or first) moss-server hello, for the 测试 row. */
+  hello: EngineHello
+  /** The hello of the moss-server this GPU runs; null for a GPU on a CLI engine or with none. */
+  helloFor: (deviceUuid: string) => EngineHello | null
+}
+
+/**
+ * Probes each moss-server some NVIDIA GPU runs (its own package via
+ * resolveDeviceEngine) and judges every GPU against its own binary, so a
+ * 4090 on cu13 and a Titan V on cu12-sm70 each get the right verdict.
+ */
+export async function probeLocalEngineGpuCompatibility(force = false): Promise<LocalGpuProbe> {
+  const inventory = (await getGpuInventory()).devices
+  const pathFor = new Map<string, string>()
+  for (const device of inventory) {
+    const path = localServerPath(device.uuid)
+    if (path && existsSync(path)) pathFor.set(device.uuid, resolve(path))
   }
-  const inventory = await getGpuInventory()
-  const snapshot = mapGpuProbe(inventory.devices, hello, path)
-  gpuProbeCache = { fingerprint, createdAt: Date.now(), snapshot, hello }
-  return { snapshot, hello }
+  const fallback = localServerPath()
+  const binaries = [...new Set([...pathFor.values(), ...(pathFor.size === 0 && fallback && existsSync(fallback) ? [resolve(fallback)] : [])])]
+  if (binaries.length === 0) throw new Error('未找到 moss-server')
+  const hellos = new Map<string, EngineHello>()
+  for (const path of binaries) hellos.set(path, await helloOf(path, force))
+  const checkedAt = new Date().toISOString()
+  const devices = inventory.flatMap((device) => {
+    const path = pathFor.get(device.uuid) ?? (pathFor.size === 0 ? binaries[0]! : undefined)
+    const hello = path ? hellos.get(path) : undefined
+    if (!hello || !path) return []
+    return mapEngineGpuProbe(inventory, hello.probe?.devices ?? [], path, hello.version, checkedAt).devices
+      .filter((item) => item.uuid === device.uuid)
+  })
+  const selection = getSettings().gpuSelection
+  const preferred = typeof selection === 'object' ? pathFor.get(selection.uuid) : undefined
+  const mainPath = preferred ?? binaries[0]!
+  const main = hellos.get(mainPath)!
+  return {
+    snapshot: { enginePath: mainPath, engineVersion: main.version, checkedAt, devices },
+    hello: main,
+    helloFor: (deviceUuid) => {
+      const path = pathFor.get(deviceUuid) ?? (pathFor.size === 0 ? binaries[0] : undefined)
+      return path ? hellos.get(path) ?? null : null
+    },
+  }
 }
 
 export function localEngineVersions(): LocalEngineVersion[] {
+  const inUse = pathsInUse()
+  const isCurrent = (path: string): boolean => inUse.has(resolve(path))
   const root = paths.mossinfer()
   const managed: LocalEngineVersion[] = existsSync(root)
     ? readdirSync(root, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && isManagedEngineDirectory(entry.name))
       .map((entry): LocalEngineVersion | null => {
-        const path = binaryIn(join(root, entry.name))
+        const path = managedBinaryIn(join(root, entry.name), entry.name)
         if (!path) return null
         return { id: entry.name, name: entry.name, path, current: isCurrent(path), source: 'managed' }
       })
@@ -142,9 +192,8 @@ async function probeVersionCompatibility(version: LocalEngineVersion, targetGpu:
   if (!protocolCompatible(hello)) {
     throw new Error(`引擎协议不兼容（protocol ${hello.protocol}），需要 protocol 2（MossInfer ≥ 2.0）`)
   }
-  const expectedArchitecture = /(?:^|-)sm75(?:-|$)/.test(version.id)
-    ? 'sm75'
-    : version.source === 'managed' ? 'standard' : undefined
+  const stamp = version.source === 'managed' ? parseEngineStamp(version.name) : null
+  const expectedArchitecture = stamp?.package.kind === 'cuda' ? stamp.package.arch : undefined
   const verdict = judgeEngineSupport(
     hello,
     { index: targetGpu.index, name: targetGpu.name },
@@ -158,16 +207,24 @@ async function probeVersionCompatibility(version: LocalEngineVersion, targetGpu:
 async function activateLocalEngineVersion(version: LocalEngineVersion): Promise<void> {
   const updated = updateSettings({ inferenceBackend: 'mossinfer', mossInferServerPath: version.path })
   emit(Events.settingsChanged, updated)
-  gpuProbeCache = null
+  helloCache.clear()
   await shutdownMossInfer()
+  await releaseStaleMossInferRuntimes()
 }
 
 /** 沿用原有切换行为：有目标 GPU 时先检查兼容性。 */
 export async function selectLocalEngineVersion(id: string): Promise<void> {
   const version = findLocalEngineVersion(id)
+  const stamp = version.source === 'managed' ? parseEngineStamp(version.name) : null
+  if (stamp && stamp.package.kind !== 'cuda') {
+    throw new Error('兼容模式和 AMD 原生引擎总是使用最新安装的版本；要换用它，请在 高级 › 每块 GPU 的引擎 里选择')
+  }
   const settings = getSettings()
   const inventory = await getGpuInventory()
-  const targetGpu = resolveGpuSelection(inventory.devices, settings.gpuSelection)
+  const selected = resolveGpuSelection(inventory.devices, settings.gpuSelection)
+  const targetGpu = selected && (selected.vendor ?? 'nvidia') === 'nvidia'
+    ? selected
+    : inventory.devices.find((device) => (device.vendor ?? 'nvidia') === 'nvidia') ?? null
   if (targetGpu) await probeVersionCompatibility(version, targetGpu)
   return activateLocalEngineVersion(version)
 }
@@ -188,7 +245,7 @@ export async function selectLocalEngineDirectory(directory: string): Promise<Loc
   return localEngineVersions()
 }
 
-export function removeLocalEngineVersion(id: string): boolean {
+export async function removeLocalEngineVersion(id: string): Promise<boolean> {
   const version = findLocalEngineVersion(id)
   if (version.current) throw new Error('当前使用的引擎版本不能删除，请先切换到其他版本')
   if (version.source === 'external') {
@@ -201,7 +258,11 @@ export function removeLocalEngineVersion(id: string): boolean {
   }
   const info = statSync(directory)
   if (!info.isDirectory()) throw new Error('引擎版本目录不存在')
+  // A Vulkan / HIP job may still run this binary (one process per job): stop them before deleting it.
+  const stamp = parseEngineStamp(version.name)
+  if (stamp && isCliEngine(stamp.package)) await shutdownCliEngines({ kind: stamp.package.kind as 'vulkan' | 'hip', binary: directory })
   rmSync(directory, { recursive: true, force: false })
+  void releaseStaleMossInferRuntimes().catch(() => undefined)
   return true
 }
 

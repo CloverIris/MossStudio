@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AdapterEntry, Catalog, EngineReadiness, ModelBundle, ModelEntry } from '@shared/types'
 import { bundleInstalled, deriveReadiness, installedBundles, rerunEligibility, resolveBundle, type ReadinessInput } from '@renderer/pages/studio/readiness'
+import { cliEngineFeatures } from '@shared/cliEngine'
+import { engineFeaturesFixture } from '@test/mocks/backend'
 import { canvas, layer } from './fixtures'
 
 const model = (id: string, installed = true): ModelEntry => ({
@@ -136,5 +138,42 @@ describe('studio/readiness input blockers', () => {
 
   it('ignores input blockers when no layout canvas is selected', () => {
     expect(deriveReadiness(input({ canvas: null, inputBlockers: [{ id: 'input-invalid', message: 'x' }] })).blockers).toEqual([])
+  })
+})
+
+describe('studio/readiness on a CLI engine (兼容模式 / AMD 原生)', () => {
+  const lora = canvas({ prompt: 'a street', adapters: [{ id: 'style', strength: 1 }] })
+
+  it('blocks LoRAs with the engine named, and only when the engine cannot load them', () => {
+    expect(deriveReadiness(input({ canvas: lora, features: cliEngineFeatures('vulkan') })).blockers)
+      .toEqual([{ id: 'lora-unsupported', message: '兼容模式引擎不支持 LoRA，请移除 LoRA 后再生成' }])
+    expect(deriveReadiness(input({ canvas: lora, features: cliEngineFeatures('hip') })).blockers[0]!.message)
+      .toBe('AMD 原生引擎不支持 LoRA，请移除 LoRA 后再生成')
+    expect(deriveReadiness(input({ canvas: lora, features: engineFeaturesFixture() })).blockers).toEqual([])
+    // Unknown (still reading) or no engine: nothing is known to be unsupported.
+    expect(deriveReadiness(input({ canvas: lora, features: undefined })).blockers).toEqual([])
+    expect(deriveReadiness(input({ canvas: lora, features: null })).blockers).toEqual([])
+  })
+
+  it('a remote run keeps its own LoRA message', () => {
+    const { blockers } = deriveReadiness(input({ canvas: lora, features: cliEngineFeatures('vulkan'), remote: { name: 'Lab', modelPath: '/m' } }))
+    expect(blockers.map((blocker) => blocker.id)).toEqual(['remote-adapters'])
+  })
+
+  it('blocks a bundle that is not a bf16 diffusers folder, with where to fix it', () => {
+    const cat = catalog({
+      bundles: [bundle('fp16'), bundle('comfy'), bundle('sft')],
+      models: [
+        model('fp16-dit'), model('comfy-dit'), model('sft-dit'), model('te'), model('vae'), model('cfg'),
+      ].map((entry) => entry.id === 'fp16-dit' ? { ...entry, precision: 'fp16' } : entry.id === 'comfy-dit' ? { ...entry, format: 'comfyui' as const } : entry),
+    })
+    const pick = (id: string) => input({ catalog: cat, bundle: resolveBundle(cat, id, null), features: cliEngineFeatures('vulkan') })
+    expect(deriveReadiness(pick('fp16')).blockers).toEqual([{
+      id: 'model-engine', message: '「FP16」不是 bf16 模型，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型', action: { label: '去下载', to: '/models' },
+    }])
+    expect(deriveReadiness(pick('comfy')).blockers[0]).toMatchObject({ id: 'model-engine', message: expect.stringContaining('扫描到的单个模型文件') })
+    expect(deriveReadiness(pick('sft')).blockers).toEqual([])
+    // The server engine runs all of them.
+    expect(deriveReadiness({ ...pick('fp16'), features: engineFeaturesFixture() }).blockers).toEqual([])
   })
 })

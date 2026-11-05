@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Ipc } from '@shared/channels'
-import type { MossInferDownloadState, OnboardingStatus } from '@shared/types'
+import type { EnginePlanView, MossInferDownloadState, OnboardingStatus } from '@shared/types'
 import { call } from '../../lib/api'
-import { engineDownloadActive, planEngineInstall, type SystemCudaCheck } from '../../lib/engineInstall'
+import { engineDownloadActive } from '../../lib/engineInstall'
+import { importFolderMessage, type ImportFolderResult } from '../../lib/modelFolder'
 import { useGpuInventory } from '../../lib/useGpuInventory'
 import { useApp } from '../../store'
 import { deriveSetup, modelDownloads, stepsToStart, type SetupView } from './setupState'
@@ -21,6 +22,12 @@ export function useSetup(): {
   starting: boolean
   start: () => Promise<void>
   gpu: ReturnType<typeof useGpuInventory>
+  /** Detect the GPUs again (and re-plan). */
+  redetect: () => Promise<void>
+  redetecting: boolean
+  /** 已有模型文件？: use a model folder where it is; null when canceled, else what happened. */
+  chooseModelFolder: () => Promise<{ message: string; ready: boolean } | null>
+  usingFolder: boolean
 } {
   const settings = useApp((state) => state.settings)
   const engine = useApp((state) => state.engineReadiness)
@@ -35,6 +42,21 @@ export function useSetup(): {
   const [engineError, setEngineError] = useState<string | null>(null)
   const [modelError, setModelError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
+  // null while the machine probe runs; undefined when it failed (then only the NVIDIA inventory is known).
+  const [plan, setPlan] = useState<EnginePlanView | null | undefined>(null)
+  const [redetecting, setRedetecting] = useState(false)
+
+  const loadPlan = useCallback(async (refresh: boolean): Promise<void> => {
+    try {
+      setPlan(await call<EnginePlanView>(Ipc.enginePlan, { refresh }))
+    } catch {
+      setPlan(undefined)
+    }
+  }, [])
+  // First look: probe the machine afresh. Later: re-plan when installs finish (what is still missing).
+  useEffect(() => { void loadPlan(true) }, [loadPlan])
+  const engineFinished = engineDownload && !engineDownloadActive(engineDownload) ? engineDownload.phase : null
+  useEffect(() => { if (engineFinished) void loadPlan(false) }, [engineFinished, engine?.state, loadPlan])
 
   // Re-read what is installed whenever a download finishes or the engine changes.
   const finished = downloads
@@ -57,20 +79,17 @@ export function useSetup(): {
     gpu: gpu.inventory,
     gpuSelection: settings?.gpuSelection,
     engine,
+    plan,
     engineDownload,
     engineError,
     onboarding,
     downloads,
     modelError,
-  }), [gpu.inventory, settings?.gpuSelection, engine, engineDownload, engineError, onboarding, downloads, modelError])
+  }), [gpu.inventory, settings?.gpuSelection, engine, plan, engineDownload, engineError, onboarding, downloads, modelError])
 
   const installEngine = useCallback(async () => {
-    let check: SystemCudaCheck | null = null
-    try { check = await call<SystemCudaCheck>(Ipc.engineSystemCuda) } catch { /* unknown: use the self-contained package */ }
-    const plan = planEngineInstall(check)
-    if (plan.kind === 'driver') { setEngineError(plan.message); return }
-    // Resolves when the install ends; progress arrives through store events meanwhile.
-    void call<MossInferDownloadState>(Ipc.mossInferDownload, { channel: plan.channel, variant: plan.variant, architecture: plan.architecture })
+    // Main installs what the plan says each GPU needs. Resolves when the install ends; progress arrives through store events.
+    void call<MossInferDownloadState>(Ipc.mossInferDownload, { channel: 'stable' })
       .then((state) => { setMossInferDownload(state); void refreshEngineReadiness() })
       .catch((error: unknown) => setEngineError(message(error)))
   }, [refreshEngineReadiness, setMossInferDownload])
@@ -105,5 +124,36 @@ export function useSetup(): {
     }
   }, [view, installEngine, downloadModels])
 
-  return { view, starting, start, gpu }
+  const refreshCatalog = useApp((state) => state.refreshCatalog)
+  const [usingFolder, setUsingFolder] = useState(false)
+  const chooseModelFolder = useCallback(async (): Promise<{ message: string; ready: boolean } | null> => {
+    setUsingFolder(true)
+    try {
+      const result = await call<ImportFolderResult>(Ipc.modelsImportFolder)
+      if (result.canceled) return null
+      await refreshCatalog()
+      const status = await loadStatus()
+      const ready = status?.steps.find((step) => step.id === 'model')?.status === 'ok'
+      setModelError(null)
+      return {
+        ready,
+        message: ready
+          ? `${importFolderMessage(result)}，不用再下载模型`
+          : `${importFolderMessage(result)}，但它不是可以直接使用的 MOSS-Image 模型；仍需下载推荐模型`,
+      }
+    } finally {
+      setUsingFolder(false)
+    }
+  }, [loadStatus, refreshCatalog])
+
+  const redetect = useCallback(async () => {
+    setRedetecting(true)
+    try {
+      await Promise.all([gpu.refresh(), loadPlan(true)])
+    } finally {
+      setRedetecting(false)
+    }
+  }, [gpu, loadPlan])
+
+  return { view, starting, start, gpu, redetect, redetecting, chooseModelFolder, usingFolder }
 }

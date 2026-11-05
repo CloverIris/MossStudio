@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useTempDataRoot } from '@test/helpers/tempDir'
@@ -19,6 +19,7 @@ describe('archiveLegacyInferenceData', () => {
   it('moves instances/runtimes/git into a dated archive with a README, leaving trainer alone', async () => {
     for (const dir of ['instances/a', 'git/moss-image.git', 'trainer/versions']) mkdirSync(join(root(), dir), { recursive: true })
     writeFileSync(join(root(), 'instances', 'a', 'file.txt'), 'x')
+    writeFileSync(join(root(), 'git', 'moss-image.git', 'HEAD'), 'ref: refs/heads/main')
     const { archiveLegacyInferenceData } = await load()
     const result = archiveLegacyInferenceData()
     expect(result.archived).toBe(true)
@@ -30,6 +31,14 @@ describe('archiveLegacyInferenceData', () => {
     expect(existsSync(join(root(), 'instances'))).toBe(false)
     expect(existsSync(join(root(), 'trainer', 'versions'))).toBe(true)
     expect(JSON.parse(readFileSync(join(root(), '.legacy-inference-archived'), 'utf8')).archive).toBe(result.archive)
+  })
+
+  it('a fresh data root with only the empty skeleton folders gets no archive', async () => {
+    for (const dir of ['instances', 'git', 'runtimes/python']) mkdirSync(join(root(), dir), { recursive: true })
+    const { archiveLegacyInferenceData } = await load()
+    expect(archiveLegacyInferenceData()).toEqual({ archived: false })
+    expect(readdirSync(root()).filter((name) => name.startsWith('legacy-inference-'))).toEqual([])
+    expect(existsSync(join(root(), 'runtimes', 'python'))).toBe(true)
   })
 
   it('runs only once', async () => {

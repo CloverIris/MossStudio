@@ -26,6 +26,14 @@ function message(error: unknown): string {
  * (copied into the project's assets, then shown as image cards) and painted
  * masks. Both need the project to exist on disk, so an unsaved one is saved first.
  */
+/** Whether any field of `value` (inputs, outputs, layers…) is exactly `path`. */
+function mentions(value: unknown, path: string): boolean {
+  if (typeof value === 'string') return value === path
+  if (Array.isArray(value)) return value.some((item) => mentions(item, path))
+  if (value && typeof value === 'object') return Object.values(value).some((item) => mentions(item, path))
+  return false
+}
+
 export function useBoardAssets(options: {
   project: Pick<StudioProject, 'projectId' | 'saveNow' | 'canvasesRef' | 'setCanvases' | 'select' | 'updateCanvas'>
   notify: (text: string, tone?: 'error' | 'info' | 'success') => void
@@ -94,8 +102,13 @@ export function useBoardAssets(options: {
       live.current.notify('项目还没保存好，遮罩暂时存不下来', 'error')
       return
     }
+    // The mask painted before is dropped once nothing else on the board still uses it.
+    const previous = project.canvasesRef.current.find((canvas) => canvas.id === canvasId)?.inputs?.mask?.path
+    const shared = previous !== undefined && project.canvasesRef.current.some((canvas) => canvas.id !== canvasId && mentions(canvas, previous))
     try {
-      const saved = await call<{ path: string }>(Ipc.studioSaveMask, { projectId: id, canvasId, png })
+      const saved = await call<{ path: string }>(Ipc.studioSaveMask, {
+        projectId: id, canvasId, png, ...(previous && !shared ? { replaces: previous } : {}),
+      })
       project.updateCanvas(canvasId, (canvas) => canvas.inputs?.init
         ? { ...canvas, inputs: { ...canvas.inputs, mask: { path: saved.path } } }
         : canvas)

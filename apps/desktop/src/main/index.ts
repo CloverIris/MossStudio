@@ -22,6 +22,7 @@ import { createInstance, deleteInstance, listInstances, updateInstance } from '.
 import { installDeps, readRuntime, resolveTorchIndex, writeRemoteRuntime } from './services/runtimes'
 import { cancelJob, getJob, getJobLogs, onJobCompleted, purgeLegacySimulationJobs, startEngineJob, startTrainingJob } from './services/supervisor'
 import { resolveServerPath, runMossInferJob, shutdownMossInfer } from './services/mossInfer'
+import { shutdownCliEngines } from './services/cliEngine'
 import { probeEngine } from './lib/probeEngine'
 import { recoverEngineInstall } from './lib/engineStore'
 import { protocolCompatible } from '@shared/engineProtocol'
@@ -1284,10 +1285,9 @@ app.whenReady().then(async () => {
 
   if (scenario === 'mossinfer-download') {
     try {
-      const { downloadMossInfer } = await import('./services/mossInferDownload')
-      // stable: the v1.0.0 release exists upstream — full chain (21 MB system-cuda
-      // archive, CUDA-libs decision, sha256 vs SHA256SUMS).
-      const stable = await downloadMossInfer('stable')
+      const { installEnginePlan } = await import('./services/enginePlan')
+      // stable: the latest release — detection, plan, every package this machine needs, sha256 vs SHA256SUMS.
+      const stable = await installEnginePlan({ channel: 'stable', all: true })
       const stablePath = stable.serverPath ?? ''
       const stableCublas = (stable.cublaslt ?? null) as { source?: string } | null
       const stableOk =
@@ -1323,7 +1323,7 @@ app.whenReady().then(async () => {
       }
       const genOk = generation ? generation['state'] === 'succeeded' && generation['outputExists'] === true : null
       // dev: latest successful ci run artifact (token-gated); install only, no second generation.
-      const dev = await downloadMossInfer('dev')
+      const dev = await installEnginePlan({ channel: 'dev', all: true })
       const devPath = dev.serverPath ?? ''
       const devOk = dev.phase === 'done' && !!devPath && existsSync(devPath)
       console.log(
@@ -1360,9 +1360,9 @@ app.whenReady().then(async () => {
   if (scenario === 'devdata-download') {
     // Runs on .dev-data (no tmp redirect): installs the engine where the dev app will find it.
     try {
-      const { downloadMossInfer } = await import('./services/mossInferDownload')
+      const { installEnginePlan } = await import('./services/enginePlan')
       const channel = (process.argv.find((a) => a.startsWith('--channel='))?.split('=')[1] ?? 'stable') as 'stable' | 'dev'
-      const state = await downloadMossInfer(channel)
+      const state = await installEnginePlan({ channel })
       console.log(
         JSON.stringify(
           {
@@ -2132,4 +2132,5 @@ app.on('before-quit', () => {
   stopUpdateWatcher()
   stopBackend()
   void shutdownMossInfer()
+  void shutdownCliEngines()
 })

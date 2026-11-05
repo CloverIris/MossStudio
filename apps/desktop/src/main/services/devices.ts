@@ -3,7 +3,9 @@ import os from 'node:os'
 import type { GpuInventorySnapshot, LaunchDevice, Settings } from '@shared/types'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
-import { parseNvidiaComputeCapabilities, parseNvidiaGpuRows, recommendedGpu } from '../lib/gpuInventory'
+import { mergeEngineGpus, parseNvidiaComputeCapabilities, parseNvidiaGpuRows, recommendedGpu } from '../lib/gpuInventory'
+import { paths } from '../lib/paths'
+import { readStoredMachineProbe } from './engineMachine'
 
 function command(file: string, args: string[]): string {
   try {
@@ -86,6 +88,7 @@ function runNvidiaSmi(args: string[]): Promise<string> {
 }
 
 let inventory: GpuInventorySnapshot | null = null
+let nvidiaOnly: GpuInventorySnapshot | null = null
 let inventoryRefresh: Promise<GpuInventorySnapshot> | null = null
 
 export async function refreshGpuInventory(): Promise<GpuInventorySnapshot> {
@@ -94,7 +97,7 @@ export async function refreshGpuInventory(): Promise<GpuInventorySnapshot> {
     let next: GpuInventorySnapshot
     try {
       const output = await runNvidiaSmi([
-        '--query-gpu=index,uuid,name,memory.total,memory.free,utilization.gpu,driver_version',
+        '--query-gpu=index,uuid,name,memory.total,memory.free,utilization.gpu,driver_version,pci.device_id',
         '--format=csv,noheader,nounits',
       ])
       const devices = parseNvidiaGpuRows(output)
@@ -140,6 +143,9 @@ export async function refreshGpuInventory(): Promise<GpuInventorySnapshot> {
           : message,
       }
     }
+    nvidiaOnly = next
+    // AMD / Intel GPUs and Vulkan indexes come from the engine's machine probe (engineMachine.ts).
+    next = mergeEngineGpus(next, readStoredMachineProbe(paths.mossinfer())?.machine.gpus ?? [])
     inventory = next
     emit(Events.gpuInventory, next)
     return next
@@ -153,4 +159,15 @@ export async function refreshGpuInventory(): Promise<GpuInventorySnapshot> {
 
 export async function getGpuInventory(): Promise<GpuInventorySnapshot> {
   return inventory ?? refreshGpuInventory()
+}
+
+/** The last inventory without waiting; null before the first scan. */
+export function cachedGpuInventory(): GpuInventorySnapshot | null {
+  return inventory
+}
+
+/** Only what nvidia-smi listed, freshly scanned (the machine probe's NVIDIA source). */
+export async function scanNvidiaGpus(): Promise<GpuInventorySnapshot> {
+  await refreshGpuInventory()
+  return nvidiaOnly ?? { scannedAt: new Date().toISOString(), status: 'unavailable', devices: [] }
 }

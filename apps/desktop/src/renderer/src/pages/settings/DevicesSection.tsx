@@ -2,12 +2,13 @@ import { RefreshCw, X } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { engineDisplayVersion, engineUpdateStatus, parseEngineStamp, type EngineUpdateStatus } from '@shared/engineUpdate'
+import { packageLabel } from '../../lib/engineInstall'
 import { engineDownloadActive, engineDownloadLabel, engineDownloadPercent, engineInstallError } from '../../lib/engineInstall'
 import { featureVisibility } from '../../lib/features'
 import { useGpuInventory } from '../../lib/useGpuInventory'
 import { useApp } from '../../store'
 import { Advanced, Button, Group, IconButton, ProgressBar, Row, Section, Spinner, StatusDot, useToast } from '../../components/ui'
-import { gpuEmptyMessage, gpuRows, savedGpuMissing } from './devicesModel'
+import { gpuEmptyMessage, gpuEngineInfo, gpuRows, savedGpuMissing } from './devicesModel'
 import { EngineAdvanced } from './EngineAdvanced'
 import { SectionBody, SwitchRow, useSaveSettings } from './fields'
 import { RemoteHosts } from './RemoteHosts'
@@ -26,7 +27,7 @@ export function DevicesSection(): React.JSX.Element {
       <GpuGroup gpu={gpu} engine={engine} />
       <EngineGroup engine={engine} />
       <Group>
-        <Advanced summary="显存模式、性能档位、渠道、CUDA、包类型、自定义引擎、引擎目录">
+        <Advanced summary="显存模式、性能档位、每块 GPU 的引擎、渠道、版本、自定义引擎、引擎目录">
           <EngineAdvanced engine={engine} inventory={gpu.inventory} />
         </Advanced>
       </Group>
@@ -47,7 +48,18 @@ function GpuGroup({ gpu, engine }: { gpu: ReturnType<typeof useGpuInventory>; en
   const settings = useApp((state) => state.settings)!
   const telemetry = useApp((state) => state.gpuTelemetry)
   const save = useSaveSettings()
-  const rows = gpuRows(gpu.inventory, engine.probe, telemetry, settings.gpuSelection)
+  const rows = gpuRows(gpu.inventory, engine.probe, telemetry, settings.gpuSelection, gpuEngineInfo(engine.readiness, engine.plan))
+  const [redetecting, setRedetecting] = useState(false)
+
+  // 重新检测 probes every GPU again (AMD / Intel included) and re-plans their engines.
+  async function redetect(): Promise<void> {
+    setRedetecting(true)
+    try {
+      await Promise.all([gpu.refresh(), engine.loadPlan(true)])
+    } finally {
+      setRedetecting(false)
+    }
+  }
   const automatic = settings.gpuSelection === 'auto'
   const missing = savedGpuMissing(gpu.inventory, settings.gpuSelection)
 
@@ -56,21 +68,35 @@ function GpuGroup({ gpu, engine }: { gpu: ReturnType<typeof useGpuInventory>; en
       title="GPU"
       description={rows.length > 1 ? (automatic ? '自动把任务交给空闲且更快的 GPU。也可以固定一块作为默认。' : '新的任务默认交给这块 GPU。') : undefined}
       actions={(
-        <IconButton label="重新检测显卡" onClick={() => void gpu.refresh()} disabled={gpu.refreshing}>
-          <RefreshCw className={gpu.refreshing ? 'size-4 animate-spin' : 'size-4'} />
+        <IconButton label="重新检测显卡" onClick={() => void redetect()} disabled={redetecting || gpu.refreshing}>
+          <RefreshCw className={redetecting || gpu.refreshing ? 'size-4 animate-spin' : 'size-4'} />
         </IconButton>
       )}
     >
       <Group>
         {rows.map((row) => (
-          <Row key={row.uuid} title={row.name} description={row.reason ? `${row.detail} · ${row.reason}` : row.detail}>
+          <Row
+            key={row.uuid}
+            title={row.name}
+            description={(
+              <span className="flex flex-col gap-0.5">
+                <span>{[row.detail, row.engine ? `引擎：${row.engine}` : null, row.reason].filter(Boolean).join(' · ')}</span>
+                {row.tip ? <span className="text-caption text-ink-2">{row.tip}</span> : null}
+              </span>
+            )}
+          >
             {row.isDefault || rows.length === 1 ? null : (
               <Button onClick={() => void save({ gpuSelection: { uuid: row.uuid } })}>设为默认</Button>
             )}
             <span className="flex items-center gap-1.5 text-caption text-ink-2"><StatusDot status={row.status} />{row.statusLabel}</span>
           </Row>
         ))}
-        {rows.length === 0 ? <Row title={gpu.inventory ? '没有可用的显卡' : '正在检测显卡…'} description={gpu.inventory ? gpuEmptyMessage(gpu.inventory) : undefined} /> : null}
+        {rows.length === 0 ? (
+          <Row
+            title={engine.plan?.os === 'macos' ? '本机不能运行引擎' : gpu.inventory ? '没有可用的显卡' : '正在检测显卡…'}
+            description={engine.plan?.blocked ?? (gpu.inventory ? gpuEmptyMessage(gpu.inventory) : undefined)}
+          />
+        ) : null}
         {missing ? (
           <Row title="之前选的默认 GPU 没有连接" description="连接后会继续使用它；现在可以改为自动选择。">
             <Button onClick={() => void save({ gpuSelection: 'auto' })}>改为自动</Button>
@@ -94,11 +120,13 @@ function engineDescription(engine: EngineState, status: EngineUpdateStatus | nul
   const { readiness, download, current } = engine
   if (engineDownloadActive(download)) return engineDownloadLabel(download!)
   const error = engineInstallError(readiness, download)
-  if (readiness?.state !== 'ready') return error ?? '生成图片需要推理引擎。安装时会按你的显卡自动选择版本。'
+  if (readiness?.state !== 'ready') return error ?? engine.plan?.blocked ?? '生成图片需要推理引擎。安装时会按你的显卡自动选择版本。'
   const stamp = current?.source === 'managed' ? parseEngineStamp(current.name) : null
   const parts: string[] = []
   if (current?.source === 'external') parts.push('自定义引擎')
   else if (stamp) parts.push(stamp.channel === 'stable' ? '正式版' : '开发版')
+  const missing = (engine.plan?.missing ?? []).map((id) => packageLabel(id) ?? id)
+  if (missing.length) parts.push(`还需下载：${missing.join('、')}`)
   if (download?.phase === 'error') parts.push('上次更新失败，当前版本仍可用')
   else if (status?.kind === 'current') parts.push('已是最新')
   else if (status?.kind === 'available') parts.push(`有新版本 ${status.latest.tag.replace(/^v/i, '')}`)
@@ -120,7 +148,6 @@ function EngineGroup({ engine }: { engine: EngineState }): React.JSX.Element {
 
   function report(outcome: InstallOutcome): void {
     if (outcome.kind === 'failed') toast.push(outcome.message, 'error')
-    if (outcome.kind === 'needs-cuda') toast.push('这台电脑缺少需要的 CUDA 运行库，请在高级里选择安装方式', 'error')
   }
 
   async function installNow(): Promise<void> {
@@ -139,25 +166,20 @@ function EngineGroup({ engine }: { engine: EngineState }): React.JSX.Element {
 
   async function update(): Promise<void> {
     if (status?.kind !== 'available' || !current) return
-    const stamp = parseEngineStamp(current.name)
-    if (!stamp) return
     setStarting(true)
-    report(await engine.install({
-      channel: 'stable',
-      variant: stamp.variant,
-      flavour: stamp.flavour,
-      architecture: settings.mossInferArchitecture,
-      releaseTag: status.latest.tag,
-      preflighted: true,
-    }))
+    // Every GPU's package at the new release, side by side.
+    report(await engine.install({ channel: 'stable', releaseTag: status.latest.tag }))
     setStarting(false)
   }
 
+  const missing = engine.plan?.missing ?? []
   let action: React.ReactNode
   if (installing) {
     action = <IconButton label="取消安装" onClick={() => void engine.cancelInstall()}><X className="size-4" /></IconButton>
   } else if (!ready) {
-    action = <Button onClick={() => void installNow()} disabled={starting}>{starting ? <Spinner /> : null}安装引擎</Button>
+    action = <Button onClick={() => void installNow()} disabled={starting || Boolean(engine.plan?.blocked)}>{starting ? <Spinner /> : null}安装引擎</Button>
+  } else if (missing.length > 0 && status?.kind !== 'available') {
+    action = <Button onClick={() => void installNow()} disabled={starting}>{starting ? <Spinner /> : null}安装缺少的引擎</Button>
   } else if (status?.kind === 'available') {
     action = <Button onClick={() => void update()} disabled={starting}>{starting ? <Spinner /> : null}更新</Button>
   } else {

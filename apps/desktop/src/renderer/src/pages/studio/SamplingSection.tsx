@@ -169,7 +169,7 @@ export function SamplingSection({ canvas, features, onChange }: { canvas: Projec
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-2">
+      {features?.cli && sampling.cfgTruncation === undefined ? null : <section className="flex flex-col gap-2">
         <FieldLabel htmlFor="studio-cfg-truncation">CFG 截断</FieldLabel>
         <OptionalNumberInput
           id="studio-cfg-truncation"
@@ -179,7 +179,7 @@ export function SamplingSection({ canvas, features, onChange }: { canvas: Projec
           onCommit={(cfgTruncation) => onChange((current) => withSampling(current, { cfgTruncation }))}
         />
         <p className="text-caption text-ink-2">0 到 1：在这个进度之后不再用 CFG，更快。CFG 为 1 时没有作用。</p>
-      </section>
+      </section>}
     </div>
   )
 }

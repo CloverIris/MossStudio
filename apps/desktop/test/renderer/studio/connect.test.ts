@@ -4,7 +4,7 @@ import { canConnect, hasPicture, linkMenu } from '@renderer/pages/studio/connect
 import { canvas } from './fixtures'
 
 const features = (patch: Partial<EngineFeatures> = {}): EngineFeatures => ({
-  preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, values: {}, ...patch,
+  preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true, values: {}, ...patch,
 })
 const adapter: ControlAdapterEntry = {
   id: 'ctl', name: 'union', path: '/m/ctl.safetensors', sizeBytes: 1, controlKinds: ['depth', 'canny', 'scribble'], addedAt: '2026-11-05T00:00:00Z',

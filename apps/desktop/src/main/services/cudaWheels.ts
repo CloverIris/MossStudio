@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import * as yauzl from 'yauzl'
 import { getSettings } from './settings'
+import { deviceEngines } from './engineInstalls'
 import { shutdownMossInfer } from './mossInfer'
 import { probeEngine } from '../lib/probeEngine'
 import type { EngineHello } from '@shared/engineProtocol'
@@ -111,10 +112,18 @@ export async function installCudaWheels(installDir: string, flavour: 'cu12' | 'c
   return { installed: all, packages }
 }
 
+/** The moss-server a GPU runs from a system-CUDA package (the pinned one first), else any CUDA one. */
+function systemCudaServerPath(): string | null {
+  const pinned = getSettings().mossInferServerPath
+  if (pinned && existsSync(pinned)) return pinned
+  const cuda = deviceEngines().flatMap(({ engine }) => (engine?.package.kind === 'cuda' ? [engine] : []))
+  const systemCuda = cuda.find((engine) => engine.package.kind === 'cuda' && engine.package.runtime === 'system-cuda')
+  return (systemCuda ?? cuda[0])?.binaryPath ?? null
+}
+
 /** Download and extract NVIDIA wheels into the installed engine tree, no Python/uv/pip. */
 export async function installMossInferCudaLibs(): Promise<{ installed: string[]; packages: string[] }> {
-  const settings = getSettings()
-  const serverPath = settings.mossInferServerPath
+  const serverPath = systemCudaServerPath()
   if (!serverPath || !existsSync(serverPath)) throw new Error('还没有安装 moss-server，请先下载引擎')
   let probe: EngineHello
   try {

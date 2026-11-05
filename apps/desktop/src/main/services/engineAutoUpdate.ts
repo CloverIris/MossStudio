@@ -1,12 +1,14 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { compareEngineTags, engineUpdateStatus, parseEngineStamp } from '@shared/engineUpdate'
+import { compareEngineTags, parseEngineStamp } from '@shared/engineUpdate'
+import type { EnginePackage } from '@shared/enginePackages'
 import type { JobRecord, LocalEngineVersion, MossInferDownloadState, MossInferRelease, Settings } from '@shared/types'
 import type { ActivationGate } from '../lib/engineActivation'
 import { paths } from '../lib/paths'
 import { engineReadiness } from './engineReadiness'
 import { localEngineVersions } from './engines'
-import { downloadMossInfer, getMossInferDownloadState, listMossInferReleases } from './mossInferDownload'
+import { getMossInferDownloadState, listMossInferReleases } from './mossInferDownload'
+import { installEnginePlan } from './enginePlan'
 import { getSettings } from './settings'
 import { listJobs } from './supervisor'
 
@@ -19,8 +21,8 @@ import { listJobs } from './supervisor'
  * - A release the person installed on purpose while a newer one existed (a
  *   rollback) is pinned and skipped until they update by hand or turn the
  *   switch back on.
- * - The update keeps the build options of the engine in use (CUDA flavour,
- *   package type, architecture), read from its folder name.
+ * - Every installed package kind is kept current (each CUDA flavour/arch/
+ *   runtime, Vulkan, HIP), read from the folder names of the installs in use.
  * - The new build downloads in the background but is only activated while no
  *   engine job runs, because activating restarts the engine.
  * - A release that failed to install is retried with growing gaps instead of
@@ -35,10 +37,9 @@ export interface EngineAutoUpdateState {
 }
 
 export interface InstallRequest {
-  flavour: 'cu12' | 'cu13'
-  variant: 'system-cuda' | 'bundled'
+  /** Every package in use whose install is older than the release. */
+  packages: EnginePackage[]
   releaseTag: string
-  architecture: 'standard' | 'sm75'
   activation: Omit<ActivationGate, 'signal'>
 }
 
@@ -85,23 +86,30 @@ export async function runEngineAutoUpdate(deps: EngineAutoUpdateDeps): Promise<E
   if (!settings.engineAutoUpdate) return 'disabled'
   // First installs belong to Setup; this only keeps an existing engine current.
   if (!(await deps.engineReady())) return 'not-installed'
-  const current = deps.versions().find((version) => version.current)
-  const stamp = current?.source === 'managed' ? parseEngineStamp(current.name) : null
+  const inUse = deps.versions().filter((version) => version.current)
+  if (inUse.length === 0) return 'not-installed'
+  // Stable managed installs in use, one per package (the newest one when several are in use).
+  const stamps = inUse
+    .map((version) => (version.source === 'managed' ? parseEngineStamp(version.name) : null))
+    .filter((stamp): stamp is NonNullable<typeof stamp> => stamp?.channel === 'stable')
+  if (stamps.length === 0) return 'unmanaged'
   const state = deps.readState()
-  if (stamp && state.pinnedTag === stamp.tag) return 'pinned'
-  const status = engineUpdateStatus(current, await deps.releases())
-  if (status.kind === 'not-installed') return 'not-installed'
-  if (status.kind === 'unmanaged' || !stamp) return 'unmanaged'
-  if (status.kind === 'current') return 'current'
-  const target = status.latest.tag
+  if (state.pinnedTag && stamps.some((stamp) => stamp.tag === state.pinnedTag)) return 'pinned'
+  const latest = [...await deps.releases()].sort((a, b) => compareEngineTags(b.tag, a.tag))[0]
+  if (!latest) return 'current'
+  const outdated = new Map<string, EnginePackage>()
+  for (const stamp of stamps) {
+    const newerInstalled = stamps.some((other) => other.packageId === stamp.packageId && compareEngineTags(other.tag, latest.tag) >= 0)
+    if (!newerInstalled && compareEngineTags(latest.tag, stamp.tag) > 0) outdated.set(stamp.packageId, stamp.package)
+  }
+  if (outdated.size === 0) return 'current'
+  const target = latest.tag
   if (state.failed?.tag === target && now() - state.failed.at < failureBackoffMs(state.failed.count)) return 'backoff'
   const download = deps.downloadState()
   if (download && !['done', 'error', 'canceled'].includes(download.phase)) return 'busy'
   if (hasActiveEngineJobs(await deps.jobs())) return 'busy'
   const result = await deps.install({
-    flavour: stamp.flavour,
-    variant: stamp.variant,
-    architecture: stamp.architecture,
+    packages: [...outdated.values()],
     releaseTag: target,
     // Jobs may start during the download: check again, under the activation lock, right before switching.
     activation: { canActivate: async () => !hasActiveEngineJobs(await deps.jobs()) },
@@ -199,8 +207,8 @@ function defaultDeps(): EngineAutoUpdateDeps {
     releases: listMossInferReleases,
     jobs: listJobs,
     downloadState: getMossInferDownloadState,
-    install: ({ flavour, variant, releaseTag, architecture, activation }) =>
-      downloadMossInfer('stable', flavour, variant, false, releaseTag, architecture, activation),
+    install: ({ packages, releaseTag, activation }) =>
+      installEnginePlan({ channel: 'stable', packages, releaseTag, activation }),
     readState: readEngineAutoUpdateState,
     writeState: writeEngineAutoUpdateState,
   }

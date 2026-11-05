@@ -143,6 +143,8 @@ function CanvasParams({
   const installed = installedBundles(catalog)
   const adapters = normalizeCanvasAdapters(canvas.adapters)
   const adapterRows = adapterStatuses(adapters, catalog?.adapters)
+  // An engine without LoRA (兼容模式 / AMD 原生): nothing to add; rows already there stay so they can be removed.
+  const loraUnsupported = inputs?.features ? !inputs.features.lora : false
   const remoteEnabled = settings?.remoteHostsEnabled === true
   const remoteHost = remoteEnabled ? hosts.find((host) => host.id === remoteHostId) ?? null : null
   const description = canvasDescription(canvas)
@@ -200,14 +202,14 @@ function CanvasParams({
                 <option key={item.id} value={item.id}>{installed.some((entry) => entry.id === item.id) ? item.name : `${item.name}（未下载）`}</option>
               ))}
             </Select>
-            <div className="flex items-center justify-between">
+            {loraUnsupported && !adapterRows.length ? null : <div className="flex items-center justify-between">
               <span className="text-ui text-ink-2">LoRA</span>
-              {readOnly ? null : (
+              {readOnly || loraUnsupported ? null : (
                 <Button tone="ghost" size="sm" className="-mr-2 h-[26px] px-2" onClick={onOpenAdapters} data-adapter-picker>
                   <Plus className="size-3.5" aria-hidden="true" />添加
                 </Button>
               )}
-            </div>
+            </div>}
             {adapterRows.length ? (
               <ul className="flex flex-col gap-1">
                 {adapterRows.map(({ adapter, name, installed: present }) => (
