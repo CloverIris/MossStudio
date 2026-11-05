@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Events } from '@shared/channels'
 import { decodeEngineHello } from '@shared/engineProtocol'
+import { engineBinaryName } from '@shared/enginePackages'
 import type { GpuInventoryDevice, JobRecord } from '@shared/types'
 import type { MossInferSink } from '@main/services/mossInfer'
 import { useTempDataRoot } from '@test/helpers/tempDir'
@@ -62,7 +63,8 @@ beforeEach(async () => {
     sinks.set(job.id, sink)
   })
   // What downloadMossInfer leaves behind: <engine root>/stable-<tag>-<package>/bin/moss-server, nothing in settings.
-  const server = join(dataRoot(), 'mossinfer', 'stable-v2.2.0-cu13', 'bin', 'moss-server')
+  // Named for the OS the test runs on (moss-server.exe on Windows), like the real package.
+  const server = join(dataRoot(), 'mossinfer', 'stable-v2.2.0-cu13', 'bin', engineBinaryName('cuda', process.platform))
   mkdirSync(join(server, '..'), { recursive: true })
   writeFileSync(server, '#!')
   const bundle = join(dataRoot(), 'bundle')

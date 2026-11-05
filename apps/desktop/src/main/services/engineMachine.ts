@@ -1,5 +1,6 @@
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+// sysfs paths are Linux paths: posix joins, whatever the host's separator.
+import { join, posix } from 'node:path'
 import type { CudaFlavour } from '@shared/enginePackages'
 import { engineOsOf, type EngineMachine, type EngineMachineGpu, type GpuVendor } from '@shared/engineChoice'
 import type { GpuInventoryDevice } from '@shared/types'
@@ -131,7 +132,7 @@ function readKfd(deps: MachineProbeDeps): KfdGpuNode[] {
   const nodes: Array<{ node: number; properties: string }> = []
   for (const name of deps.readdir(base)) {
     if (!/^\d+$/.test(name)) continue
-    const properties = deps.readFile(join(base, name, 'properties'))
+    const properties = deps.readFile(posix.join(base, name, 'properties'))
     if (properties) nodes.push({ node: Number(name), properties })
   }
   return kfdGpuNodes(nodes)
@@ -144,8 +145,8 @@ function readDrm(deps: MachineProbeDeps): string[] {
     .filter((name) => /^card\d+$/.test(name))
     .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)))
     .flatMap((name) => {
-      const vendor = deps.readFile(join(base, name, 'device', 'vendor'))
-      const device = deps.readFile(join(base, name, 'device', 'device'))
+      const vendor = deps.readFile(posix.join(base, name, 'device', 'vendor'))
+      const device = deps.readFile(posix.join(base, name, 'device', 'device'))
       const pciId = vendor && device ? drmPciId(vendor, device) : null
       return pciId ? [pciId] : []
     })

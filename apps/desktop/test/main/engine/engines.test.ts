@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Events } from '@shared/channels'
 import type { GpuInventoryDevice, GpuInventorySnapshot, Settings, TrainingHost } from '@shared/types'
 import { decodeEngineHello, type EngineHello } from '@shared/engineProtocol'
 import { useTempDataRoot } from '@test/helpers/tempDir'
+import { setPlatform } from '@test/helpers/platform'
 
 const probeEngine = vi.hoisted(() => vi.fn<(path: string) => Promise<EngineHello>>())
 const resolveServerPath = vi.hoisted(() => vi.fn<(settings: Settings) => string | null>())
@@ -23,6 +24,8 @@ vi.mock('@main/services/trainingHosts', () => ({ getTrainingHost: (_s: unknown, 
 vi.mock('@main/services/remoteEngine', () => ({ remoteEngineStatus }))
 
 const dataRoot = useTempDataRoot()
+const hostPlatform = process.platform
+afterEach(() => setPlatform(hostPlatform))
 type Engines = typeof import('@main/services/engines')
 let engines: Engines
 let settingsModule: typeof import('@main/services/settings')
@@ -47,6 +50,14 @@ function managed(name: string, inBin = true): string {
   writeFileSync(path, '#!')
   return path
 }
+/** A managed install whose program is named for the platform the test models (not the host). */
+function managedFor(name: string, program: string): string {
+  const path = join(engineRoot(), name, 'bin', program)
+  mkdirSync(join(path, '..'), { recursive: true })
+  writeFileSync(path, '#!')
+  return path
+}
+
 function external(dir: string, inBin = true): string {
   const path = inBin ? join(dir, 'bin', SERVER) : join(dir, SERVER)
   mkdirSync(join(path, '..'), { recursive: true })
@@ -228,13 +239,15 @@ describe('probeLocalEngineGpuCompatibility', () => {
     expect(probeEngine).toHaveBeenCalledTimes(3)
   })
 
-  it('judges each GPU against the moss-server of its own package (4090 on cu13, Titan V on cu12-sm70)', async () => {
+  it('judges each GPU against the moss-server of its own package (Linux: 4090 on cu13, Titan V on cu12-sm70)', async () => {
+    // The SM70 build is Linux-only: model a Linux host whatever this test runs on.
+    setPlatform('linux')
     const rtx: GpuInventoryDevice = { index: 0, uuid: 'GPU-4090', name: 'NVIDIA GeForce RTX 4090', computeCapability: { major: 8, minor: 9 }, driverVersion: '590.48.01' }
     const titan: GpuInventoryDevice = { index: 1, uuid: 'GPU-titan', name: 'NVIDIA TITAN V', computeCapability: { major: 7, minor: 0 }, driverVersion: '590.48.01' }
     cachedInventory.value = inventory([rtx, titan])
     getGpuInventory.mockResolvedValue(inventory([rtx, titan]))
-    const cu13 = managed('stable-v2.2.0-cu13')
-    const sm70 = managed('stable-v2.2.0-cu12-sm70')
+    const cu13 = managedFor('stable-v2.2.0-cu13', 'moss-server')
+    const sm70 = managedFor('stable-v2.2.0-cu12-sm70', 'moss-server')
     const devices = (titanSupported: boolean) => [
       { index: 0, name: 'NVIDIA GeForce RTX 4090', supported: true, compute_capability: '8.9' },
       { index: 1, name: 'NVIDIA TITAN V', supported: titanSupported, compute_capability: '7.0', ...(titanSupported ? {} : { unsupported_reason: 'compute capability 7.0 is below the required 8.0' }) },
@@ -250,6 +263,23 @@ describe('probeLocalEngineGpuCompatibility', () => {
     // Each binary is cached on its own.
     await engines.probeLocalEngineGpuCompatibility()
     expect(probeEngine).toHaveBeenCalledTimes(2)
+  })
+
+  it('on Windows the Titan V has no CUDA build (no SM70 there): only the cu13 moss-server is probed', async () => {
+    setPlatform('win32')
+    const rtx: GpuInventoryDevice = { index: 0, uuid: 'GPU-4090', name: 'NVIDIA GeForce RTX 4090', computeCapability: { major: 8, minor: 9 }, driverVersion: '581.42' }
+    const titan: GpuInventoryDevice = { index: 1, uuid: 'GPU-titan', name: 'NVIDIA TITAN V', computeCapability: { major: 7, minor: 0 }, driverVersion: '581.42' }
+    cachedInventory.value = inventory([rtx, titan])
+    getGpuInventory.mockResolvedValue(inventory([rtx, titan]))
+    const cu13 = managedFor('stable-v2.2.0-cu13', 'moss-server.exe')
+    probeEngine.mockResolvedValue(decodeEngineHello({ protocol_version: 2, version: '2.2.0', probe: { devices: [
+      { index: 0, name: 'NVIDIA GeForce RTX 4090', supported: true, compute_capability: '8.9' },
+      { index: 1, name: 'NVIDIA TITAN V', supported: false, compute_capability: '7.0', unsupported_reason: 'compute capability 7.0 is below the required 8.0' },
+    ] } }))
+    const probe = await engines.probeLocalEngineGpuCompatibility()
+    expect(probeEngine.mock.calls.map(([path]) => path)).toEqual([cu13])
+    expect(probe.helloFor('GPU-4090')?.version).toBe('2.2.0')
+    expect(probe.helloFor('GPU-titan')).toBeNull()
   })
 
   it('shares one in-flight probe between concurrent callers', async () => {
