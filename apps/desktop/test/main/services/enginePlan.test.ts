@@ -188,7 +188,8 @@ describe('detectEngineMachine: when to probe again', () => {
   it('getEnginePlan uses the live inventory for that check', async () => {
     store(probe([rtx]))
     live.devices = [{ uuid: 'GPU-other', index: 0, name: 'RTX 3060' }]
-    const spy = vi.spyOn(machineModule, 'probeEngineMachine')
+    // Stub the probe itself: the real one runs nvidia-smi, ldconfig and the Vulkan probe.
+    const spy = vi.spyOn(machineModule, 'probeEngineMachine').mockResolvedValue({ machine: probe([rtx]), vulkanDevices: [], notes: [] })
     await plan.getEnginePlan().catch(() => undefined)
     expect(spy).toHaveBeenCalled()
   })
