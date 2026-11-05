@@ -19,6 +19,7 @@
     "release:md": "node tools/release-md.mjs",
     "release:md:check": "node tools/release-md.mjs --check",
     "release:build": "pnpm typecheck && pnpm build && node tools/build-release.mjs",
+    "release:package": "node tools/build-release.mjs",
     "test:models": "pnpm --filter @clover/desktop exec vitest run test/main/models/modelFiles.test.ts",
     "test:gpu-studio": "pnpm --filter @clover/desktop exec vitest run test/shared/gpuProfile.test.ts test/shared/gpuCompatibility.test.ts test/shared/gpuScheduling.test.ts test/shared/canvasJobBranch.test.ts",
     "test:model-imports": "pnpm --filter @clover/desktop exec vitest run test/main/models/modelImports.test.ts",

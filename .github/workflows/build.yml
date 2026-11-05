@@ -47,9 +47,9 @@ jobs:
           if-no-files-found: ignore
 
   windows:
-    name: Typecheck, unit tests and build (Windows)
+    name: Typecheck, unit tests, build and package (Windows)
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -61,8 +61,17 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test:unit
       - run: pnpm build
-      - name: Upload build output
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Package the Setup exe and portable ZIP
+        run: pnpm release:package
+      - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-out-windows
-          path: apps/desktop/out
+          name: MossStudio-windows-x64
+          path: |
+            release/artifacts/MossStudio-Setup-*-x64.exe
+            release/artifacts/MossStudio-*-win32-x64.zip
+          if-no-files-found: error
+          compression-level: 0
