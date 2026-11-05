@@ -148,6 +148,16 @@ export const Ipc = {
   engineInstallRemote: 'engine:install-remote',
   engineSystemCuda: 'engine:system-cuda',
   mossInferCudaLibs: 'engine:install-cuda-wheels',
+  /** EngineFeatures of the engine a job would run on: `{ deviceUuid?, hostId? }` → EngineFeatures | null. */
+  engineFeatures: 'engine:features',
+  /** Copy a picture into a project's assets: `{ projectId, path }` → `{ path, width, height }`. */
+  studioImportImage: 'studio:import-image',
+  /** Write a painted mask PNG into a project's assets: `{ projectId, canvasId, png: Uint8Array }` → `{ path }`. */
+  studioSaveMask: 'studio:save-mask',
+  controlAdaptersList: 'control-adapters:list',
+  /** Register a control adapter file (checked with the engine's `inspect`): `{ path }` → ControlAdapterEntry. */
+  controlAdaptersAdd: 'control-adapters:add',
+  controlAdaptersRemove: 'control-adapters:remove',
 } as const
 
 export type IpcChannel = (typeof Ipc)[keyof typeof Ipc]

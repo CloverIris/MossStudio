@@ -22,6 +22,8 @@ import type {
   ManagedHost,
   MossInferDownloadState,
   MossInferRelease,
+  ControlAdapterEntry,
+  EngineFeatures,
   ProjectDocument,
   Settings,
   TrainerVersion,
@@ -32,6 +34,7 @@ import {
   catalogFixture,
   diagnosticFixture,
   engineDownloadFixture,
+  engineFeaturesFixture,
   engineReleaseFixture,
   engineMissingFixture,
   engineReadyFixture,
@@ -71,6 +74,9 @@ export interface MockBackendState {
   projects: ProjectDocument[]
   aiProviders: AiProviderInfo[]
   conversations: AiConversationInfo[]
+  /** What `engine:features` answers; null = no usable engine. */
+  engineFeatures: EngineFeatures | null
+  controlAdapters: ControlAdapterEntry[]
 }
 
 export type ScenarioName =
@@ -109,6 +115,8 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     projects: [],
     aiProviders: [],
     conversations: [],
+    engineFeatures: engineFeaturesFixture(),
+    controlAdapters: [],
   }
 
   const firstRun = (): Partial<MockBackendState> => ({
@@ -116,6 +124,7 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     catalog: catalogFixture(),
     engineReadiness: engineMissingFixture(),
     engineVersions: [],
+    engineFeatures: null,
     gallery: [],
   })
 

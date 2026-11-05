@@ -9,6 +9,8 @@ import type { AiConversationInfo, AiProviderInfo } from '@shared/ai'
 import type { UpdateDownloadState } from '@shared/release'
 import type {
   AdapterEntry,
+  ControlAdapterEntry,
+  EngineFeatures,
   Announcement,
   Catalog,
   Diagnostic,
@@ -478,5 +480,38 @@ export function trainerVersionFixture(patch: Partial<TrainerVersion> = {}): Trai
     shortCommit: 'a1b2c3d', commitDate: FIXTURE_NOW, subject: 'Fixture trainer', author: 'fixture', channel: 'stable',
     path: '/fixture/trainer/main', runtimeId: 'runtime-main', runtimeState: 'ready', createdAt: FIXTURE_NOW,
     lastUsedAt: null, dirty: false, status: 'ok', ...patch,
+  }
+}
+
+/** What moss-server 2.2.0 reports in its hello: every generation feature on. */
+export function engineFeaturesFixture(patch: Partial<EngineFeatures> = {}): EngineFeatures {
+  return {
+    preview: true,
+    imageInput: true,
+    control: true,
+    references: true,
+    hires: true,
+    samplers: true,
+    values: {
+      sampler: ['euler', 'ab2', 'euler_ancestral', 'heun', 'dpmpp_2m', 'dpmpp_2m_sde', 'er_sde', 'res_multistep'],
+      scheduler: ['moss', 'simple', 'normal', 'karras', 'exponential', 'beta', 'sgm_uniform'],
+      resize: ['crop', 'fit', 'stretch'],
+      mask_encoding: ['u8', 'binary01'],
+      step_cache: ['off', 'fbcache'],
+    },
+    ...patch,
+  }
+}
+
+export function controlAdapterFixture(patch: Partial<ControlAdapterEntry> = {}): ControlAdapterEntry {
+  return {
+    id: 'control-union',
+    name: 'moss-control-union.safetensors',
+    path: '/fixture/models/control/moss-control-union.safetensors',
+    sizeBytes: 1_200_000_000,
+    controlKinds: ['depth', 'canny', 'pose'],
+    baseModel: 'moss-image',
+    addedAt: FIXTURE_NOW,
+    ...patch,
   }
 }

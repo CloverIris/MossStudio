@@ -37,7 +37,7 @@ import type {
   Settings,
   TrainingHost,
 } from '@shared/types'
-import { ENGINE_PATH, FIXTURE_NOW, localHostFixture, downloadFixture, jobLifecycle } from './fixtures'
+import { ENGINE_PATH, FIXTURE_NOW, controlAdapterFixture, localHostFixture, downloadFixture, jobLifecycle } from './fixtures'
 import { scenario, type MockBackendState, type ScenarioName } from './scenarios'
 
 export * from './fixtures'
@@ -367,6 +367,34 @@ function defaultHandlers(): Map<string, Handler> {
     if (!state.gallery.some((item) => item.path === path)) throw new MockIpcError('E_NOT_FOUND', '这张图片不在作品目录中，无法删除')
     state.gallery = state.gallery.filter((item) => item.path !== path)
     return { trashed: [path] }
+  })
+
+  // Studio inputs: engine features, imported pictures, painted masks, control adapters
+  h.set(Ipc.engineFeatures, (_, { state }) => state.engineFeatures)
+  h.set(Ipc.studioImportImage, (payload) => {
+    const { projectId, path } = p<{ projectId: string; path: string }>(payload)
+    const name = path.split(/[\\/]/).pop() ?? 'image.png'
+    return { path: `/fixture/projects/${projectId}/assets/${name}`, width: 1024, height: 1024 }
+  })
+  h.set(Ipc.studioSaveMask, (payload) => {
+    const { projectId, canvasId } = p<{ projectId: string; canvasId: string }>(payload)
+    return { path: `/fixture/projects/${projectId}/assets/mask-${canvasId}.png` }
+  })
+  h.set(Ipc.controlAdaptersList, (_, { state }) => state.controlAdapters)
+  h.set(Ipc.controlAdaptersAdd, (payload, { state, emit }) => {
+    const { path } = p<{ path: string }>(payload)
+    if (!/\.safetensors$/i.test(path)) throw new MockIpcError('E_NOT_CONTROL_ADAPTER', '这个文件不是控制适配器')
+    const name = path.split(/[\\/]/).pop()!
+    const entry = controlAdapterFixture({ id: `control-${state.controlAdapters.length + 1}`, name, path })
+    state.controlAdapters = [...state.controlAdapters.filter((item) => item.path !== path), entry]
+    emit(Events.modelsChanged, null)
+    return entry
+  })
+  h.set(Ipc.controlAdaptersRemove, (payload, { state, emit }) => {
+    const { id } = p<{ id: string }>(payload)
+    state.controlAdapters = state.controlAdapters.filter((item) => item.id !== id)
+    emit(Events.modelsChanged, null)
+    return null
   })
 
   // Projects
