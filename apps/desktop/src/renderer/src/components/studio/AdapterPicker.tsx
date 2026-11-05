@@ -55,40 +55,40 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
     <Modal
       open={open}
       title="选择 LoRA"
-      description="为这个 Canvas 叠加若干适配器；强度在生成设置里逐个调整。"
+      description="给这个画面叠加 LoRA；强度在左侧面板里逐个调整。"
       onClose={onClose}
       width="max-w-xl"
       footer={
         <>
-          <Button tone="ghost" onClick={() => void importFiles()} disabled={importing}>
+          <Button tone="ghost" size="md" onClick={() => void importFiles()} disabled={importing}>
             {importing ? <Spinner className="size-4" /> : <FilePlus2 className="size-4" />}
-            导入 .safetensors
+            导入文件
           </Button>
-          <Button tone="primary" data-dialog-initial-focus onClick={onClose}>完成</Button>
+          <Button tone="primary" size="md" data-dialog-initial-focus onClick={onClose}>完成</Button>
         </>
       }
     >
-      <div className="space-y-2.5">
+      <div className="flex flex-col gap-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden="true" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索名称、id 或基底模型"
-            className="w-full pl-8"
+            placeholder="搜索名称"
+            className="pl-9"
             aria-label="搜索 LoRA"
           />
         </div>
 
-        <div className="max-h-[46vh] min-h-24 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border-subtle)]">
+        <div className="max-h-[46vh] min-h-24 overflow-y-auto rounded-xl bg-panel p-1.5">
           {visible.length === 0 ? (
-            <div className="px-4 py-8 text-center text-caption leading-5 text-[var(--color-text-tertiary)]">
+            <div className="px-4 py-8 text-center text-ui text-ink-2">
               {selectable.length === 0
-                ? <>模型库里还没有 LoRA。用下面的「导入 .safetensors」把本地文件加入模型库。</>
-                : <>没有匹配「{query.trim()}」的 LoRA。</>}
+                ? <>模型库里还没有 LoRA。用下面的「导入文件」把电脑上的 .safetensors 文件加进来。</>
+                : <>没有名称包含「{query.trim()}」的 LoRA。</>}
             </div>
           ) : (
-            <ul className="divide-y divide-[var(--color-border-subtle)]">
+            <ul className="flex flex-col gap-0.5">
               {visible.map((entry) => {
                 const active = chosen.has(entry.id)
                 return (
@@ -99,24 +99,21 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
                       aria-pressed={active}
                       data-adapter-option={entry.id}
                       className={cn(
-                        'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
-                        active ? 'bg-accent-500/[0.08]' : 'hover:bg-white/[0.03]',
+                        'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors',
+                        active ? 'bg-well-strong' : 'hover:bg-well',
                       )}
                     >
                       <span className={cn(
-                        'inline-flex size-4 shrink-0 items-center justify-center rounded-[4px] border',
-                        active ? 'border-accent-400 bg-accent-500/25 text-accent-100' : 'border-[var(--color-border)]',
+                        'inline-flex size-4 shrink-0 items-center justify-center rounded-[4px]',
+                        active ? 'bg-accent text-on-accent' : 'bg-well-strong',
                       )}>
-                        {active ? <Check className="size-3" /> : null}
+                        {active ? <Check className="size-3" aria-hidden="true" /> : null}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-ui text-[var(--color-text)]">{entry.name}</span>
-                        <span className="block truncate font-mono text-micro text-[var(--color-text-tertiary)]">
-                          {entry.id}{entry.base ? ` · ${entry.base}` : ''}
-                        </span>
+                        <span className="block truncate text-control text-ink">{entry.name}</span>
+                        {entry.base ? <span className="block truncate text-caption text-ink-2">适用于 {entry.base}</span> : null}
                       </span>
-                      <span className="shrink-0 text-caption uppercase text-[var(--color-text-tertiary)]">{entry.kind}</span>
-                      <span className="w-16 shrink-0 text-right text-caption tabular-nums text-[var(--color-text-tertiary)]">{bytes(entry.sizeBytes)}</span>
+                      <span className="tabular w-16 shrink-0 text-right text-caption text-ink-2">{bytes(entry.sizeBytes)}</span>
                     </button>
                   </li>
                 )
@@ -126,26 +123,21 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
         </div>
 
         {orphans.length ? (
-          <div className="rounded-[var(--radius-md)] border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2">
-            <p className="text-caption text-amber-200">以下 LoRA 已不在模型库里，生成前需要移除：</p>
-            <div className="mt-1 flex flex-wrap gap-1.5">
+          <div className="flex flex-col gap-2 rounded-lg bg-warn-soft px-3 py-2.5">
+            <p className="text-caption text-warn">下面的 LoRA 已经不在模型库里，生成前需要移除：</p>
+            <div className="flex flex-wrap gap-1.5">
               {orphans.map((row) => (
-                <button
-                  key={row.adapter.id}
-                  type="button"
-                  onClick={() => onToggle(row.adapter.id)}
-                  className="rounded-full border border-amber-500/40 px-2 py-0.5 text-caption text-amber-100 hover:bg-amber-500/10"
-                >
-                  {row.name} · 移除
-                </button>
+                <Button key={row.adapter.id} tone="secondary" size="sm" className="h-7 px-2.5" onClick={() => onToggle(row.adapter.id)}>
+                  移除「{row.name}」
+                </Button>
               ))}
             </div>
           </div>
         ) : null}
 
-        <p className="text-caption leading-4 text-[var(--color-text-tertiary)]">
-          适配器按选择顺序叠加，强度 0–2，默认 1。
-          {hiddenDmd ? ' 8 步 DMD 由采样档位自动启用，不在列表中重复出现。' : ''}
+        <p className="text-caption text-ink-2">
+          按选择顺序叠加，强度 0–2，默认 1。
+          {hiddenDmd ? '「快速」质量自带的加速组件会自动启用，不在这里列出。' : ''}
         </p>
       </div>
     </Modal>

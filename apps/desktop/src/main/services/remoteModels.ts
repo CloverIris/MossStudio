@@ -1,6 +1,7 @@
 import type { AdapterEntry, Catalog, DownloadTask, ModelEntry, TrainingHost } from '@shared/types'
 import { posixQuote, remoteAbsolute, sshExec } from './ssh'
 import { startRemoteDownload } from './remoteDownloads'
+import { assertSafeSteps, planRemoteDelete, type RemoteEntryFiles } from './remoteModelDelete'
 
 export async function prepareRemoteDefaultModel(
   host: TrainingHost,
@@ -62,21 +63,88 @@ function modelMatches(entry: ModelEntry, files: string[]): string | undefined {
   return undefined
 }
 
-export async function scanRemoteModels(host: TrainingHost, catalog: Catalog, modelsRoot?: string): Promise<RemoteModelInventory> {
+/**
+ * Where an adapter's files are: an HF snapshot or a plain `<repo>/` folder
+ * that holds EVERY listed file (one stray file is not an installed adapter).
+ */
+function adapterMatches(entry: AdapterEntry, files: string[]): string | undefined {
+  const expected = entry.files.filter(Boolean)
+  if (!expected.length) return undefined
+  const repoToken = `models--${entry.repo.replace('/', '--')}`
+  const marker = `/${entry.repo}/`
+  const bases = new Set<string>()
+  for (const file of files) {
+    const snapshot = file.includes(repoToken) ? file.match(/^(.*?\/snapshots\/[^/]+)\//)?.[1] : undefined
+    if (snapshot) bases.add(snapshot)
+    const index = file.indexOf(marker)
+    if (index >= 0) bases.add(file.slice(0, index + marker.length - 1))
+  }
+  const present = new Set(files)
+  return [...bases].find((base) => expected.every((name) => present.has(`${base}/${name}`)))
+}
+
+async function listRemoteModelFiles(host: TrainingHost, modelsRoot?: string): Promise<{ root: string; files: string[] }> {
   const root = await remoteAbsolute(host, modelsRoot || host.modelsRoot || '~/.mossstudio/models')
   const command = `test -d ${posixQuote(root)} && find ${posixQuote(root)} -maxdepth 8 -type f -size +0c \\( -name '*.safetensors' -o -name '*.json' -o -name '*.py' -o -name '*.txt' -o -name '*.jinja' \\) -printf '%p\\n' 2>/dev/null | head -n 20000 || true`
   const result = await sshExec(host, command, 120_000)
-  const files = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  return { root, files: result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) }
+}
+
+function inventoryFrom(catalog: Catalog, files: string[]): Pick<RemoteModelInventory, 'models' | 'adapters'> {
   const models = catalog.models.map((entry) => {
     const path = modelMatches(entry, files)
     return { id: entry.id, installed: Boolean(path), path }
   })
   const adapters = catalog.adapters.map((entry) => {
-    const repoToken = `models--${entry.repo.replace('/', '--')}`
-    const candidates = files.filter((file) => file.includes(repoToken) || file.includes(entry.repo))
-    const file = candidates.find((candidate) => entry.files.some((suffix) => candidate.endsWith(suffix))) ?? candidates[0]
-    const path = file?.match(/^(.*?\/snapshots\/[^/]+)/)?.[1] ?? file?.slice(0, file.lastIndexOf('/')) ?? undefined
+    const path = adapterMatches(entry, files)
     return { id: entry.id, installed: Boolean(path), path }
   })
-  return { root, files: files.length, models, adapters }
+  return { models, adapters }
+}
+
+export async function scanRemoteModels(host: TrainingHost, catalog: Catalog, modelsRoot?: string): Promise<RemoteModelInventory> {
+  const { root, files } = await listRemoteModelFiles(host, modelsRoot)
+  return { root, files: files.length, ...inventoryFrom(catalog, files) }
+}
+
+/**
+ * Deletes catalog entries (models or LoRAs) from an SSH host, removing only
+ * the files each one owns and keeping anything an entry that stays installed
+ * needs (see `planRemoteDelete`). Returns what was removed and what was kept.
+ */
+export async function deleteRemoteModels(
+  host: TrainingHost,
+  catalog: Catalog,
+  ids: readonly string[],
+): Promise<{ removed: string[]; kept: string[] }> {
+  const { root, files } = await listRemoteModelFiles(host)
+  const inventory = inventoryFrom(catalog, files)
+  const located: Array<RemoteEntryFiles & { installed: boolean }> = [
+    ...catalog.models.map((entry, index) => ({ entry, found: inventory.models[index]! })).map(({ entry, found }) => ({
+      id: entry.id, base: found.path ?? '', patterns: entry.files?.filter(Boolean) ?? [], installed: found.installed,
+    })),
+    ...catalog.adapters.map((entry, index) => ({ entry, found: inventory.adapters[index]! })).map(({ entry, found }) => ({
+      id: entry.id, base: found.path ?? '', patterns: entry.files.filter(Boolean), installed: found.installed,
+    })),
+  ].filter((entry) => entry.base)
+  const wanted = new Set(ids)
+  const remove = located.filter((entry) => wanted.has(entry.id))
+  if (!remove.length) throw new Error('在这台主机上找不到要删除的文件')
+  const keep = located.filter((entry) => !wanted.has(entry.id) && entry.installed)
+  const plan = planRemoteDelete(remove, keep, files)
+  assertSafeSteps(plan.steps, root, remove.map((entry) => entry.base))
+  if (plan.steps.length) {
+    const folders = plan.steps.filter((step) => step.recursive).map((step) => posixQuote(step.path))
+    const single = plan.steps.filter((step) => !step.recursive).map((step) => posixQuote(step.path))
+    const bases = [...new Set(remove.map((entry) => entry.base))].map(posixQuote)
+    const script = [
+      folders.length ? `rm -rf -- ${folders.join(' ')}` : '',
+      single.length ? `rm -f -- ${single.join(' ')}` : '',
+      // Tidy folders the deletion emptied, never the folders themselves when something is left.
+      `for d in ${bases.join(' ')}; do test -d "$d" && find "$d" -depth -type d -empty -delete; done; true`,
+    ].filter(Boolean).join(' && ')
+    const result = await sshExec(host, script, 120_000)
+    if (result.code !== 0) throw new Error((result.stderr || result.stdout).trim().slice(-1200) || '删除失败')
+  }
+  return { removed: plan.steps.map((step) => step.path), kept: plan.kept }
 }

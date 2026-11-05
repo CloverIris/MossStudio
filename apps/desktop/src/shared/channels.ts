@@ -102,6 +102,8 @@ export const Ipc = {
   modelsCleanupEmpty: 'models:cleanup-empty',
   modelsRemoteInventory: 'models:remote-inventory',
   modelsRemoteDownload: 'models:remote-download',
+  /** Delete catalog entries from an SSH host, keeping files other installed entries share. */
+  modelsRemoteDelete: 'models:remote-delete',
   remoteDownloadsRefresh: 'downloads:remote-refresh',
   remoteDownloadControl: 'downloads:remote-control',
   modelsInstalled: 'models:installed',
@@ -125,6 +127,8 @@ export const Ipc = {
   galleryList: 'gallery:list',
   galleryItem: 'gallery:item',
   galleryReveal: 'gallery:reveal',
+  /** Move one gallery image (and its JSON sidecar) to the OS trash. */
+  galleryTrash: 'gallery:trash',
   pickDialog: 'dialog:pick',
   pickImages: 'dialog:pick-images',
   openPath: 'app:open-path',
@@ -144,6 +148,16 @@ export const Ipc = {
   engineInstallRemote: 'engine:install-remote',
   engineSystemCuda: 'engine:system-cuda',
   mossInferCudaLibs: 'engine:install-cuda-wheels',
+  /** EngineFeatures of the engine a job would run on: `{ deviceUuid?, hostId? }` → EngineFeatures | null. */
+  engineFeatures: 'engine:features',
+  /** Copy a picture into a project's assets: `{ projectId, path }` → `{ path, width, height }`. */
+  studioImportImage: 'studio:import-image',
+  /** Write a painted mask PNG into a project's assets: `{ projectId, canvasId, png: Uint8Array }` → `{ path }`. */
+  studioSaveMask: 'studio:save-mask',
+  controlAdaptersList: 'control-adapters:list',
+  /** Register a control adapter file (checked with the engine's `inspect`): `{ path }` → ControlAdapterEntry. */
+  controlAdaptersAdd: 'control-adapters:add',
+  controlAdaptersRemove: 'control-adapters:remove',
 } as const
 
 export type IpcChannel = (typeof Ipc)[keyof typeof Ipc]
@@ -154,6 +168,8 @@ export const Events = {
   gitProgress: 'event:git-progress',
   runtimeLog: 'event:runtime-log',
   download: 'event:download',
+  /** The Library's images changed (a generation's outputs were recorded). */
+  galleryChanged: 'event:gallery-changed',
   instancesChanged: 'event:instances-changed',
   hostsChanged: 'event:hosts-changed',
   modelsChanged: 'event:models-changed',

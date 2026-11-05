@@ -29,7 +29,7 @@ import { canvasBranchesConflict } from '@shared/canvasJobBranch'
 import { resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
 import { probeLocalEngineGpuCompatibility } from './engines'
 import { getTrainingHost } from './trainingHosts'
-import { runRemoteEngineJob } from './remoteEngine'
+import { cancelRemoteEngineJob, runRemoteEngineJob } from './remoteEngine'
 import {
   remoteAbsolute,
   sshExec,
@@ -47,6 +47,8 @@ import {
   stripAnsi,
   toDiagnostic,
 } from './parsers'
+import { waitForEngineActivation } from '../lib/engineActivation'
+import { jobPreviewPath, previewsDir, PreviewThrottle, queuePositions } from './jobPreview'
 
 const PREFIX = '@@CLOVER@@ '
 
@@ -85,6 +87,8 @@ function logPath(jobId: string): string {
 async function loadJobs(): Promise<void> {
   if (loaded) return
   loaded = true
+  // Live previews belong to running jobs; whatever a previous run left is stale.
+  await rm(previewsDir(), { recursive: true, force: true }).catch(() => undefined)
   try {
     const raw = JSON.parse(await readFile(join(jobsDir(), 'jobs.json'), 'utf8')) as Array<
       JobRecord & { backend?: unknown }
@@ -221,6 +225,7 @@ function finish(job: JobRecord, runningJob: RunningJob, code: number | null): vo
   for (const line of runningJob.out.flush()) appendLog(job, 'stdout', line, runningJob)
   for (const line of runningJob.err.flush()) appendLog(job, 'stderr', line, runningJob)
   running.delete(job.id)
+  clearPreview(job)
   const slot = engineSlotKey(job)
   if (slot) {
     activeEngineSlots.delete(slot)
@@ -292,6 +297,26 @@ function finish(job: JobRecord, runningJob: RunningJob, code: number | null): vo
   notifyCompleted(job)
 }
 
+/** Coalesces the engine's preview writes into at most a few renderer updates a second. */
+function previewLive(jobId: string): boolean {
+  const job = jobs.get(jobId)
+  return Boolean(job && running.has(jobId) && (job.state === 'running' || job.state === 'starting'))
+}
+
+const previewThrottle = new PreviewThrottle((jobId, preview) => {
+  const job = jobs.get(jobId)
+  if (job) update(job, { preview })
+}, previewLive)
+
+/** A job ended: its live preview goes (the record and the file); the next update carries that. */
+function clearPreview(job: JobRecord): void {
+  previewThrottle.stop(job.id)
+  job.preview = undefined
+  if (job.engine === 'mossinfer' && !job.hostId) {
+    void rm(jobPreviewPath(job.id), { force: true }).catch(() => undefined)
+  }
+}
+
 function handleRunnerEvent(job: JobRecord, runningJob: RunningJob, payload: string): void {
   let event: Record<string, unknown>
   try {
@@ -342,6 +367,16 @@ function handleRunnerEvent(job: JobRecord, runningJob: RunningJob, payload: stri
   }
   if (type === 'log') {
     appendLog(job, 'system', String(event['message'] ?? ''), runningJob)
+    return
+  }
+  if (type === 'preview') {
+    const path = typeof event['path'] === 'string' ? (event['path'] as string) : ''
+    if (!path || job.state === 'succeeded' || job.state === 'failed' || job.state === 'canceled') return
+    previewThrottle.push(job.id, {
+      path,
+      step: Number(event['step'] ?? 0),
+      total: Number(event['total'] ?? job.progress.total),
+    })
     return
   }
   if (type === 'result') {
@@ -443,7 +478,7 @@ function handleLine(job: JobRecord, runningJob: RunningJob, stream: 'stdout' | '
   }
 }
 
-export interface StartEngineJobInput {
+export interface StartEngineJobInput extends Pick<JobParams, 'initImage' | 'mask' | 'control' | 'references' | 'sampling'> {
   projectId?: string
   canvasId?: string
   canvasLineage?: string[]
@@ -475,6 +510,44 @@ const activeEngineSlots = new Set<string>()
 const canvasReservations = new Map<string, { sourceId: string; path: Set<string> }>()
 const pendingAutoGpuAssignments = new Map<string, number>()
 
+/**
+ * Restarts the moss-server of the GPU a local job runs on, and only that one:
+ * restartMossInfer() without a device would stop every GPU's jobs.
+ */
+function restartOwnRuntime(job: JobRecord): void {
+  if (job.hostId || !job.deviceUuid) return
+  void restartMossInfer(job.deviceUuid)
+}
+
+/** The JobParams of an engine request; image inputs only when set. */
+function paramsOf(input: StartEngineJobInput): JobParams {
+  return {
+    prompt: input.prompt,
+    negativePrompt: input.negativePrompt ?? '',
+    width: input.width,
+    height: input.height,
+    steps: input.steps,
+    cfg: input.cfg,
+    seed: input.seed,
+    profile: input.profile ?? 'base',
+    adapters: input.adapters,
+    ...(input.initImage ? { initImage: input.initImage } : {}),
+    ...(input.mask ? { mask: input.mask } : {}),
+    ...(input.control ? { control: input.control } : {}),
+    ...(input.references ? { references: input.references } : {}),
+    ...(input.sampling ? { sampling: input.sampling } : {}),
+  }
+}
+
+/** Tell each job still waiting in `slot`'s queue its (1-based) place, when it changed. */
+function refreshQueuePositions(slot: string): void {
+  const positions = queuePositions(engineQueues.get(slot) ?? [])
+  for (const [id, position] of positions) {
+    const job = jobs.get(id)
+    if (job && job.state === 'queued' && job.queuePosition !== position) update(job, { queuePosition: position })
+  }
+}
+
 function engineSlotKey(job: { deviceUuid?: string; hostId?: string }): string | null {
   if (job.hostId) return `host:${job.hostId}`
   return job.deviceUuid ? `gpu:${job.deviceUuid}` : null
@@ -489,10 +562,12 @@ async function pumpEngineQueue(slot: string): Promise<void> {
   if (activeEngineSlots.has(slot) || !queue?.length) return
   const next = queue.shift()!
   activeEngineSlots.add(slot)
+  refreshQueuePositions(slot)
   try {
     await startEngineJobNow(next.input, next.job)
   } catch (error) {
     update(next.job, {
+      queuePosition: undefined,
       state: 'failed',
       error: { code: 'E_ENGINE', message: error instanceof Error ? error.message : String(error) },
       endedAt: new Date().toISOString(),
@@ -601,6 +676,8 @@ function gpuSnapshot(device: GpuInventoryDevice): NonNullable<JobRecord['gpuSnap
 /** Generate directly through MossInfer; no Instance, repo worktree or Python runtime. */
 export async function startEngineJob(input: StartEngineJobInput): Promise<JobRecord> {
   await loadJobs()
+  // A new engine build is being switched in (and the old one stopped): start on the new one.
+  if (!input.hostId) await waitForEngineActivation()
   if (!input.prompt.trim()) throw new Error('提示词不能为空')
   if (
     input.canvasLineage !== undefined &&
@@ -673,17 +750,7 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
     const gpuProfile = assignedGpu ? resolveGpuProfile(settings, assignedGpu) : undefined
     const queue = engineQueues.get(slot) ?? []
     if (activeEngineSlots.has(slot) || queue.length > 0) {
-      const params: JobParams = {
-        prompt: input.prompt,
-        negativePrompt: input.negativePrompt ?? '',
-        width: input.width,
-        height: input.height,
-        steps: input.steps,
-        cfg: input.cfg,
-        seed: input.seed,
-        profile: input.profile ?? 'base',
-      adapters: input.adapters,
-      }
+      const params = paramsOf(input)
       const job: JobRecord = {
         id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
         instanceId: 'engine',
@@ -704,6 +771,7 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
         stage: 'idle',
         params,
         progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
+        queuePosition: queue.length + 1,
         startedAt: new Date().toISOString(),
       }
       job.logPath = logPath(job.id)
@@ -713,6 +781,7 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
       update(job, {})
       queue.push({ input: assignedInput, job })
       engineQueues.set(slot, queue)
+      refreshQueuePositions(slot)
       if (!activeEngineSlots.has(slot)) scheduleEngineQueue(slot)
       return snapshot(job)
     }
@@ -784,17 +853,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     const outputRoot = await remoteAbsolute(host, host.outputRoot ?? '~/.mossstudio/outputs')
     const remoteOutput = `${outputRoot.replace(/\/$/, '')}/${Date.now().toString(36)}-${randomUUID().slice(0, 6)}.png`
     const localOutput = join(paths.outputs(), `${channelSafe(host.id)}-${Date.now().toString(36)}.png`)
-    const params: JobParams = {
-      prompt: input.prompt,
-      negativePrompt: input.negativePrompt ?? '',
-      width: input.width,
-      height: input.height,
-      steps: input.steps,
-      cfg: input.cfg,
-      seed: input.seed,
-      profile: input.profile ?? 'base',
-      adapters: input.adapters,
-    }
+    const params = paramsOf(input)
     const job: JobRecord = queuedJob ?? {
       id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
       instanceId: 'engine',
@@ -824,6 +883,8 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       state: 'starting' as const,
       params,
       progress: { stage: 'idle' as const, current: 0, total: params.steps, percent: 0 },
+      queuePosition: undefined,
+      preview: undefined,
       error: undefined,
       endedAt: undefined,
     })
@@ -850,6 +911,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
         mode: settings.mossInferMemoryMode,
         tier: settings.mossInferTier,
         device: input.deviceId?.startsWith('cuda:') ? Number(input.deviceId.slice(5)) : undefined,
+        jobId: job.id,
       },
       {
         event: (payload) => handleRunnerEvent(job, runningJob, JSON.stringify(payload)),
@@ -863,17 +925,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     return snapshot(job)
   }
 
-  const params: JobParams = {
-    prompt: input.prompt,
-    negativePrompt: input.negativePrompt ?? '',
-    width: input.width,
-    height: input.height,
-    steps: input.steps,
-    cfg: input.cfg,
-    seed: input.seed,
-    profile: input.profile ?? 'base',
-      adapters: input.adapters,
-  }
+  const params = paramsOf(input)
   const job: JobRecord = queuedJob ?? {
     id: `job-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
     instanceId: 'engine',
@@ -909,6 +961,8 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     state: 'starting' as const,
     params,
     progress: { stage: 'idle' as const, current: 0, total: params.steps, percent: 0 },
+    queuePosition: undefined,
+    preview: undefined,
     error: undefined,
     endedAt: undefined,
   })
@@ -933,7 +987,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
         signature: `E_TIMEOUT:${job.id}`,
       })
       update(job, { state: 'failed', error: { code: 'E_TIMEOUT', message: '启动超时' } })
-      void restartMossInfer(job.deviceUuid)
+      restartOwnRuntime(job)
     }
   }, 180_000)
   const runningJob: RunningJob = {
@@ -956,6 +1010,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       systemDeviceIndex: localGpu!.index,
       loras: params.adapters ?? [],
       output,
+      previewOutput: jobPreviewPath(job.id),
       settings: executionSettings,
       ...modelFiles,
     },
@@ -1122,7 +1177,8 @@ export async function cancelJob(id: string): Promise<JobRecord | null> {
     if (queuedIndex < 0) continue
     queue.splice(queuedIndex, 1)
     if (!queue.length) engineQueues.delete(slot)
-    update(job, { state: 'canceled', endedAt: new Date().toISOString() })
+    update(job, { state: 'canceled', queuePosition: undefined, endedAt: new Date().toISOString() })
+    refreshQueuePositions(slot)
     notifyCompleted(job)
     if (queue.length) scheduleEngineQueue(slot)
     return snapshot(job)
@@ -1135,12 +1191,15 @@ export async function cancelJob(id: string): Promise<JobRecord | null> {
   }
   runningJob.cancelRequested = true
   appendLog(job, 'system', '正在停止任务…', runningJob)
+  if (job.engine === 'mossinfer' && job.hostId) {
+    // Its own SSH session carries the cancel (and is closed if the host does not confirm); local engines are not involved.
+    cancelRemoteEngineJob(job.id)
+    return snapshot(job)
+  }
   if (job.engine === 'mossinfer') {
     cancelMossInferJob(job.id)
-    // server 卡死兜底：5 秒后仍无 done-cancelled 则重启引擎，exit 处理会失败活动任务
-    runningJob.killTimer = setTimeout(() => {
-      void restartMossInfer(job.deviceUuid)
-    }, 5000)
+    // server 卡死兜底：5 秒后仍无 done-cancelled 则重启该 GPU 的引擎，exit 处理会失败活动任务
+    runningJob.killTimer = setTimeout(() => restartOwnRuntime(job), 5000)
     return snapshot(job)
   }
   if (runningJob.cancelCommand) {

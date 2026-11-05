@@ -84,3 +84,83 @@ export async function probeEngine(
     }, 2000).unref()
   }
 }
+
+/** What a short-lived moss-server answered: its hello, then the one request's result. */
+export interface EngineRequestOnceResult {
+  hello: EngineHello
+  result: Record<string, unknown>
+}
+
+/**
+ * Starts a moss-server for one request (one that needs no loaded model, such as
+ * `inspect`), after a hello, then shuts it down. A request error rejects with
+ * `code: message`, the same shape the long-lived client uses.
+ */
+export async function requestEngineOnce(
+  serverPath: string,
+  method: string,
+  params: Record<string, unknown>,
+  options: { env?: Record<string, string>; timeoutMs?: number } = {},
+): Promise<EngineRequestOnceResult> {
+  const proc = spawnEngineServer(serverPath, [], options.env)
+  try {
+    return await new Promise<EngineRequestOnceResult>((resolve, reject) => {
+      let buffer = ''
+      let hello: EngineHello | null = null
+      const timer = setTimeout(() => reject(new Error(`moss-server ${method} 超时`)), options.timeoutMs ?? 60_000)
+      const fail = (error: Error): void => {
+        clearTimeout(timer)
+        reject(error)
+      }
+      proc.stdout.setEncoding('utf8')
+      proc.stdout.on('data', (chunk: string) => {
+        const lines = (buffer + chunk).split(/\r\n|\n|\r/)
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          let message: Record<string, unknown>
+          try {
+            message = JSON.parse(line) as Record<string, unknown>
+          } catch {
+            continue
+          }
+          const error = message.error as { code?: string; message?: string } | undefined
+          if (message.id === 'once-hello') {
+            if (error) return fail(new Error(error.message ?? 'hello 失败'))
+            try {
+              hello = decodeEngineHello(message.result ?? {})
+            } catch (decodeError) {
+              return fail(decodeError instanceof Error ? decodeError : new Error(String(decodeError)))
+            }
+          } else if (message.id === 'once-request') {
+            if (error) return fail(new Error(`${error.code ?? 'error'}: ${error.message ?? ''}`.trim()))
+            if (!hello) return fail(new Error('moss-server 未完成 hello'))
+            clearTimeout(timer)
+            resolve({ hello, result: (message.result ?? {}) as Record<string, unknown> })
+          }
+        }
+      })
+      proc.on('error', (error) => fail(error))
+      proc.on('close', (code) => fail(new Error(`moss-server 退出 (code ${code ?? 'null'})，未完成 ${method}`)))
+      proc.stdin.write(`${JSON.stringify({
+        id: 'once-hello',
+        method: 'hello',
+        params: { client: 'MossStudio', protocol_version: ENGINE_PROTOCOL_VERSION },
+      })}\n`)
+      proc.stdin.write(`${JSON.stringify({ id: 'once-request', method, params })}\n`)
+    })
+  } finally {
+    try {
+      proc.stdin.write(`${JSON.stringify({ id: 'bye', method: 'shutdown' })}\n`)
+    } catch {
+      // 进程可能已经退出。
+    }
+    setTimeout(() => {
+      try {
+        proc.kill('SIGKILL')
+      } catch {
+        // 进程可能已经退出。
+      }
+    }, 2000).unref()
+  }
+}

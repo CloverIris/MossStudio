@@ -5,7 +5,6 @@ import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { runModelManagementTests } from './modelManagement.test'
-import { runModelManagementUi } from './modelManagementUi.test'
 import { runProjectCanvasTests } from './projects.test'
 import { runStudioCanvasUiTests } from './studioCanvasUi.test'
 import { ensureDirs, paths } from './lib/paths'
@@ -52,18 +51,16 @@ import { collectTrainerArtifact } from './services/trainerArtifacts'
 import { checkUpdates } from './services/updates'
 import { startUpdateWatcher, stopUpdateWatcher } from './services/updateWatcher'
 import { downloadCustomModel, getCatalog, listDownloads } from './services/models'
-import { resolveCanvasAdapters } from './services/adapterResolution'
+import { startRequestedEngineJob } from './services/engineJobStart'
 import { registerGalleryProtocol } from './services/gallery'
 import { createAppWindow, getWindow, openWindow } from './windows'
 import { refreshGpuInventory } from './services/devices'
 import { startRemoteDownloadMonitor } from './services/remoteDownloads'
 import { startGpuTelemetry } from './services/gpuTelemetry'
 
-async function startJob(input: Record<string, unknown>) {
-  // Canvas adapters arrive as model-library ids; resolve them to files the engine can open.
-  const hostId = typeof input['hostId'] === 'string' ? input['hostId'] : undefined
-  const adapters = await resolveCanvasAdapters(getSettings(), input['adapters'], { hostId })
-  return startEngineJob({ ...input, adapters } as never)
+function startJob(input: Record<string, unknown>) {
+  // LoRA ids are resolved to files and image inputs validated, as for the HTTP path.
+  return startRequestedEngineJob(input)
 }
 
 const isDev = !app.isPackaged
@@ -82,10 +79,11 @@ if (scenario) {
 }
 app.setName('MossStudio')
 if (process.platform === 'win32') app.setAppUserModelId('com.mossstudio.app')
-nativeTheme.themeSource = 'dark'
+nativeTheme.themeSource = getSettings().theme
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'clover', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  // corsEnabled + the handler's Access-Control-Allow-Origin let a canvas read a picture back (mask painting) untainted.
+  { scheme: 'clover', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ])
 
 const noSandbox = process.env['CLOVER_NO_SANDBOX'] === '1' || smoke || screenshot || Boolean(scenario)
@@ -162,11 +160,6 @@ app.whenReady().then(async () => {
   await startBackend()
   if (scenario === 'studio-canvas-ui') {
     await runStudioCanvasUiTests()
-    return
-  }
-  if (scenario === 'model-management-ui') {
-    try { await runModelManagementUi(); app.exit(0) }
-    catch (error) { console.error(error); app.exit(1) }
     return
   }
 

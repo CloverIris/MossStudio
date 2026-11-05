@@ -1,31 +1,17 @@
-/* InspireDeputy's menu material, shared by desktop and web select controls. */
+/* Select pickers: a raised, borderless sheet with one soft shadow. */
 :root {
-  --dropdown-background: linear-gradient(180deg, rgb(34 37 43 / 0.90), rgb(18 20 25 / 0.82)), rgb(24 27 33 / 0.90);
-  --dropdown-border: rgb(255 255 255 / 0.16);
-  --dropdown-shadow: 0 18px 48px rgb(0 0 0 / 0.34);
-  --dropdown-text: #a8b2c1;
-  --dropdown-text-strong: #e9eef7;
-  --dropdown-hover: rgb(255 255 255 / 0.10);
-  --dropdown-selected: rgb(138 182 255 / 0.10);
-  --dropdown-disabled: rgb(233 238 247 / 0.34);
-  --dropdown-scheme: dark;
-}
-
-html[data-theme="light"] {
-  --dropdown-background: linear-gradient(180deg, rgb(255 255 255 / 0.90), rgb(246 246 246 / 0.80)), rgb(255 255 255 / 0.72);
-  --dropdown-border: rgb(28 28 28 / 0.13);
-  --dropdown-shadow: 0 18px 48px rgb(23 23 23 / 0.18), 0 4px 14px rgb(23 23 23 / 0.10);
-  --dropdown-text: #666666;
-  --dropdown-text-strong: #1c1c1c;
-  --dropdown-hover: rgb(28 28 28 / 0.08);
-  --dropdown-selected: rgb(91 143 224 / 0.10);
-  --dropdown-disabled: rgb(28 28 28 / 0.34);
-  --dropdown-scheme: light;
+  --dropdown-background: var(--raised);
+  --dropdown-shadow: var(--shadow-float);
+  --dropdown-text: var(--ink-2);
+  --dropdown-text-strong: var(--ink);
+  --dropdown-hover: var(--well);
+  --dropdown-selected: var(--well-strong);
+  --dropdown-disabled: var(--ink-3);
 }
 
 select option {
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--raised);
+  color: var(--ink);
 }
 
 /* Native top-layer pickers escape scrolling panels and modal clipping while
@@ -61,7 +47,7 @@ select option {
     border-right: 1.5px solid currentColor;
     border-bottom: 1.5px solid currentColor;
     rotate: 45deg;
-    color: var(--color-text-tertiary);
+    color: var(--ink-3);
   }
 
   select:open::picker-icon {
@@ -75,18 +61,16 @@ select option {
     max-block-size: min(343px, calc(100dvh - 16px));
     margin-block: 4px;
     padding: 6px;
-    border: 1px solid var(--dropdown-border);
-    border-radius: 8px;
+    border: 0;
+    border-radius: 10px;
     background: var(--dropdown-background);
     color: var(--dropdown-text);
-    color-scheme: var(--dropdown-scheme);
     box-shadow: var(--dropdown-shadow);
-    backdrop-filter: blur(32px) saturate(1.45);
     overflow: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
     scrollbar-color: var(--dropdown-disabled) transparent;
-    font: 400 var(--text-caption)/18px var(--font-sans);
+    font: 400 var(--text-ui)/20px var(--font-sans);
     cursor: default;
   }
 
@@ -104,7 +88,7 @@ select option {
     border-radius: 6px;
     background: transparent;
     color: var(--dropdown-text);
-    font: 400 var(--text-caption)/18px var(--font-sans);
+    font: 400 var(--text-ui)/20px var(--font-sans);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -122,8 +106,8 @@ select option {
   }
 
   select:where(:not([multiple]):is(:not([size]), [size="1"])) option:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   select:where(:not([multiple]):is(:not([size]), [size="1"])) option::checkmark {

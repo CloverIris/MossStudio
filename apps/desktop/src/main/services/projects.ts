@@ -8,8 +8,30 @@ function projectsRoot(): string {
   return join(paths.root(), 'projects')
 }
 
+/** Project ids name a folder under projects/; anything else (e.g. '..') must never reach the filesystem. */
+export const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/
+
 function projectDir(id: string): string {
+  if (!PROJECT_ID_PATTERN.test(id)) throw new Error(`Invalid project id: ${JSON.stringify(id)}`)
   return join(projectsRoot(), id)
+}
+
+/** Where a project's pictures live (imported images, painted masks, backgrounds). */
+export function projectAssetsDir(id: string): string {
+  return join(projectDir(id), 'assets')
+}
+
+/** True when `file` names something under `projects/<valid id>/assets/` (lexically; callers resolve symlinks first). */
+export function isProjectAssetPath(file: string): boolean {
+  const rel = relative(resolve(projectsRoot()), resolve(file))
+  if (!rel || isAbsolute(rel)) return false
+  const parts = rel.split(sep)
+  return parts.length >= 3 && PROJECT_ID_PATTERN.test(parts[0]!) && parts[1] === 'assets' && !parts.includes('..')
+}
+
+/** The folder holding every project (for symlink-resolved containment checks). */
+export function projectsRootDir(): string {
+  return projectsRoot()
 }
 
 function projectFile(id: string): string {

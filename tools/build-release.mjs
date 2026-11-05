@@ -120,6 +120,15 @@ async function preparePackagerApp(stagingWorkspaceDir, desktopPackage) {
   return packagedAppDir
 }
 
+// Windows PowerShell 5.1 started from PowerShell 7 (the default shell of GitHub's
+// Windows runners) inherits 7's PSModulePath and then cannot load its own built-in
+// modules (`Get-FileHash` is "not recognized"). Without the variable it uses its defaults.
+function windowsPowerShellEnv(extra = {}) {
+  const env = { ...process.env, ...extra }
+  for (const key of Object.keys(env)) if (key.toLowerCase() === 'psmodulepath') delete env[key]
+  return env
+}
+
 function buildSetupInstaller(version, payload) {
   const script = join(root, 'installer', 'build.ps1')
   assert(existsSync(script), 'installer/build.ps1 is missing.')
@@ -140,7 +149,7 @@ function buildSetupInstaller(version, payload) {
       '-OutDir',
       artifactsDir,
     ],
-    { cwd: root, encoding: 'utf8', windowsHide: true },
+    { cwd: root, env: windowsPowerShellEnv(), encoding: 'utf8', windowsHide: true },
   )
   if (result.error) throw result.error
   const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`
@@ -166,11 +175,10 @@ function createZip(sourceDir, destination) {
     ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
     {
       cwd: root,
-      env: {
-        ...process.env,
+      env: windowsPowerShellEnv({
         MOSS_RELEASE_SOURCE: sourceDir,
         MOSS_RELEASE_ZIP: destination,
-      },
+      }),
       stdio: 'inherit',
       windowsHide: true,
     },

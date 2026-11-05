@@ -101,20 +101,20 @@ function centeredBox(
 export function compileLayout(draft: LayoutDraft): CompileResult {
   const errors: string[] = []
   if (!Number.isInteger(draft.width) || draft.width <= 0 || draft.width % 16 !== 0) {
-    errors.push('画布宽度必须是 16 的正整数倍')
+    errors.push('画面宽度需要是 16 的倍数')
   }
   if (!Number.isInteger(draft.height) || draft.height <= 0 || draft.height % 16 !== 0) {
-    errors.push('画布高度必须是 16 的正整数倍')
+    errors.push('画面高度需要是 16 的倍数')
   }
-  if (!draft.summary.caption.trim()) errors.push('总览描述（summary.caption）不能为空')
-  if (draft.items.length === 0) errors.push('至少需要一个布局区域')
+  if (!draft.summary.caption.trim()) errors.push('先写一句整体描述')
+  if (draft.items.length === 0) errors.push('至少需要一个区域')
   for (const [index, item] of draft.items.entries()) {
     if (item.visible === false) continue
-    if (!item.caption.trim()) errors.push(`区域 ${index + 1} 的描述不能为空`)
-    if (item.label === 'text' && !item.text?.trim()) errors.push(`文字区域 ${index + 1} 需要填写文字内容`)
+    if (!item.caption.trim()) errors.push(`区域 ${index + 1} 还没有描述`)
+    if (item.label === 'text' && !item.text?.trim()) errors.push(`文字区域 ${index + 1} 还没有填写要显示的文字`)
     const [x1, y1, x2, y2] = item.bbox
     if (x1 < 0 || y1 < 0 || x2 > draft.width || y2 > draft.height || x1 >= x2 || y1 >= y2) {
-      errors.push(`区域 ${index + 1} 超出画布或尺寸无效`)
+      errors.push(`区域 ${index + 1} 超出了画面`)
     }
   }
   if (errors.length) return { ok: false, errors, prompt: '', preview: '' }

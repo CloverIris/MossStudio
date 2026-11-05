@@ -1,4 +1,5 @@
-﻿import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { hasHfToken } from './hfCredentials'
 import type { Settings } from '@shared/types'
 import { paths, setEngineRoot } from '../lib/paths'
@@ -54,6 +55,9 @@ export const DEFAULT_SETTINGS: Settings = {
   githubToken: null,
   disabledDevices: [],
   deviceLabels: {},
+  remoteHostsEnabled: false,
+  trainingEnabled: false,
+  engineAutoUpdate: true,
 }
 
 let cache: Settings | null = null
@@ -78,6 +82,10 @@ export function getSettings(): Settings {
       cache.gpuSelection = 'auto'
     }
     if (!Array.isArray(cache.dismissedAnnouncements)) cache.dismissedAnnouncements = []
+    // Optional features arrived after users had already configured them: keep
+    // them visible for anyone who was using them before the switch existed.
+    if (parsed.remoteHostsEnabled === undefined) cache.remoteHostsEnabled = hasConfiguredRemoteHosts()
+    if (parsed.trainingEnabled === undefined) cache.trainingEnabled = hasTrainerInstall(parsed.trainerRoot ?? null)
     if ((cache.mossInferVariant as string) === 'sm75') {
       cache.mossInferVariant = 'system-cuda'
       cache.mossInferArchitecture = 'sm75'
@@ -91,6 +99,43 @@ export function getSettings(): Settings {
   cache.hasHfToken = hasHfToken()
   setEngineRoot(cache.engineRoot)
   return cache
+}
+
+/**
+ * Whether this user really trained before the switch existed. The trainer
+ * folder alone says nothing: ensureDirs creates trainer/git, versions and
+ * runtimes on every launch. A created version (a non-empty folder under
+ * versions/) or a past training job counts.
+ */
+export function hasTrainerInstall(trainerRoot: string | null): boolean {
+  try {
+    const versions = join(paths.trainerRoot(trainerRoot), 'versions')
+    const created = readdirSync(versions, { withFileTypes: true }).some((entry) => {
+      if (!entry.isDirectory()) return false
+      try { return readdirSync(join(versions, entry.name)).length > 0 } catch { return false }
+    })
+    if (created) return true
+  } catch {
+    // no versions folder: fall through to the job history
+  }
+  try {
+    const jobs = JSON.parse(readFileSync(join(paths.root(), 'jobs', 'jobs.json'), 'utf8')) as unknown
+    return Array.isArray(jobs) && jobs.some((job) => typeof job === 'object' && job !== null && (job as { kind?: unknown }).kind === 'training')
+  } catch {
+    return false
+  }
+}
+
+function hasConfiguredRemoteHosts(): boolean {
+  for (const name of ['hosts.json', 'training-hosts.json']) {
+    try {
+      const hosts = JSON.parse(readFileSync(join(paths.root(), name), 'utf8')) as unknown
+      if (Array.isArray(hosts) && hosts.length > 0) return true
+    } catch {
+      // missing or unreadable: no remote hosts configured
+    }
+  }
+  return false
 }
 
 export function updateSettings(patch: Partial<Settings>): Settings {

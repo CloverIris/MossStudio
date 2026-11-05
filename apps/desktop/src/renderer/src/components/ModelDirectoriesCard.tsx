@@ -1,16 +1,17 @@
-import { FolderOpen, FolderSearch, HardDrive, RefreshCw, Sparkles } from 'lucide-react'
+import { FolderSearch, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { ModelDirectories, ModelDirectoryId, ModelScanResult, ScannedModel, Settings } from '@shared/types'
 import { call, onEvent } from '../lib/api'
-import { Button, Card, Modal, Pill, Spinner, cn, useToast } from './ui'
+import { sizeText } from '../pages/models/logic'
+import { Button, Group, Modal, Pill, Row, Spinner, cn, useToast } from './ui'
 
 const roles: Array<{ key: ModelDirectoryId; label: string; hint: string }> = [
-  { key: 'dit', label: '主模型 DiT', hint: 'diffusers transformer 或 ComfyUI diffusion_models' },
-  { key: 'textEncoder', label: '文本编码器', hint: 'Qwen3.5 / ComfyUI text_encoders' },
-  { key: 'vae', label: 'VAE', hint: 'FLUX.2 VAE' },
-  { key: 'adapters', label: 'LoRA 适配器', hint: 'loras 目录' },
-  { key: 'support', label: '运行配置', hint: 'pipeline / scheduler 等辅助文件' },
+  { key: 'dit', label: '主模型', hint: '跟随模型根目录' },
+  { key: 'textEncoder', label: '文本编码器', hint: '跟随模型根目录' },
+  { key: 'vae', label: 'VAE', hint: '跟随模型根目录' },
+  { key: 'adapters', label: 'LoRA', hint: '跟随模型根目录' },
+  { key: 'support', label: '运行配置', hint: '跟随模型根目录' },
 ]
 
 const roleLabel: Record<ScannedModel['role'], string> = {
@@ -18,30 +19,15 @@ const roleLabel: Record<ScannedModel['role'], string> = {
   text_encoder: '文本编码器',
   vae: 'VAE',
   support: '运行配置',
-  full: 'diffusers 整包',
+  full: '完整模型',
   lora: 'LoRA',
 }
 
-const roleTone: Record<ScannedModel['role'], 'accent' | 'blue' | 'neutral' | 'amber'> = {
-  dit: 'accent',
-  text_encoder: 'blue',
-  vae: 'blue',
-  support: 'neutral',
-  full: 'neutral',
-  lora: 'amber',
-}
-
-function bytes(value: number): string {
-  if (value >= 1e9) return `${(value / 1e9).toFixed(2).replace(/\.?0+$/, '')} GB`
-  if (value >= 1e6) return `${(value / 1e6).toFixed(1).replace(/\.0$/, '')} MB`
-  if (value >= 1e3) return `${(value / 1e3).toFixed(1)} KB`
-  return `${value} B`
-}
-
 /**
- * Model storage lives on the Models page, where the user runs into it, instead
- * of three levels down in Settings. Selecting a folder only scans it; nothing is
- * copied or created until the user registers a file.
+ * Directory management for models, shown under 模型 › 高级: the root folder,
+ * per-part folders, "use files I already have" (scan + register) and cleanup.
+ * Selecting a folder only scans it; nothing is copied or created until the
+ * user registers a file.
  */
 export function ModelDirectoriesCard(): React.JSX.Element {
   const toast = useToast()
@@ -49,7 +35,6 @@ export function ModelDirectoriesCard(): React.JSX.Element {
   const [scan, setScan] = useState<ModelScanResult | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState<'scan' | 'clean' | 'roots' | null>(null)
-  const [advanced, setAdvanced] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -209,106 +194,60 @@ export function ModelDirectoriesCard(): React.JSX.Element {
   }, [scan, selected, toast])
 
   const root = settings?.modelsRoot?.trim() || ''
-  const chosenRoleCount = roles.filter((role) => settings?.modelDirectories?.[role.key]).length
 
   return (
     <>
-      <Card className="mx-5 mt-4 rounded-[8px] px-4 py-3.5" data-model-directories>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[5px] border border-[var(--color-border-subtle)] bg-white/[0.03]">
-              <HardDrive className="size-4" />
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-ui font-semibold">模型目录</h2>
-                <Pill tone={chosenRoleCount ? 'accent' : 'neutral'}>
-                  {chosenRoleCount ? `${chosenRoleCount} 个角色自定义` : '使用默认目录'}
-                </Pill>
-              </div>
-              <p className="mt-1 truncate text-caption text-[var(--color-text-tertiary)]" title={root || '应用数据目录 / models'}>
-                根目录：{root || '应用数据目录 / models'}
-              </p>
-              <p className="mt-0.5 text-caption text-[var(--color-text-tertiary)]">
-                扫描只读取文件，不复制、不移动，也不会在你的目录里新建文件夹。
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button tone="secondary" disabled={busy !== null} onClick={() => void chooseRoot()}>
-              <FolderOpen className="size-4" /> 更改根目录
-            </Button>
-            <Button tone="primary" disabled={busy !== null} onClick={() => void runScan()} data-scan-models>
-              {busy === 'scan' ? <Spinner className="size-4" /> : <FolderSearch className="size-4" />}
-              识别已有模型
-            </Button>
-            <Button tone="ghost" disabled={busy !== null} onClick={() => void cleanup()}>
-              {busy === 'clean' ? <Spinner className="size-4" /> : <Sparkles className="size-4" />}
-              清理空目录
-            </Button>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          className="mt-2.5 text-caption text-[var(--color-text-tertiary)] underline-offset-2 hover:underline"
-          onClick={() => setAdvanced((value) => !value)}
-        >
-          {advanced ? '收起角色目录' : '按角色分别指定目录…'}
-        </button>
-        {advanced ? (
-          <div className="mt-2 space-y-1.5 border-t border-[var(--color-border-subtle)] pt-2">
-            {roles.map((role) => {
-              const path = settings?.modelDirectories?.[role.key] ?? ''
-              return (
-                <div key={role.key} className="flex items-center justify-between gap-3 text-caption">
-                  <span className="w-24 shrink-0 text-[var(--color-text-secondary)]">{role.label}</span>
-                  <span className="min-w-0 flex-1 truncate text-[var(--color-text-tertiary)]" title={path || role.hint}>
-                    {path || role.hint}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1">
-                    <Button tone="ghost" className="!h-6 !px-2" onClick={() => void chooseRole(role.key)}>
-                      更改
-                    </Button>
-                    {path ? (
-                      <Button tone="ghost" className="!h-6 !px-2" onClick={() => void clearRole(role.key)}>
-                        清除
-                      </Button>
-                    ) : null}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        ) : null}
-        {error ? <p className="mt-2 text-caption text-red-400">{error}</p> : null}
-      </Card>
+      <Group data-model-directories>
+        <Row title="模型根目录" description={root || '应用数据目录中的 models 文件夹'}>
+          <Button tone="secondary" disabled={busy !== null} onClick={() => void chooseRoot()}>更改</Button>
+        </Row>
+        <Row title="使用已有的模型文件" description="选择一个文件夹（例如 ComfyUI 的 models），只读取、不复制，选好的文件会登记到模型库。">
+          <Button tone="secondary" disabled={busy !== null} onClick={() => void runScan()} data-scan-models>
+            {busy === 'scan' ? <Spinner /> : <FolderSearch className="size-4" strokeWidth={1.6} />}
+            选择文件夹
+          </Button>
+        </Row>
+        {roles.map((role) => {
+          const path = settings?.modelDirectories?.[role.key] ?? ''
+          return (
+            <Row key={role.key} title={`${role.label}目录`} description={path || role.hint}>
+              {path ? <Button tone="ghost" disabled={busy !== null} onClick={() => void clearRole(role.key)}>恢复默认</Button> : null}
+              <Button tone="secondary" disabled={busy !== null} onClick={() => void chooseRole(role.key)}>更改</Button>
+            </Row>
+          )
+        })}
+        <Row title="清理空文件夹" description="删除模型目录里下载中断后留下的空文件夹。">
+          <Button tone="secondary" disabled={busy !== null} onClick={() => void cleanup()}>
+            {busy === 'clean' ? <Spinner /> : <Sparkles className="size-4" strokeWidth={1.6} />}
+            清理
+          </Button>
+        </Row>
+      </Group>
+      {error ? <p className="px-1 text-caption text-danger">{error}</p> : null}
 
       <Modal
         open={scan !== null}
-        title="识别到的模型"
+        title="找到的模型文件"
         onClose={() => setScan(null)}
         width="max-w-3xl"
         footer={
           <>
-            <span className="mr-auto text-caption text-[var(--color-text-tertiary)]">
+            <span className="tabular mr-auto text-caption text-ink-2">
               已选 {selected.size} / {scan?.candidates.length ?? 0}
             </span>
-            <Button tone="ghost" onClick={() => setScan(null)}>
-              取消
-            </Button>
-            <Button tone="primary" disabled={busy !== null || selected.size === 0} onClick={() => void register()}>
+            <Button tone="ghost" size="md" onClick={() => setScan(null)}>取消</Button>
+            <Button tone="primary" size="md" disabled={busy !== null || selected.size === 0} onClick={() => void register()}>
               登记到模型库
             </Button>
           </>
         }
       >
         {scan ? (
-          <div className="space-y-2">
-            <p className="truncate text-caption text-[var(--color-text-tertiary)]" title={scan.root}>
-              {scan.root} · 扫描到 {scan.candidates.length} 项
+          <div className="flex flex-col gap-2">
+            <p className="truncate text-caption text-ink-2" title={scan.root}>
+              {scan.root} · 找到 {scan.candidates.length} 项
             </p>
-            <div className="max-h-[52vh] space-y-1 overflow-y-auto pr-1">
+            <div className="flex max-h-[52vh] flex-col gap-0.5 overflow-y-auto">
               {scan.candidates.map((candidate) => {
                 const checked = selected.has(candidate.path)
                 const disabled = candidate.role === 'lora'
@@ -316,38 +255,36 @@ export function ModelDirectoriesCard(): React.JSX.Element {
                   <label
                     key={candidate.path}
                     className={cn(
-                      'flex cursor-pointer items-center gap-2 rounded-[5px] border px-2 py-1.5 text-caption',
-                      checked
-                        ? 'border-accent-500/40 bg-accent-500/[0.06]'
-                        : 'border-[var(--color-border-subtle)]',
+                      'flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-ui transition-colors hover:bg-well',
+                      checked && 'bg-well',
                       disabled && 'cursor-not-allowed opacity-60',
                     )}
                   >
                     <input
                       type="checkbox"
-                      className="size-3.5 shrink-0"
+                      className="size-4 shrink-0 accent-accent"
                       checked={checked}
                       disabled={disabled}
                       onChange={() => toggle(candidate.path)}
                     />
-                    <Pill tone={roleTone[candidate.role]}>{roleLabel[candidate.role]}</Pill>
-                    <span className="min-w-0 flex-1 truncate" title={candidate.path}>
+                    <Pill tone={candidate.role === 'lora' ? 'neutral' : 'accent'}>{roleLabel[candidate.role]}</Pill>
+                    <span className="min-w-0 flex-1 truncate text-ink" title={candidate.path}>
                       {candidate.relativePath}
                     </span>
-                    <span className="shrink-0 tabular-nums text-[var(--color-text-tertiary)]">
-                      {candidate.layout === 'diffusers-folder' ? '目录' : bytes(candidate.size)}
+                    <span className="tabular shrink-0 text-caption text-ink-2">
+                      {candidate.layout === 'diffusers-folder' ? '文件夹' : sizeText(candidate.size)}
                     </span>
                   </label>
                 )
               })}
               {!scan.candidates.length ? (
-                <p className="py-6 text-center text-ui text-[var(--color-text-tertiary)]">
-                  没有找到可识别的模型文件；确认目录里是 safetensors/gguf 权重。
+                <p className="py-6 text-center text-ui text-ink-2">
+                  没有找到能识别的模型文件。确认文件夹里是 .safetensors 或 .gguf 权重。
                 </p>
               ) : null}
             </div>
-            <p className="text-caption text-[var(--color-text-tertiary)]">
-              LoRA 请用「导入 LoRA」加入适配器；登记不会改动原文件，删掉记录也不会删除文件。
+            <p className="text-caption text-ink-2">
+              LoRA 请在「LoRA」里导入。登记不会改动原文件，删除登记也不会删除文件。
             </p>
           </div>
         ) : null}

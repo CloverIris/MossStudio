@@ -115,12 +115,15 @@ export function startGpuTelemetry(): () => void {
 
   const schedule = (): void => {
     if (stopped || suspended || timer) return
-    const visible = BrowserWindow.getAllWindows().some((window) => !window.isDestroyed() && window.isVisible())
+    const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed())
+    // The title-bar monitor is live only while someone is looking at it.
+    const focused = windows.some((window) => window.isFocused())
+    const visible = windows.some((window) => window.isVisible() && !window.isMinimized())
     const active = latest?.devices.some((device) => device.runningTasks > 0 || device.queuedTasks > 0) ?? false
     timer = setTimeout(() => {
       timer = undefined
       void sample()
-    }, visible ? active ? 4000 : 15_000 : 30_000)
+    }, telemetryInterval({ focused, visible, active }))
     timer.unref()
   }
 
@@ -155,4 +158,11 @@ export function startGpuTelemetry(): () => void {
     app.removeListener('browser-window-created', attachWindow)
     for (const window of BrowserWindow.getAllWindows()) window.removeListener('show', onWindowShow)
   }
+}
+
+/** How long to wait before the next nvidia-smi sample. */
+export function telemetryInterval({ focused, visible, active }: { focused: boolean; visible: boolean; active: boolean }): number {
+  if (focused) return active ? 2000 : 5000
+  if (visible) return active ? 4000 : 15_000
+  return 30_000
 }

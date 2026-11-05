@@ -1,148 +1,58 @@
-/* One workbench surface; functional sections share fine dividers. */
-.studio-workbench {
-  background: color-mix(in srgb, var(--color-surface) 86%, transparent);
-  container-type: inline-size;
-}
+/* Studio: panels are told apart by tone only; these are the few things Tailwind
+   utilities cannot express on their own. */
 
-@property --studio-sidebar-open {
-  syntax: "<number>";
-  inherits: false;
-  initial-value: 1;
-}
-
-.studio-sidebar {
-  --studio-sidebar-open: 1;
-  --studio-expanded-width: min(var(--studio-sidebar-width), 32cqw);
-  position: relative;
-  flex: none;
-  min-width: 0;
-  height: 100%;
-  /* Animate only openness, so dragging the divider still updates instantly. */
-  width: calc(33px + (var(--studio-expanded-width) - 32px) * var(--studio-sidebar-open));
-  overflow: clip;
-  transition: --studio-sidebar-open var(--motion-normal) var(--motion-ease);
-}
-
-.studio-sidebar[data-side="left"] { border-right: 1px solid var(--color-border-subtle); }
-.studio-sidebar[data-side="right"] { border-left: 1px solid var(--color-border-subtle); }
-.studio-sidebar[data-collapsed="true"] { --studio-sidebar-open: 0; }
-
-.studio-sidebar-content {
+/* Panel resize handle: invisible hit area on the panel edge. */
+.studio-divider {
   position: absolute;
   inset-block: 0;
-  display: flex;
-  flex-direction: column;
-  width: var(--studio-expanded-width);
-  opacity: 1;
-  transform: translateX(0);
-  transition: opacity var(--motion-normal) var(--motion-ease), transform var(--motion-normal) var(--motion-ease);
-}
-
-.studio-sidebar[data-side="left"] .studio-sidebar-content { left: 0; }
-.studio-sidebar[data-side="right"] .studio-sidebar-content { right: 0; }
-.studio-sidebar[data-collapsed="true"] .studio-sidebar-content { opacity: 0; pointer-events: none; }
-.studio-sidebar[data-side="left"][data-collapsed="true"] .studio-sidebar-content { transform: translateX(-12px); }
-.studio-sidebar[data-side="right"][data-collapsed="true"] .studio-sidebar-content { transform: translateX(12px); }
-
-.studio-sidebar-rail {
-  position: absolute;
-  inset: 0;
-  padding-top: 4px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--motion-normal) var(--motion-ease);
-}
-
-.studio-sidebar[data-collapsed="true"] .studio-sidebar-rail { opacity: 1; pointer-events: auto; }
-.studio-sidebar > .studio-divider { position: absolute; inset-block: 0; }
-.studio-sidebar[data-side="left"] > .studio-divider { right: 0; }
-.studio-sidebar[data-side="right"] > .studio-divider { left: 0; }
-
-.studio-section + .studio-section {
-  border-top: 1px solid var(--color-border-subtle);
-}
-
-.studio-divider {
-  position: relative;
-  z-index: 5;
-  flex: 0 0 1px;
-  width: 1px;
-  background: var(--color-border-subtle);
+  z-index: 30;
+  width: 8px;
   cursor: col-resize;
   touch-action: none;
 }
 
-.studio-divider::before {
-  content: "";
-  position: absolute;
-  inset: 0 -4px;
-}
-
-.studio-divider:is(:hover, :focus-visible) {
-  background: var(--accent);
-}
-
 .studio-divider:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  background: var(--accent-soft);
 }
 
-.studio-tool-tab:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -3px;
+/* A card that is generating breathes slightly, so it reads as busy at any zoom. */
+.studio-card-running {
+  animation: studio-card-breathe 2.4s ease-in-out infinite;
 }
 
-/* A Canvas that is generating: slow outer glow plus a light sweep across the card,
-   so the job state is readable on the board without opening the terminal. */
-.studio-canvas-running {
-  position: relative;
-  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
-  animation: studio-canvas-glow 2.6s ease-in-out infinite;
-}
-
-.studio-canvas-running::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: linear-gradient(112deg, transparent 34%, rgb(255 255 255 / 0.07) 50%, transparent 66%);
-  background-size: 240% 100%;
-  animation: studio-canvas-sweep 2.4s linear infinite;
-}
-
-@keyframes studio-canvas-glow {
+@keyframes studio-card-breathe {
   0%,
-  100% {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
-      0 0 20px -10px color-mix(in srgb, var(--accent) 50%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
-      0 0 28px -6px color-mix(in srgb, var(--accent) 70%, transparent);
-  }
+  100% { opacity: 1; }
+  50% { opacity: 0.86; }
 }
 
-@keyframes studio-canvas-sweep {
-  from {
-    background-position: 130% 0;
-  }
-  to {
-    background-position: -130% 0;
-  }
+/* Progress before the engine reports steps. */
+.studio-progress-indeterminate {
+  animation: studio-progress-slide 1.4s ease-in-out infinite;
 }
 
-/* Indeterminate state of the bottom progress band. */
-.studio-canvas-progress-slide {
-  animation: studio-canvas-progress-slide 1.4s ease-in-out infinite;
+@keyframes studio-progress-slide {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(320%); }
 }
 
-@keyframes studio-canvas-progress-slide {
-  0% {
-    transform: translateX(-110%);
-  }
-  100% {
-    transform: translateX(360%);
+/* A wire into a card that is generating: the dash flows toward the consumer. */
+.studio-wire-flow {
+  stroke-dasharray: 6 5;
+  animation: studio-wire-flow 0.7s linear infinite;
+}
+
+@keyframes studio-wire-flow {
+  to { stroke-dashoffset: -11; }
+}
+
+html[data-ui-animation="off"] :is(.studio-card-running, .studio-progress-indeterminate, .studio-wire-flow) {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-ui-animation="on"]) :is(.studio-card-running, .studio-progress-indeterminate, .studio-wire-flow) {
+    animation: none;
   }
 }

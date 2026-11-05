@@ -6,6 +6,7 @@ import { Events, Ipc } from '@shared/channels'
 import type { JobRecord } from '@shared/types'
 import { createAppWindow } from './windows'
 import { getProject, listProjects, saveProject } from './services/projects'
+import { updateSettings } from './services/settings'
 
 export async function runStudioCanvasUiTests(): Promise<void> {
   const mock = (channel: string, data: unknown): void => {
@@ -14,7 +15,14 @@ export async function runStudioCanvasUiTests(): Promise<void> {
   }
   mock(Ipc.envScan, null)
   mock(Ipc.updatesCheck, null)
-  mock(Ipc.modelsCatalog, { models: [], adapters: [], bundles: [] })
+  // One installed model and a ready engine, so the 生成 button is only ever
+  // disabled by the job state this test drives.
+  const installed = (id: string): Record<string, unknown> => ({ id, name: id, role: 'dit', installed: true, installedBytes: 1, sizeBytes: 1, tags: [] })
+  mock(Ipc.modelsCatalog, {
+    models: [installed('e2e-dit'), installed('e2e-te'), installed('e2e-vae')],
+    adapters: [],
+    bundles: [{ id: 'e2e', name: 'E2E model', description: '', components: { dit: 'e2e-dit', textEncoder: 'e2e-te', vae: 'e2e-vae' }, support: '', recommended: true }],
+  })
   mock(Ipc.downloadsList, [])
   mock(Ipc.jobList, [])
   mock(Ipc.diagnosticsList, [])
@@ -22,9 +30,11 @@ export async function runStudioCanvasUiTests(): Promise<void> {
   mock(Ipc.onboardingStatus, { ready: true, steps: [], checkedAt: '' })
   mock(Ipc.launchQueueList, [])
   mock(Ipc.mossInferDownloadState, null)
-  mock(Ipc.engineStatus, { state: 'missing', path: null, gpus: [] })
+  mock(Ipc.engineStatus, { state: 'ready', path: '/e2e/engine' })
   mock(Ipc.hostsList, [])
 
+  // Past first-run setup, so the shell shows the Studio instead of /setup.
+  updateSettings({ onboardingState: 'completed' })
   const win = createAppWindow('studio', false)
   win.webContents.setBackgroundThrottling(false)
   await new Promise<void>((resolve, reject) => {
@@ -45,17 +55,14 @@ export async function runStudioCanvasUiTests(): Promise<void> {
 
   try {
     await waitFor("Boolean(document.querySelector('.studio-workbench'))")
-    assert.equal(await evaluate("document.body.innerText.includes('创建第一个可编辑 Canvas')"), true)
-    assert.equal(await evaluate("document.body.innerText.includes('请点击选择一个 Canvas')"), true)
+    // A new project starts with one blank canvas, ready for a description.
+    await waitFor("Boolean(document.querySelector('article[aria-label^=\"画面 1\"]'))")
+    await evaluate("document.querySelector('[data-new-canvas]')?.click()")
+    await waitFor("Boolean(document.querySelector('article[aria-label^=\"画面 2\"]'))")
 
-    await evaluate("[...document.querySelectorAll('button')].find((button) => button.textContent.includes('新建内容'))?.click()")
-    await waitFor("Boolean(document.querySelector('article[aria-label^=\"Canvas 1\"]'))")
-    await evaluate("[...document.querySelectorAll('button')].find((button) => button.textContent.trim() === '新建内容')?.click()")
-    await waitFor("Boolean(document.querySelector('article[aria-label^=\"Canvas 2\"]'))")
-
-    await evaluate("document.querySelector('article[aria-label^=\"Canvas 1\"]')?.click()")
+    await evaluate("document.querySelector('article[aria-label^=\"画面 1\"]')?.click()")
     const setPrompt = (value: string): Promise<unknown> => evaluate(`(() => {
-      const input = document.querySelector('textarea[placeholder="描述画面、文字、风格与布局。"]');
+      const input = document.querySelector('textarea[aria-label="描述"]');
       if (!input) return false;
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
       setter?.call(input, ${JSON.stringify(value)});
@@ -63,7 +70,7 @@ export async function runStudioCanvasUiTests(): Promise<void> {
       return true;
     })()`)
     assert.equal(await setPrompt('first canvas prompt'), true)
-    await evaluate("document.querySelector('article[aria-label^=\"Canvas 2\"]')?.click()")
+    await evaluate("document.querySelector('article[aria-label^=\"画面 2\"]')?.click()")
     assert.equal(await setPrompt('second canvas prompt'), true)
 
     await new Promise((resolve) => setTimeout(resolve, 2200))
@@ -71,22 +78,21 @@ export async function runStudioCanvasUiTests(): Promise<void> {
     assert.ok(projectId, 'Canvas autosave should create a Project')
     let project = getProject(projectId!)
     assert.equal(project?.canvases.length, 2)
-    assert.equal(project?.canvases.find((canvas) => canvas.title === 'Canvas 1')?.prompt, 'first canvas prompt')
-    assert.equal(project?.canvases.find((canvas) => canvas.title === 'Canvas 2')?.prompt, 'second canvas prompt')
-    assert.equal(project?.selectedCanvasId, project?.canvases.find((canvas) => canvas.title === 'Canvas 2')?.id)
+    assert.equal(project?.canvases.find((canvas) => canvas.title === '画面 1')?.prompt, 'first canvas prompt')
+    assert.equal(project?.canvases.find((canvas) => canvas.title === '画面 2')?.prompt, 'second canvas prompt')
+    assert.equal(project?.selectedCanvasId, project?.canvases.find((canvas) => canvas.title === '画面 2')?.id)
 
+    // Reopening the app reopens the most recent project and its selection.
     await new Promise<void>((resolve) => {
       win.webContents.once('did-finish-load', () => resolve())
       void win.webContents.reload()
     })
-    await waitFor("[...document.querySelectorAll('button')].some((button) => button.textContent.includes('未命名 Project'))")
-    await evaluate("[...document.querySelectorAll('button')].find((button) => button.textContent.includes('未命名 Project'))?.click()")
-    await waitFor("Boolean(document.querySelector('article[aria-label^=\"Canvas 1\"]'))")
-    await waitFor("document.querySelector('textarea[placeholder=\"描述画面、文字、风格与布局。\"]')?.value === 'second canvas prompt'")
+    await waitFor("Boolean(document.querySelector('article[aria-label^=\"画面 1\"]'))")
+    await waitFor("document.querySelector('textarea[aria-label=\"描述\"]')?.value === 'second canvas prompt'")
     project = getProject(projectId!)
     assert.equal(project?.canvases.length, 2)
 
-    const sourceCanvas = project?.canvases.find((canvas) => canvas.title === 'Canvas 1')
+    const sourceCanvas = project?.canvases.find((canvas) => canvas.title === '画面 1')
     assert.ok(sourceCanvas, 'source Canvas should exist before testing generation controls')
     const activeJobId = 'e2e-canvas-generation'
     project = saveProject({
@@ -101,9 +107,7 @@ export async function runStudioCanvasUiTests(): Promise<void> {
       win.webContents.once('did-finish-load', () => resolve())
       void win.webContents.reload()
     })
-    await waitFor("[...document.querySelectorAll('button')].some((button) => button.textContent.includes('未命名 Project'))")
-    await evaluate("[...document.querySelectorAll('button')].find((button) => button.textContent.includes('未命名 Project'))?.click()")
-    await waitFor("document.querySelector('article[aria-label^=\"Canvas 1\"]')")
+    await waitFor("document.querySelector('article[aria-label^=\"画面 1\"]')")
     const generateDisabled = (): Promise<unknown> => evaluate("document.querySelector('[data-studio-generate]')?.disabled")
     assert.equal(await generateDisabled(), true, 'generation action should be disabled while the Canvas job is active')
 
@@ -159,7 +163,10 @@ export async function runStudioCanvasUiTests(): Promise<void> {
       id: projectId!,
       name: project!.name,
       canvases: project!.canvases.map((canvas) =>
-        canvas.id === sourceCanvas!.id ? { ...canvas, jobState: 'succeeded' as const } : canvas,
+        // A finished source shows its re-run action, which a nested job must disable.
+        canvas.id === sourceCanvas!.id
+          ? { ...canvas, jobState: 'succeeded' as const, outputs: [{ path: join(app.getPath('userData'), 'e2e-missing.png'), width: 512, height: 512, seed: 1 }] }
+          : canvas,
       ).concat(
         {
           ...sourceCanvas!,
@@ -189,11 +196,9 @@ export async function runStudioCanvasUiTests(): Promise<void> {
       win.webContents.once('did-finish-load', () => resolve())
       void win.webContents.reload()
     })
-    await waitFor("[...document.querySelectorAll('button')].some((button) => button.textContent.includes('未命名 Project'))")
-    await evaluate("[...document.querySelectorAll('button')].find((button) => button.textContent.includes('未命名 Project'))?.click()")
     await waitFor("document.querySelector('[data-studio-generate]')?.disabled === true")
     assert.equal(
-      await evaluate("[...document.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === '重跑 Canvas 1')?.disabled"),
+      await evaluate("[...document.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === '重新生成 画面 1')?.disabled"),
       true,
       'source Canvas rerun action should be disabled while a nested result job is active',
     )
@@ -224,7 +229,8 @@ export async function runStudioCanvasUiTests(): Promise<void> {
       ok: false,
       error: error instanceof Error ? error.message : String(error),
     }))
-    setTimeout(() => app.exit(1), 50)
+    // Exit now: destroying the window below would otherwise quit with code 0.
+    app.exit(1)
   } finally {
     win.destroy()
   }

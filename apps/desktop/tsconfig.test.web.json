@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.test.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"]
+  },
+  "include": [
+    "test/renderer/**/*.ts",
+    "test/renderer/**/*.tsx",
+    "test/mocks/backend/**/*.ts",
+    "test/mocks/*.test.ts",
+    "test/helpers/renderer.ts",
+    "test/helpers/network.ts",
+    "test/setup/renderer.ts",
+    "src/renderer/src/env.d.ts"
+  ]
+}

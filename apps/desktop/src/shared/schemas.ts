@@ -12,9 +12,112 @@ const downloadProxy = z.string().trim().max(2048).refine((value) => {
   try { const url = new URL(value); return ['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'].includes(url.protocol) && Boolean(url.hostname) && !url.search && !url.hash && (!url.pathname || url.pathname === '/') } catch { return false }
 }, '代理需使用 HTTP/HTTPS/SOCKS4/SOCKS4a/SOCKS5/SOCKS5h 地址')
 const hfToken = z.string().trim().max(2048).regex(/^[^\r\n\0]*$/, 'Token 不能包含换行或 NUL')
+/** A file path handed to the engine: non-empty, no NUL (the engine refuses both). */
+const inputPath = z.string().max(4096).refine((value) => value.trim().length > 0, '图片路径不能为空').regex(/^[^\0]*$/, '图片路径不能包含 NUL')
+const unitInterval = (label: string) => z.number().min(0, `${label}需在 0 到 1 之间`).max(1, `${label}需在 0 到 1 之间`)
+
+/** The pictures a canvas takes in, as links to other canvases (see CanvasInputs). */
+const canvasImageLinkSchema = z.object({
+  canvasId: z.string().min(1).max(120),
+  output: z.number().int().min(0).max(63).optional(),
+})
+
+const resizeModeSchema = z.enum(['crop', 'fit', 'stretch'])
+
+const samplingSchema = z.object({
+  sampler: z.string().min(1).max(64).optional(),
+  scheduler: z.string().min(1).max(64).optional(),
+  shift: z.number().optional(),
+  hires: z.object({
+    // 64 like every canvas size (a hires result card takes this size).
+    width: z.number().int().min(64, '高清修复尺寸至少 64').max(4096, '高清修复尺寸最大 4096').multipleOf(16, '高清修复尺寸需为 16 的倍数'),
+    height: z.number().int().min(64, '高清修复尺寸至少 64').max(4096, '高清修复尺寸最大 4096').multipleOf(16, '高清修复尺寸需为 16 的倍数'),
+    steps: z.number().int().min(0).max(1000).optional(),
+    strength: unitInterval('高清修复重绘幅度').optional(),
+  }).optional(),
+  stepCache: z.string().min(1).max(32).optional(),
+  cfgTruncation: unitInterval('CFG 截断').optional(),
+})
+
+/**
+ * The image inputs of a generation (JobParams.initImage … sampling), with the
+ * engine's own limits (moss-server test_protocol.py) so a bad request gets a
+ * readable answer before it reaches the engine.
+ */
+export const jobInputsSchema = z.object({
+  initImage: z.object({
+    path: inputPath,
+    strength: unitInterval('重绘幅度'),
+    resize: resizeModeSchema.optional(),
+  }).optional(),
+  mask: z.object({ path: inputPath }).optional(),
+  control: z.object({
+    adapter: inputPath,
+    loraStrength: z.number().min(-10).max(10).optional(),
+    images: z.array(z.object({
+      kind: z.string().trim().min(1, '控制类型不能为空').max(64),
+      path: inputPath,
+      strength: z.number().min(0, '控制强度需在 0 到 10 之间').max(10, '控制强度需在 0 到 10 之间'),
+      start: unitInterval('控制开始位置'),
+      end: unitInterval('控制结束位置'),
+    })).max(16, '控制图最多 16 张'),
+  }).optional(),
+  references: z.object({
+    paths: z.array(inputPath).min(1, '至少需要 1 张参考图').max(4, '参考图最多 4 张'),
+    maxEdge: z.number().int('参考图边长需为整数').min(16, '参考图边长需在 16 到 2048 之间').max(2048, '参考图边长需在 16 到 2048 之间').optional(),
+  }).optional(),
+  sampling: samplingSchema.optional(),
+}).superRefine((value, ctx) => {
+  if (value.mask && !value.initImage) {
+    ctx.addIssue({ code: 'custom', path: ['mask'], message: '遮罩需要先设置起始图' })
+  }
+  const kinds = new Set<string>()
+  value.control?.images.forEach((image, index) => {
+    if (image.start > image.end) {
+      ctx.addIssue({ code: 'custom', path: ['control', 'images', index], message: '控制图的开始位置不能晚于结束位置' })
+    }
+    if (kinds.has(image.kind)) {
+      ctx.addIssue({ code: 'custom', path: ['control', 'images', index], message: `「${image.kind}」控制图只能有一张` })
+    }
+    kinds.add(image.kind)
+  })
+})
+
 const projectCanvasSchema = z.object({
   id: z.string().min(1).max(120),
-  kind: z.enum(['layout', 'result']),
+  kind: z.enum(['layout', 'result', 'image']),
+  imagePath: z.string().max(4096).optional(),
+  /** Pixel size of `imagePath` (up to studio:import-image's 16384 limit); width/height are the card's. */
+  imageSize: z.object({
+    width: z.number().int().min(1).max(16384),
+    height: z.number().int().min(1).max(16384),
+  }).optional(),
+  inputs: z.object({
+    init: z.object({ link: canvasImageLinkSchema, strength: z.number().min(0).max(1), resize: resizeModeSchema.optional() }).optional(),
+    mask: z.object({ path: z.string().min(1).max(4096) }).optional(),
+    control: z.object({
+      // '' while a control image is linked before an adapter is picked (generate is blocked then).
+      adapterId: z.string().max(200),
+      loraStrength: z.number().optional(),
+      images: z.array(z.object({
+        kind: z.string().min(1).max(64),
+        link: canvasImageLinkSchema,
+        strength: z.number().min(0).max(10),
+        start: z.number().min(0).max(1),
+        end: z.number().min(0).max(1),
+      })).max(16),
+    }).optional(),
+    references: z.object({
+      links: z.array(canvasImageLinkSchema).max(4),
+      maxEdge: z.number().int().min(16).max(2048).optional(),
+    }).optional(),
+  }).optional(),
+  sampling: samplingSchema.optional(),
+  /** First-pass size of a hires result card (width/height are then the output size). */
+  baseSize: z.object({
+    width: z.number().int().min(64).max(4096),
+    height: z.number().int().min(64).max(4096),
+  }).optional(),
   title: z.string().max(200),
   x: z.number().int().min(-100000).max(100000),
   y: z.number().int().min(-100000).max(100000),
@@ -67,6 +170,7 @@ const projectCanvasSchema = z.object({
     strength: z.number().min(0).max(2),
     path: z.string().max(4096).optional(),
   })).max(16).optional(),
+  seedLocked: z.boolean().optional(),
 })
 
 
@@ -148,6 +252,9 @@ export const schemas = {
         tier: z.enum(['reference', 'high', 'turbo']).optional(),
       })),
       githubToken: z.string().max(200).nullable(),
+      remoteHostsEnabled: z.boolean(),
+      trainingEnabled: z.boolean(),
+      engineAutoUpdate: z.boolean(),
     })
     .partial(),
 
@@ -297,6 +404,7 @@ export const schemas = {
   modelsRemoteInventory: z.object({ hostId: z.string().min(1).max(120), modelsRoot: z.string().max(4096).optional() }),
 
   modelsRemoteDownload: z.object({ hostId: z.string().min(1).max(120), modelId: z.string().min(1).max(200) }),
+  modelsRemoteDelete: z.object({ hostId: z.string().min(1).max(120), ids: z.array(z.string().min(1).max(200)).min(1).max(50) }),
   remoteDownloadsRefresh: z.object({ hostId: z.string().min(1).max(120) }),
   remoteDownloadControl: z.object({ hostId: z.string().min(1).max(120), taskId: z.string().min(1).max(400), operation: z.enum(['pause', 'resume', 'cancel']) }),
 
@@ -439,7 +547,7 @@ export const schemas = {
     title: z.string().min(1).max(120),
   }),
 
-  projectId: z.object({ id: z.string().min(1).max(120) }),
+  projectId: z.object({ id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/) }),
 
   projectLayer: z.object({
     id: z.string().min(1).max(120),
@@ -496,6 +604,28 @@ export const schemas = {
 
   jobId: z.object({ id: z.string().min(1).max(120) }),
 
+  engineFeatures: z.object({
+    deviceUuid: z.string().min(1).max(200).optional(),
+    hostId: z.string().min(1).max(80).optional(),
+  }),
+
+  /** A picture file by path, or its bytes (a paste, a browser drop). */
+  studioImportImage: z.object({
+    projectId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/, 'Project 无效'),
+    path: pathLike.optional(),
+    bytes: z.instanceof(Uint8Array).optional(),
+  }).refine((value) => Boolean(value.path) !== Boolean(value.bytes), '需要图片路径或图片内容（二选一）'),
+
+  studioSaveMask: z.object({
+    projectId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/, 'Project 无效'),
+    canvasId: z.string().min(1).max(120),
+    png: z.instanceof(Uint8Array),
+  }),
+
+  controlAdapterAdd: z.object({ path: pathLike }),
+
+  controlAdapterRemove: z.object({ id: z.string().min(1).max(200) }),
+
   jobInput: z.object({
     id: z.string().min(1).max(120),
     text: z.string().max(4096),
@@ -508,11 +638,17 @@ export const schemas = {
     limit: z.number().int().min(1).max(120).default(48),
     query: z.string().max(200).optional(),
     root: z.string().max(4096).optional(),
+    /** Only images generated for this Studio project. */
+    projectId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/).optional(),
+    /** Only images modified at or after this time (ms since epoch). */
+    since: z.number().int().min(0).optional(),
   }),
 
   galleryItem: z.object({ path: pathLike }),
 
   galleryReveal: z.object({ path: pathLike }),
+
+  galleryTrash: z.object({ path: pathLike }),
 
   pickImages: z.object({ title: z.string().max(120).optional() }),
 

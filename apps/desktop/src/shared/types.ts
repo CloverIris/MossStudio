@@ -192,6 +192,12 @@ export interface Settings {
   githubToken: string | null
   disabledDevices: string[]
   deviceLabels: Record<string, string>
+  /** Optional feature: run generation/training on SSH machines. Off by default. */
+  remoteHostsEnabled: boolean
+  /** Optional feature: LoRA training. Off by default. */
+  trainingEnabled: boolean
+  /** Keep the inference engine on the latest release of its channel automatically. */
+  engineAutoUpdate: boolean
 }
 
 export type GpuSelection = 'auto' | { uuid: string }
@@ -715,6 +721,96 @@ export interface JobParams {
   seed: number
   profile: 'base' | 'dmd8'
   adapters?: Array<{ path: string; strength: number }>
+  /** Image-to-image: start from this picture instead of noise. */
+  initImage?: JobInitImage
+  /** Inpainting: only the white part of this PNG is repainted. Needs `initImage`. */
+  mask?: JobMask
+  /** A control adapter guided by one image per control kind (depth, edges, pose…). */
+  control?: JobControl
+  /** Reference pictures for an edit adapter (at most 4). */
+  references?: JobReferences
+  /** Sampler, scheduler and the second (hires) pass; absent fields use the engine's defaults. */
+  sampling?: JobSampling
+}
+
+export type ImageResizeMode = 'crop' | 'fit' | 'stretch'
+
+export interface JobInitImage {
+  path: string
+  /** 0 keeps the picture, 1 replaces it entirely. */
+  strength: number
+  resize?: ImageResizeMode
+}
+
+export interface JobMask {
+  path: string
+}
+
+export interface JobControlImage {
+  /** One of the adapter's `controlKinds`. */
+  kind: string
+  path: string
+  /** 0–10, engine default 1. */
+  strength: number
+  /** Fraction of the denoise where this image starts/stops guiding, 0 ≤ start ≤ end ≤ 1. */
+  start: number
+  end: number
+}
+
+export interface JobControl {
+  adapter: string
+  loraStrength?: number
+  images: JobControlImage[]
+}
+
+export interface JobReferences {
+  paths: string[]
+  /** 16–2048; the engine scales references so their long edge fits. */
+  maxEdge?: number
+}
+
+export interface JobHires {
+  width: number
+  height: number
+  steps?: number
+  strength?: number
+}
+
+export interface JobSampling {
+  /** A name from `EngineFeatures.values.sampler`. */
+  sampler?: string
+  /** A name from `EngineFeatures.values.scheduler`. */
+  scheduler?: string
+  shift?: number
+  hires?: JobHires
+  stepCache?: string
+  cfgTruncation?: number
+}
+
+/** What the engine that will run a job can do, read from its hello. */
+export interface EngineFeatures {
+  /** Live preview images while denoising. */
+  preview: boolean
+  /** `initImage` and `mask`. */
+  imageInput: boolean
+  control: boolean
+  references: boolean
+  hires: boolean
+  samplers: boolean
+  /** Accepted names per enum parameter, e.g. `{ sampler: ['euler', …], scheduler: [...], resize: [...] }`. */
+  values: Record<string, string[]>
+}
+
+/** A control adapter file registered with the app (identified by the engine's `inspect`). */
+export interface ControlAdapterEntry {
+  id: string
+  name: string
+  path: string
+  sizeBytes: number
+  /** Control kinds the file was trained for, e.g. `['depth', 'canny']`. */
+  controlKinds: string[]
+  baseModel?: string
+  addedAt: string
 }
 
 export interface LaunchStartInput {
@@ -814,6 +910,10 @@ export interface JobRecord {
   exitCode?: number
   error?: { code: string; message: string }
   outputs?: Array<{ path: string; width: number; height: number; seed: number }>
+  /** Latest live preview while denoising (a PNG the engine rewrites; `seq` changes on every write). */
+  preview?: { path: string; step: number; total: number; seq: number }
+  /** 1-based place in the queue of the engine that will run it, while `state` is 'queued'. */
+  queuePosition?: number
   url?: string
   logPath?: string
 }
@@ -861,6 +961,42 @@ export interface GalleryItem {
   height?: number
   prompt?: string
   seed?: number | null
+  /** Studio project the image was generated for, when known (job record or sidecar). */
+  projectId?: string
+  /** Generation job that produced the image, when known. */
+  jobId?: string
+}
+
+/** How an image was generated, from its job record or its JSON sidecar. Every field is optional. */
+export interface GalleryGeneration {
+  jobId?: string
+  projectId?: string
+  modelName?: string
+  modelBundleId?: string
+  steps?: number
+  cfg?: number
+  width?: number
+  height?: number
+  seed?: number
+  adapters?: Array<{ path: string; strength: number }>
+  /** ISO time the generation started. */
+  createdAt?: string
+  /** Where it ran, in plain words: "本机 · RTX 4090" or the SSH host's name. */
+  where?: string
+  hostId?: string
+  /** The overall description as the user wrote it (for a region layout: its caption). */
+  description?: string
+  /** Number of regions when the image came from a region layout. */
+  regions?: number
+  /** With 高清修复: the first pass's size (`width`/`height` are the finished picture's). */
+  baseWidth?: number
+  baseHeight?: number
+  /** The pictures and sampling choices the generation used, when it used any. */
+  initImage?: JobInitImage
+  mask?: JobMask
+  control?: JobControl
+  references?: JobReferences
+  sampling?: JobSampling
 }
 
 export interface GalleryPage {
@@ -873,6 +1009,7 @@ export interface GalleryPage {
 export interface GalleryDetail extends GalleryItem {
   negativePrompt?: string
   parameters?: string
+  generation?: GalleryGeneration
 }
 
 import type { BackendInfo } from './backend'
@@ -931,9 +1068,38 @@ export interface CanvasAdapter {
   path?: string
 }
 
+/** An image a Canvas takes in: another Canvas on the board (drawn as a wire). */
+export interface CanvasImageLink {
+  canvasId: string
+  /** Which of the source's outputs; absent = its first. Ignored for `kind: 'image'` sources. */
+  output?: number
+}
+
+export interface CanvasInputs {
+  init?: { link: CanvasImageLink; strength: number; resize?: ImageResizeMode }
+  /** PNG painted on this Canvas (white = repaint), stored in the project's assets. */
+  mask?: { path: string }
+  control?: {
+    adapterId: string
+    loraStrength?: number
+    images: Array<{ kind: string; link: CanvasImageLink; strength: number; start: number; end: number }>
+  }
+  references?: { links: CanvasImageLink[]; maxEdge?: number }
+}
+
 export interface ProjectCanvas {
   id: string
-  kind: 'layout' | 'result'
+  /** layout: a description to generate; result: a generation's output; image: a picture brought in from a file. */
+  kind: 'layout' | 'result' | 'image'
+  /** The picture of an `image` Canvas (copied into the project's assets). */
+  imagePath?: string
+  /** The real pixel size of `imagePath` (`width`/`height` are its card size on the board). */
+  imageSize?: { width: number; height: number }
+  /** Pictures this Canvas generates from. */
+  inputs?: CanvasInputs
+  sampling?: JobSampling
+  /** A result of a run with 高清修复: the first pass's size (`width`/`height` are the finished picture's). */
+  baseSize?: { width: number; height: number }
   title: string
   /** Position on the free-form board, in unscaled board pixels. */
   x: number
@@ -959,6 +1125,8 @@ export interface ProjectCanvas {
   error?: JobRecord['error']
   /** LoRA adapters applied when this Canvas generates. */
   adapters?: CanvasAdapter[]
+  /** Keep `seed` for the next run; otherwise every run draws a new random seed. */
+  seedLocked?: boolean
 }
 
 export interface ProjectSummary {
