@@ -37,12 +37,22 @@
   to { transform: translateX(320%); }
 }
 
-html[data-ui-animation="off"] :is(.studio-card-running, .studio-progress-indeterminate) {
+/* A wire into a card that is generating: the dash flows toward the consumer. */
+.studio-wire-flow {
+  stroke-dasharray: 6 5;
+  animation: studio-wire-flow 0.7s linear infinite;
+}
+
+@keyframes studio-wire-flow {
+  to { stroke-dashoffset: -11; }
+}
+
+html[data-ui-animation="off"] :is(.studio-card-running, .studio-progress-indeterminate, .studio-wire-flow) {
   animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html:not([data-ui-animation="on"]) :is(.studio-card-running, .studio-progress-indeterminate) {
+  html:not([data-ui-animation="on"]) :is(.studio-card-running, .studio-progress-indeterminate, .studio-wire-flow) {
     animation: none;
   }
 }

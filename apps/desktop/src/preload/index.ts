@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const api = {
   invoke(channel: string, payload?: unknown): Promise<unknown> {
@@ -8,6 +8,14 @@ const api = {
     const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => callback(data)
     ipcRenderer.on(channel, handler)
     return () => ipcRenderer.removeListener(channel, handler)
+  },
+  /** Disk path of a dropped File (studio:import-image takes it); '' for a paste or a browser file. */
+  pathForFile(file: File): string {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
+    }
   },
   platform: process.platform,
   version: process.versions.electron,

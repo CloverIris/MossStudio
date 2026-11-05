@@ -2,6 +2,9 @@ import type { AdapterEntry, Catalog, EngineReadiness, ModelBundle, ModelEntry, P
 import { adapterStatuses, normalizeCanvasAdapters } from '@shared/adapters'
 import { compileCanvasPrompt, type CompiledPrompt } from './prompt'
 
+/** Problems with a canvas's pictures and sampling choices (see jobInputs.ts). */
+export type InputBlockerId = 'input-source' | 'input-adapter' | 'input-unsupported' | 'input-invalid'
+
 /**
  * What stands between the user and the 生成 button. Only real blockers are
  * listed; each one says what is wrong and, when the fix lives elsewhere, where
@@ -9,7 +12,7 @@ import { compileCanvasPrompt, type CompiledPrompt } from './prompt'
  */
 
 export interface Blocker {
-  id: 'model-none' | 'model-missing' | 'engine' | 'remote-path' | 'adapters' | 'remote-adapters' | 'prompt'
+  id: 'model-none' | 'model-missing' | 'engine' | 'remote-path' | 'adapters' | 'remote-adapters' | 'prompt' | InputBlockerId
   message: string
   action?: { label: string; to: string }
 }
@@ -66,6 +69,8 @@ export interface ReadinessInput {
   setupDone: boolean
   /** The SSH machine this run goes to, when remote hosts are enabled and one is picked. */
   remote: { name: string; modelPath?: string } | null
+  /** What is wrong with the canvas's pictures and sampling (from `resolveJobInputs`). */
+  inputBlockers?: readonly Blocker[]
 }
 
 export interface Readiness {
@@ -115,6 +120,8 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
   if (input.remote && adapters.length) {
     blockers.push({ id: 'remote-adapters', message: '在其他电脑上运行时暂不支持 LoRA，请移除 LoRA 或改回这台电脑' })
   }
+
+  if (input.canvas) blockers.push(...(input.inputBlockers ?? []))
 
   const prompt = input.canvas ? compileCanvasPrompt(input.canvas) : null
   if (prompt && !prompt.ok) blockers.push({ id: 'prompt', message: prompt.errors[0] ?? '描述还不完整' })

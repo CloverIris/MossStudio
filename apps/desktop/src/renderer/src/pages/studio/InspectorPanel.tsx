@@ -32,6 +32,9 @@ export function InspectorPanel({
   }, [focusToken])
 
   if (!canvas) return <p className="px-1 py-8 text-center text-caption text-ink-2">选中一个画面后，这里显示它的区域。</p>
+  if (canvas.kind === 'image') {
+    return <p className="px-1 py-8 text-center text-caption text-ink-2">这是一张导入的图片，没有区域。把它连到画面上就能用它生成。</p>
+  }
   if (canvas.kind === 'result') {
     return <p className="px-1 py-8 text-center text-caption text-ink-2">这是一次生成的结果，区域不能再改。复制成新画面后就可以编辑。</p>
   }

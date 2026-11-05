@@ -1,11 +1,11 @@
-import { ArrowLeft, ArrowRight, Copy, FolderOpen, ImageIcon, Sparkles, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Copy, FolderOpen, ImageIcon, Sparkles, Trash2, Wand2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Ipc } from '@shared/channels'
 import type { GalleryDetail, GalleryItem } from '@shared/types'
 import { call } from '../../lib/api'
 import { cloverUrl } from '../../lib/clover'
-import { buildReuseRequest, canReuse } from '../../lib/studioReuse'
+import { buildReuseRequest, buildStartPictureRequest, canReuse } from '../../lib/studioReuse'
 import { useApp } from '../../store'
 import { Button, ConfirmDialog, IconButton, Spinner, useCopyText, useToast } from '../../components/ui'
 import { detailFacts } from './logic'
@@ -68,6 +68,12 @@ export function DetailPanel({
     requestStudioReuse(buildReuseRequest(shown))
     navigate('/studio')
   }, [navigate, requestStudioReuse, shown])
+
+  // A new canvas in 创作 that starts from this picture (image-to-image).
+  const useAsStart = useCallback(() => {
+    requestStudioReuse(buildStartPictureRequest(shown ?? item))
+    navigate('/studio')
+  }, [item, navigate, requestStudioReuse, shown])
 
   const useAsBackground = useCallback(() => {
     const source = shown ?? item
@@ -189,10 +195,13 @@ export function DetailPanel({
           <Sparkles className="size-4" strokeWidth={1.6} /> 在创作中复用
         </Button>
         <div className="grid grid-cols-2 gap-2">
+          <Button tone="secondary" onClick={useAsStart} data-use-as-start>
+            <Wand2 className="size-4" strokeWidth={1.6} /> 用作起始图
+          </Button>
           <Button tone="secondary" onClick={useAsBackground}>
             <ImageIcon className="size-4" strokeWidth={1.6} /> 用作底图
           </Button>
-          <Button tone="secondary" onClick={reveal}>
+          <Button tone="secondary" className="col-span-2" onClick={reveal}>
             <FolderOpen className="size-4" strokeWidth={1.6} /> 在文件夹中显示
           </Button>
         </div>

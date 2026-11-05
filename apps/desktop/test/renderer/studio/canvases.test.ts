@@ -134,3 +134,121 @@ describe('studio/canvases migrateCanvas', () => {
     expect(migrateCanvas(current)).toBe(current)
   })
 })
+
+describe('studio/canvases inputs and pictures', () => {
+  const out = (path: string, size = 1024) => ({ path, width: size, height: size, seed: 1 })
+
+  it('migrates saved inputs: numbers pulled into range, a mask without a start picture and dangling links dropped', async () => {
+    const { migrateCanvases } = await import('@renderer/pages/studio/canvases')
+    const source = canvas({ id: 'src', kind: 'image', imagePath: '/a.png', seedLocked: false })
+    const list = migrateCanvases([
+      source,
+      canvas({ id: 'a', seedLocked: false, inputs: { init: { link: { canvasId: 'src' }, strength: 3 }, references: { links: [{ canvasId: 'gone' }, { canvasId: 'src' }] } }, sampling: { sampler: '' } }),
+      canvas({ id: 'b', seedLocked: false, inputs: { mask: { path: '/m.png' }, control: { adapterId: 'x', images: [{ kind: 'depth', link: { canvasId: 'src' }, strength: 99, start: 0.7, end: 0.2 }] } } }),
+    ])
+    expect(list[1]!.inputs).toEqual({ init: { link: { canvasId: 'src' }, strength: 1 }, references: { links: [{ canvasId: 'src' }] } })
+    expect('sampling' in list[1]!).toBe(false)
+    expect(list[2]!.inputs).toEqual({ control: { adapterId: 'x', images: [{ kind: 'depth', link: { canvasId: 'src' }, strength: 10, start: 0.7, end: 0.7 }] } })
+    // Old canvases without inputs come through untouched.
+    const plain = canvas({ seedLocked: true })
+    expect(migrateCanvases([plain])[0]).toBe(plain)
+  })
+
+  it('copies keep their inputs and sampling; the links still point at the same sources', () => {
+    const source = canvas({ id: 's', inputs: { init: { link: { canvasId: 'img' }, strength: 0.4 }, mask: { path: '/m.png' } }, sampling: { sampler: 'euler', hires: { width: 2048, height: 2048 } } })
+    const copy = copyAsLayout(source, [source], 'copy')
+    expect(copy.inputs).toEqual(source.inputs)
+    expect(copy.inputs).not.toBe(source.inputs)
+    expect(copy.sampling).toEqual(source.sampling)
+  })
+
+  it('a copy of a 高清修复 result starts again at the first-pass size', () => {
+    const result = canvas({ id: 'r', kind: 'result', width: 2048, height: 2048, baseSize: { width: 1024, height: 1024 }, sampling: { hires: { width: 2048, height: 2048 } } })
+    expect(copyAsLayout(result, [result], 'c')).toMatchObject({ width: 1024, height: 1024, sampling: { hires: { width: 2048, height: 2048 } } })
+    expect(settingsFrom(result)).toMatchObject({ width: 1024, height: 1024 })
+    // New canvases inherit sampler choices, not the costly second pass.
+    expect(settingsFrom(canvas({ sampling: { sampler: 'heun', hires: { width: 2048, height: 2048 } } })).sampling).toEqual({ sampler: 'heun' })
+  })
+
+  it('a picture card copies as another picture card and gives no settings to new canvases', async () => {
+    const { createImageCanvas } = await import('@renderer/pages/studio/canvases')
+    const card = createImageCanvas([], { path: '/assets/photo.final.jpg', width: 3000, height: 2000 }, undefined, 'img')
+    expect(card).toMatchObject({ id: 'img', kind: 'image', imagePath: '/assets/photo.final.jpg', title: 'photo.final', width: 1024, height: 683, imageSize: { width: 3000, height: 2000 } })
+    // The copy keeps the real pixel size, not the card size.
+    expect(copyAsLayout(card, [card], 'img2')).toMatchObject({ id: 'img2', kind: 'image', imagePath: '/assets/photo.final.jpg', width: 1024, height: 683, imageSize: { width: 3000, height: 2000 } })
+    expect(settingsFrom(card)).toEqual(defaultSettings())
+  })
+
+  it('places a picture card left of the canvas it feeds, below anything already there', async () => {
+    const { createImageCanvas } = await import('@renderer/pages/studio/canvases')
+    const near = canvas({ id: 'n', x: 600, y: 100 })
+    const first = createImageCanvas([near], { path: '/a.png', width: 1024, height: 1024 }, near, 'a')
+    expect(first.x + 256).toBeLessThan(600)
+    expect(first.y).toBe(100)
+    const second = createImageCanvas([near, first], { path: '/b.png', width: 1024, height: 1024 }, near, 'b')
+    expect(second.x).toBe(first.x)
+    expect(second.y).toBeGreaterThan(first.y)
+  })
+
+  it('a 高清修复 run gets a result card at the output size that remembers the first pass', () => {
+    const source = canvas({ id: 's', outputs: [out('/o.png')], sampling: { hires: { width: 1536, height: 1536 } } })
+    const { canvases, taskId } = taskCanvasFor(source, [source], 'task')
+    const task = canvases.find((item) => item.id === taskId)!
+    expect(task).toMatchObject({ width: 1536, height: 1536, baseSize: { width: 1024, height: 1024 }, kind: 'result' })
+    // Running that result again repeats it at the same sizes.
+    const again = taskCanvasFor(task, canvases, 'again').canvases.find((item) => item.id === 'again')!
+    expect(again).toMatchObject({ width: 1536, height: 1536, baseSize: { width: 1024, height: 1024 } })
+    // Without hires nothing changes.
+    const plain = canvas({ id: 'p', outputs: [out('/o.png')] })
+    const plainTask = taskCanvasFor(plain, [plain], 'pt').canvases.find((item) => item.id === 'pt')!
+    expect(plainTask).toMatchObject({ width: 1024, height: 1024 })
+    expect('baseSize' in plainTask).toBe(false)
+  })
+
+  it('resizing keeps a hires target in proportion', () => {
+    const resized = resizeCanvas(canvas({ sampling: { hires: { width: 2048, height: 2048 } } }), 1280, 720)
+    expect(resized.sampling?.hires).toEqual({ width: 2560, height: 1440 })
+  })
+
+  it('deleting a canvas drops the links that pointed at it and counts them', async () => {
+    const { removeCanvasFrom } = await import('@renderer/pages/studio/canvases')
+    const list = [
+      canvas({ id: 'img', kind: 'image', imagePath: '/a.png' }),
+      canvas({ id: 'a', inputs: { init: { link: { canvasId: 'img' }, strength: 0.6 }, references: { links: [{ canvasId: 'img', output: 1 }] } } }),
+      canvas({ id: 'b' }),
+    ]
+    const { canvases, removedLinks } = removeCanvasFrom(list, 'img')
+    expect(canvases.map((item) => item.id)).toEqual(['a', 'b'])
+    expect(removedLinks).toBe(2)
+    expect(canvases[0]!.inputs).toBeUndefined()
+  })
+})
+
+describe('studio/canvases review fixes', () => {
+  it('reuse carries the image sampling (高清修复 included) onto the new canvas', () => {
+    const { canvas: created } = canvasFromReuse({
+      id: 'r', createdAt: '', sourcePath: '/o.png', prompt: 'p', width: 1024, height: 1024, seed: 5,
+      sampling: { sampler: 'euler', hires: { width: 2048, height: 2048, strength: 0.35 } },
+    }, [], { ...defaultSettings(), sampling: { scheduler: 'karras' } }, [], 'x')
+    expect(created).toMatchObject({ width: 1024, height: 1024, sampling: { sampler: 'euler', hires: { width: 2048, height: 2048, strength: 0.35 } } })
+    const { canvas: plain } = canvasFromReuse({ id: 'r', createdAt: '', sourcePath: '/o.png', prompt: 'p' }, [], { ...defaultSettings(), sampling: { scheduler: 'karras' } }, [], 'y')
+    expect(plain.sampling).toEqual({ scheduler: 'karras' })
+  })
+
+  it('result cards keep their recorded inputs when a source is deleted or missing', async () => {
+    const { migrateCanvases, removeCanvasFrom } = await import('@renderer/pages/studio/canvases')
+    const frozen = { init: { link: { canvasId: 'img' }, strength: 0.6 } }
+    const list = [
+      canvas({ id: 'img', kind: 'image', imagePath: '/a.png', seedLocked: false }),
+      canvas({ id: 'a', seedLocked: false, inputs: frozen }),
+      canvas({ id: 'r', kind: 'result', seedLocked: false, inputs: frozen, sourceCanvasId: 'a' }),
+    ]
+    const { canvases, removedLinks } = removeCanvasFrom(list, 'img')
+    expect(removedLinks).toBe(1)
+    expect(canvases.find((item) => item.id === 'r')!.inputs).toEqual(frozen)
+    expect(canvases.find((item) => item.id === 'a')!.inputs).toBeUndefined()
+    const loaded = migrateCanvases(list.slice(1))
+    expect(loaded.find((item) => item.id === 'r')!.inputs).toEqual(frozen)
+    expect(loaded.find((item) => item.id === 'a')!.inputs).toBeUndefined()
+  })
+})

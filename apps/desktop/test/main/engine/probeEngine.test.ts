@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const spawn = vi.hoisted(() => vi.fn())
 vi.mock('node:child_process', () => ({ spawn, default: { spawn } }))
 
-import { probeEngine, spawnEngineServer } from '@main/lib/probeEngine'
+import { probeEngine, requestEngineOnce, spawnEngineServer } from '@main/lib/probeEngine'
 
 interface FakeProc extends EventEmitter {
   stdin: PassThrough
@@ -112,5 +112,35 @@ describe('probeEngine', () => {
     proc.stdout.write(`${JSON.stringify(hello)}\n`)
     await pending
     expect(spawn.mock.calls[0]![2].env.CUDA_VISIBLE_DEVICES).toBe('0')
+  })
+})
+
+describe('requestEngineOnce', () => {
+  const answer = (message: Record<string, unknown>): void => { proc.stdout.write(`${JSON.stringify(message)}\n`) }
+
+  it('sends hello then the request, answers with both, then asks the server to exit', async () => {
+    const pending = requestEngineOnce('/engine/moss-server', 'inspect', { path: '/m/c.safetensors' })
+    answer({ id: 'once-hello', result: { protocol_version: 2, capabilities: { inspect: true } } })
+    answer({ event: 'log', message: 'noise' })
+    answer({ id: 'once-request', result: { kind: 'control_adapter' } })
+    const { hello, result } = await pending
+    expect(hello.capabilities).toEqual({ inspect: true })
+    expect(result).toEqual({ kind: 'control_adapter' })
+    const lines = proc.written.join('').trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>)
+    expect(lines.map((line) => [line['id'], line['method']])).toEqual([['once-hello', 'hello'], ['once-request', 'inspect'], ['bye', 'shutdown']])
+    expect(lines[1]!['params']).toEqual({ path: '/m/c.safetensors' })
+  })
+
+  it('rejects with the request error as code: message', async () => {
+    const pending = requestEngineOnce('/engine/moss-server', 'inspect', { path: '/missing' })
+    answer({ id: 'once-hello', result: { protocol_version: 2 } })
+    answer({ id: 'once-request', error: { code: 'io', message: 'cannot open /missing' } })
+    await expect(pending).rejects.toThrow('io: cannot open /missing')
+  })
+
+  it('rejects when the server exits first', async () => {
+    const pending = requestEngineOnce('/engine/moss-server', 'inspect', { path: '/x' })
+    proc.emit('close', 127)
+    await expect(pending).rejects.toThrow('code 127')
   })
 })

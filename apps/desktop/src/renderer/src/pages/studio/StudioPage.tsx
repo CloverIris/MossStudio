@@ -18,6 +18,7 @@ import { Board, type BoardHandle } from './Board'
 import { canvasFromReuse, newRegion, resizeCanvas, settingsFrom } from './canvases'
 import { clampDimension, isSeedLocked, nearestQuality, qualityPreset, SEED_MAX } from './defaults'
 import { InspectorPanel } from './InspectorPanel'
+import type { InputsWiring } from './InputsSection'
 import { ACTIVE_JOB_STATES } from './jobStatus'
 import { OutputViewer } from './OutputViewer'
 import { ParamsPanel } from './ParamsPanel'
@@ -25,7 +26,13 @@ import { ProjectSwitcher } from './ProjectSwitcher'
 import { canvasDescription, withDescription } from './prompt'
 import type { BoardTool } from './RegionLayer'
 import { deriveReadiness, resolveBundle } from './readiness'
+import { useBoardAssets } from './useBoardAssets'
+import { useEngineFeatures } from './useEngineFeatures'
+import { useControlAdapters } from '../../lib/useControlAdapters'
+import { removeLink, setLink, type PickTarget } from './links'
+import { resolveJobInputs } from './jobInputs'
 import { useGenerate } from './useGenerate'
+import { useInputImport } from './useInputImport'
 import { useStudioProject } from './useStudioProject'
 
 const BUNDLE_KEY = 'mossstudio.modelBundleId'
@@ -114,10 +121,23 @@ export function StudioPage(): React.JSX.Element {
   const [viewer, setViewer] = useState<{ canvasId: string; index: number } | null>(null)
   const [deleting, setDeleting] = useState<ProjectCanvas | null>(null)
   const [adapterPickerOpen, setAdapterPickerOpen] = useState(false)
+  /** 输入 › 从画板选择: the next card clicked on the board fills this slot. */
+  const [pickTarget, setPickTarget] = useState<PickTarget | null>(null)
 
   const remoteEnabled = settings?.remoteHostsEnabled === true
   const remoteHost = remoteEnabled ? hosts.find((host) => host.id === remoteHostId) ?? null : null
   const bundle = resolveBundle(catalog, selected?.modelBundleId, preferredBundleId)
+  // Board: wires, imported pictures and masks.
+  const boardFeatures = useEngineFeatures(selected ? { deviceUuid: selected.deviceUuid, hostId: remoteHost?.id } : { hostId: remoteHost?.id })
+  const { adapters: controlAdapters, loaded: controlAdaptersLoaded } = useControlAdapters()
+  const boardAssets = useBoardAssets({ project, notify: toast.push })
+  // Inspector: what the selected canvas's pictures and sampling resolve to.
+  const inputBlockers = useMemo(
+    () => selected?.kind === 'layout'
+      ? resolveJobInputs(selected, { canvases: project.canvases, features: boardFeatures, controlAdapters, controlAdaptersLoaded }).blockers
+      : [],
+    [selected, project.canvases, boardFeatures, controlAdapters, controlAdaptersLoaded],
+  )
   const readiness = deriveReadiness({
     canvas: selected?.kind === 'layout' ? selected : null,
     catalog,
@@ -126,15 +146,22 @@ export function StudioPage(): React.JSX.Element {
     // While first-run preparation is still going ('active'), its page is where progress shows.
     setupDone: settings ? settings.onboardingState === 'completed' || settings.onboardingState === 'dismissed' : true,
     remote: remoteHost ? { name: remoteHost.name, modelPath: remoteHost.modelPath } : null,
+    inputBlockers,
   })
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false
-  const { submitting, generate } = useGenerate({ project, catalog, preferredBundleId, remoteHost, notify: toast.push })
+  const { submitting, generate } = useGenerate({ project, catalog, preferredBundleId, remoteHost, controlAdapters, controlAdaptersLoaded, notify: toast.push })
+  const inputImport = useInputImport({ project, notify: toast.push })
 
   useEffect(() => { writeStorage(WIDTH_KEY, JSON.stringify(widths)) }, [widths])
 
   // A different canvas has its own regions.
   useEffect(() => setSelectedRegionId(null), [project.selectedCanvasId])
+  // Picking fills a slot of the selected canvas; selecting another one ends it, and so does leaving the mask tool's canvas.
+  useEffect(() => {
+    setPickTarget((current) => current && current.canvasId !== project.selectedCanvasId ? null : current)
+    setTool((current) => current === 'mask' ? 'select' : current)
+  }, [project.selectedCanvasId])
 
   useEffect(() => {
     void call<GpuInventorySnapshot>(Ipc.gpuInventory).then(setGpuInventory).catch(() => undefined)
@@ -205,18 +232,51 @@ export function StudioPage(): React.JSX.Element {
     setCanvases([...list, canvas])
     select(canvas.id)
     requestAnimationFrame(() => board.current?.reveal(canvas.id))
+    // 用作起始图: the picture comes onto the board beside the new canvas and feeds it.
+    if (request.useAs === 'start') {
+      void inputImport.importPaths([request.sourcePath], canvas).then(([image]) => {
+        if (image) updateCanvas(canvas.id, (item) => setLink(item, 'init', { canvasId: image.id }))
+      })
+    }
     const choice = resolveBundle(catalog, canvas.modelBundleId, preferredBundleId)
     if (request.modelBundleId && (choice.unavailable || !choice.installed)) {
       toast.push(`这张图用的模型「${request.modelName ?? request.modelBundleId}」还没有下载，生成前请先下载或换一个模型`, 'info')
     }
     if (missingAdapters.length) toast.push(`模型库里没有这些 LoRA：${missingAdapters.join('、')}`, 'info')
-  }, [loaded, reuseRequest, canvasesRef, selectedRef, setCanvases, select, catalog, preferredBundleId, toast])
+  }, [loaded, reuseRequest, canvasesRef, selectedRef, setCanvases, select, catalog, preferredBundleId, toast, inputImport, updateCanvas])
 
   const changeSelected = (update: (canvas: ProjectCanvas) => ProjectCanvas): void => {
     if (selected) project.updateCanvas(selected.id, update)
   }
   const changeLayers = (canvasId: string, update: (layers: ProjectLayer[]) => ProjectLayer[]): void => {
     project.updateCanvas(canvasId, (canvas) => ({ ...canvas, layers: update(canvas.layers) }))
+  }
+
+  const pickSource = (sourceId: string): void => {
+    const target = pickTarget
+    if (!target) return
+    setPickTarget(null)
+    project.updateCanvas(target.canvasId, (canvas) => setLink(canvas, target.role, { canvasId: sourceId }, target.kind))
+  }
+
+  // A picture card's 用它新建画面: a new canvas next to it, starting from the picture.
+  const newCanvasFromPicture = (imageCanvasId: string): void => {
+    if (!project.canvasesRef.current.some((canvas) => canvas.id === imageCanvasId)) return
+    const created = project.addCanvas()
+    project.updateCanvas(created.id, (canvas) => setLink(canvas, 'init', { canvasId: imageCanvasId }))
+    requestAnimationFrame(() => board.current?.reveal(created.id))
+  }
+
+  const inputsWiring: InputsWiring = {
+    canvases: project.canvases,
+    features: boardFeatures,
+    controlAdapters,
+    pickTarget,
+    onPickTarget: setPickTarget,
+    onAddFromFile: (role, kind) => { if (selected) void inputImport.addFromFile(selected.id, role, kind) },
+    maskTool: tool === 'mask',
+    onToggleMask: () => setTool((current) => current === 'mask' ? 'select' : 'mask'),
+    onNavigate: (to) => navigate(to),
   }
 
   const run = async (canvasId: string, seed?: 'new' | 'same'): Promise<void> => {
@@ -351,10 +411,15 @@ export function StudioPage(): React.JSX.Element {
         return
       }
       if (event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target) || document.querySelector('dialog[open]')) return
+      if (event.key === 'Escape' && pickTarget) {
+        setPickTarget(null)
+        return
+      }
       const key = event.key.toLowerCase()
       if (key === 'v') setTool('select')
       else if (key === 'b') setTool('draw')
       else if (key === 'h') setTool('pan')
+      else if (key === 'm') setTool((current) => current === 'mask' ? 'select' : 'mask')
       else if (key === 'escape') setSelectedRegionId(null)
       else if ((key === 'delete' || key === 'backspace') && selected?.kind === 'layout' && selectedRegionId) {
         const region = selected.layers.find((layer) => layer.id === selectedRegionId)
@@ -405,6 +470,8 @@ export function StudioPage(): React.JSX.Element {
           onCopyAsLayout={() => { if (selected) project.addCanvas(selected) }}
           onAddCanvas={() => project.addCanvas()}
           onNavigate={(to) => navigate(to)}
+          inputs={inputsWiring}
+          onUseAsStart={newCanvasFromPicture}
         />
       </StudioSidebar>
 
@@ -448,6 +515,14 @@ export function StudioPage(): React.JSX.Element {
             }
             setDeleting(canvas)
           }}
+          engineFeatures={boardFeatures}
+          controlAdapters={controlAdapters}
+          onLink={(targetId, role, link, kind) => project.updateCanvas(targetId, (canvas) => setLink(canvas, role, link, kind))}
+          onRemoveLink={(canvasId, role, at) => project.updateCanvas(canvasId, (canvas) => removeLink(canvas, role, at))}
+          onImportImages={(files, at) => { void boardAssets.importImages(files, at) }}
+          onSaveMask={(canvasId, png) => { void boardAssets.saveMask(canvasId, png) }}
+          pickTarget={pickTarget}
+          onPick={pickSource}
         />
       </main>
 
@@ -492,7 +567,10 @@ export function StudioPage(): React.JSX.Element {
         description="画面和它的区域会从项目里删除。已经生成的图片仍保留在作品里。"
         confirmLabel="删除画面"
         onConfirm={() => {
-          if (deleting) project.removeCanvas(deleting.id)
+          if (deleting) {
+            const removedLinks = project.removeCanvas(deleting.id)
+            if (removedLinks) toast.push(`已删除「${deleting.title}」，并移除了 ${removedLinks} 条连到它的连线`, 'info')
+          }
           setDeleting(null)
         }}
       />

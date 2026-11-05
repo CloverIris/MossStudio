@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Events, Ipc } from '@shared/channels'
 import type { WebAccessInfo } from '@shared/backend'
-import type { IpcResult, OnboardingStatus, TrainingHost } from '@shared/types'
-import { SFT_BUNDLE_IDS, createMockBackend, downloadFixture, jobFixture, scenario, settingsFixture, sshHostFixture, trainerVersionFixture, type ScenarioName } from './backend'
+import type { IpcResult, JobRecord, OnboardingStatus, TrainingHost } from '@shared/types'
+import { ENGINE_JOBS_CHANNEL, SFT_BUNDLE_IDS, createMockBackend, previewPathFixture, downloadFixture, jobFixture, scenario, settingsFixture, sshHostFixture, trainerVersionFixture, type ScenarioName } from './backend'
 
 async function invoke<T>(backend: ReturnType<typeof createMockBackend>, channel: string, payload?: unknown): Promise<IpcResult<T>> {
   return backend.bridge.invoke<IpcResult<T>>(channel, payload)
@@ -85,6 +85,47 @@ describe('mock backend', () => {
     expect(backend.state.jobs[0]!.outputs).toHaveLength(1)
     const failed = backend.playJob(jobFixture({ id: 'f' }), { fail: { code: 'E', message: 'boom' } })
     expect(failed.at(-1)).toMatchObject({ state: 'failed', error: { message: 'boom' } })
+  })
+
+  it('playJob can queue the job (counting down its place) and play live preview frames', () => {
+    const backend = createMockBackend()
+    const sequence = backend.playJob(jobFixture({ id: 'p', params: { ...jobFixture().params, steps: 20 } }), { queuedAhead: 2, previews: 4 })
+    expect(sequence.slice(0, 2).map((job) => [job.state, job.queuePosition])).toEqual([['queued', 2], ['queued', 1]])
+    expect(sequence[2]!.queuePosition).toBeUndefined()
+    const frames = sequence.filter((job) => job.preview)
+    expect(frames.map((job) => job.preview)).toEqual([5, 10, 15, 20].map((step, index) => ({ path: previewPathFixture('p'), step, total: 20, seq: index + 1 })))
+    expect(frames.every((job) => job.stage === 'denoise' && job.state === 'running')).toBe(true)
+    expect(sequence.at(-1)).toMatchObject({ state: 'succeeded' })
+    expect(sequence.at(-1)!.preview).toBeUndefined()
+  })
+
+  it('engine:features answers the scenario features, without control and previews for an SSH host', async () => {
+    const backend = createMockBackend()
+    const local = await invoke<Record<string, unknown>>(backend, Ipc.engineFeatures, { deviceUuid: 'GPU-1' })
+    expect(local.ok && local.data).toMatchObject({ control: true, preview: true, imageInput: true })
+    const remote = await invoke<Record<string, unknown>>(backend, Ipc.engineFeatures, { hostId: 'h1' })
+    expect(remote.ok && remote.data).toMatchObject({ control: false, preview: false, imageInput: true })
+    backend.state.engineFeatures = null
+    expect(await invoke(backend, Ipc.engineFeatures, { hostId: 'h1' })).toEqual({ ok: true, data: null })
+  })
+
+  it('answers a Studio job submission with a queued job carrying every input', async () => {
+    const backend = createMockBackend()
+    const body = {
+      prompt: 'p', width: 512, height: 512, steps: 8, cfg: 1, seed: 3, canvasId: 'c1', projectId: 'project-1',
+      initImage: { path: '/a/init.png', strength: 0.6 }, mask: { path: '/a/mask.png' },
+      control: { adapter: '/m/c.safetensors', images: [{ kind: 'depth', path: '/a/d.png', strength: 1, start: 0, end: 1 }] },
+      references: { paths: ['/a/r.png'] }, sampling: { sampler: 'heun', hires: { width: 768, height: 768 } },
+    }
+    const result = await backend.bridge.invoke<{ ok: boolean; data: JobRecord }>(ENGINE_JOBS_CHANNEL, body)
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({ id: 'job-e2e-1', state: 'queued', canvasId: 'c1', projectId: 'project-1' })
+    expect(result.data.params).toMatchObject({ initImage: body.initImage, mask: body.mask, control: body.control, references: body.references, sampling: body.sampling })
+    expect(backend.state.jobs[0]!.id).toBe('job-e2e-1')
+    expect(backend.callsTo(ENGINE_JOBS_CHANNEL)).toEqual([body])
+    const plain = await backend.bridge.invoke<{ ok: boolean; data: JobRecord }>(ENGINE_JOBS_CHANNEL, { prompt: 'q' })
+    expect(plain.data.id).toBe('job-e2e-2')
+    expect(plain.data.params).not.toHaveProperty('initImage')
   })
 
   it('playDownload ends in done and marks the catalog entry installed, or ends in error', () => {

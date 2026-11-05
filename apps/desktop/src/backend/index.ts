@@ -14,6 +14,16 @@ const host = process.env['CLOVER_BACKEND_HOST'] ?? '127.0.0.1'
 const webRoot = process.env['CLOVER_WEB_ROOT'] ?? ''
 const requestedPort = Number(process.env['CLOVER_BACKEND_PORT'] ?? 0) || 0
 const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>()
+
+/** An RPC failure from main, with its E_* code when main gave one. */
+class RpcError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message)
+  }
+}
+
+/** Largest picture or mask upload (bytes). */
+const MAX_UPLOAD_BYTES = 80 * 1024 * 1024
 let nextId = 0
 
 function rpc<T>(method: string, params?: unknown): Promise<T> {
@@ -58,6 +68,18 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
     if (body.length > 2_000_000) throw new Error('request too large')
   }
   return body ? JSON.parse(body) : undefined
+}
+
+async function readBytes(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))
+    size += buffer.byteLength
+    if (size > MAX_UPLOAD_BYTES) throw new RpcError('图片文件太大了（不超过 80 MB）', 'E_IMAGE_TOO_LARGE')
+    chunks.push(buffer)
+  }
+  return Buffer.concat(chunks)
 }
 
 const MIME: Record<string, string> = {
@@ -169,6 +191,18 @@ const server = createServer(async (req, res) => {
       send(res, 200, await rpc('getJob', { id: decodeURIComponent(url.pathname.slice('/api/jobs/'.length)) }))
       return
     }
+    // Pictures for a Studio project, sent as the raw request body (image/png, image/jpeg, image/webp).
+    if (req.method === 'POST' && url.pathname === '/api/studio/import-image') {
+      const projectId = url.searchParams.get('projectId') ?? ''
+      send(res, 200, await rpc('importImage', { projectId, base64: (await readBytes(req)).toString('base64') }))
+      return
+    }
+    if (req.method === 'POST' && url.pathname === '/api/studio/save-mask') {
+      const projectId = url.searchParams.get('projectId') ?? ''
+      const canvasId = url.searchParams.get('canvasId') ?? ''
+      send(res, 200, await rpc('saveMask', { projectId, canvasId, base64: (await readBytes(req)).toString('base64') }))
+      return
+    }
     if (req.method === 'POST' && url.pathname === '/api/engine-jobs') {
       send(res, 200, await rpc('startEngineJob', await readBody(req)))
       return
@@ -186,7 +220,10 @@ const server = createServer(async (req, res) => {
     }
     send(res, 404, { error: 'not found' })
   } catch (error) {
-    send(res, 500, { error: error instanceof Error ? error.message : String(error) })
+    const code = error instanceof RpcError ? error.code : undefined
+    // A request main refused for what it asked (E_INPUT*, E_IMAGE*, E_NOT_SUPPORTED) is the client's to fix.
+    const status = code && /^E_(INPUT|IMAGE|NOT_SUPPORTED)/.test(code) ? 400 : 500
+    send(res, status, { error: error instanceof Error ? error.message : String(error), ...(code ? { code } : {}) })
   }
 })
 
@@ -221,7 +258,7 @@ parentPort?.on('message', (event) => {
     if (!entry) return
     pending.delete(String(message['id']))
     clearTimeout(entry.timer)
-    if (message['error']) entry.reject(new Error(String(message['error'])))
+    if (message['error']) entry.reject(new RpcError(String(message['error']), typeof message['code'] === 'string' ? message['code'] : undefined))
     else entry.resolve(message['result'])
     return
   }

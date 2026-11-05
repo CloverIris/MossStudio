@@ -51,6 +51,10 @@ import { inspectRemoteResource, removeRemoteResource } from './services/remoteRe
 import { getTrainingHost } from './services/trainingHosts'
 import { pushTestNotification } from './services/desktopNotifications'
 import { isInside } from './lib/paths'
+import { errorCode } from './lib/codedError'
+import { getEngineFeatures } from './services/engineFeatures'
+import { importImageBytes, importImageFile, saveMask } from './services/studioAssets'
+import { addControlAdapter, listControlAdapters, removeControlAdapter } from './services/controlAdapters'
 import { applyThemeSource, openWindow } from './windows'
 import { getGpuInventory, listDevices, refreshGpuInventory } from './services/devices'
 import { getOnboardingStatus } from './services/onboarding'
@@ -96,7 +100,7 @@ function toResult<T>(fn: () => Promise<T> | T): Promise<IpcResult<T>> {
     .catch((error: unknown) => ({
       ok: false as const,
       error: {
-        code: error instanceof ZodError ? 'BAD_REQUEST' : 'INTERNAL',
+        code: error instanceof ZodError ? 'BAD_REQUEST' : errorCode(error) ?? 'INTERNAL',
         message:
           error instanceof ZodError
             ? error.issues[0]?.message ?? '参数不合法'
@@ -435,6 +439,19 @@ export function registerIpc(): void {
   handle(Ipc.engineSelectDirectory, schemas.engineSelectDirectory, ({ path }) => selectLocalEngineDirectory(path))
 
   handle(Ipc.engineProbe, null, () => probeLocalEngine())
+
+  handle(Ipc.engineFeatures, schemas.engineFeatures, (target) => getEngineFeatures(target))
+
+  handle(Ipc.studioImportImage, schemas.studioImportImage, ({ projectId, path, bytes }) =>
+    bytes ? importImageBytes(projectId, bytes) : importImageFile(projectId, path!))
+
+  handle(Ipc.studioSaveMask, schemas.studioSaveMask, ({ projectId, canvasId, png }) => saveMask(projectId, canvasId, png))
+
+  handle(Ipc.controlAdaptersList, null, () => listControlAdapters())
+
+  handle(Ipc.controlAdaptersAdd, schemas.controlAdapterAdd, (input) => addControlAdapter(input))
+
+  handle(Ipc.controlAdaptersRemove, schemas.controlAdapterRemove, (input) => removeControlAdapter(input))
 
   handle(Ipc.engineRemoteStatus, schemas.engineRemoteStatus, ({ hostId, refreshCuda }) => remoteEngineInfo(hostId, refreshCuda))
 

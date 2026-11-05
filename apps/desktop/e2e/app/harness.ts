@@ -16,8 +16,8 @@ import * as fixtures from '../../test/mocks/backend/fixtures'
 import { createMockBackend, type MockBackend, type MockBackendState, type ScenarioName } from '../../test/mocks/backend'
 import { startTelemetry } from './telemetry'
 
-/** The pseudo IPC channel the Studio's HTTP job submission is recorded under. */
-export const ENGINE_JOBS_CHANNEL = 'http:POST /api/engine-jobs'
+/** The pseudo IPC channel the Studio's HTTP job submission is recorded under (answered by the mock backend). */
+export const ENGINE_JOBS_CHANNEL = fixtures.ENGINE_JOBS_CHANNEL
 
 export interface E2eMock {
   backend: MockBackend
@@ -30,8 +30,11 @@ export interface E2eMock {
   handle: MockBackend['handle']
   playDownload: MockBackend['playDownload']
   playJob: MockBackend['playJob']
-  /** Run a submitted job to the end with `outputs` images (default 1). */
-  finishJob(id: string, options?: { outputs?: number; fail?: { code: string; message: string } }): JobRecord[]
+  /**
+   * Run a submitted job to the end with `outputs` images (default 1); `previews`
+   * live frames while denoising, `queuedAhead` queue places counting down first.
+   */
+  finishJob(id: string, options?: { outputs?: number; fail?: { code: string; message: string }; previews?: number; queuedAhead?: number }): JobRecord[]
   /** Drive a submitted job part-way (running, denoise at half). */
   progressJob(id: string): JobRecord
   fixtures: typeof fixtures
@@ -57,30 +60,6 @@ function parseJson<T>(raw: string | null): T | undefined {
   }
 }
 
-let jobCounter = 0
-
-function submittedJob(body: Record<string, unknown>): JobRecord {
-  jobCounter += 1
-  const base = fixtures.jobFixture({
-    id: `job-e2e-${jobCounter}`,
-    state: 'queued',
-    stage: 'idle',
-    canvasId: typeof body['canvasId'] === 'string' ? body['canvasId'] : undefined,
-    projectId: typeof body['projectId'] === 'string' ? body['projectId'] : undefined,
-    params: {
-      prompt: String(body['prompt'] ?? ''),
-      negativePrompt: String(body['negativePrompt'] ?? ''),
-      width: Number(body['width'] ?? 1024),
-      height: Number(body['height'] ?? 1024),
-      steps: Number(body['steps'] ?? 28),
-      cfg: Number(body['cfg'] ?? 4.5),
-      seed: Number(body['seed'] ?? 0),
-      profile: body['profile'] === 'dmd8' ? 'dmd8' : 'base',
-    },
-  })
-  return { ...base, progress: { stage: 'idle', current: 0, total: base.params.steps, percent: 0 } }
-}
-
 export function installHarness(mount: () => void): E2eMock {
   const query = new URLSearchParams(window.location.search)
   const name = (query.get('scenario') ?? 'ready') as ScenarioName
@@ -100,13 +79,7 @@ export function installHarness(mount: () => void): E2eMock {
     ...settingsPatch,
   } as Settings
 
-  // The Studio submits jobs over HTTP to the local backend; answer from the mock.
-  backend.handle(ENGINE_JOBS_CHANNEL, (payload, { state, emit }) => {
-    const job = submittedJob(payload as Record<string, unknown>)
-    state.jobs = [job, ...state.jobs]
-    emit(Events.job, job)
-    return job
-  })
+  // The Studio submits jobs over HTTP to the local backend; the mock backend answers ENGINE_JOBS_CHANNEL.
   const realFetch = window.fetch.bind(window)
   const backendUrl = 'http://studio-fixture'
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -141,7 +114,7 @@ export function installHarness(mount: () => void): E2eMock {
     playJob: (job, options) => backend.playJob(job, options),
     finishJob(id, options = {}) {
       const job = jobById(id)
-      const sequence = fixtures.jobLifecycle(job, options.fail ? { fail: options.fail } : {})
+      const sequence = fixtures.jobLifecycle(job, { fail: options.fail, previews: options.previews, queuedAhead: options.queuedAhead })
       const count = options.outputs ?? 1
       const last = sequence.at(-1)!
       if (!options.fail) {

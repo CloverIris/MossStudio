@@ -23,7 +23,7 @@ app.commandLine.appendSwitch('force-color-profile', 'srgb')
 app.commandLine.appendSwitch('lang', 'zh-CN')
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'clover', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: 'clover', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ])
 
 /** Generated output/gallery images: a soft gradient whose hue comes from the path. */
@@ -46,7 +46,7 @@ function fixtureImage(url) {
 
 app.whenReady().then(() => {
   protocol.handle('clover', (request) => new Response(fixtureImage(request.url), {
-    headers: { 'content-type': 'image/svg+xml', 'cache-control': 'no-store' },
+    headers: { 'content-type': 'image/svg+xml', 'cache-control': 'no-store', 'access-control-allow-origin': '*' },
   }))
   const win = new BrowserWindow({
     width: 1600,

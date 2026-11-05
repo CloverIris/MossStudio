@@ -988,6 +988,15 @@ export interface GalleryGeneration {
   description?: string
   /** Number of regions when the image came from a region layout. */
   regions?: number
+  /** With 高清修复: the first pass's size (`width`/`height` are the finished picture's). */
+  baseWidth?: number
+  baseHeight?: number
+  /** The pictures and sampling choices the generation used, when it used any. */
+  initImage?: JobInitImage
+  mask?: JobMask
+  control?: JobControl
+  references?: JobReferences
+  sampling?: JobSampling
 }
 
 export interface GalleryPage {
@@ -1084,9 +1093,13 @@ export interface ProjectCanvas {
   kind: 'layout' | 'result' | 'image'
   /** The picture of an `image` Canvas (copied into the project's assets). */
   imagePath?: string
+  /** The real pixel size of `imagePath` (`width`/`height` are its card size on the board). */
+  imageSize?: { width: number; height: number }
   /** Pictures this Canvas generates from. */
   inputs?: CanvasInputs
   sampling?: JobSampling
+  /** A result of a run with 高清修复: the first pass's size (`width`/`height` are the finished picture's). */
+  baseSize?: { width: number; height: number }
   title: string
   /** Position on the free-form board, in unscaled board pixels. */
   x: number

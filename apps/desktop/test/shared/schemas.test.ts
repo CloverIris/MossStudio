@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { z } from 'zod'
-import { type Schemas, schemas } from '@shared/schemas'
+import { jobInputsSchema, type Schemas, schemas } from '@shared/schemas'
 
 const SHA = 'b'.repeat(64)
 const long = (length: number, char = 'a') => char.repeat(length)
@@ -663,6 +663,27 @@ const cases = {
           },
         ],
       },
+      'a control image linked before an adapter is picked': {
+        name: 'Project',
+        canvases: [{ ...canvas, inputs: { control: { adapterId: '', images: [{ kind: 'depth', link: { canvasId: 'x' }, strength: 1, start: 0, end: 1 }] } } }],
+      },
+      'image canvas and a layout with every input': {
+        name: 'Project',
+        canvases: [
+          { ...canvas, id: 'img', kind: 'image', imagePath: '/p/assets/a.png', imageSize: { width: 6000, height: 4000 } },
+          {
+            ...canvas,
+            inputs: {
+              init: { link: { canvasId: 'img' }, strength: 0.6, resize: 'fit' },
+              mask: { path: '/p/assets/mask-c1-x.png' },
+              control: { adapterId: 'control-1', loraStrength: 1, images: [{ kind: 'depth', link: { canvasId: 'img', output: 1 }, strength: 1, start: 0, end: 1 }] },
+              references: { links: [{ canvasId: 'img' }], maxEdge: 1024 },
+            },
+            baseSize: { width: 1024, height: 1024 },
+            sampling: { sampler: 'euler', scheduler: 'karras', shift: 3, hires: { width: 1536, height: 1536, steps: 10, strength: 0.4 }, stepCache: 'fbcache', cfgTruncation: 0.5 },
+          },
+        ],
+      },
     },
     rejects: {
       'empty name': { name: '', canvases: [] },
@@ -680,6 +701,12 @@ const cases = {
       'adapter strength above 2': { name: 'P', canvases: [{ ...canvas, adapters: [{ id: 'a', strength: 2.5 }] }] },
       'invalid layer': { name: 'P', canvases: [{ ...canvas, layers: [{ ...layer, opacity: 2 }] }] },
       'empty device uuid': { name: 'P', canvases: [{ ...canvas, deviceUuid: '' }] },
+      'unknown canvas kind': { name: 'P', canvases: [{ ...canvas, kind: 'mask' }] },
+      'five reference links': { name: 'P', canvases: [{ ...canvas, inputs: { references: { links: Array.from({ length: 5 }, () => ({ canvasId: 'x' })) } } }] },
+      'init strength above 1': { name: 'P', canvases: [{ ...canvas, inputs: { init: { link: { canvasId: 'x' }, strength: 1.5 } } }] },
+      'fractional image size': { name: 'P', canvases: [{ ...canvas, kind: 'image', imageSize: { width: 10.5, height: 10 } }] },
+      'base size too small': { name: 'P', canvases: [{ ...canvas, baseSize: { width: 32, height: 1024 } }] },
+      'hires not a multiple of 16': { name: 'P', canvases: [{ ...canvas, sampling: { hires: { width: 1000, height: 1024 } } }] },
     },
   },
 
@@ -731,6 +758,36 @@ const cases = {
   },
 
   jobId: { valid: { id: 'j1' }, rejects: { 'empty id': { id: '' } } },
+
+  engineFeatures: {
+    valid: {},
+    accepts: { 'a gpu': { deviceUuid: 'GPU-1' }, 'a host': { hostId: 'h1' } },
+    rejects: { 'empty gpu': { deviceUuid: '' }, 'overlong host': { hostId: long(81) } },
+  },
+
+  studioImportImage: {
+    valid: { projectId: 'project-1', path: '/pics/a.png' },
+    accepts: { bytes: { projectId: 'project-1', bytes: new Uint8Array([1, 2]) } },
+    rejects: {
+      'traversal project id': { projectId: '..', path: '/pics/a.png' },
+      'neither path nor bytes': { projectId: 'project-1' },
+      'both path and bytes': { projectId: 'project-1', path: '/a.png', bytes: new Uint8Array([1]) },
+      'bytes as an array': { projectId: 'project-1', bytes: [1, 2] },
+    },
+  },
+
+  studioSaveMask: {
+    valid: { projectId: 'project-1', canvasId: 'c1', png: new Uint8Array([137, 80]) },
+    rejects: {
+      'bad project id': { projectId: 'a/b', canvasId: 'c1', png: new Uint8Array([1]) },
+      'empty canvas id': { projectId: 'p', canvasId: '', png: new Uint8Array([1]) },
+      'png as base64': { projectId: 'p', canvasId: 'c1', png: 'iVBOR' },
+    },
+  },
+
+  controlAdapterAdd: { valid: { path: '/m/control.safetensors' }, rejects: { 'blank path': { path: ' ' } } },
+
+  controlAdapterRemove: { valid: { id: 'control-1' }, rejects: { 'empty id': { id: '' } } },
 
   jobInput: {
     valid: { id: 'j1', text: 'y' },
@@ -957,5 +1014,12 @@ describe('defaults do not override explicit values', () => {
 
   it('leaves gbcCommits limit unset when omitted', () => {
     expect(schemas.gbcCommits.parse({ branch: 'main' })).toEqual({ branch: 'main' })
+  })
+})
+
+describe('jobInputsSchema paths', () => {
+  it('keeps a path exactly as given (no trimming) and refuses a blank one', () => {
+    expect(jobInputsSchema.parse({ initImage: { path: ' /a b.png ', strength: 0.5 } }).initImage?.path).toBe(' /a b.png ')
+    expect(jobInputsSchema.safeParse({ references: { paths: ['   '] } }).error?.issues[0]?.message).toBe('图片路径不能为空')
   })
 })

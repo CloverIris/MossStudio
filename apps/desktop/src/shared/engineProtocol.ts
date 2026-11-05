@@ -1,3 +1,5 @@
+import type { EngineFeatures } from './types'
+
 export const ENGINE_PROTOCOL_VERSION = 2
 
 export interface EngineComputeCapability {
@@ -43,6 +45,8 @@ export interface EngineHello {
   version?: string
   abiVersion?: number
   capabilities: Record<string, boolean | undefined>
+  /** Accepted names per enum parameter (hello's `values`, 2.2+); empty with older engines. */
+  values: Record<string, string[]>
   probe?: EngineProbe
   raw: Record<string, unknown>
 }
@@ -137,6 +141,13 @@ export function decodeEngineHello(raw: unknown): EngineHello {
     }
   }
 
+  const values: Record<string, string[]> = {}
+  if (isRecord(raw.values)) {
+    for (const [key, list] of Object.entries(raw.values)) {
+      if (Array.isArray(list)) values[key] = list.filter((item): item is string => typeof item === 'string')
+    }
+  }
+
   let probe: EngineProbe | undefined
   if (raw.probe !== undefined && raw.probe !== null) {
     if (!isRecord(raw.probe)) throw new Error('引擎 hello.probe 必须是对象')
@@ -164,8 +175,28 @@ export function decodeEngineHello(raw: unknown): EngineHello {
     version: optionalString(raw.version),
     abiVersion: optionalNumber(raw.abi_version ?? raw.abiVersion),
     capabilities,
+    values,
     probe,
     raw,
+  }
+}
+
+/**
+ * What a job may ask of this engine. A capability the hello does not name
+ * (an engine older than 2.2) counts as unsupported.
+ */
+export function engineFeaturesOf(hello: EngineHello): EngineFeatures {
+  const on = (key: string): boolean => hello.capabilities[key] === true
+  const values: Record<string, string[]> = {}
+  for (const [key, list] of Object.entries(hello.values)) values[key] = [...list]
+  return {
+    preview: on('preview'),
+    imageInput: on('image_input'),
+    control: on('control'),
+    references: on('references'),
+    hires: on('hires'),
+    samplers: on('samplers'),
+    values,
   }
 }
 

@@ -1,13 +1,24 @@
 import { Plus } from 'lucide-react'
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react'
-import type { GalleryItem, JobRecord, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react'
+import type { CanvasImageLink, ControlAdapterEntry, EngineFeatures, GalleryItem, JobRecord, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { cn } from '../../components/ui'
-import { CARD_HEADER, boardBounds, cardBodyHeight, cardRect, cardWidth, centerOn, fitView, nextFreeSpot, zoomAround, type View } from './boardLayout'
+import { CARD_HEADER, boardBounds, cardBodyHeight, cardRect, cardWidth, centerOn, fitView, nextFreeSpot, toBoardPoint, zoomAround, type View } from './boardLayout'
 import { CanvasCard } from './CanvasCard'
+import { canConnect, hasPicture, linkMenu } from './connect'
+import { isImageFile } from './imageNodes'
 import { cardJobView } from './jobStatus'
+import { LinkMenu } from './LinkMenu'
+import { controlKindLabel, linkSourceImage, roleLabel, type LinkRole, type PickTarget } from './links'
+import { BRUSH_DEFAULT, maskAvailability, startPictureSize } from './mask'
+import type { MaskBrush, MaskCommand } from './MaskLayer'
 import { rerunEligibility } from './readiness'
 import type { BoardTool } from './RegionLayer'
-import { Toolbar } from './Toolbar'
+import { MaskBar, Toolbar } from './Toolbar'
+import { useCardDrag } from './useCardDrag'
+import { useWireConnect } from './useWireConnect'
+import { useWireSelection } from './useWireSelection'
+import { WireChips, WireLayer } from './WireLayer'
+import { boardWires } from './wires'
 
 const FIT_PADDING = { top: 72, side: 48 }
 
@@ -42,9 +53,25 @@ export interface BoardProps {
   onShowActivity: (jobId?: string) => void
   onCopy: (canvas: ProjectCanvas) => void
   onDelete: (canvas: ProjectCanvas) => void
+  /** What the engine can do (undefined while loading, null when none is usable). */
+  engineFeatures: EngineFeatures | null | undefined
+  controlAdapters: readonly ControlAdapterEntry[]
+  onLink: (targetId: string, role: LinkRole, link: CanvasImageLink, kind?: string) => void
+  onRemoveLink: (canvasId: string, role: LinkRole, at?: number | string) => void
+  /** Picture files dropped or pasted onto the board, at a board point. */
+  onImportImages: (files: File[], at: { x: number; y: number }) => void
+  /** A painted mask to store for a canvas (null: nothing painted any more). */
+  onSaveMask: (canvasId: string, png: Uint8Array | null) => void
+  /** Pick mode (from the inspector): the next card with a picture clicked fills this input. */
+  pickTarget?: PickTarget | null
+  onPick?: (sourceCanvasId: string) => void
 }
 
-/** The free-form board: cards placed anywhere, pan and zoom, and the floating toolbar. */
+function isTyping(target: EventTarget | null): boolean {
+  return Boolean((target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable="true"]'))
+}
+
+/** The free-form board: cards placed anywhere and wired together, pan and zoom, and the floating toolbar. */
 export function Board(props: BoardProps): React.JSX.Element {
   const viewport = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<View>({ zoom: 1, pan: { x: FIT_PADDING.side, y: FIT_PADDING.top } })
@@ -52,15 +79,19 @@ export function Board(props: BoardProps): React.JSX.Element {
   viewRef.current = view
   const [panning, setPanning] = useState(false)
   const pan = useRef<{ pointerId: number; x: number; y: number; origin: View['pan'] } | null>(null)
-  const cardDrag = useRef<{ id: string; pointerId: number; x: number; y: number; origin: { x: number; y: number }; moved: boolean } | null>(null)
-  const [draggingId, setDraggingId] = useState<string | null>(null)
-  /** Until this time a click is the tail of a drag and must not change the selection. */
-  const suppressClick = useRef(0)
+  const [brush, setBrush] = useState<MaskBrush>({ mode: 'paint', size: BRUSH_DEFAULT })
+  const [maskCommand, setMaskCommand] = useState<MaskCommand | undefined>(undefined)
+  /** Last pointer position over the board, where a pasted picture lands. */
+  const pointer = useRef<{ x: number; y: number } | null>(null)
 
   const selected = props.canvases.find((canvas) => canvas.id === props.selectedCanvasId) ?? null
-  const newSpot = nextFreeSpot(props.canvases, selected ?? { width: 1024, height: 1024 })
-  const tileSize = selected ?? { width: 1024, height: 1024 }
+  const tileSize = selected && selected.kind !== 'image' ? selected : { width: 1024, height: 1024 }
+  const newSpot = nextFreeSpot(props.canvases, tileSize)
   const tileRect = { x: newSpot.x, y: newSpot.y, w: cardWidth(tileSize), h: CARD_HEADER + cardBodyHeight(tileSize) }
+
+  const [hoveredWire, setHoveredWire] = useState<string | null>(null)
+  const wires = useMemo(() => boardWires(props.canvases, view.zoom), [props.canvases, view.zoom])
+  const mask = maskAvailability(selected, props.engineFeatures)
 
   const viewportSize = (): { width: number; height: number } => {
     const rect = viewport.current?.getBoundingClientRect()
@@ -68,6 +99,29 @@ export function Board(props: BoardProps): React.JSX.Element {
   }
   const latest = useRef(props)
   latest.current = props
+  const zoomRef = useRef(view.zoom)
+  zoomRef.current = view.zoom
+  const moveRef = useRef(props.onMoveCanvas)
+  moveRef.current = props.onMoveCanvas
+  const cardDrag = useCardDrag({ zoom: zoomRef, onMove: moveRef })
+  // Reading order on the board; frozen while a card is dragged, because moving
+  // its element in the DOM would end the drag (pointer capture is lost).
+  const order = useRef<string[]>([])
+  const ordered = useMemo(() => {
+    const byPosition = [...props.canvases].sort((a, b) => a.y - b.y || a.x - b.x)
+    if (!cardDrag.draggingId) {
+      order.current = byPosition.map((canvas) => canvas.id)
+      return byPosition
+    }
+    const rank = new Map(order.current.map((id, index) => [id, index]))
+    return [...props.canvases].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity))
+  }, [props.canvases, cardDrag.draggingId])
+  const orderedRef = useRef(ordered)
+  orderedRef.current = ordered
+  const connect = useWireConnect({ viewport, view: viewRef, cards: orderedRef })
+  const wireSelection = useWireSelection(wires, (wire) => latest.current.onRemoveLink(wire.targetId, wire.role!, wire.at))
+  const selectedWireId = wireSelection.selectedWireId
+  const setSelectedWireId = wireSelection.select
 
   const fit = useCallback(() => {
     const size = viewportSize()
@@ -115,6 +169,11 @@ export function Board(props: BoardProps): React.JSX.Element {
     return () => element.removeEventListener('wheel', onWheel)
   }, [])
 
+  // The 遮罩 tool only works on a canvas with a start picture.
+  useEffect(() => {
+    if (props.tool === 'mask' && !mask.enabled) props.onTool('select')
+  }, [props.tool, mask.enabled, props.onTool])
+
   const zoomBy = (factor: number): void => {
     const size = viewportSize()
     setView((current) => zoomAround(current, size.width / 2, size.height / 2, factor))
@@ -132,8 +191,16 @@ export function Board(props: BoardProps): React.JSX.Element {
     return () => window.removeEventListener('blur', endPan)
   }, [])
 
+  const boardPoint = (clientX: number, clientY: number): { x: number; y: number } => {
+    const rect = viewport.current?.getBoundingClientRect()
+    return toBoardPoint(viewRef.current, clientX - (rect?.left ?? 0), clientY - (rect?.top ?? 0))
+  }
+
   const onPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>): void => {
     const target = event.target as HTMLElement
+    // Pasting needs the board focused; a press anywhere that is not a control focuses it.
+    if (!target.closest('button, input, textarea, select, a, [contenteditable="true"]')) viewport.current?.focus({ preventScroll: true })
+    if (!target.closest('[data-wire], [data-wire-chip]')) setSelectedWireId(null)
     if (target.closest('[data-board-ui]')) return
     const onCard = Boolean(target.closest('[data-canvas-card], [data-new-canvas]'))
     // Middle button, the 平移 tool, or a drag on the empty board pans.
@@ -147,6 +214,7 @@ export function Board(props: BoardProps): React.JSX.Element {
     event.currentTarget.setPointerCapture(event.pointerId)
   }
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
+    pointer.current = boardPoint(event.clientX, event.clientY)
     const gesture = pan.current
     if (!gesture || gesture.pointerId !== event.pointerId) return
     if (event.buttons === 0) {
@@ -158,50 +226,57 @@ export function Board(props: BoardProps): React.JSX.Element {
 
   const startCardDrag = (canvas: ProjectCanvas, event: React.PointerEvent<HTMLElement>): void => {
     if (event.button !== 0 || props.tool === 'pan') return
-    event.stopPropagation()
-    cardDrag.current = { id: canvas.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, origin: { x: canvas.x, y: canvas.y }, moved: false }
-    event.currentTarget.setPointerCapture(event.pointerId)
-    const element = event.currentTarget
-    const move = (next: PointerEvent): void => {
-      const drag = cardDrag.current
-      if (!drag || drag.pointerId !== next.pointerId) return
-      if (next.buttons === 0) { stop(next); return }
-      const dx = (next.clientX - drag.x) / viewRef.current.zoom
-      const dy = (next.clientY - drag.y) / viewRef.current.zoom
-      if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 3) return
-      if (!drag.moved) setDraggingId(drag.id)
-      drag.moved = true
-      latest.current.onMoveCanvas(drag.id, Math.round(drag.origin.x + dx), Math.round(drag.origin.y + dy))
-    }
-    const stop = (next: PointerEvent): void => {
-      const drag = cardDrag.current
-      if (!drag || drag.pointerId !== next.pointerId) return
-      if (drag.moved) suppressClick.current = performance.now() + 300
-      cardDrag.current = null
-      setDraggingId(null)
-      element.removeEventListener('pointermove', move)
-      element.removeEventListener('pointerup', stop)
-      element.removeEventListener('pointercancel', stop)
-      if (element.hasPointerCapture(next.pointerId)) element.releasePointerCapture(next.pointerId)
-    }
-    element.addEventListener('pointermove', move)
-    element.addEventListener('pointerup', stop)
-    element.addEventListener('pointercancel', stop)
+    cardDrag.start(canvas, event)
   }
 
-  const ordered = [...props.canvases].sort((a, b) => a.y - b.y || a.x - b.x)
+  const importFiles = (list: FileList | null | undefined, at: { x: number; y: number }): boolean => {
+    const files = [...(list ?? [])].filter(isImageFile)
+    if (!files.length) return false
+    props.onImportImages(files, at)
+    return true
+  }
+
+  const onPaste = (event: React.ClipboardEvent<HTMLDivElement>): void => {
+    if (isTyping(event.target)) return
+    const size = viewportSize()
+    const at = pointer.current ?? toBoardPoint(viewRef.current, size.width / 2, size.height / 2)
+    if (importFiles(event.clipboardData?.files, at)) event.preventDefault()
+  }
+
+  const pickFor = props.pickTarget ? props.canvases.find((canvas) => canvas.id === props.pickTarget!.canvasId) : undefined
+  const pickState = (canvas: ProjectCanvas): 'ok' | 'inert' | undefined => {
+    if (!props.pickTarget) return undefined
+    return pickFor && hasPicture(canvas) && canConnect(props.canvases, canvas.id, pickFor).ok ? 'ok' : 'inert'
+  }
+  const pickRole = props.pickTarget
+    ? props.pickTarget.role === 'control' ? `控制图 · ${controlKindLabel(props.pickTarget.kind ?? '')}` : roleLabel(props.pickTarget.role)
+    : ''
+
+  const menuTarget = connect.menu ? props.canvases.find((canvas) => canvas.id === connect.menu!.targetId) : undefined
+  const menuSource = connect.menu ? props.canvases.find((canvas) => canvas.id === connect.menu!.sourceId) : undefined
 
   return (
     <div
       ref={viewport}
+      tabIndex={-1}
+      data-board
       data-panning={panning || undefined}
-      className={cn('relative h-full min-h-0 overflow-hidden bg-board', (panning || props.tool === 'pan') && 'cursor-grab', panning && 'cursor-grabbing')}
+      className={cn('relative h-full min-h-0 overflow-hidden bg-board outline-none', (panning || props.tool === 'pan') && 'cursor-grab', panning && 'cursor-grabbing')}
       onPointerDownCapture={onPointerDownCapture}
       onPointerMove={onPointerMove}
       onPointerUp={endPan}
       onPointerCancel={endPan}
       onLostPointerCapture={(event) => { if (pan.current?.pointerId === event.pointerId) endPan() }}
       onAuxClick={(event) => { if (event.button === 1) event.preventDefault() }}
+      onDragOver={(event) => {
+        if (![...event.dataTransfer.types].includes('Files')) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(event) => {
+        if (importFiles(event.dataTransfer.files, boardPoint(event.clientX, event.clientY))) event.preventDefault()
+      }}
+      onPaste={onPaste}
     >
       <Toolbar
         tool={props.tool}
@@ -214,27 +289,71 @@ export function Board(props: BoardProps): React.JSX.Element {
         zoom={view.zoom}
         onZoom={zoomBy}
         onFit={fit}
+        mask={mask}
       />
+      {props.tool === 'mask' && mask.enabled ? (
+        <MaskBar
+          brush={brush}
+          onBrush={setBrush}
+          onClear={() => setMaskCommand((value) => ({ type: 'clear', n: (value?.n ?? 0) + 1 }))}
+          onInvert={() => setMaskCommand((value) => ({ type: 'invert', n: (value?.n ?? 0) + 1 }))}
+          onDone={() => props.onTool('select')}
+        />
+      ) : null}
 
       <div
         className="absolute left-0 top-0 origin-top-left"
         style={{ transform: `translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})` }}
       >
+        <WireLayer
+          wires={wires}
+          zoom={view.zoom}
+          selectedWireId={selectedWireId}
+          selectedCanvasId={props.selectedCanvasId}
+          flowing={props.busyIds}
+          draft={connect.draft}
+          onSelect={(id) => { setSelectedWireId(id); props.onSelectRegion(null) }}
+          onHover={setHoveredWire}
+        />
         {ordered.map((canvas) => {
           const job = canvas.jobId ? props.jobs.find((item) => item.id === canvas.jobId) : undefined
           const busy = props.busyIds.has(canvas.id)
+          const isSelected = canvas.id === props.selectedCanvasId
+          const init = canvas.kind === 'layout' ? canvas.inputs?.init : undefined
+          const initPath = init ? linkSourceImage(init.link, props.canvases) : null
+          const showMask = Boolean(init && isSelected && (props.tool === 'mask' || canvas.inputs?.mask))
+          const draft = connect.draft
+          const pick = pickState(canvas)
           return (
             <CanvasCard
               key={canvas.id}
               canvas={canvas}
               view={cardJobView(canvas, job, props.jobs)}
-              selected={canvas.id === props.selectedCanvasId}
-              dragging={draggingId === canvas.id}
+              selected={isSelected}
+              dragging={cardDrag.draggingId === canvas.id}
               tool={props.tool}
               regionKind={props.regionKind}
               selectedRegionId={props.selectedRegionId}
               rerun={rerunEligibility(canvas, { busy, submitting: props.submitting })}
-              onSelect={() => { if (performance.now() > suppressClick.current && canvas.id !== props.selectedCanvasId) props.onSelectCanvas(canvas.id) }}
+              initPicture={initPath ? { path: initPath, resize: init?.resize, size: startPictureSize(canvas, props.canvases) } : null}
+              mask={showMask ? {
+                interactive: props.tool === 'mask' && mask.enabled,
+                brush,
+                command: maskCommand,
+                onSave: (png) => props.onSaveMask(canvas.id, png),
+              } : null}
+              hasOutput={hasPicture(canvas)}
+              dropTarget={draft?.targetId === canvas.id ? (draft.ok ? 'ok' : 'no') : undefined}
+              onPortDown={(event) => connect.start(canvas, event)}
+              pick={pick}
+              onSelect={() => {
+                if (cardDrag.isDragTail()) return
+                if (pick) {
+                  if (pick === 'ok') props.onPick?.(canvas.id)
+                  return
+                }
+                if (canvas.id !== props.selectedCanvasId) props.onSelectCanvas(canvas.id)
+              }}
               onSelectRegion={props.onSelectRegion}
               onChangeLayers={(update) => props.onChangeLayers(canvas.id, update)}
               onRegionDrawn={(id) => { props.onSelectRegion(id); props.onTool('select') }}
@@ -249,6 +368,15 @@ export function Board(props: BoardProps): React.JSX.Element {
             />
           )
         })}
+        <WireChips
+          wires={wires}
+          zoom={view.zoom}
+          selectedWireId={selectedWireId}
+          hovered={hoveredWire}
+          onHover={setHoveredWire}
+          onSelect={(id) => { setSelectedWireId(id); props.onSelectRegion(null) }}
+          onRemove={wireSelection.remove}
+        />
         <button
           type="button"
           data-new-canvas
@@ -260,6 +388,32 @@ export function Board(props: BoardProps): React.JSX.Element {
           新建画面
         </button>
       </div>
+
+      {props.pickTarget ? (
+        <div
+          role="status"
+          data-board-ui
+          data-pick-hint
+          className="absolute left-1/2 top-[64px] z-20 -translate-x-1/2 rounded-full bg-raised px-3 py-1.5 text-caption text-ink shadow-float"
+        >
+          点一张有图片的卡片作为{pickRole} · Esc 取消
+        </div>
+      ) : null}
+      {connect.menu && menuTarget ? (
+        <LinkMenu
+          title={`把「${menuSource?.title ?? '图片'}」接到「${menuTarget.title}」`}
+          entries={linkMenu(menuTarget, connect.menu.sourceId, props.engineFeatures, props.controlAdapters)}
+          at={connect.menu.at}
+          bounds={viewportSize()}
+          onClose={connect.closeMenu}
+          onPick={(role, kind) => {
+            const menu = connect.menu!
+            props.onLink(menu.targetId, role, { canvasId: menu.sourceId }, kind)
+            connect.closeMenu()
+          }}
+        />
+      ) : null}
+      <span className="sr-only" aria-live="polite">{selectedWireId ? `已选中连线 ${wires.find((wire) => wire.id === selectedWireId)?.label ?? ''}，按 Delete 断开` : ''}</span>
     </div>
   )
 }

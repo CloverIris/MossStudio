@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JobRecord, ProjectCanvas, ProjectDocument, ProjectSummary } from '@shared/types'
 import { electronStudioClient, type StudioClient } from '../../lib/studioClient'
-import { applyJobs, copyAsLayout, createLayoutCanvas, migrateCanvas, settingsFrom } from './canvases'
+import { applyJobs, copyAsLayout, createLayoutCanvas, migrateCanvases, removeCanvasFrom, settingsFrom } from './canvases'
 import { UNTITLED_PROJECT, nextProjectName } from './defaults'
 import { useLiveState } from './useLiveState'
 
@@ -32,7 +32,8 @@ export interface StudioProject {
   updateCanvas: (id: string, patch: Partial<ProjectCanvas> | ((canvas: ProjectCanvas) => ProjectCanvas)) => void
   select: (id: string | null) => void
   addCanvas: (source?: ProjectCanvas) => ProjectCanvas
-  removeCanvas: (id: string) => void
+  /** Removes the canvas and every link that pointed at it; returns how many links went. */
+  removeCanvas: (id: string) => number
   saveNow: (override?: { canvases: ProjectCanvas[]; selectedCanvasId: string | null }) => Promise<ProjectDocument | null>
   openProject: (id: string) => Promise<void>
   newProject: () => Promise<void>
@@ -196,7 +197,7 @@ export function useStudioProject(options: {
         onErrorRef.current('这个项目已经不存在了')
         return false
       }
-      const list = Array.isArray(doc.canvases) ? doc.canvases.map(migrateCanvas) : []
+      const list = Array.isArray(doc.canvases) ? migrateCanvases(doc.canvases) : []
       if (list.length === 0) {
         const first = createLayoutCanvas([], settingsFrom(null))
         adopt({ ...doc, canvases: [first], selectedCanvasId: first.id }, false)
@@ -301,7 +302,9 @@ export function useStudioProject(options: {
 
   const addCanvas = useCallback((source?: ProjectCanvas) => {
     const list = canvasesRef.current
-    const current = list.find((canvas) => canvas.id === selectedRef.current)
+    const selectedCanvas = list.find((canvas) => canvas.id === selectedRef.current)
+    // A picture card has no generation settings; carry over the latest canvas's instead.
+    const current = selectedCanvas?.kind === 'image' ? [...list].reverse().find((canvas) => canvas.kind !== 'image') : selectedCanvas
     const canvas = source ? copyAsLayout(source, list) : createLayoutCanvas(list, settingsFrom(current))
     editCanvases([...list, canvas])
     select(canvas.id)
@@ -309,11 +312,12 @@ export function useStudioProject(options: {
   }, [canvasesRef, selectedRef, editCanvases, select])
 
   const removeCanvas = useCallback((id: string) => {
-    const remaining = canvasesRef.current.filter((canvas) => canvas.id !== id)
+    const { canvases: remaining, removedLinks } = removeCanvasFrom(canvasesRef.current, id)
     editCanvases(remaining)
     if (selectedRef.current === id) {
       select((remaining.find((canvas) => canvas.kind === 'layout') ?? remaining[0])?.id ?? null)
     }
+    return removedLinks
   }, [canvasesRef, selectedRef, editCanvases, select])
 
   /**

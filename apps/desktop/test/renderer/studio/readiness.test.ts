@@ -125,3 +125,16 @@ describe('studio/readiness rerunEligibility', () => {
     expect(rerunEligibility(canvas(), { busy: false, submitting: false })).toMatchObject({ ok: false, reason: '先写一句描述' })
   })
 })
+
+describe('studio/readiness input blockers', () => {
+  it('lists the canvas input problems before an incomplete description', () => {
+    const inputBlockers = [{ id: 'input-source' as const, message: '起始图「画面 2」还没生成' }]
+    const { blockers } = deriveReadiness(input({ canvas: canvas({ prompt: '' }), inputBlockers }))
+    expect(blockers.map((blocker) => blocker.id)).toEqual(['input-source', 'prompt'])
+    expect(blockers[0]!.message).toBe('起始图「画面 2」还没生成')
+  })
+
+  it('ignores input blockers when no layout canvas is selected', () => {
+    expect(deriveReadiness(input({ canvas: null, inputBlockers: [{ id: 'input-invalid', message: 'x' }] })).blockers).toEqual([])
+  })
+})

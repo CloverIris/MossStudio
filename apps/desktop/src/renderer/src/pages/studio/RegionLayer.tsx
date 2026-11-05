@@ -6,7 +6,8 @@ import { moveBox, newRegion, regionFromDrag, resizeBox } from './canvases'
 
 export const KIND_LABEL: Record<ProjectLayerKind, string> = { object: '物体', character: '人物', text: '文字' }
 
-export type BoardTool = 'select' | 'draw' | 'pan'
+/** 遮罩 paints the repaint mask of the selected canvas (see MaskLayer). */
+export type BoardTool = 'select' | 'draw' | 'pan' | 'mask'
 
 type Gesture = { owner: Element } & (
   | { kind: 'draw'; pointerId: number; start: [number, number]; current: [number, number] }

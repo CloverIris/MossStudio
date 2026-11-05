@@ -23,6 +23,7 @@ import {
 } from '../../components/ui'
 import { useApp } from '../../store'
 import { AdvancedPanel } from './AdvancedPanel'
+import { ControlAdaptersSection } from './ControlAdaptersSection'
 import { LoraTab } from './LoraTab'
 import { DeleteModelDialog, FeaturedModel, ModelList } from './ModelEntries'
 import { bundleDeletePlan, bundleView, parseModelsQuery, recommendedBundle, visibleTasks } from './logic'
@@ -119,6 +120,8 @@ function ModelsTab({
           <ModelList views={shownOthers} location={location} highlightId={preferredBundleId} deletable={deletable} onDelete={setDeleting} />
         </Section>
       ) : null}
+
+      {location.kind === 'local' ? <ControlAdaptersSection /> : null}
 
       <Section title="存储位置">
         <StorageRow location={location} />

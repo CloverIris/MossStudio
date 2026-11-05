@@ -37,7 +37,17 @@ import type {
   Settings,
   TrainingHost,
 } from '@shared/types'
-import { ENGINE_PATH, FIXTURE_NOW, controlAdapterFixture, localHostFixture, downloadFixture, jobLifecycle } from './fixtures'
+import {
+  ENGINE_JOBS_CHANNEL,
+  ENGINE_PATH,
+  FIXTURE_NOW,
+  controlAdapterFixture,
+  localHostFixture,
+  downloadFixture,
+  jobLifecycle,
+  submittedJobFixture,
+  type JobLifecycleOptions,
+} from './fixtures'
 import { scenario, type MockBackendState, type ScenarioName } from './scenarios'
 
 export * from './fixtures'
@@ -85,8 +95,8 @@ export interface MockBackend {
   hold(channel: string): HeldCall
   emit(event: string, data: unknown): void
   listenerCount(event: string): number
-  /** Emit `jobLifecycle(job)` on Events.job, keeping state.jobs in sync. */
-  playJob(job: JobRecord, options?: { fail?: { code: string; message: string } }): JobRecord[]
+  /** Emit `jobLifecycle(job, options)` on Events.job (queue places, preview frames…), keeping state.jobs in sync. */
+  playJob(job: JobRecord, options?: JobLifecycleOptions): JobRecord[]
   /** Emit queued → running → verifying → done (or error) for a download task. */
   playDownload(task: DownloadTask, options?: { error?: string }): DownloadTask[]
   install(target?: { clover?: CloverBridge }): () => void
@@ -300,7 +310,7 @@ function defaultHandlers(): Map<string, Handler> {
   h.set(Ipc.engineProbe, (_, { state }) => {
     if (state.engineReadiness.state !== 'ready') throw new MockIpcError('E_ENGINE_MISSING', '未找到 moss-server；请下载引擎或设置路径')
     const version = state.engineVersions.find((item) => item.current)?.name ?? 'v2.1.1'
-    const hello: EngineHello = { protocol: 2, server: 'moss-server', version, capabilities: {}, raw: {} }
+    const hello: EngineHello = { protocol: 2, server: 'moss-server', version, capabilities: {}, values: {}, raw: {} }
     const gpuCompatibility: EngineGpuProbeSnapshot = {
       enginePath: state.engineReadiness.path ?? ENGINE_PATH,
       engineVersion: version,
@@ -370,10 +380,16 @@ function defaultHandlers(): Map<string, Handler> {
   })
 
   // Studio inputs: engine features, imported pictures, painted masks, control adapters
-  h.set(Ipc.engineFeatures, (_, { state }) => state.engineFeatures)
+  // Like main: an SSH host gets uploaded image inputs, but no control adapters or live previews yet.
+  h.set(Ipc.engineFeatures, (payload, { state }) => {
+    const { hostId } = p<{ deviceUuid?: string; hostId?: string }>(payload)
+    if (!state.engineFeatures || !hostId) return state.engineFeatures
+    return { ...state.engineFeatures, control: false, preview: false }
+  })
   h.set(Ipc.studioImportImage, (payload) => {
-    const { projectId, path } = p<{ projectId: string; path: string }>(payload)
-    const name = path.split(/[\\/]/).pop() ?? 'image.png'
+    const { projectId, path, bytes, name: given } = p<{ projectId: string; path?: string; bytes?: Uint8Array; name?: string }>(payload)
+    if (!path && !bytes) throw new MockIpcError('BAD_REQUEST', '需要图片路径或图片内容（二选一）')
+    const name = path ? path.split(/[\\/]/).pop() ?? 'image.png' : given ?? 'pasted.png'
     return { path: `/fixture/projects/${projectId}/assets/${name}`, width: 1024, height: 1024 }
   })
   h.set(Ipc.studioSaveMask, (payload) => {
@@ -395,6 +411,16 @@ function defaultHandlers(): Map<string, Handler> {
     state.controlAdapters = state.controlAdapters.filter((item) => item.id !== id)
     emit(Events.modelsChanged, null)
     return null
+  })
+
+  // The Studio submits generations over HTTP; every request field (image inputs included) lands in job.params.
+  let submitted = 0
+  h.set(ENGINE_JOBS_CHANNEL, (payload, { state, emit }) => {
+    submitted += 1
+    const job = submittedJobFixture(p<Record<string, unknown>>(payload), `job-e2e-${submitted}`)
+    state.jobs = [job, ...state.jobs]
+    emit(Events.job, job)
+    return job
   })
 
   // Projects

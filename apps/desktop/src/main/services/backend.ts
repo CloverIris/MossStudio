@@ -5,8 +5,10 @@ import { app, utilityProcess, type UtilityProcess } from 'electron'
 import type { BackendInfo, WebAccessInfo } from '@shared/backend'
 import type { JobRecord } from '@shared/types'
 import { onEmit } from '../lib/events'
-import { cancelJob, getJob, listJobs, startEngineJob } from './supervisor'
-import { resolveCanvasAdapters } from './adapterResolution'
+import { cancelJob, getJob, listJobs } from './supervisor'
+import { errorCode } from '../lib/codedError'
+import { startRequestedEngineJob } from './engineJobStart'
+import { importImageBytes, saveMask } from './studioAssets'
 import { getCatalog } from './models'
 import { listGallery, readGalleryFile } from './gallery'
 import { deleteProject, getProject, listProjects, saveProject } from './projects'
@@ -20,9 +22,9 @@ function handleRpc(message: Record<string, unknown>): void {
   const id = String(message['id'] ?? '')
   const method = String(message['method'] ?? '')
   const params = (message['params'] ?? {}) as Record<string, unknown>
-  const respond = (result: unknown, error?: string): void => {
+  const respond = (result: unknown, error?: string, code?: string): void => {
     try {
-      child?.postMessage(error ? { type: 'rpc-result', id, error } : { type: 'rpc-result', id, result })
+      child?.postMessage(error ? { type: 'rpc-result', id, error, ...(code ? { code } : {}) } : { type: 'rpc-result', id, result })
     } catch {
       // child gone
     }
@@ -30,11 +32,13 @@ function handleRpc(message: Record<string, unknown>): void {
   void (async () => {
     try {
       if (method === 'startEngineJob') {
-        // The renderer posts model-library adapter ids; resolve them here as well,
-        // because this RPC path does not go through the IPC `startJob` wrapper.
-        const hostId = typeof params['hostId'] === 'string' && params['hostId'] ? params['hostId'] : undefined
-        const adapters = await resolveCanvasAdapters(getSettings(), params['adapters'], { hostId })
-        respond(await startEngineJob({ ...params, adapters } as never))
+        // LoRA ids are resolved and image inputs validated (paths, limits, engine support).
+        respond(await startRequestedEngineJob(params))
+      } else if (method === 'importImage') {
+        // The LAN web UI uploads the picture's bytes (it has no local path).
+        respond(await importImageBytes(String(params['projectId'] ?? ''), Buffer.from(String(params['base64'] ?? ''), 'base64')))
+      } else if (method === 'saveMask') {
+        respond(await saveMask(String(params['projectId'] ?? ''), String(params['canvasId'] ?? ''), Buffer.from(String(params['base64'] ?? ''), 'base64')))
       } else if (method === 'cancelJob') {
         respond(await cancelJob(String(params['id'] ?? '')))
       } else if (method === 'getJob') {
@@ -60,7 +64,7 @@ function handleRpc(message: Record<string, unknown>): void {
         respond(null, `unknown backend method: ${method}`)
       }
     } catch (error) {
-      respond(null, error instanceof Error ? error.message : String(error))
+      respond(null, error instanceof Error ? error.message : String(error), errorCode(error))
     }
   })()
 }

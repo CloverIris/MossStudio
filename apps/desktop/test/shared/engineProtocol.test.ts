@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   decodeEngineHello,
+  engineFeaturesOf,
   ENGINE_PROTOCOL_VERSION,
   type EngineDevice,
   type EngineHello,
@@ -55,6 +56,7 @@ const device = (overrides: Partial<EngineDevice> = {}): EngineDevice => ({
 const helloWith = (devices: EngineDevice[], protocol = ENGINE_PROTOCOL_VERSION): EngineHello => ({
   protocol,
   capabilities: {},
+  values: {},
   probe: { devices },
   raw: {},
 })
@@ -418,5 +420,59 @@ describe('probeEngine against the fake moss-server', () => {
     expect(hello.server).toBe('fake-moss-server')
     expect(hello.probe?.devices).toHaveLength(1)
     expect(hello.probe?.devices[0]?.compute).toEqual({ major: 8, minor: 9 })
+  })
+})
+
+describe('engineFeaturesOf', () => {
+  /** moss-server 2.2's hello (main.cpp hello()): every capability, and the enum tables in `values`. */
+  const hello22 = {
+    protocol_version: 2,
+    server: 'moss-server',
+    version: '2.2.0',
+    capabilities: {
+      preview: true, comfyui_models: false, model_files: true, lora: true, tiers: true, samplers: true,
+      image_input: true, hires: true, distill: true, system_cuda: true, control: true, accel: true,
+      preload: true, release: true, certificate_dirs: false, te_host_pin: true, progress_fraction: true,
+      inspect: true, references: true, check: true, components: true,
+    },
+    values: {
+      sampler: ['euler', 'ab2', 'euler_ancestral', 'heun', 'dpmpp_2m', 'dpmpp_2m_sde', 'er_sde', 'res_multistep', 'dataspace'],
+      scheduler: ['moss', 'simple', 'normal', 'karras', 'exponential', 'beta', 'sgm_uniform'],
+      resize: ['crop', 'fit', 'stretch'],
+      mask_encoding: ['u8', 'binary01'],
+      step_cache: ['off', 'fbcache'],
+      tier: ['reference', 'high', 'turbo'],
+    },
+  }
+
+  it('reads the generation capabilities and the enum names of a 2.2 engine', () => {
+    const features = engineFeaturesOf(decodeEngineHello(hello22))
+    expect(features).toEqual({
+      preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true,
+      values: hello22.values,
+    })
+  })
+
+  it('treats an engine without these capabilities (older than 2.2) as supporting none of them', () => {
+    const features = engineFeaturesOf(decodeEngineHello({ protocol_version: 2, version: '2.1.1', capabilities: { tiers: true, lora: true } }))
+    expect(features).toEqual({ preview: false, imageInput: false, control: false, references: false, hires: false, samplers: false, values: {} })
+  })
+
+  it('counts only a literal true, and keeps only string names', () => {
+    const features = engineFeaturesOf(decodeEngineHello({
+      protocol_version: 2,
+      capabilities: { preview: 'yes', image_input: 1, control: false },
+      values: { sampler: ['euler', 3, null, 'heun'], scheduler: 'karras', resize: [] },
+    }))
+    expect(features.preview).toBe(false)
+    expect(features.imageInput).toBe(false)
+    expect(features.control).toBe(false)
+    expect(features.values).toEqual({ sampler: ['euler', 'heun'], resize: [] })
+  })
+
+  it('returns a copy of the names, not the hello\'s own arrays', () => {
+    const hello = decodeEngineHello(hello22)
+    engineFeaturesOf(hello).values['sampler']!.push('mine')
+    expect(hello.values['sampler']).not.toContain('mine')
   })
 })

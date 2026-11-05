@@ -37,7 +37,7 @@ export function cardRect(canvas: Placed): Rect {
   return { x: canvas.x, y: canvas.y, w: cardWidth(canvas), h: cardHeight(canvas) }
 }
 
-function overlaps(a: Rect, b: Rect): boolean {
+export function overlaps(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 }
 
@@ -127,4 +127,27 @@ export function pointInCanvas(
   const x = ((client.x - rect.left) / Math.max(1, rect.width)) * canvas.width
   const y = ((client.y - rect.top) / Math.max(1, rect.height)) * canvas.height
   return [Math.round(Math.min(canvas.width, Math.max(0, x))), Math.round(Math.min(canvas.height, Math.max(0, y)))]
+}
+
+/** A point in the viewport (relative to its top-left) as unscaled board pixels. */
+export function toBoardPoint(view: View, viewportX: number, viewportY: number): { x: number; y: number } {
+  return { x: (viewportX - view.pan.x) / view.zoom, y: (viewportY - view.pan.y) / view.zoom }
+}
+
+/** Longest picture edge an imported image card is shown at (in canvas pixels). */
+export const IMAGE_NODE_MAX_EDGE = 1024
+export const IMAGE_NODE_MIN_EDGE = 128
+
+/**
+ * The card size of an imported picture: its own aspect ratio, scaled so the
+ * long edge is at most IMAGE_NODE_MAX_EDGE and the short edge stays visible.
+ */
+export function imageNodeSize(pixels: { width: number; height: number }): { width: number; height: number } {
+  const width = Math.max(1, pixels.width || 1)
+  const height = Math.max(1, pixels.height || 1)
+  const scale = Math.min(1, IMAGE_NODE_MAX_EDGE / Math.max(width, height))
+  return {
+    width: Math.max(IMAGE_NODE_MIN_EDGE, Math.round(width * scale)),
+    height: Math.max(IMAGE_NODE_MIN_EDGE, Math.round(height * scale)),
+  }
 }

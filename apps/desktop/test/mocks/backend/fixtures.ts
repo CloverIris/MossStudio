@@ -22,6 +22,7 @@ import type {
   GpuInventorySnapshot,
   GpuTelemetrySnapshot,
   JobLogLine,
+  JobParams,
   JobRecord,
   LaunchDevice,
   LaunchRow,
@@ -291,17 +292,45 @@ export function jobFixture(patch: Partial<JobRecord> = {}): JobRecord {
   }
 }
 
-/** The event sequence a successful (or failing) job emits on Events.job. */
-export function jobLifecycle(base: JobRecord, options: { fail?: { code: string; message: string } } = {}): JobRecord[] {
+export interface JobLifecycleOptions {
+  fail?: { code: string; message: string }
+  /** Live preview frames while denoising (each a `JobRecord.preview` with a new `seq`). */
+  previews?: number
+  /** Start queued behind this many jobs: one `queued` update per place (N, N-1 … 1). */
+  queuedAhead?: number
+}
+
+/** Where the mock engine "writes" a job's live preview (clover:// serves any path in E2E). */
+export function previewPathFixture(jobId: string): string {
+  return `/fixture/cache/previews/${jobId}.png`
+}
+
+/**
+ * The event sequence a successful (or failing) job emits on Events.job:
+ * optionally queued (with `queuePosition` counting down), then loading,
+ * denoising (with `previews` live frames), decoding and the result.
+ */
+export function jobLifecycle(base: JobRecord, options: JobLifecycleOptions = {}): JobRecord[] {
   const total = base.params.steps
+  const { preview: _preview, queuePosition: _queuePosition, ...clean } = base
   const at = (stage: JobRecord['stage'], current: number, state: JobRecord['state']): JobRecord => ({
-    ...base, state, stage, progress: { stage, current, total, percent: Math.round((current / total) * 100) },
+    ...clean, state, stage, progress: { stage, current, total, percent: Math.round((current / total) * 100) },
   })
+  const queued = Array.from({ length: Math.max(0, options.queuedAhead ?? 0) }, (_, index) => ({
+    ...at('idle', 0, 'queued'), queuePosition: (options.queuedAhead ?? 0) - index,
+  }))
+  const frames = Math.max(0, options.previews ?? 0)
+  const denoise = frames
+    ? Array.from({ length: frames }, (_, index) => {
+        const step = Math.max(1, Math.round(((index + 1) / frames) * total))
+        return { ...at('denoise', step, 'running'), preview: { path: previewPathFixture(base.id), step, total, seq: index + 1 } }
+      })
+    : [at('denoise', Math.floor(total / 2), 'running'), at('denoise', total, 'running')]
   const running = [
+    ...queued,
     at('load', 0, 'starting'),
     at('text', 0, 'running'),
-    at('denoise', Math.floor(total / 2), 'running'),
-    at('denoise', total, 'running'),
+    ...denoise,
   ]
   if (options.fail) {
     return [...running, { ...at('denoise', total, 'failed'), error: options.fail, endedAt: FIXTURE_NOW, exitCode: 1 }]
@@ -316,6 +345,40 @@ export function jobLifecycle(base: JobRecord, options: { fail?: { code: string; 
       outputs: [{ path: `/fixture/outputs/${base.id}.png`, width: base.params.width, height: base.params.height, seed: base.params.seed }],
     },
   ]
+}
+
+/** The pseudo IPC channel the Studio's HTTP job submission (POST /api/engine-jobs) is answered on. */
+export const ENGINE_JOBS_CHANNEL = 'http:POST /api/engine-jobs'
+
+/**
+ * The job the backend answers a Studio submission with: queued, with every
+ * generation field of the request in `params` (image inputs included), so a
+ * test can assert what reached the engine side.
+ */
+export function submittedJobFixture(body: Record<string, unknown>, id: string): JobRecord {
+  const base = jobFixture({
+    id,
+    state: 'queued',
+    stage: 'idle',
+    canvasId: typeof body['canvasId'] === 'string' ? body['canvasId'] : undefined,
+    projectId: typeof body['projectId'] === 'string' ? body['projectId'] : undefined,
+    hostId: typeof body['hostId'] === 'string' ? body['hostId'] : undefined,
+    params: {
+      prompt: String(body['prompt'] ?? ''),
+      negativePrompt: String(body['negativePrompt'] ?? ''),
+      width: Number(body['width'] ?? 1024),
+      height: Number(body['height'] ?? 1024),
+      steps: Number(body['steps'] ?? 28),
+      cfg: Number(body['cfg'] ?? 4.5),
+      seed: Number(body['seed'] ?? 0),
+      profile: body['profile'] === 'dmd8' ? 'dmd8' : 'base',
+      ...(Array.isArray(body['adapters']) ? { adapters: structuredClone(body['adapters']) as JobParams['adapters'] } : {}),
+      ...Object.fromEntries((['initImage', 'mask', 'control', 'references', 'sampling'] as const)
+        .filter((key) => body[key] !== undefined && body[key] !== null)
+        .map((key) => [key, structuredClone(body[key])])),
+    },
+  })
+  return { ...base, progress: { stage: 'idle', current: 0, total: base.params.steps, percent: 0 } }
 }
 
 export function jobLogFixture(jobId: string, count: number, startSeq = 0): JobLogLine[] {

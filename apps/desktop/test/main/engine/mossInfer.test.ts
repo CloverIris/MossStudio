@@ -373,3 +373,110 @@ describe('shutdownMossInfer', () => {
     expect(existsSync(join(dataRoot(), 'cache'))).toBe(false)
   })
 })
+
+describe('image inputs, sampling and live previews', () => {
+  const withInputs: JobParams = {
+    ...params,
+    initImage: { path: '/assets/init.png', strength: 0.6, resize: 'crop' },
+    mask: { path: '/assets/mask.png' },
+    references: { paths: ['/assets/ref.png'] },
+    sampling: { sampler: 'heun', hires: { width: 768, height: 1152, strength: 0.3 } },
+  }
+
+  function runWith(id: string, jobParams: JobParams, patch: Record<string, unknown> = {}): Sink {
+    const events: Array<Record<string, unknown>> = []
+    let resolveDone: (code: number) => void = () => undefined
+    const done = new Promise<number>((resolve) => { resolveDone = resolve })
+    void mossInfer.runMossInferJob({ id } as JobRecord, jobParams, {
+      model: join(dataRoot(), 'bundle'), device: 0, deviceUuid: 'GPU-a', systemDeviceIndex: 0, loras: [],
+      output: join(dataRoot(), `${id}.png`), settings, ...patch,
+    }, { event: (payload) => events.push(payload), stderr: () => undefined, done: resolveDone })
+    return { events, stderr: [], done }
+  }
+
+  const previewing = (capabilities: Record<string, boolean>): Reply => (request, server) => {
+    if (request.method === 'hello') return server.send({ id: request.id, result: { ...helloResult(), capabilities } })
+    if (request.method !== 'generate') return happy(request, server)
+    const id = request.id
+    const image = request.params['preview_output']
+    server.send({ id, result: { accepted: true } })
+    server.send({ event: 'progress', id, phase: 'denoise', step: 0, total_steps: 4 })
+    if (image) {
+      server.send({ event: 'preview', id, step: 1, total_steps: 4, image, width: 64, height: 64 })
+      server.send({ event: 'preview', id: 'someone-else', step: 1, total_steps: 4, image: '/elsewhere.png' })
+      server.send({ event: 'preview', id, step: 2, total_steps: 4, image, width: 64, height: 64 })
+    }
+    server.send({ event: 'done', id, status: 'ok', report: { seed_used: 9 } })
+  }
+
+  it('sends the inputs in the engine spelling and reports the hires size as the result size', async () => {
+    const s = runWith('img', withInputs)
+    expect(await s.done).toBe(0)
+    const generate = servers[0]!.requests.find((r) => r.method === 'generate')!
+    expect(generate.params).toMatchObject({
+      init_image: '/assets/init.png', denoise_strength: 0.6, resize: 'crop', mask: '/assets/mask.png', mask_encoding: 'u8',
+      references: { images: ['/assets/ref.png'] }, sampler: 'heun', hires: { width: 768, height: 1152, strength: 0.3 },
+    })
+    expect(s.events.find((e) => e['type'] === 'result')).toMatchObject({ images: [{ width: 768, height: 1152, seed: 77 }] })
+    const sidecar = JSON.parse(readFileSync(join(dataRoot(), 'img.json'), 'utf8')) as Record<string, unknown>
+    expect(sidecar).toMatchObject({
+      width: 768, height: 1152, init_image: '/assets/init.png', denoise_strength: 0.6, resize: 'crop',
+      mask: '/assets/mask.png', references: { images: ['/assets/ref.png'] }, sampler: 'heun', hires: { width: 768, height: 1152, strength: 0.3 },
+    })
+  })
+
+  it('asks for a preview file when the engine can preview, and passes each write on', async () => {
+    reply = previewing({ preview: true })
+    const previewOutput = join(dataRoot(), 'cache', 'previews', 'pv.png')
+    const s = runWith('pv', { ...params, steps: 30 }, { previewOutput })
+    expect(await s.done).toBe(0)
+    const generate = servers[0]!.requests.find((r) => r.method === 'generate')!
+    expect(generate.params).toMatchObject({ preview_output: previewOutput, preview_every: 2 })
+    expect(existsSync(join(dataRoot(), 'cache', 'previews'))).toBe(true)
+    expect(s.events.filter((e) => e['type'] === 'preview')).toEqual([
+      { type: 'preview', path: previewOutput, step: 1, total: 4 },
+      { type: 'preview', path: previewOutput, step: 2, total: 4 },
+    ])
+  })
+
+  it('does not ask for previews from an engine without the capability', async () => {
+    reply = previewing({ preview: false })
+    const s = runWith('np', params, { previewOutput: join(dataRoot(), 'cache', 'previews', 'np.png') })
+    expect(await s.done).toBe(0)
+    const generate = servers[0]!.requests.find((r) => r.method === 'generate')!
+    expect(generate.params).not.toHaveProperty('preview_output')
+    expect(generate.params).not.toHaveProperty('preview_every')
+    expect(s.events.some((e) => e['type'] === 'preview')).toBe(false)
+  })
+})
+
+describe('runningEngineHello / requestRunningEngine', () => {
+  it('has nothing to offer before a sidecar runs', () => {
+    expect(mossInfer.runningEngineHello()).toBeNull()
+    expect(mossInfer.requestRunningEngine('inspect', { path: '/x' })).toBeNull()
+  })
+
+  it('answers from the running sidecar without starting another one', async () => {
+    reply = (request, server) => {
+      if (request.method === 'inspect') return server.send({ id: request.id, result: { kind: 'control_adapter', path: request.params['path'] } })
+      happy(request, server)
+    }
+    await run('a').done
+    expect(mossInfer.runningEngineHello('GPU-a')?.version).toBe('2.1.1')
+    expect(mossInfer.runningEngineHello('GPU-other')?.version).toBe('2.1.1')
+    await expect(mossInfer.requestRunningEngine('inspect', { path: '/m/c.safetensors' })).resolves.toEqual({ kind: 'control_adapter', path: '/m/c.safetensors' })
+    expect(servers).toHaveLength(1)
+  })
+
+  it('rejects with the engine error and never restarts the sidecar on a slow answer', async () => {
+    reply = (request, server) => {
+      if (request.method === 'inspect') return server.send({ id: request.id, error: { code: 'io', message: 'cannot open' } })
+      if (request.method === 'status') return undefined
+      happy(request, server)
+    }
+    await run('a').done
+    await expect(mossInfer.requestRunningEngine('inspect', { path: '/missing' })).rejects.toThrow('io: cannot open')
+    await expect(mossInfer.requestRunningEngine('status', {}, 20)).rejects.toThrow('请求超时')
+    expect(servers[0]!.killed).toEqual([])
+  })
+})

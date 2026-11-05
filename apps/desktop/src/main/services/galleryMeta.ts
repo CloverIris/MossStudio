@@ -1,5 +1,5 @@
 import { basename, dirname, extname, join } from 'node:path'
-import type { GalleryGeneration, JobRecord } from '@shared/types'
+import type { GalleryGeneration, JobParams, JobRecord } from '@shared/types'
 import { isInside } from '../lib/paths'
 
 /**
@@ -112,7 +112,124 @@ export function generationFromJob(
     where: whereLabel(job, hostName),
     hostId: job.hostId,
     ...describedPrompt(job.params.prompt),
+    ...inputsOf(job.params),
   }
+}
+
+/** The image inputs and sampling choices of a job, copied (absent ones left out). */
+function inputsOf(params: JobParams): Pick<GalleryGeneration, 'baseWidth' | 'baseHeight' | 'initImage' | 'mask' | 'control' | 'references' | 'sampling'> {
+  const copy = <T>(value: T | undefined): T | undefined => (value === undefined ? undefined : structuredClone(value))
+  const out = {
+    baseWidth: params.sampling?.hires ? params.width : undefined,
+    baseHeight: params.sampling?.hires ? params.height : undefined,
+    initImage: copy(params.initImage),
+    mask: copy(params.mask),
+    control: copy(params.control),
+    references: copy(params.references),
+    sampling: params.sampling && Object.keys(params.sampling).length ? copy(params.sampling) : undefined,
+  }
+  return Object.fromEntries(Object.entries(out).filter(([, value]) => value !== undefined))
+}
+
+/**
+ * The sidecar keys for a job's image inputs, in the engine's own spellings
+ * (init_image, denoise_strength, control.images[].path…), so the file reads
+ * like the request that made the picture. Absent inputs are left out.
+ */
+export function jobInputsSidecar(params: JobParams): Record<string, unknown> {
+  const record: Record<string, unknown> = {}
+  if (params.initImage) {
+    record['init_image'] = params.initImage.path
+    record['denoise_strength'] = params.initImage.strength
+    if (params.initImage.resize) record['resize'] = params.initImage.resize
+  }
+  if (params.mask) record['mask'] = params.mask.path
+  if (params.control) {
+    record['control'] = {
+      adapter: params.control.adapter,
+      ...(params.control.loraStrength !== undefined ? { lora_strength: params.control.loraStrength } : {}),
+      images: params.control.images.map((image) => ({ ...image })),
+    }
+  }
+  if (params.references) {
+    record['references'] = {
+      images: [...params.references.paths],
+      ...(params.references.maxEdge !== undefined ? { max_edge: params.references.maxEdge } : {}),
+    }
+  }
+  const sampling = params.sampling
+  if (sampling?.sampler) record['sampler'] = sampling.sampler
+  if (sampling?.scheduler) record['scheduler'] = sampling.scheduler
+  if (sampling?.shift !== undefined) record['shift'] = sampling.shift
+  if (sampling?.hires) {
+    record['hires'] = { ...sampling.hires }
+    // width/height are the finished picture's; the first pass ran at the requested size.
+    record['base_width'] = params.width
+    record['base_height'] = params.height
+  }
+  if (sampling?.stepCache) record['step_cache'] = sampling.stepCache
+  if (sampling?.cfgTruncation !== undefined) record['cfg_truncation'] = sampling.cfgTruncation
+  return record
+}
+
+const objectOf = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
+
+/** `jobInputsSidecar` read back; anything malformed is skipped, never guessed. */
+function inputsFromSidecar(sidecar: Record<string, unknown>): Pick<GalleryGeneration, 'baseWidth' | 'baseHeight' | 'initImage' | 'mask' | 'control' | 'references' | 'sampling'> {
+  const out: Pick<GalleryGeneration, 'baseWidth' | 'baseHeight' | 'initImage' | 'mask' | 'control' | 'references' | 'sampling'> = {}
+  const baseWidth = num(sidecar['base_width'])
+  const baseHeight = num(sidecar['base_height'])
+  if (baseWidth !== undefined && baseHeight !== undefined) {
+    out.baseWidth = baseWidth
+    out.baseHeight = baseHeight
+  }
+  const init = str(sidecar['init_image'])
+  const strength = num(sidecar['denoise_strength'])
+  if (init && strength !== undefined) {
+    const resize = sidecar['resize']
+    out.initImage = { path: init, strength, ...(resize === 'crop' || resize === 'fit' || resize === 'stretch' ? { resize } : {}) }
+  }
+  const mask = str(sidecar['mask'])
+  if (mask) out.mask = { path: mask }
+  const control = objectOf(sidecar['control'])
+  const adapter = control ? str(control['adapter']) : undefined
+  if (control && adapter) {
+    const images = Array.isArray(control['images'])
+      ? (control['images'] as unknown[]).flatMap((item) => {
+          const image = objectOf(item)
+          const kind = image ? str(image['kind']) : undefined
+          const path = image ? str(image['path']) : undefined
+          if (!image || !kind || !path) return []
+          return [{ kind, path, strength: num(image['strength']) ?? 1, start: num(image['start']) ?? 0, end: num(image['end']) ?? 1 }]
+        })
+      : []
+    const loraStrength = num(control['lora_strength'])
+    out.control = { adapter, images, ...(loraStrength !== undefined ? { loraStrength } : {}) }
+  }
+  const references = objectOf(sidecar['references'])
+  if (references && Array.isArray(references['images'])) {
+    const paths = (references['images'] as unknown[]).flatMap((item) => (str(item) ? [item as string] : []))
+    const maxEdge = num(references['max_edge'])
+    if (paths.length) out.references = { paths, ...(maxEdge !== undefined ? { maxEdge } : {}) }
+  }
+  const hires = objectOf(sidecar['hires'])
+  const hiresWidth = hires ? num(hires['width']) : undefined
+  const hiresHeight = hires ? num(hires['height']) : undefined
+  const sampling = {
+    sampler: str(sidecar['sampler']),
+    scheduler: str(sidecar['scheduler']),
+    shift: num(sidecar['shift']),
+    hires: hires && hiresWidth !== undefined && hiresHeight !== undefined
+      ? Object.fromEntries(Object.entries({ width: hiresWidth, height: hiresHeight, steps: num(hires['steps']), strength: num(hires['strength']) })
+        .filter(([, value]) => value !== undefined)) as { width: number; height: number; steps?: number; strength?: number }
+      : undefined,
+    stepCache: str(sidecar['step_cache']),
+    cfgTruncation: num(sidecar['cfg_truncation']),
+  }
+  const definedSampling = Object.entries(sampling).filter(([, value]) => value !== undefined)
+  if (definedSampling.length) out.sampling = Object.fromEntries(definedSampling)
+  return out
 }
 
 function describedPrompt(prompt: string | undefined): Pick<GalleryGeneration, 'description' | 'regions'> {
@@ -157,6 +274,7 @@ export function generationFromSidecar(sidecar: Record<string, unknown> | null): 
     hostId: str(sidecar['host_id']),
     description: str(sidecar['description']),
     regions: num(sidecar['regions']),
+    ...inputsFromSidecar(sidecar),
   }
   const defined = Object.entries(generation).filter(([, value]) => value !== undefined)
   return defined.length ? (Object.fromEntries(defined) as GalleryGeneration) : undefined
@@ -191,6 +309,7 @@ export function sidecarRecord(
     host_id: job.hostId,
     description: generation.description,
     regions: generation.regions,
+    ...jobInputsSidecar(job.params),
   }
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined))
 }

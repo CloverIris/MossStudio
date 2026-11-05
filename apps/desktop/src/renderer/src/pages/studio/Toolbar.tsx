@@ -1,4 +1,4 @@
-import { ChevronDown, Hand, Maximize2, Minus, MousePointer2, Plus, SquareDashed } from 'lucide-react'
+import { Brush, ChevronDown, Eraser, FlipHorizontal2, Hand, Maximize2, Minus, MousePointer2, Plus, SquareDashed, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { GalleryItem, ProjectLayerKind } from '@shared/types'
 import { Ipc } from '@shared/channels'
@@ -6,7 +6,16 @@ import { IconButton, Spinner, cn } from '../../components/ui'
 import { MenuGap, MenuItem, Popover } from '../../components/common/Popover'
 import { call } from '../../lib/api'
 import { cloverUrl } from '../../lib/clover'
+import { BRUSH_MAX, BRUSH_MIN } from './mask'
+import type { MaskBrush } from './MaskLayer'
 import { KIND_LABEL, type BoardTool } from './RegionLayer'
+
+/** Whether the 遮罩 tool shows, and why it is off. Hidden when the engine cannot inpaint. */
+export interface MaskToolState {
+  hidden: boolean
+  enabled: boolean
+  reason?: string
+}
 
 const TOOLS: Array<{ id: BoardTool; label: string; key: string; icon: React.ReactNode }> = [
   { id: 'select', label: '选择', key: 'V', icon: <MousePointer2 className="size-[18px]" strokeWidth={1.6} /> },
@@ -87,6 +96,7 @@ export function Toolbar({
   zoom,
   onZoom,
   onFit,
+  mask,
 }: {
   tool: BoardTool
   onTool: (tool: BoardTool) => void
@@ -98,6 +108,7 @@ export function Toolbar({
   zoom: number
   onZoom: (factor: number) => void
   onFit: () => void
+  mask: MaskToolState
 }): React.JSX.Element {
   return (
     <div
@@ -152,6 +163,18 @@ export function Toolbar({
       >
         {(close) => <UnderlayMenu current={underlay} onPick={onUnderlay} close={close} />}
       </Popover>
+      {mask.hidden ? null : (
+        <ToolButton
+          on={tool === 'mask'}
+          disabled={!mask.enabled}
+          aria-label="遮罩"
+          title={mask.enabled ? '涂出要重画的部分（M）' : mask.reason}
+          onClick={() => onTool(tool === 'mask' ? 'select' : 'mask')}
+        >
+          <Brush className="size-[18px]" strokeWidth={1.6} />
+          遮罩
+        </ToolButton>
+      )}
       <span aria-hidden="true" className="w-2" />
       <IconButton label="缩小" onClick={() => onZoom(1 / 1.25)} className="text-ink"><Minus className="size-4" /></IconButton>
       <button type="button" onClick={onFit} title="适应窗口" className="tabular h-8 w-12 rounded-md text-center text-caption text-ink hover:bg-well">
@@ -159,6 +182,61 @@ export function Toolbar({
       </button>
       <IconButton label="放大" onClick={() => onZoom(1.25)} className="text-ink"><Plus className="size-4" /></IconButton>
       <IconButton label="适应窗口" onClick={onFit} className="text-ink"><Maximize2 className="size-4" strokeWidth={1.6} /></IconButton>
+    </div>
+  )
+}
+
+/** Brush settings and commands while the 遮罩 tool is on; floats under the toolbar. */
+export function MaskBar({
+  brush,
+  onBrush,
+  onClear,
+  onInvert,
+  onDone,
+}: {
+  brush: MaskBrush
+  onBrush: (brush: MaskBrush) => void
+  onClear: () => void
+  onInvert: () => void
+  onDone: () => void
+}): React.JSX.Element {
+  return (
+    <div
+      role="toolbar"
+      aria-label="遮罩工具"
+      data-board-ui
+      className="absolute left-1/2 top-[64px] z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[10px] bg-raised p-1 shadow-float"
+    >
+      <ToolButton on={brush.mode === 'paint'} aria-label="画笔" title="画笔：涂出要重画的部分" onClick={() => onBrush({ ...brush, mode: 'paint' })}>
+        <Brush className="size-4" strokeWidth={1.6} />
+      </ToolButton>
+      <ToolButton on={brush.mode === 'erase'} aria-label="橡皮" title="橡皮：擦掉涂过的部分" onClick={() => onBrush({ ...brush, mode: 'erase' })}>
+        <Eraser className="size-4" strokeWidth={1.6} />
+      </ToolButton>
+      <label className="flex h-8 items-center gap-2 px-2 text-caption text-ink-2">
+        大小
+        <input
+          type="range"
+          aria-label="笔刷大小"
+          min={BRUSH_MIN}
+          max={BRUSH_MAX}
+          step={4}
+          value={brush.size}
+          onChange={(event) => onBrush({ ...brush, size: Number(event.target.value) })}
+          className="w-24 accent-accent"
+        />
+        <span className="tabular w-7 text-right text-ink">{brush.size}</span>
+      </label>
+      <ToolButton aria-label="反转" title="反转：涂过的保留，其余重画" onClick={onInvert}>
+        <FlipHorizontal2 className="size-4" strokeWidth={1.6} />
+        反转
+      </ToolButton>
+      <ToolButton aria-label="清除" title="清除整个遮罩" onClick={onClear}>
+        <Trash2 className="size-4" strokeWidth={1.6} />
+        清除
+      </ToolButton>
+      <span aria-hidden="true" className="w-1" />
+      <ToolButton className="bg-well" onClick={onDone}>完成</ToolButton>
     </div>
   )
 }

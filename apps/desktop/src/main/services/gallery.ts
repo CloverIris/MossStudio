@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { open, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { protocol, shell } from 'electron'
 import type { GalleryDetail, GalleryGeneration, GalleryItem, GalleryPage, JobRecord, Settings } from '@shared/types'
 import { revealInFileManager } from '../lib/fileManager'
@@ -9,6 +9,8 @@ import { isInside, paths } from '../lib/paths'
 import { getSettings } from './settings'
 import { listJobs } from './supervisor'
 import { getTrainingHost } from './trainingHosts'
+import { previewsDir } from './jobPreview'
+import { isProjectAssetPath, projectsRootDir } from './projects'
 import {
   GALLERY_IMAGE_EXT as IMAGE_EXT,
   assertTrashable,
@@ -440,6 +442,31 @@ export async function revealInFolder(file: string): Promise<void> {
   await revealInFileManager(file)
 }
 
+/** The picture types clover:// hands out from the Studio folders (assets may hold other copied files). */
+const STUDIO_PICTURE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp'])
+
+/**
+ * The symlink-resolved path of a live preview (cache/previews) or a picture in
+ * a project's assets folder, or null when `file` is neither. The check runs on
+ * the resolved path, and callers read that path, so a link placed in either
+ * folder (or swapped in after the check) cannot hand out a file from elsewhere.
+ */
+export async function studioPicturePath(file: string): Promise<string | null> {
+  let real: string
+  try {
+    real = await realpath(file)
+  } catch {
+    return null
+  }
+  if (!STUDIO_PICTURE_EXT.has(extname(real).toLowerCase())) return null
+  const previews = await realpath(previewsDir()).catch(() => null)
+  if (previews && isInside(previews, real) && real !== previews) return real
+  const projects = await realpath(projectsRootDir()).catch(() => null)
+  if (!projects || !isInside(projects, real)) return null
+  // Re-anchor on the lexical root so the id/assets shape is checked on the resolved path.
+  return isProjectAssetPath(join(projectsRootDir(), relative(projects, real))) ? real : null
+}
+
 export function registerGalleryProtocol(): void {
   protocol.handle('clover', async (request) => {
     try {
@@ -449,9 +476,10 @@ export function registerGalleryProtocol(): void {
       if (!file) return new Response('Missing path', { status: 400 })
       const settings = getSettings()
       const roots = await galleryRoots(settings)
-      const allowed = roots.some((root) => isInside(root, file)) || file === settings.homeBackground
-      if (!allowed) return new Response('Forbidden', { status: 403 })
-      const ext = extname(file).toLowerCase()
+      const listed = roots.some((root) => isInside(root, file)) || file === settings.homeBackground
+      const target = listed ? file : await studioPicturePath(file)
+      if (!target) return new Response('Forbidden', { status: 403 })
+      const ext = extname(target).toLowerCase()
       const mime =
         ext === '.png'
           ? 'image/png'
@@ -460,8 +488,9 @@ export function registerGalleryProtocol(): void {
             : ext === '.jpg' || ext === '.jpeg'
               ? 'image/jpeg'
               : 'application/octet-stream'
-      const data = await readFile(file)
-      return new Response(new Uint8Array(data), { headers: { 'content-type': mime } })
+      const data = await readFile(target)
+      // Readable by a canvas (crossOrigin='anonymous'); which files are served is decided above.
+      return new Response(new Uint8Array(data), { headers: { 'content-type': mime, 'access-control-allow-origin': '*' } })
     } catch {
       return new Response('Not found', { status: 404 })
     }

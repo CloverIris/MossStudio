@@ -1,7 +1,7 @@
 import { spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import type { JobParams, JobRecord, JobStage, Settings } from '@shared/types'
 import {
   decodeEngineHello,
@@ -12,6 +12,8 @@ import {
 } from '@shared/engineProtocol'
 import { paths } from '../lib/paths'
 import { spawnEngineServer } from '../lib/probeEngine'
+import { jobInputsSidecar } from './galleryMeta'
+import { buildGenerateParams, outputSizeOf, previewEveryFor } from './generateParams'
 import { LineSplitter } from './parsers'
 
 /**
@@ -60,6 +62,8 @@ interface QueuedJob {
     systemDeviceIndex: number
     loras: Array<{ path: string; strength: number }>
     output: string
+    /** Where the engine may write the live preview PNG (used when it supports previews). */
+    previewOutput?: string
     settings: Settings
   }
   sink: MossInferSink
@@ -272,9 +276,18 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
       })
       return
     }
-    case 'preview':
-      // no preview surface yet; preview_output is never requested
+    case 'preview': {
+      // The engine has just rewritten the preview PNG (main.cpp on_preview).
+      const image = typeof message['image'] === 'string' ? (message['image'] as string) : runtime.active.queue.opts.previewOutput
+      if (!image) return
+      sink.event({
+        type: 'preview',
+        path: image,
+        step: Number(message['step'] ?? 0),
+        total: Number(message['total_steps'] ?? params.steps),
+      })
       return
+    }
     case 'done': {
       const current = runtime.active
       runtime.active = null
@@ -288,6 +301,7 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
         void (async () => {
           await writeSidecar(current.queue, report)
           sink.event({ type: 'stage', name: 'save' })
+          const size = outputSizeOf(params)
           const timings = ((report?.['timings_s'] ?? {}) ?? {}) as Record<string, unknown>
           const ms = (key: string, fallback?: string): number => {
             const value = timings[key] ?? (fallback ? timings[fallback] : undefined)
@@ -298,8 +312,8 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
             images: [
               {
                 path: current.queue.opts.output,
-                width: params.width,
-                height: params.height,
+                width: size.width,
+                height: size.height,
                 seed:
                   typeof report?.['seed_used'] === 'number'
                     ? (report['seed_used'] as number)
@@ -352,6 +366,7 @@ async function writeSidecar(
     const seed =
       typeof report?.['seed_used'] === 'number' ? (report['seed_used'] as number) : params.seed
     const target = opts.output.replace(/\.png$/i, '.json')
+    const size = outputSizeOf(params)
     await writeFile(
       target,
       JSON.stringify(
@@ -359,10 +374,11 @@ async function writeSidecar(
           prompt: params.prompt,
           negative_prompt: params.negativePrompt,
           seed,
-          width: params.width,
-          height: params.height,
+          width: size.width,
+          height: size.height,
           engine: 'mossinfer',
           tier: quality?.tier ?? null,
+          ...jobInputsSidecar(params),
         },
         null,
         2,
@@ -550,19 +566,13 @@ async function pump(runtime: MossInferRuntime): Promise<void> {
     const genId = job.id
     runtime.active = { jobId: job.id, genId, sink, phase: '', queue: next }
     try {
-      const generateParams: Record<string, unknown> = {
+      const preview = Boolean(opts.previewOutput) && runtime.hello?.capabilities['preview'] === true
+      if (preview) await mkdir(dirname(opts.previewOutput!), { recursive: true })
+      const generateParams = buildGenerateParams(params, {
         output: opts.output,
-        prompt: params.prompt,
-        negative_prompt: params.negativePrompt,
-        width: params.width,
-        height: params.height,
-        steps: params.steps,
-        cfg: params.cfg,
-        seed: params.seed,
-        save_metadata: true,
-        include_prompts: true,
-      }
-      if (opts.loras.length) generateParams['loras'] = opts.loras
+        loras: opts.loras,
+        ...(preview ? { previewOutput: opts.previewOutput, previewEvery: previewEveryFor(params.steps) } : {}),
+      })
       await requestWithId(runtime, genId, 'generate', generateParams)
     } catch (error) {
       runtime.busy = false
@@ -608,6 +618,7 @@ export async function runMossInferJob(
     systemDeviceIndex: number
     loras: Array<{ path: string; strength: number }>
     output: string
+    previewOutput?: string
     settings: Settings
   },
   sink: MossInferSink,
@@ -622,6 +633,48 @@ export async function runMossInferJob(
   }
   runtime.queue.push({ job, params, opts, sink })
   void pump(runtime)
+}
+
+/**
+ * The hello of a moss-server this app is already running (the one bound to
+ * `deviceUuid` first), so a question about the engine never starts another one.
+ */
+export function runningEngineHello(deviceUuid?: string): EngineHello | null {
+  const preferred = deviceUuid ? runtimes.get(deviceUuid) : undefined
+  if (preferred?.child && preferred.hello) return preferred.hello
+  for (const runtime of runtimes.values()) {
+    if (runtime.child && runtime.hello) return runtime.hello
+  }
+  return null
+}
+
+/**
+ * Sends a request that needs no loaded model (inspect) to a running
+ * moss-server, or resolves null when none runs. Unlike a generate, a slow
+ * answer never restarts the engine: a job may be running on it.
+ */
+export function requestRunningEngine(
+  method: string,
+  params: Record<string, unknown>,
+  timeoutMs = 60_000,
+): Promise<Record<string, unknown>> | null {
+  const runtime = [...runtimes.values()].find((item) => item.child?.stdin.writable && item.hello)
+  if (!runtime) return null
+  const id = `mi-${++runtime.reqSeq}`
+  return new Promise((resolvePromise, rejectPromise) => {
+    const timer = setTimeout(() => {
+      runtime.pending.delete(id)
+      rejectPromise(new Error(`moss-server ${method} 请求超时`))
+    }, timeoutMs)
+    runtime.pending.set(id, { resolve: resolvePromise, reject: rejectPromise, timer })
+    try {
+      send(runtime, { id, method, params })
+    } catch (error) {
+      clearTimeout(timer)
+      runtime.pending.delete(id)
+      rejectPromise(error instanceof Error ? error : new Error(String(error)))
+    }
+  })
 }
 
 export function cancelMossInferJob(jobId: string): boolean {

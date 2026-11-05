@@ -149,6 +149,20 @@ export async function sshExec(host: TrainingHost, command: string, timeoutMs = 6
   return run(sshCommand(), sshArgs(host, command), { timeoutMs, env: sshEnv(host), input })
 }
 
+/**
+ * Writes `data` to `remotePath` on the host (parent folders created), through
+ * base64 on the SSH session's stdin: no scp, so no banner or quoting quirks,
+ * and the file appears whole (written beside it, then renamed).
+ */
+export async function sshWriteFile(host: TrainingHost, remotePath: string, data: Uint8Array, timeoutMs = 180_000): Promise<void> {
+  const slash = remotePath.lastIndexOf('/')
+  const dir = slash > 0 ? remotePath.slice(0, slash) : '.'
+  const temporary = `${remotePath}.part`
+  const command = `mkdir -p ${posixQuote(dir)} && base64 -d > ${posixQuote(temporary)} && mv -f ${posixQuote(temporary)} ${posixQuote(remotePath)}`
+  const result = await sshExec(host, command, timeoutMs, Buffer.from(data).toString('base64'))
+  if (result.code !== 0) throw new Error(result.stderr.trim() || `上传到远端失败：${remotePath}`)
+}
+
 export async function sshStream(
   host: TrainingHost,
   command: string,

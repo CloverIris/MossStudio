@@ -79,3 +79,52 @@ describe('lib/studioReuse isStudioReuseRequest', () => {
     expect(isStudioReuseRequest(value)).toBe(false)
   })
 })
+
+describe('lib/studioReuse 用作起始图', () => {
+  it('asks for a start picture, carrying the description and size but not the seed', async () => {
+    const { buildStartPictureRequest } = await import('@renderer/lib/studioReuse')
+    const request = buildStartPictureRequest(detail({ prompt: 'a cat', seed: 9 }), { id: 's', now })
+    expect(request).toEqual({ id: 's', createdAt: now.toISOString(), sourcePath: '/fixture/outputs/moss_0003.png', prompt: 'a cat', width: 1024, height: 1024, useAs: 'start' })
+    expect(isStudioReuseRequest(request)).toBe(true)
+  })
+
+  it('works for a picture with no recorded parameters', async () => {
+    const { buildStartPictureRequest } = await import('@renderer/lib/studioReuse')
+    const request = buildStartPictureRequest(detail({ prompt: undefined }), { id: 's', now })
+    expect(request).toMatchObject({ sourcePath: '/fixture/outputs/moss_0003.png', prompt: '', useAs: 'start' })
+  })
+
+  it('rejects an unknown hand-off mode', () => {
+    expect(isStudioReuseRequest({ id: 'r', createdAt: '', sourcePath: '/a.png', prompt: '', useAs: 'edit' })).toBe(false)
+  })
+})
+
+describe('lib/studioReuse 高清修复 pictures', () => {
+  const hires = { width: 2048, height: 2048, strength: 0.35 }
+  const generation = { width: 2048, height: 2048, baseWidth: 1024, baseHeight: 1024, seed: 5, sampling: { sampler: 'euler', hires } }
+
+  it('reuses the first-pass size and the sampling, so the same picture comes out', () => {
+    const request = buildReuseRequest(detail({ width: 2048, height: 2048, generation: generation as never }), { id: 'r', now })
+    expect(request).toMatchObject({ width: 1024, height: 1024, seed: 5, sampling: { sampler: 'euler', hires } })
+    expect(request.sampling).not.toBe(generation.sampling)
+    expect(isStudioReuseRequest(request)).toBe(true)
+  })
+
+  it('falls back to width/height when no first-pass size was recorded', () => {
+    const request = buildReuseRequest(detail({ generation: { width: 1280, height: 720 } }), { id: 'r', now })
+    expect(request).toMatchObject({ width: 1280, height: 720 })
+    expect(request.sampling).toBeUndefined()
+  })
+
+  it('a start picture keeps the picture size and drops the 高清修复 pass', async () => {
+    const { buildStartPictureRequest } = await import('@renderer/lib/studioReuse')
+    const request = buildStartPictureRequest(detail({ width: 2048, height: 2048, generation: generation as never }), { id: 's', now })
+    expect(request).toMatchObject({ width: 2048, height: 2048, sampling: { sampler: 'euler' }, useAs: 'start' })
+    expect(request.sampling?.hires).toBeUndefined()
+    expect(request.seed).toBeUndefined()
+  })
+
+  it('rejects a malformed sampling field', () => {
+    expect(isStudioReuseRequest({ id: 'r', createdAt: '', sourcePath: '/a.png', prompt: '', sampling: 'euler' })).toBe(false)
+  })
+})

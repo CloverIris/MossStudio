@@ -10,6 +10,8 @@ declare global {
       acrylic: boolean
       windowKind: 'launcher' | 'creator' | 'terminal' | 'trainer' | 'devices'
       channel: string
+      /** Disk path of a dropped or pasted File (Electron's webUtils); '' when it has none. */
+      pathForFile?: (file: File) => string
     }
   }
 }

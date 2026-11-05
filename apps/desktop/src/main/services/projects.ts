@@ -16,6 +16,24 @@ function projectDir(id: string): string {
   return join(projectsRoot(), id)
 }
 
+/** Where a project's pictures live (imported images, painted masks, backgrounds). */
+export function projectAssetsDir(id: string): string {
+  return join(projectDir(id), 'assets')
+}
+
+/** True when `file` names something under `projects/<valid id>/assets/` (lexically; callers resolve symlinks first). */
+export function isProjectAssetPath(file: string): boolean {
+  const rel = relative(resolve(projectsRoot()), resolve(file))
+  if (!rel || isAbsolute(rel)) return false
+  const parts = rel.split(sep)
+  return parts.length >= 3 && PROJECT_ID_PATTERN.test(parts[0]!) && parts[1] === 'assets' && !parts.includes('..')
+}
+
+/** The folder holding every project (for symlink-resolved containment checks). */
+export function projectsRootDir(): string {
+  return projectsRoot()
+}
+
 function projectFile(id: string): string {
   return join(projectDir(id), 'project.json')
 }

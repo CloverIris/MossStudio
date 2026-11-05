@@ -26,6 +26,10 @@ import {
 import { canvasDescription, withDescription, type CompiledPrompt } from './prompt'
 import { installedBundles, type Blocker, type BundleChoice } from './readiness'
 import { resizeCanvas } from './canvases'
+import { ImageCardPanel } from './ImageCardPanel'
+import { InputsSection, type InputsWiring } from './InputsSection'
+import { SamplingSection } from './SamplingSection'
+import { samplingSummary } from './sampling'
 
 const SHORTCUT = typeof window !== 'undefined' && window.clover?.platform === 'darwin' ? '⌘ ↵' : 'Ctrl ↵'
 
@@ -85,6 +89,10 @@ export interface ParamsPanelProps {
   onCopyAsLayout: () => void
   onAddCanvas: () => void
   onNavigate: (to: string) => void
+  /** Pictures, engine features and pick mode for the 输入 and sampling sections. */
+  inputs?: InputsWiring
+  /** For a picture card: make a new canvas that starts from it. */
+  onUseAsStart?: (imageCanvasId: string) => void
 }
 
 export function ParamsPanel(props: ParamsPanelProps): React.JSX.Element {
@@ -100,6 +108,7 @@ export function ParamsPanel(props: ParamsPanelProps): React.JSX.Element {
       </div>
     )
   }
+  if (canvas.kind === 'image') return <ImageCardPanel canvas={canvas} onUseAsStart={props.onUseAsStart} />
   return <CanvasParams {...props} canvas={canvas} />
 }
 
@@ -123,6 +132,7 @@ function CanvasParams({
   onGenerate,
   onCopyAsLayout,
   onNavigate,
+  inputs,
 }: ParamsPanelProps & { canvas: ProjectCanvas }): React.JSX.Element {
   const copyText = useCopyText()
   const readOnly = canvas.kind === 'result'
@@ -146,7 +156,7 @@ function CanvasParams({
   const boundMissing = Boolean(canvas.deviceUuid && gpuInventory && !gpuInventory.devices.some((device) => device.uuid === canvas.deviceUuid))
   const gpuName = canvas.deviceUuid ? gpuInventory?.devices.find((device) => device.uuid === canvas.deviceUuid)?.name : undefined
   const locationName = remoteHost ? remoteHost.name : '本机'
-  const advancedSummary = [seedLocked ? `种子 ${canvas.seed}` : '种子随机', locationName, gpuName].filter(Boolean).join(' · ')
+  const advancedSummary = [seedLocked ? `种子 ${canvas.seed}` : '种子随机', locationName, gpuName, samplingSummary(canvas)].filter(Boolean).join(' · ')
 
   const bundleOptions = [...installed]
   if (bundle.bundle && !bundleOptions.some((item) => item.id === bundle.bundle!.id)) bundleOptions.unshift(bundle.bundle)
@@ -174,6 +184,8 @@ function CanvasParams({
             />
             {regionCount > 0 ? <p className="text-caption text-ink-2">另有 {regionCount} 个区域，在画面上编辑</p> : null}
           </section>
+
+          {inputs && !readOnly ? <InputsSection canvas={canvas} onChange={onChange} wiring={inputs} /> : null}
 
           <section className="flex flex-col gap-2.5">
             <Label htmlFor="studio-model">模型</Label>
@@ -320,6 +332,8 @@ function CanvasParams({
                 />
               </section>
 
+              {inputs ? <SamplingSection canvas={canvas} features={inputs.features} onChange={onChange} /> : null}
+
               {remoteEnabled ? (
                 <section className="flex flex-col gap-2">
                   <Label htmlFor="studio-location">运行位置</Label>
@@ -369,8 +383,8 @@ function CanvasParams({
           <>
             {blockers.length ? (
               <ul aria-live="polite" className="flex flex-col gap-1.5">
-                {blockers.map((blocker) => (
-                  <li key={blocker.id} className="flex items-center gap-2 text-caption text-ink-2">
+                {blockers.map((blocker, index) => (
+                  <li key={`${blocker.id}-${index}`} className="flex items-center gap-2 text-caption text-ink-2">
                     <span className="min-w-0 flex-1">{blocker.message}</span>
                     {blocker.action ? (
                       <Button tone="secondary" size="sm" className="h-7 px-2.5" onClick={() => onNavigate(blocker.action!.to)}>{blocker.action.label}</Button>

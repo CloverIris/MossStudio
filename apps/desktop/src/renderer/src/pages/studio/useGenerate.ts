@@ -1,12 +1,15 @@
 import { useCallback, useRef, useState } from 'react'
 import type { BackendInfo } from '@shared/backend'
-import type { Catalog, JobRecord, ManagedHost, ProjectCanvas } from '@shared/types'
+import type { Catalog, ControlAdapterEntry, EngineFeatures, JobRecord, ManagedHost, ProjectCanvas } from '@shared/types'
+import { Ipc } from '@shared/channels'
 import { activeCanvasBranchIds, canvasLineage } from '@shared/canvasJobBranch'
 import { adapterStatuses, normalizeCanvasAdapters } from '@shared/adapters'
+import { call } from '../../lib/api'
 import { electronStudioClient } from '../../lib/studioClient'
 import { useApp } from '../../store'
 import { taskCanvasFor } from './canvases'
 import { profileFor, randomSeed, seedForRun } from './defaults'
+import { resolveJobInputs } from './jobInputs'
 import { compileCanvasPrompt } from './prompt'
 import { resolveBundle } from './readiness'
 import type { StudioProject } from './useStudioProject'
@@ -40,6 +43,9 @@ export function useGenerate(options: {
   catalog: Catalog | null
   preferredBundleId: string | null
   remoteHost: ManagedHost | null
+  /** Registered control adapters (a canvas's control adapter id resolves to its file). */
+  controlAdapters?: readonly ControlAdapterEntry[]
+  controlAdaptersLoaded?: boolean
   notify: (message: string, tone: 'info' | 'success' | 'error') => void
 }): { submitting: boolean; generate: (canvasId?: string, seed?: SeedMode) => Promise<{ queued: boolean; canvasId?: string; jobId?: string; error?: string }> } {
   const [submitting, setSubmitting] = useState(false)
@@ -49,37 +55,60 @@ export function useGenerate(options: {
   latest.current = options
 
   const generate = useCallback(async (canvasId?: string, seedMode: SeedMode = 'auto') => {
-    const { project, catalog, preferredBundleId, remoteHost, notify } = latest.current
+    const { project, catalog, preferredBundleId, remoteHost, controlAdapters = [], controlAdaptersLoaded, notify } = latest.current
     const fail = (message: string): { queued: false; error: string } => {
       notify(message, 'error')
       return { queued: false, error: message }
     }
     if (submittingRef.current) return { queued: false, error: '正在提交上一次生成' }
+    const requestedId = canvasId ?? project.selectedRef.current
+    const requested = project.canvasesRef.current.find((canvas) => canvas.id === requestedId)
+    if (!requested) return fail('先选中一个画面')
+
+    // Busy from here on, so a second click shows the state instead of slipping in.
+    submittingRef.current = true
+    setSubmitting(true)
+    const stop = (message: string): { queued: false; error: string } => {
+      submittingRef.current = false
+      setSubmitting(false)
+      return fail(message)
+    }
+
+    // Pictures and sampling choices are checked against the engine this run goes to.
+    const usesInputs = Boolean(requested.inputs || requested.sampling)
+    const features = usesInputs
+      ? await call<EngineFeatures | null>(Ipc.engineFeatures, {
+          deviceUuid: remoteHost ? undefined : requested.deviceUuid || undefined,
+          hostId: remoteHost?.id,
+        }).catch(() => null)
+      : null
+    // Everything below reads the canvases as they are now: edits made while the engine answered are kept.
     const canvases = project.canvasesRef.current
-    const source = canvases.find((canvas) => canvas.id === (canvasId ?? project.selectedRef.current))
-    if (!source) return fail('先选中一个画面')
+    const source = canvases.find((canvas) => canvas.id === requested.id)
+    if (!source) return stop('这个画面已经删除了')
     const jobs = useApp.getState().jobs
-    if (activeCanvasBranchIds(canvases, jobs).has(source.id)) return fail('这个画面正在生成，等它完成后再试')
+    if (activeCanvasBranchIds(canvases, jobs).has(source.id)) return stop('这个画面正在生成，等它完成后再试')
 
     const choice = resolveBundle(catalog, source.modelBundleId, preferredBundleId)
-    if (!choice.bundle) return fail(choice.unavailable ? '这个画面用的模型已经不在模型库里，请换一个模型' : '还没有可用的模型，请先到模型页下载')
-    if (!choice.installed) return fail(`「${choice.bundle.name}」还没有下载完`)
+    if (!choice.bundle) return stop(choice.unavailable ? '这个画面用的模型已经不在模型库里，请换一个模型' : '还没有可用的模型，请先到模型页下载')
+    if (!choice.installed) return stop(`「${choice.bundle.name}」还没有下载完`)
     const remoteModelPath = remoteHost?.modelPath?.trim()
-    if (remoteHost && !remoteModelPath) return fail(`「${remoteHost.name}」还没有设置模型位置，请到 设置 › 设备与引擎 填写`)
+    if (remoteHost && !remoteModelPath) return stop(`「${remoteHost.name}」还没有设置模型位置，请到 设置 › 设备与引擎 填写`)
     const adapters = normalizeCanvasAdapters(source.adapters)
-    if (remoteHost && adapters.length) return fail('在其他电脑上运行时暂不支持 LoRA，请移除 LoRA 或改回这台电脑')
+    if (remoteHost && adapters.length) return stop('在其他电脑上运行时暂不支持 LoRA，请移除 LoRA 或改回这台电脑')
     const missing = adapterStatuses(adapters, catalog?.adapters).filter((item) => !item.installed)
-    if (missing.length) return fail(`LoRA ${missing.map((item) => `「${item.name}」`).join('')}找不到了，请移除或到模型库重新安装`)
-    const compiled = compileCanvasPrompt(source)
-    if (!compiled.ok) return fail(compiled.errors[0] ?? '描述还不完整')
+    if (missing.length) return stop(`LoRA ${missing.map((item) => `「${item.name}」`).join('')}找不到了，请移除或到模型库重新安装`)
+    // Regions are laid out on the first-pass size.
+    const compiled = compileCanvasPrompt(source.baseSize ? { ...source, ...source.baseSize } : source)
+    if (!compiled.ok) return stop(compiled.errors[0] ?? '描述还不完整')
+    const resolved = resolveJobInputs(source, { canvases, features, controlAdapters, controlAdaptersLoaded })
+    if (resolved.blockers.length) return stop(resolved.blockers[0]!.message)
 
     // 'same' repeats the picture on this card: the seed its run used, not the
     // source's latest seed (a later 换个种子 from this card records a new one).
     const shownSeed = jobs.find((job) => job.id === source.jobId)?.params.seed ?? source.outputs?.[0]?.seed ?? source.seed
     const seed = seedMode === 'same' ? shownSeed : seedMode === 'new' ? randomSeed() : seedForRun(source)
     const runSource: ProjectCanvas = { ...source, seed, modelBundleId: choice.bundle.id }
-    submittingRef.current = true
-    setSubmitting(true)
     let taskId: string | null = null
     let board: ProjectCanvas[] | null = null
     try {
@@ -120,8 +149,9 @@ export function useGenerate(options: {
           prompt: compiled.prompt,
           negativePrompt: source.negative,
           adapters,
-          width: source.width,
-          height: source.height,
+          ...resolved.params,
+          width: resolved.size.width,
+          height: resolved.size.height,
           steps: source.steps,
           cfg: source.cfg,
           seed,
