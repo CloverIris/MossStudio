@@ -179,6 +179,8 @@ describe('lib/format jobs', () => {
     expect(jobTitle(job())).toBe('a cat')
     expect(jobTitle(job({ params: { ...job().params, prompt: 'x'.repeat(40) } }))).toBe(`${'x'.repeat(36)}…`)
     expect(jobTitle(job({ params: { ...job().params, prompt: ' ' }, caseName: '海报' }))).toBe('海报')
+    // Named after its canvas when it has one, as on the Studio card.
+    expect(jobTitle(job({ canvasTitle: ' 画面 2 ' }))).toBe('画面 2')
     expect(jobTitle(job({ params: { ...job().params, prompt: '' } }))).toBe('生成')
     expect(jobTitle(job({ kind: 'training', trainerRunName: 'cat-lora' }))).toBe('训练 · cat-lora')
   })

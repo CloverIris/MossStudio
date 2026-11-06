@@ -145,6 +145,8 @@ export function useGenerate(options: {
         body: JSON.stringify({
           projectId: saved.id,
           canvasId: taskId,
+          // Activity names the job after the card it draws on, as the card itself does.
+          canvasTitle: board.find((canvas) => canvas.id === taskId)?.title ?? source.title,
           // Lineage starts at the source, as the scheduler expects.
           canvasLineage: canvasLineage(source, canvases),
           modelBinding: { bundleId: choice.bundle.id, ...choice.bundle.components },

@@ -884,6 +884,8 @@ export interface JobRecord {
   projectId?: string
   canvasId?: string
   canvasLineage?: string[]
+  /** The canvas's title when the job started, so Activity can name the job as the Studio card does. */
+  canvasTitle?: string
   id: string
   instanceId: string
   instanceName: string

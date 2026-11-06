@@ -121,6 +121,15 @@ describe("engine jobs: the moss-server of the GPU's own install", () => {
 })
 
 describe('engine jobs: inputs', () => {
+  it('records the canvas title for Activity, trimmed and at most 120 characters', async () => {
+    const named = await supervisor.startEngineJob(request('installed', { canvasTitle: '  画面 1  ' }))
+    expect(named.canvasTitle).toBe('画面 1')
+    const long = await supervisor.startEngineJob(request('installed', { canvasTitle: 'x'.repeat(200) }))
+    expect(long.canvasTitle).toHaveLength(120)
+    const blank = await supervisor.startEngineJob(request('installed', { canvasTitle: '   ' }))
+    expect(blank.canvasTitle).toBeUndefined()
+  })
+
   it('carries the image inputs into the job params and to the engine', async () => {
     const job = await supervisor.startEngineJob(
       request('with inputs', {
