@@ -137,14 +137,18 @@ export function useApp(): E2eApp {
   return handle
 }
 
-/** The shell rendered and the store finished its first load. */
+/**
+ * The shell rendered and the store finished its first load. Allowed longer than the 8 s default:
+ * the first window of a run starts a cold Electron (on CI right after downloading it), and how
+ * fast that is is not what any test checks.
+ */
 export async function waitForApp(page: Page): Promise<void> {
   await page.waitForFunction(() => {
     const root = document.getElementById('root')
     // The setup and uninstall windows (data-standalone) never load settings.
     const loaded = window.__mock.calls.some((call) => call.channel === 'settings:get') || Boolean(document.querySelector('[data-standalone]'))
     return Boolean(root && root.children.length > 0 && loaded)
-  })
+  }, undefined, { timeout: 30_000 })
   await settle(page)
 }
 

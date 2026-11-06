@@ -2,9 +2,11 @@
 // Build everything the install → update → rollback test serves, from ONE `pnpm build` made
 // with the test environment (MOSS_UPDATE_TEST_KEYS = the test public key, MOSS_UPDATE_FEED_URL
 // = this server's /feed/):
-//   X    = the package version     installed by the setup file
+//   X    = the package version     installed by the setup file (every artifact: setup, portable, full)
 //   X+1  = same build, stamped     offered first (full + delta from X)
 //   X+2  = same build, stamped     offered next; the test makes it crash at start → rollback
+// X+1 and X+2 are only ever updated to, so they get the update files alone (--update-only):
+// no setup, DMG or portable package, which were most of this script's time.
 //
 //   node tools/release/integration/prepare.mjs --key-file <seed file> [--platform linux-x64]
 //        [--out dist/it] [--skip-package]
@@ -45,7 +47,8 @@ main(async () => {
     node('package-app.mjs', ['--platform', platform, '--out', appOut, ...versions.flatMap((v) => ['--version', v])])
   }
   for (const version of versions) {
-    node('make-artifacts.mjs', ['--platform', platform, '--version', version, '--app', join(appOut, version, platform), '--out', artifacts])
+    const only = version === versions[0] ? [] : ['--update-only']
+    node('make-artifacts.mjs', ['--platform', platform, '--version', version, '--app', join(appOut, version, platform), '--out', artifacts, ...only])
   }
   // Deltas X → X+1 and X+1 → X+2 (the file lists of the earlier versions sit in artifacts/).
   node('make-deltas.mjs', ['--version', versions[1], '--previous', artifacts, '--artifacts', artifacts, '--platform', platform])
@@ -57,7 +60,7 @@ main(async () => {
     node('sign-feed.mjs', ['--key-file', values['key-file'], join(feeds, 'update-stable.json'), join(feeds, 'update-beta.json')])
   }
   for (const version of versions) {
-    const feedArgs = version === versions[0] ? ['--no-feeds'] : ['--feeds', join(base, 'feeds', version), '--public-key', publicKey, '--url-prefix', itFilesUrl()]
+    const feedArgs = version === versions[0] ? ['--no-feeds'] : ['--update-only', '--feeds', join(base, 'feeds', version), '--public-key', publicKey, '--url-prefix', itFilesUrl()]
     node('verify-artifacts.mjs', ['--version', version, '--artifacts', artifacts, '--platform', platform, '--previous', artifacts, ...feedArgs])
   }
   writeFileSync(join(base, 'versions.json'), `${JSON.stringify({ platform, versions, publicKey }, null, 2)}\n`)

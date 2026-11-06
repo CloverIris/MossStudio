@@ -13,7 +13,9 @@ import { afterEach, beforeEach } from 'vitest'
 export function useTempDir(prefix = 'mossstudio-test-'): () => string {
   let dir = ''
   beforeEach(() => { dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix))) })
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+  // Retries: code under test may still be finishing a fire-and-forget write (the supervisor's
+  // job list, a log line) into the folder while it is removed (ENOTEMPTY, EBUSY).
+  afterEach(() => { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }) })
   return () => dir
 }
 

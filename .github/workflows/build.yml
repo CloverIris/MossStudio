@@ -1,22 +1,49 @@
 name: Build
 
-# Pull requests, pushes to feature branches, and by hand from the Actions tab.
+# Tiers (decided by .github/scripts/ci-scope.sh):
+#   every pull request    typecheck, unit, launcher (Go) and E2E tests (`checks`)
+#   + install/update      the package + install/update/rollback matrix, without macOS Intel,
+#     paths changed       when the PR touches what it tests (launcher, install, update, release)
+#   push to main, manual  everything on all four platforms
+# Run the full matrix for a pull request by hand: `gh workflow run build.yml --ref <branch>`.
+# `CI result` is the one check to require: it passes when every job that ran passed.
+#
 # Every package built here is a TEST build: it trusts an ephemeral key generated in the job
 # and reads its update feed from a local server, so it can never update from the real feed.
 on:
   pull_request:
   push:
-    branches: ['feat/**']
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
+  # One run per pull request (or branch): a new push cancels the previous PR run; main keeps
+  # every commit's run.
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  scope:
+    name: Decide what to run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      install: ${{ steps.scope.outputs.install }}
+      matrix: ${{ steps.scope.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: bash .github/scripts/ci-scope.sh
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+
   checks:
     name: Typecheck, unit tests, launcher tests, E2E (Linux)
     runs-on: ubuntu-latest
@@ -62,17 +89,16 @@ jobs:
 
   package:
     name: Package and install/update/rollback test (${{ matrix.platform }})
+    needs: scope
+    if: needs.scope.outputs.install == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
     strategy:
       fail-fast: false
+      # win32-x64, linux-x64, darwin-arm64, and darwin-x64 (macos-15-intel, the last hosted
+      # Intel image) on main and manual runs only; see ci-scope.sh.
       matrix:
-        include:
-          - { runner: windows-latest, platform: win32-x64 }
-          - { runner: ubuntu-latest, platform: linux-x64 }
-          - { runner: macos-latest, platform: darwin-arm64 }
-          # The last hosted Intel image; GitHub's x64 macOS runners.
-          - { runner: macos-15-intel, platform: darwin-x64 }
+        include: ${{ fromJSON(needs.scope.outputs.matrix) }}
     env:
       # Must match MOSS_IT_PORT of the test server (tools/release/integration/server.mjs).
       MOSS_IT_PORT: '47613'
@@ -154,3 +180,24 @@ jobs:
           name: install-test-report-${{ matrix.platform }}
           path: ${{ env.IT_REPORT }}
           if-no-files-found: ignore
+
+  result:
+    name: CI result
+    if: always()
+    needs: [scope, checks, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job that ran passed
+        env:
+          RESULTS: ${{ needs.scope.result }} ${{ needs.checks.result }} ${{ needs.package.result }}
+          INSTALL: ${{ needs.scope.outputs.install }}
+        run: |
+          echo "scope checks package: $RESULTS (package matrix: ${INSTALL:-?})"
+          read -r scope checks package <<< "$RESULTS"
+          [[ "$scope" == success && "$checks" == success ]] || { echo "::error::scope or checks did not pass"; exit 1; }
+          case "$package" in
+            success) ;;
+            skipped) [[ "$INSTALL" == false ]] || { echo "::error::the package matrix was skipped although it was needed"; exit 1; } ;;
+            *) echo "::error::the package matrix ended: $package"; exit 1 ;;
+          esac
