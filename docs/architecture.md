@@ -186,7 +186,7 @@ SSH host → spawn ssh → remote moss-server
 ```bash
 pnpm typecheck
 pnpm build
-pnpm test:ui
+pnpm test:e2e
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --smoke
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 env -u ELECTRON_RUN_AS_NODE pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-remote-job

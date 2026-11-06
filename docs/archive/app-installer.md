@@ -1,3 +1,5 @@
+> **Archived (2026-11-06).** The 1.0.3 self-extracting installer design. Replaced by the launcher in `apps/launcher` and `src/main/install`; see [ADR-0010](../decisions/0010-own-installer-and-signed-updates.md).
+
 # 应用安装器与更新（1.0.3）
 
 - 状态：已实现（1.0.3）：`installer/` 源码、`build.ps1`、自测 36 项；应用侧按 `kind: exe` 下载并交给 Setup

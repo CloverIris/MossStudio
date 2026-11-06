@@ -1,3 +1,5 @@
+> **Archived (2026-11-06).** An early layout guide for `apps/` that no longer matches the code. The current map is in [CONTRIBUTING.md](../../CONTRIBUTING.md).
+
 # apps/
 
 当前只有 `apps/desktop` 一个应用包：Electron 主进程 + preload + React renderer
@@ -99,7 +101,7 @@ pnpm --filter @clover/desktop exec electron . --smoke
 | `--scenario=backend-renderer` | 渲染进程访问 backend（CSP/CORS/POST） |
 | `--scenario=project-save` | Project JSON 保存/读取 |
 
-验证结论以 [../docs/status.md](../docs/status.md) 为准，不要把 scenario 模拟
+验证结论以 [../docs/status.md](../status.md) 为准，不要把 scenario 模拟
 当成真实权重/CUDA 验收。
 
 ## 设计系统
@@ -113,9 +115,9 @@ pnpm --filter @clover/desktop exec electron . --smoke
 
 ## 相关文档
 
-- [文档索引](../docs/README.md)
-- [事实来源：status](../docs/status.md)
-- [架构](../docs/architecture.md)
-- [产品设计](../docs/product-design.md)
-- [路线图](../docs/roadmap.md)
-- [Windows 开发与验收手册](../docs/windows-validation-guide.md)
+- [文档索引](../README.md)
+- [事实来源：status](../status.md)
+- [架构](../architecture.md)
+- [产品设计](../product-design.md)
+- [路线图](../roadmap.md)
+- [Windows 开发与验收手册](../windows-validation-guide.md)
