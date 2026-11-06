@@ -190,7 +190,7 @@ export function Advanced({
         )}
       >
         <ChevronRight className={cn('size-4 shrink-0 text-ink-2 transition-transform', open && 'rotate-90')} aria-hidden="true" />
-        <span className={cn('font-medium', dense ? 'text-caption text-ink-2' : 'text-control text-ink')}>{title}</span>
+        <span className={cn('font-medium text-ink-2', dense ? 'text-caption' : 'text-ui')}>{title}</span>
         {summary && !open ? <span className="min-w-0 flex-1 truncate text-caption text-ink-2">{summary}</span> : null}
       </button>
       <Collapse open={open} id={panelId}>

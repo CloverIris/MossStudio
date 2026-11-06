@@ -100,6 +100,8 @@ describe('activity panel', () => {
     await expect.poll(() => panel(page).getByText('显存不足').isVisible()).toBe(true)
     // No button without a fix behind it.
     expect(await panel(page).getByRole('button', { name: '自动重试' }).count()).toBe(0)
+    // Fixes are ordinary buttons: a list of cards has no one main action.
+    expect(await panel(page).locator('[data-problem] button.bg-ink').count()).toBe(0)
     await app.screenshot('activity-problems-light')
 
     await panel(page).getByRole('button', { name: '查看日志' }).click()
@@ -154,10 +156,10 @@ describe('title bar', () => {
       [GiB] as const,
     )
     const monitor = page.locator('[data-perf-monitor]')
-    await expect.poll(() => monitor.getAttribute('aria-label')).toBe('性能：GPU 57%，显存 9.5 / 24.0 GB，1 个任务。点击查看每块 GPU')
+    await expect.poll(() => monitor.getAttribute('aria-label')).toBe('性能：显卡负载 57%，显存 9.5 / 24.0 GB，1 个任务。点击查看每块显卡')
     await expect.poll(() => monitor.textContent()).toContain('57%')
     await monitor.click()
-    const popover = page.getByRole('dialog', { name: 'GPU 状态' })
+    const popover = page.getByRole('dialog', { name: '显卡状态' })
     await expect.poll(() => popover.getByText('NVIDIA GeForce RTX 3060').isVisible()).toBe(true)
     await expect.poll(() => popover.getByText('NVIDIA GeForce RTX 4090').isVisible()).toBe(true)
     await app.screenshot('titlebar-gpu-popover-dark')
@@ -166,9 +168,9 @@ describe('title bar', () => {
     await expect.poll(() => popover.count()).toBe(0)
   })
 
-  it('says when there is no NVIDIA GPU', async () => {
+  it('says when there is no GPU', async () => {
     const page = await app.open({ scenario: 'noGpu', route: '/studio', settings: { onboardingState: 'dismissed' } })
-    await expect.poll(() => page.locator('[data-perf-monitor]').textContent()).toContain('未检测到 NVIDIA GPU')
+    await expect.poll(() => page.locator('[data-perf-monitor]').textContent()).toContain('未检测到显卡')
   })
 
   it('offers an update only when one is available', async () => {

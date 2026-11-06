@@ -45,7 +45,7 @@ function JobsTab(): React.JSX.Element {
     const open = focused === job.id
     const running = isActive(job)
     return (
-      <div key={job.id} data-job-row={job.id} className={cn('flex flex-col gap-2 rounded-lg px-3 py-2.5', open && 'bg-surface')}>
+      <div key={job.id} data-job-row={job.id} className={cn('flex flex-col gap-2 rounded-lg px-3 py-2.5', open && 'bg-well')}>
         <div className="flex items-start gap-3">
           <button type="button" aria-expanded={open} onClick={() => focusJob(open ? null : job.id)} className="min-w-0 flex-1 text-left">
             <div className="truncate text-ui font-medium text-ink">{jobTitle(job)}</div>
@@ -108,11 +108,17 @@ function NotificationsTab(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-1">
       {notifications.map((item) => (
-        <div key={item.id} className={cn('flex gap-3 rounded-lg px-3 py-2.5', unreadOnOpen.has(item.id) && 'bg-surface')}>
+        <div key={item.id} data-unread={unreadOnOpen.has(item.id) || undefined} className="flex gap-3 rounded-lg px-3 py-2.5">
           <span className="mt-0.5 shrink-0">{toneIcon[item.tone]}</span>
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="truncate text-ui font-medium text-ink">{item.title}</span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-ui font-medium text-ink">{item.title}</span>
+                {/* Unread is a dot, not a fill: fills mean selected (well) or a card (surface). */}
+                {unreadOnOpen.has(item.id) ? (
+                  <span role="img" aria-label="未读" className="size-1.5 shrink-0 rounded-full bg-accent" />
+                ) : null}
+              </span>
               <span className="shrink-0 text-caption text-ink-2">{relative(item.createdAt)}</span>
             </div>
             <p className="mt-0.5 text-caption text-ink-2 [overflow-wrap:anywhere]">{item.message}</p>
@@ -198,12 +204,15 @@ function ProblemsTab(): React.JSX.Element {
                 {diagnostic.severity === 'error' ? toneIcon.error : diagnostic.severity === 'warning' ? toneIcon.warning : toneIcon.info}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-ui font-medium text-ink">{diagnostic.title}</div>
+                {/* The time sits where every Activity list puts it: right of the title, ink-2. */}
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 text-ui font-medium text-ink">{diagnostic.title}</span>
+                  <span className="tabular shrink-0 text-caption text-ink-2">
+                    {diagnostic.count > 1 ? `出现 ${diagnostic.count} 次 · ` : ''}
+                    {relative(diagnostic.lastAt)}
+                  </span>
+                </div>
                 <p className="mt-0.5 text-caption text-ink-2 [overflow-wrap:anywhere]">{diagnostic.explain}</p>
-                <p className="tabular mt-1 text-caption text-ink-3">
-                  {diagnostic.count > 1 ? `出现 ${diagnostic.count} 次 · ` : ''}
-                  {relative(diagnostic.lastAt)}
-                </p>
               </div>
               <IconButton label="忽略" className="-mr-1 -mt-1 size-7" onClick={() => void dismissDiagnostic(diagnostic.id)}>
                 <X className="size-3.5" />
@@ -212,11 +221,8 @@ function ProblemsTab(): React.JSX.Element {
             {solutions.length ? (
               <div className="flex flex-wrap gap-2 pl-7">
                 {solutions.map((solution, index) => (
-                  <Button
-                    key={`${solution.action}-${index}`}
-                    tone={index === 0 ? 'primary' : 'secondary'}
-                    onClick={() => void apply(diagnostic, solution)}
-                  >
+                  // One list, many cards: no card's fix outranks another's, so none is primary.
+                  <Button key={`${solution.action}-${index}`} onClick={() => void apply(diagnostic, solution)}>
                     {solution.label}
                   </Button>
                 ))}

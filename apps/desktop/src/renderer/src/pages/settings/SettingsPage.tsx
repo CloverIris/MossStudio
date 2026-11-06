@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../../store'
-import { Spinner, cn } from '../../components/ui'
+import { LoadingRow, PageHeader, cn } from '../../components/ui'
 import { AboutSection } from './AboutSection'
 import { DevicesSection } from './DevicesSection'
 import { FeaturesSection } from './FeaturesSection'
@@ -53,7 +53,8 @@ export function SettingsPage(): React.JSX.Element {
   return (
     <div className="flex h-full min-h-0 bg-surface">
       <nav aria-label="设置分区" className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto bg-panel px-3 py-6">
-        <div className="px-3 pb-4 text-title font-semibold text-ink">设置</div>
+        {/* The panel's own name, like 活动: one step below the section title it sits beside. */}
+        <div className="px-3 pb-3 text-section font-semibold text-ink">设置</div>
         {SETTINGS_SECTIONS.map((item) => {
           const current = item.id === section
           return (
@@ -74,15 +75,8 @@ export function SettingsPage(): React.JSX.Element {
       </nav>
       <div ref={scroller} className="min-w-0 flex-1 overflow-y-auto">
         <div className="flex w-full max-w-[768px] flex-col gap-7 px-14 pb-16 pt-10">
-          <h1 className="text-title font-semibold text-ink">{sectionLabel(section)}</h1>
-          {settings ? (
-            <Section />
-          ) : (
-            <div className="flex items-center gap-2 text-ui text-ink-2">
-              <Spinner />
-              正在读取设置…
-            </div>
-          )}
+          <PageHeader title={sectionLabel(section)} />
+          {settings ? <Section /> : <LoadingRow label="正在读取设置…" />}
         </div>
       </div>
     </div>
