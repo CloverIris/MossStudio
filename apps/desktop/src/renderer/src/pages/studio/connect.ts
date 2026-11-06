@@ -1,5 +1,6 @@
 import type { ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
 import { canvasPicture, controlKindLabel, linksOf, MAX_REFERENCES, wouldCycle, type LinkRole } from './links'
+import { engineUnavailableReason, type Blocker } from './readiness'
 
 /**
  * Connecting cards by dragging a wire: which cards offer a picture, which
@@ -32,16 +33,17 @@ export type LinkMenuEntry =
 /**
  * The role menu shown when a wire is dropped on a layout canvas. Only roles
  * the engine supports appear; control lists the kinds of the canvas's chosen
- * control adapter. `features` null means no engine is usable.
+ * control adapter. `features` null means no engine is usable; `blockers` (the
+ * readiness of the 生成 footer) then words why.
  */
 export function linkMenu(
   target: ProjectCanvas,
   sourceId: string,
   features: EngineFeatures | null | undefined,
   adapters: readonly ControlAdapterEntry[],
+  blockers: readonly Blocker[] = [],
 ): LinkMenuEntry[] {
-  if (features === undefined) return [{ type: 'note', label: '正在读取引擎支持的功能…' }]
-  if (features === null) return [{ type: 'note', label: '没有可用的引擎，暂时不能把图片接进来' }]
+  if (!features) return [{ type: 'note', label: engineUnavailableReason(features, blockers, '把图片接进来') ?? '' }]
   const links = linksOf(target)
   const entries: LinkMenuEntry[] = []
   if (features.imageInput) {

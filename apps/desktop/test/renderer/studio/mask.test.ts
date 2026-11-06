@@ -128,6 +128,11 @@ describe('studio/mask availability', () => {
   it('is hidden when the engine cannot take pictures, and off with a reason otherwise', () => {
     expect(maskAvailability(withInit, features({ imageInput: false }))).toMatchObject({ hidden: true, enabled: false })
     expect(maskAvailability(withInit, null)).toMatchObject({ hidden: false, enabled: false, reason: '没有可用的引擎，暂时不能画遮罩' })
+    // While the engine installs, the reason is the 生成 footer's, not "no engine".
+    expect(maskAvailability(withInit, null, [{ id: 'engine', message: '引擎正在安装 · 40%' }])).toMatchObject({
+      enabled: false,
+      reason: '引擎正在安装 · 40%，就绪后才能画遮罩',
+    })
     expect(maskAvailability(canvas(), features())).toMatchObject({ enabled: false, reason: '先给画面连一张起始图，再画遮罩' })
     expect(maskAvailability(canvas({ kind: 'image' }), features())).toMatchObject({ enabled: false, reason: '先选中一个可编辑的画面' })
     expect(maskAvailability(null, features())).toMatchObject({ enabled: false })
