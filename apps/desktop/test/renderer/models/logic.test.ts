@@ -3,6 +3,7 @@ import type { DownloadTask, ModelBundle, ModelEntry } from '@shared/types'
 import {
   bundleComponentIds,
   bundleDeletePlan,
+  bundleTone,
   bundleView,
   bundlesUsing,
   isOfferedComponent,
@@ -58,7 +59,9 @@ describe('bundleView', () => {
     const c = catalog()
     const view = bundleView(bundle('moss-sft'), c.models, [])
     expect(view.status).toBe('missing')
-    expect(view.stateText).toBe(`未下载 · ${sizeText(view.totalBytes)}`)
+    // The size is shown once, next to the description, never inside the state.
+    expect(view.stateText).toBe('未下载')
+    expect(bundleTone(view.status)).toBe('neutral')
     expect(view).toMatchObject({ action: 'download', actionLabel: '下载' })
   })
 
@@ -67,6 +70,7 @@ describe('bundleView', () => {
     const view = bundleView(bundle('moss-sft'), c.models, [])
     expect(view.status).toBe('partial')
     expect(view.stateText).toBe('还差 1 个文件 · 250 MB')
+    expect(bundleTone(view.status)).toBe('warn')
     expect(view.missing.map((item) => item.id)).toEqual(['flux2-vae-small'])
   })
 
@@ -75,6 +79,8 @@ describe('bundleView', () => {
     const size = model('flux2-vae-small').sizeBytes
     const view = bundleView(bundle('moss-sft'), c.models, [task('flux2-vae-small', { state: 'running', bytes: Math.floor(size * 0.425) })])
     expect(view).toMatchObject({ status: 'downloading', stateText: '下载中 42%', action: 'pause', actionLabel: '暂停', percent: 42 })
+    // In progress is accent, the same as generation and training.
+    expect(bundleTone(view.status)).toBe('accent')
     expect(view.tasks).toHaveLength(1)
   })
 
@@ -186,9 +192,14 @@ describe('itemState', () => {
 
   it('covers installed, downloading, paused, failed, partial and missing', () => {
     expect(itemState(entry, true, undefined)).toMatchObject({ text: '已下载', action: 'delete', tone: 'ok' })
-    expect(itemState({ ...entry, provider: 'local' }, true, undefined)).toMatchObject({ text: '已添加', action: 'delete' })
+    expect(itemState({ ...entry, provider: 'local' }, true, undefined)).toMatchObject({
+      text: '已添加',
+      action: 'delete',
+      actionLabel: '移除',
+    })
     expect(itemState(entry, false, downloadFixture({ state: 'running', bytes: 50, totalBytes: 100 }))).toMatchObject({
       text: '下载中 50%',
+      tone: 'accent',
       action: 'pause',
       percent: 50,
     })
@@ -215,7 +226,7 @@ describe('itemState', () => {
       action: 'delete',
       actionLabel: '移除',
     })
-    expect(itemState(entry, false, undefined)).toMatchObject({ text: '74 MB', action: 'download', actionLabel: '下载' })
+    expect(itemState(entry, false, undefined)).toMatchObject({ text: '', action: 'download', actionLabel: '下载' })
   })
 })
 

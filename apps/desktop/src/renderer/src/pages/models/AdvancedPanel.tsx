@@ -1,25 +1,14 @@
-import { ArrowDownToLine, FolderInput, Pause, Play, Trash2 } from 'lucide-react'
+import { FolderPlus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Ipc } from '@shared/channels'
 import { importFolderMessage, type ImportFolderResult } from '../../lib/modelFolder'
 import type { Catalog, DownloadTask, ModelEntry } from '@shared/types'
 import { call } from '../../lib/api'
 import { ModelDirectoriesCard } from '../../components/ModelDirectoriesCard'
-import {
-  Button,
-  ConfirmDialog,
-  Field,
-  Group,
-  IconButton,
-  Input,
-  ProgressBar,
-  Row,
-  Section,
-  Spinner,
-  cn,
-  useToast,
-} from '../../components/ui'
+import { Button, ConfirmDialog, Field, Group, Pill, ProgressBar, Row, Section, Spinner, useToast } from '../../components/ui'
+import { TextSetting } from '../training/TextSetting'
 import { ROLE_LABEL, bundlesUsing, isOfferedComponent, itemState, sizeText, taskFor } from './logic'
+import { DownloadActionIcon, RemoveButton } from './ModelEntries'
 import type { ModelLocation } from './useModelLocation'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
@@ -54,11 +43,12 @@ function PartsList({ catalog, location }: { catalog: Catalog; location: ModelLoc
 
   async function remove(model: ModelEntry): Promise<void> {
     setRemoving(null)
+    const verb = model.provider === 'local' ? '移除' : '删除'
     try {
       await location.remove('model', model.id)
-      toast.push(`已删除 ${model.name}`, 'success')
+      toast.push(`已${verb} ${model.name}`, 'success')
     } catch (cause) {
-      toast.push(`没能删除：${errorText(cause)}`, 'error')
+      toast.push(`没能${verb}：${errorText(cause)}`, 'error')
     }
   }
 
@@ -90,42 +80,21 @@ function PartsList({ catalog, location }: { catalog: Catalog; location: ModelLoc
                 </span>
               }
             >
-              {!(state.action === 'download' && state.actionLabel === '下载') ? (
-                <span
-                  className={cn(
-                    'tabular text-caption',
-                    state.tone === 'ok'
-                      ? 'text-ok'
-                      : state.tone === 'danger'
-                        ? 'text-danger'
-                        : state.tone === 'warn'
-                          ? 'text-warn'
-                          : 'text-ink-2',
-                  )}
-                >
+              {state.text ? (
+                <Pill tone={state.tone} className="tabular">
                   {state.text}
-                </span>
+                </Pill>
               ) : null}
               {state.action === 'delete' ? (
-                <IconButton label={`${state.actionLabel} ${model.name}`} onClick={() => setRemoving(model)}>
-                  <Trash2 className="size-4" strokeWidth={1.6} />
-                </IconButton>
+                <RemoveButton remove={model.provider === 'local'} name={model.name} onClick={() => setRemoving(model)} />
               ) : state.action ? (
                 <Button
                   tone="secondary"
                   disabled={busy !== null}
                   onClick={() => void act(model, state.action as 'download' | 'resume' | 'pause', task)}
                 >
-                  {busy === model.id ? (
-                    <Spinner />
-                  ) : state.action === 'pause' ? (
-                    <Pause className="size-4" strokeWidth={1.6} />
-                  ) : state.action === 'resume' ? (
-                    <Play className="size-4" strokeWidth={1.6} />
-                  ) : (
-                    <ArrowDownToLine className="size-4" strokeWidth={1.6} />
-                  )}
-                  {state.action === 'download' && state.actionLabel === '下载' ? `下载 · ${sizeText(model.sizeBytes)}` : state.actionLabel}
+                  {busy === model.id ? <Spinner /> : <DownloadActionIcon action={state.action} label={state.actionLabel} />}
+                  {state.actionLabel}
                 </Button>
               ) : null}
             </Row>
@@ -134,10 +103,10 @@ function PartsList({ catalog, location }: { catalog: Catalog; location: ModelLoc
       </Group>
       <ConfirmDialog
         open={Boolean(removing)}
-        title={removing ? `删除「${removing.name}」？` : ''}
+        title={removing ? `${removing.provider === 'local' ? '移除' : '删除'}「${removing.name}」？` : ''}
         description={
           removing?.provider === 'local'
-            ? '只移除模型库里的登记，电脑上的原文件不会被删除。'
+            ? '只从模型库里移除，电脑上的原文件不会被删除。'
             : `${users.length ? `${users.join('、')} 需要这个文件，删除后这些模型要重新下载它才能使用。` : ''}可释放约 ${sizeText(removing?.installedBytes || removing?.sizeBytes)}。`
         }
         confirmLabel={removing?.provider === 'local' ? '移除' : '删除'}
@@ -176,36 +145,33 @@ function RemoteFolders({ location }: { location: ModelLocation }): React.JSX.Ele
   return (
     <>
       <Group>
+        {/* Paths save themselves on Enter or when the field loses focus, like the trainer's paths. */}
         <div className="flex flex-col gap-3 px-3.5 py-3">
           <Field label="模型保存目录" hint="这台主机上存放下载模型的文件夹。">
-            <div className="flex gap-2">
-              <Input value={root} onChange={(event) => setRoot(event.target.value)} className="min-w-0 flex-1" />
-              <Button
-                tone="secondary"
-                size="md"
-                disabled={busy !== null || !root.trim()}
-                onClick={() =>
-                  void run('root', async () => {
-                    await call(Ipc.hostsUpdatePaths, { id: hostId, modelsRoot: root.trim() })
-                    return '已保存'
-                  })
-                }
-              >
-                保存
-              </Button>
-            </div>
+            <TextSetting
+              label="模型保存目录"
+              value={root}
+              validate={(value) => (value ? null : '填写一个文件夹')}
+              onSave={async (value) => {
+                await call(Ipc.hostsUpdatePaths, { id: hostId, modelsRoot: value ?? '' })
+                setRoot(value ?? '')
+              }}
+            />
           </Field>
           <Field label="生成时使用的模型文件夹" hint="留空时按上面的目录自动查找。">
-            <div className="flex gap-2">
-              <Input
+            <div className="flex items-start gap-2">
+              <TextSetting
+                label="生成时使用的模型文件夹"
+                className="flex-1"
                 value={modelPath}
-                onChange={(event) => setModelPath(event.target.value)}
                 placeholder="例如 ~/.mossstudio/models/…/snapshots/…"
-                className="min-w-0 flex-1"
+                onSave={async (value) => {
+                  await call(Ipc.hostsUpdatePaths, { id: hostId, modelPath: value ?? '' })
+                  setModelPath(value ?? '')
+                }}
               />
               <Button
                 tone="secondary"
-                size="md"
                 disabled={busy !== null}
                 onClick={() =>
                   void run('find', async () => {
@@ -215,26 +181,14 @@ function RemoteFolders({ location }: { location: ModelLocation }): React.JSX.Ele
                       path: root.trim() || '~/.mossstudio/models',
                     })
                     if (!result.found) throw new Error(result.message)
-                    setModelPath(result.found)
                     await call(Ipc.hostsUpdatePaths, { id: hostId, modelPath: result.found })
+                    setModelPath(result.found)
                     return result.message
                   })
                 }
               >
+                {busy === 'find' ? <Spinner /> : null}
                 自动查找
-              </Button>
-              <Button
-                tone="secondary"
-                size="md"
-                disabled={busy !== null}
-                onClick={() =>
-                  void run('path', async () => {
-                    await call(Ipc.hostsUpdatePaths, { id: hostId, modelPath: modelPath.trim() })
-                    return '已保存'
-                  })
-                }
-              >
-                保存
               </Button>
             </div>
           </Field>
@@ -251,14 +205,13 @@ function RemoteFolders({ location }: { location: ModelLocation }): React.JSX.Ele
               })
             }
           >
-            {busy === 'prepare' ? <Spinner /> : null}下载
+            {busy === 'prepare' ? <Spinner /> : null}
+            下载
           </Button>
         </Row>
         {modelPath ? (
           <Row title="删除生成用的模型文件夹" description={modelPath}>
-            <Button tone="ghost-danger" disabled={busy !== null} onClick={() => setConfirmRemove(true)}>
-              删除
-            </Button>
+            <RemoveButton name={modelPath} disabled={busy !== null} onClick={() => setConfirmRemove(true)} />
           </Row>
         ) : null}
       </Group>
@@ -302,10 +255,11 @@ function ImportFolderRow(): React.JSX.Element {
     <Group>
       <Row
         title="在原位置使用这个模型文件夹"
-        description="选一个已有的模型文件夹（例如从别的电脑拷来的 MOSS-Image）。文件留在原处，不复制、不移动。"
+        description="选一个完整的模型文件夹（例如从别的电脑拷来的 MOSS-Image），添加到模型库。文件留在原处，不复制、不移动。"
       >
         <Button tone="secondary" disabled={busy} onClick={() => void importFolder()}>
-          {busy ? <Spinner /> : <FolderInput className="size-4" strokeWidth={1.6} />}选择文件夹
+          {busy ? <Spinner /> : <FolderPlus className="size-4" strokeWidth={1.6} />}
+          选择文件夹
         </Button>
       </Row>
     </Group>

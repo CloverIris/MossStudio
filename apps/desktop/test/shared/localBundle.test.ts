@@ -29,7 +29,7 @@ describe('localFilesBundle', () => {
     expect(localFilesBundle(trio())).toEqual({
       id: 'local-files',
       name: '本地文件（扫描）',
-      description: '直接使用本地已登记的单文件组件，不复制、不下载。',
+      description: '直接使用你添加到模型库的本地文件，不复制、不下载。',
       components: { dit: 'dit-1', textEncoder: 'te-1', vae: 'vae-1' },
       support: '',
       recommended: false,

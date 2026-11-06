@@ -1,9 +1,23 @@
-import { ArrowDownToLine, FileUp, Pause, Play, Sparkles, Trash2 } from 'lucide-react'
+import { FileUp, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import type { AdapterEntry, Catalog, DownloadTask } from '@shared/types'
 import { useApp } from '../../store'
-import { Button, ConfirmDialog, EmptyState, Group, IconButton, ProgressBar, Row, Section, Spinner, cn, useToast } from '../../components/ui'
+import { Notice } from '../../components/common/Notice'
+import {
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  Group,
+  LoadingRow,
+  Pill,
+  ProgressBar,
+  Row,
+  Section,
+  Spinner,
+  useToast,
+} from '../../components/ui'
 import { itemState, sizeText, taskFor } from './logic'
+import { DownloadActionIcon, RemoveButton } from './ModelEntries'
 import type { ModelLocation } from './useModelLocation'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
@@ -20,12 +34,20 @@ export function LoraTab({ catalog, location }: { catalog: Catalog; location: Mod
   const [busy, setBusy] = useState<string | null>(null)
   const [removing, setRemoving] = useState<AdapterEntry | null>(null)
   if (!location.ready) {
-    return (
-      <p className="px-1 text-ui text-ink-2">
-        {location.scanning
-          ? `正在查看 ${location.host?.name ?? '远程主机'} 上的 LoRA`
-          : `读不到 ${location.host?.name ?? '远程主机'} 上的 LoRA，回到「模型」重试。`}
-      </p>
+    const hostName = location.host?.name ?? '远程主机'
+    return location.scanning ? (
+      <LoadingRow label={`正在查看 ${hostName} 上的 LoRA…`} />
+    ) : (
+      <Notice
+        tone="danger"
+        action={
+          <Button size="xs" onClick={location.rescan}>
+            重试
+          </Button>
+        }
+      >
+        读不到 {hostName} 上的 LoRA{location.scanError ? `：${location.scanError}` : ''}。检查这台主机是否在线，然后重试。
+      </Notice>
     )
   }
   const adapters = catalog.adapters.filter((adapter) => location.kind === 'local' || adapter.provider !== 'local')
@@ -84,16 +106,14 @@ export function LoraTab({ catalog, location }: { catalog: Catalog; location: Mod
           <Group>
             {installed.map((adapter) => (
               <Row key={adapter.id} title={adapter.name} description={adapterDescription(adapter)}>
-                <IconButton label={`删除 ${adapter.name}`} onClick={() => setRemoving(adapter)}>
-                  <Trash2 className="size-4" strokeWidth={1.6} />
-                </IconButton>
+                <RemoveButton name={adapter.name} onClick={() => setRemoving(adapter)} />
               </Row>
             ))}
           </Group>
         ) : (
           <Group>
             <EmptyState
-              className="py-10"
+              size="section"
               icon={<Sparkles className="size-6" strokeWidth={1.6} />}
               title="还没有 LoRA"
               description={location.kind === 'local' ? '导入电脑上的 .safetensors 文件，或从下面下载。' : '从下面下载到这台主机。'}
@@ -121,8 +141,10 @@ export function LoraTab({ catalog, location }: { catalog: Catalog; location: Mod
                     </span>
                   }
                 >
-                  {state.action !== 'download' ? (
-                    <span className={cn('tabular text-caption', state.tone === 'danger' ? 'text-danger' : 'text-ink-2')}>{state.text}</span>
+                  {state.text ? (
+                    <Pill tone={state.tone} className="tabular">
+                      {state.text}
+                    </Pill>
                   ) : null}
                   {state.action && state.action !== 'delete' ? (
                     <Button
@@ -130,15 +152,7 @@ export function LoraTab({ catalog, location }: { catalog: Catalog; location: Mod
                       disabled={busy !== null}
                       onClick={() => void act(adapter, state.action as 'download' | 'resume' | 'pause', task)}
                     >
-                      {busy === adapter.id ? (
-                        <Spinner />
-                      ) : state.action === 'pause' ? (
-                        <Pause className="size-4" strokeWidth={1.6} />
-                      ) : state.action === 'resume' ? (
-                        <Play className="size-4" strokeWidth={1.6} />
-                      ) : (
-                        <ArrowDownToLine className="size-4" strokeWidth={1.6} />
-                      )}
+                      {busy === adapter.id ? <Spinner /> : <DownloadActionIcon action={state.action} label={state.actionLabel} />}
                       {state.actionLabel}
                     </Button>
                   ) : null}

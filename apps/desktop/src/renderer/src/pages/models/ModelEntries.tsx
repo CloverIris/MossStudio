@@ -1,9 +1,9 @@
-import { ArrowDownToLine, Pause, Play, Trash2 } from 'lucide-react'
+import { ArrowDownToLine, Pause, Play, RotateCw, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ModelBundle, ModelEntry } from '@shared/types'
-import { Button, Card, ConfirmDialog, Group, ProgressBar, Row, Spinner, StatusDot, cn, useToast } from '../../components/ui'
-import { bundleDeletePlan, sizeText, type BundleView } from './logic'
+import { Button, Card, ConfirmDialog, Group, Pill, ProgressBar, Row, Spinner, useToast } from '../../components/ui'
+import { bundleDeletePlan, bundleTone, sizeText, type BundleView } from './logic'
 import type { ModelLocation } from './useModelLocation'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
@@ -22,12 +22,60 @@ async function runBundleAction(view: BundleView, location: ModelLocation): Promi
   if (view.action === 'download') await location.downloadBundle(view.bundle)
 }
 
-function ActionIcon({ action }: { action: BundleView['action'] }): React.JSX.Element | null {
+/**
+ * The icon of a download action, the same in every list and in the queue:
+ * pause, continue, retry (a failed download) and download.
+ */
+export function DownloadActionIcon({
+  action,
+  label,
+}: {
+  action: 'download' | 'resume' | 'pause' | null
+  label: string
+}): React.JSX.Element | null {
   if (action === 'pause') return <Pause className="size-4" strokeWidth={1.6} />
-  if (action === 'resume') return <Play className="size-4" strokeWidth={1.6} />
+  if (action === 'resume')
+    return label === '重试' ? <RotateCw className="size-4" strokeWidth={1.6} /> : <Play className="size-4" strokeWidth={1.6} />
   if (action === 'download') return <ArrowDownToLine className="size-4" strokeWidth={1.6} />
   return null
 }
+
+/**
+ * Starting a delete from a row or card. Files the app downloaded are deleted
+ * (删除); files that stay where they are on this computer are only removed
+ * from the list (移除). Both open a confirm.
+ */
+export function RemoveButton({
+  remove,
+  name,
+  onClick,
+  disabled,
+}: {
+  /** True when the files stay on disk and only the entry goes. */
+  remove?: boolean
+  name: string
+  onClick: () => void
+  disabled?: boolean
+}): React.JSX.Element {
+  return remove ? (
+    <Button tone="ghost" aria-label={`移除 ${name}`} disabled={disabled} onClick={onClick}>
+      <X className="size-4" strokeWidth={1.6} />
+      移除
+    </Button>
+  ) : (
+    <Button tone="ghost-danger" aria-label={`删除 ${name}`} disabled={disabled} onClick={onClick}>
+      <Trash2 className="size-4" strokeWidth={1.6} />
+      删除
+    </Button>
+  )
+}
+
+/** A whole model whose files all stay where they are on this computer (registered, not downloaded). */
+const isLocalOnly = (view: BundleView): boolean =>
+  view.components.length > 0 && view.components.every((model) => model.provider === 'local')
+
+/** The description of a model with its total size at the end, the same place as for parts and LoRA. */
+const describe = (view: BundleView): string => [view.bundle.description, sizeText(view.totalBytes)].filter(Boolean).join(' · ')
 
 function useBundleActions(location: ModelLocation) {
   const toast = useToast()
@@ -46,13 +94,6 @@ function useBundleActions(location: ModelLocation) {
     }
   }
   return { busy, act }
-}
-
-function statusTone(view: BundleView): 'ok' | 'warn' | 'error' | 'unknown' {
-  if (view.status === 'ready') return 'ok'
-  if (view.status === 'failed') return 'error'
-  if (view.status === 'unavailable' || view.status === 'partial') return 'warn'
-  return 'unknown'
 }
 
 /** The recommended model, with its state in plain words and one main action. */
@@ -76,16 +117,12 @@ export function FeaturedModel({
         <div className="flex min-w-0 flex-col gap-1">
           <span className="text-caption text-ink-2">{view.bundle.recommended ? '推荐模型' : '模型'}</span>
           <h2 className="text-section font-semibold text-ink">{view.bundle.name}</h2>
-          {view.bundle.description ? <p className="text-ui text-ink-2">{view.bundle.description}</p> : null}
+          <p className="tabular text-ui text-ink-2">{describe(view)}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {view.status === 'ready' ? (
             <>
-              {deletable ? (
-                <Button tone="ghost" onClick={() => onDelete(view.bundle)}>
-                  <Trash2 className="size-4" strokeWidth={1.6} /> 删除
-                </Button>
-              ) : null}
+              {deletable ? <RemoveButton remove={isLocalOnly(view)} name={view.bundle.name} onClick={() => onDelete(view.bundle)} /> : null}
               {location.kind === 'local' ? (
                 <Button tone="secondary" size="md" onClick={() => navigate('/studio')}>
                   去创作
@@ -94,23 +131,25 @@ export function FeaturedModel({
             </>
           ) : view.action ? (
             <Button tone="primary" size="md" data-oobe-hint-target disabled={busy !== null} onClick={() => void act(view)}>
-              {busy ? <Spinner /> : <ActionIcon action={view.action} />}
+              {busy ? <Spinner /> : <DownloadActionIcon action={view.action} label={view.actionLabel} />}
               {view.actionLabel}
             </Button>
           ) : null}
         </div>
       </div>
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <StatusDot status={statusTone(view)} />
-          <span className={cn('tabular text-control', view.status === 'failed' ? 'text-danger' : 'text-ink')}>{view.stateText}</span>
-          {/* The state line already says the size when nothing is downloaded yet. */}
-          {view.stateText.includes(sizeText(view.totalBytes)) ? null : (
-            <span className="tabular ml-auto text-caption text-ink-2">{sizeText(view.totalBytes)}</span>
-          )}
+      {/* Not downloaded yet needs no state: the 下载 button says it. */}
+      {view.status !== 'missing' || progressing ? (
+        <div className="flex flex-col gap-2.5">
+          {view.status !== 'missing' ? (
+            <div>
+              <Pill tone={bundleTone(view.status)} className="tabular">
+                {view.stateText}
+              </Pill>
+            </div>
+          ) : null}
+          {progressing ? <ProgressBar value={view.percent} label={`${view.bundle.name} 下载进度`} /> : null}
         </div>
-        {progressing ? <ProgressBar value={view.percent} label={`${view.bundle.name} 下载进度`} /> : null}
-      </div>
+      ) : null}
     </Card>
   )
 }
@@ -141,28 +180,23 @@ export function ModelList({
             title={view.bundle.name}
             description={
               <span className="flex flex-col gap-1.5">
-                <span>{view.bundle.description}</span>
+                <span className="tabular">{describe(view)}</span>
                 {progressing ? <ProgressBar value={view.percent} label={`${view.bundle.name} 下载进度`} className="max-w-64" /> : null}
               </span>
             }
           >
-            <span
-              className={cn(
-                'tabular text-caption',
-                view.status === 'failed' ? 'text-danger' : view.status === 'ready' ? 'text-ok' : 'text-ink-2',
-              )}
-            >
-              {view.stateText}
-            </span>
+            {view.status !== 'missing' ? (
+              <Pill tone={bundleTone(view.status)} className="tabular">
+                {view.stateText}
+              </Pill>
+            ) : null}
             {view.status === 'ready' ? (
               deletable(view.bundle) ? (
-                <Button tone="ghost" onClick={() => onDelete(view.bundle)}>
-                  删除
-                </Button>
+                <RemoveButton remove={isLocalOnly(view)} name={view.bundle.name} onClick={() => onDelete(view.bundle)} />
               ) : null
             ) : view.action ? (
               <Button tone="secondary" disabled={busy !== null} onClick={() => void act(view)}>
-                {busy === view.bundle.id ? <Spinner /> : <ActionIcon action={view.action} />}
+                {busy === view.bundle.id ? <Spinner /> : <DownloadActionIcon action={view.action} label={view.actionLabel} />}
                 {view.actionLabel}
               </Button>
             ) : null}
@@ -199,7 +233,7 @@ export function DeleteModelDialog({
     : plan.ids.length === 0
       ? '这个模型的文件都被其他模型共用，删除它不会释放空间。'
       : local
-        ? '只移除模型库里的登记，电脑上的原文件不会被删除。'
+        ? '只从模型库里移除，电脑上的原文件不会被删除。'
         : `会删除${where}${plan.ids.length} 个文件，释放约 ${sizeText(plan.bytes)}。` +
           (keptNames.length ? `其他模型还在用的 ${keptNames.join('、')} 会保留。` : '') +
           '需要时可以重新下载。'
@@ -209,16 +243,16 @@ export function DeleteModelDialog({
     onClose()
     try {
       await location.removeMany('model', plan.ids)
-      toast.push(`已删除 ${bundle.name}`, 'success')
+      toast.push(`${local ? '已移除' : '已删除'} ${bundle.name}`, 'success')
     } catch (cause) {
-      toast.push(`没能删除：${errorText(cause)}`, 'error')
+      toast.push(`${local ? '没能移除' : '没能删除'}：${errorText(cause)}`, 'error')
     }
   }
 
   return (
     <ConfirmDialog
       open={Boolean(bundle) && plan.ids.length > 0}
-      title={bundle ? `删除「${bundle.name}」？` : ''}
+      title={bundle ? `${local ? '移除' : '删除'}「${bundle.name}」？` : ''}
       description={description}
       confirmLabel={local ? '移除' : '删除'}
       onClose={onClose}
