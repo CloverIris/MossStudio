@@ -3,6 +3,7 @@ import type { AdapterEntry, Catalog, EngineReadiness, ModelBundle, ModelEntry } 
 import {
   bundleInstalled,
   deriveReadiness,
+  inputsUnavailableReason,
   installedBundles,
   rerunEligibility,
   resolveBundle,
@@ -172,6 +173,22 @@ describe('studio/readiness rerunEligibility', () => {
     expect(rerunEligibility(ok, { busy: true, submitting: false }).ok).toBe(false)
     expect(rerunEligibility(ok, { busy: false, submitting: true }).ok).toBe(false)
     expect(rerunEligibility(canvas(), { busy: false, submitting: false })).toMatchObject({ ok: false, reason: '先写一句描述' })
+  })
+})
+
+describe('studio/readiness inputsUnavailableReason', () => {
+  it('takes the reason from readiness so 输入 and the footer agree', () => {
+    const installing = { id: 'engine', message: '引擎正在安装 · 40%', action: { label: '查看', to: '/setup' } } as const
+    expect(inputsUnavailableReason(null, [installing])).toBe('引擎正在安装 · 40%，就绪后才能添加图片')
+    expect(inputsUnavailableReason(null, [{ id: 'remote-path', message: '「A100」还没有设置模型位置' }])).toBe(
+      '「A100」还没有设置模型位置，就绪后才能添加图片',
+    )
+    expect(inputsUnavailableReason(null, [{ id: 'prompt', message: '先写一句描述' }])).toBe('没有可用的引擎，暂时不能添加图片')
+  })
+
+  it('waits while features load and allows adding once they are known', () => {
+    expect(inputsUnavailableReason(undefined, [])).toBe('正在读取引擎支持的功能…')
+    expect(inputsUnavailableReason(engineFeaturesFixture(), [])).toBeNull()
   })
 })
 

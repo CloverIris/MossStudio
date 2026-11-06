@@ -176,6 +176,18 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
   return { blockers, prompt }
 }
 
+/**
+ * Why the 输入 section cannot add pictures right now, or null when it can.
+ * Worded from the same readiness the 生成 footer shows, so the two never
+ * disagree (e.g. the engine is still installing, not missing).
+ */
+export function inputsUnavailableReason(features: EngineFeatures | null | undefined, blockers: readonly Blocker[]): string | null {
+  if (features === undefined) return '正在读取引擎支持的功能…'
+  if (features !== null) return null
+  const engine = blockers.find((blocker) => blocker.id === 'engine' || blocker.id === 'remote-path')
+  return engine ? `${engine.message}，就绪后才能添加图片` : '没有可用的引擎，暂时不能添加图片'
+}
+
 export interface RerunCheck {
   ok: boolean
   reason?: string
