@@ -46,6 +46,37 @@ export function folderProblemMessage(check: FolderCheck): FolderMessage | null {
   }
 }
 
+/**
+ * A line under an install location that is fine but not empty: a folder an uninstall left with
+ * the data kept, whose data the install keeps using. Null for every other check.
+ */
+export function folderNote(check: { ok: boolean; kind: string } | null): string | null {
+  return check?.ok && check.kind === 'data' ? '这个文件夹里有上次卸载时保留的作品、模型和设置，装好后会继续使用它们。' : null
+}
+
+/** The same folder, the way the OS compares paths (case-insensitive on Windows and macOS). */
+export function sameFolder(platform: 'win32' | 'linux' | 'darwin', a: string, b: string): boolean {
+  const norm = (path: string): string => {
+    const trimmed = path.trim().replace(/[\\/]+$/, '')
+    return platform === 'linux' ? trimmed : trimmed.replace(/\//g, platform === 'win32' ? '\\' : '/').toLowerCase()
+  }
+  return norm(a) === norm(b)
+}
+
+/**
+ * Is the install going where the old install (or the kept data) already is? Then its data stays
+ * in use and there is no choice to make: an old 1.0.x folder is converted in place; a folder an
+ * uninstall left keeps its data/.
+ */
+export function legacyInPlace(
+  platform: 'win32' | 'linux' | 'darwin',
+  legacy: { root: string; source: string },
+  location: { kind: string; path: string } | null,
+): boolean {
+  if (!location) return false
+  return legacy.source === 'kept' ? location.kind === 'data' && sameFolder(platform, location.path, legacy.root) : location.kind === 'legacy'
+}
+
 /** "需要 820 MB · 可用 120 GB" (free space only when known). */
 export function spaceLine(requiredBytes: number, freeBytes?: number | null): string {
   const need = `需要 ${bytes(requiredBytes)}`
@@ -119,8 +150,14 @@ export interface OldInstallView {
   description: string
 }
 
-export function oldInstallText(old: { root: string; dataBytes: number | null; version: string | null }): OldInstallView {
+export function oldInstallText(old: { root: string; dataBytes: number | null; version: string | null; dataDir?: string; source?: string }): OldInstallView {
   const size = old.dataBytes !== null && old.dataBytes > 0 ? `，共 ${bytes(old.dataBytes)}` : ''
+  if (old.source === 'kept') {
+    return {
+      title: '发现上次保留的数据',
+      description: `卸载 MossStudio${old.version ? ` ${old.version}` : ''} 时留下的作品、模型和设置，位于 ${old.dataDir ?? old.root}${size}。`,
+    }
+  }
   return {
     title: old.version ? `发现旧版 MossStudio ${old.version}` : '发现旧版 MossStudio',
     description: `位于 ${old.root}，里面有你的作品、模型和设置${size}。`,

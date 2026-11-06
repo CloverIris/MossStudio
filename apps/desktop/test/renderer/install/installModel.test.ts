@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   downgradeText,
   folderProblemMessage,
+  folderNote,
+  legacyInPlace,
   oldInstallText,
+  sameFolder,
   progressLabel,
   progressPercent,
   runView,
@@ -133,6 +136,33 @@ describe('old install and downgrade wording', () => {
       title: '发现旧版 MossStudio',
       description: '位于 /old，里面有你的作品、模型和设置。',
     })
+  })
+
+  it('describes data a keep-data uninstall left behind', () => {
+    expect(oldInstallText({ root: 'C:\\MossStudio', dataDir: 'C:\\MossStudio\\data', dataBytes: 12 * GB, version: '1.9.0', source: 'kept' })).toEqual({
+      title: '发现上次保留的数据',
+      description: '卸载 MossStudio 1.9.0 时留下的作品、模型和设置，位于 C:\\MossStudio\\data，共 12 GB。',
+    })
+    expect(oldInstallText({ root: '/r', dataDir: '/r/data', dataBytes: null, version: null, source: 'kept' }).description).toBe('卸载 MossStudio 时留下的作品、模型和设置，位于 /r/data。')
+  })
+
+  it('notes a location whose kept data the install will use', () => {
+    expect(folderNote({ ok: true, kind: 'data' })).toBe('这个文件夹里有上次卸载时保留的作品、模型和设置，装好后会继续使用它们。')
+    expect(folderNote({ ok: false, kind: 'data' })).toBeNull()
+    expect(folderNote({ ok: true, kind: 'empty' })).toBeNull()
+    expect(folderNote(null)).toBeNull()
+  })
+
+  it('knows when the install goes where the old install or the kept data already is', () => {
+    expect(sameFolder('win32', 'C:\\Moss\\', 'c:/moss')).toBe(true)
+    expect(sameFolder('linux', '/a/Moss', '/a/moss')).toBe(false)
+    expect(sameFolder('linux', '/a/moss/', '/a/moss')).toBe(true)
+    const kept = { root: 'C:\\Moss', source: 'kept' }
+    expect(legacyInPlace('win32', kept, { kind: 'data', path: 'c:\\moss' })).toBe(true)
+    expect(legacyInPlace('win32', kept, { kind: 'data', path: 'D:\\Moss' })).toBe(false)
+    expect(legacyInPlace('win32', kept, { kind: 'missing', path: 'C:\\Moss' })).toBe(false)
+    expect(legacyInPlace('win32', { root: 'C:\\Old', source: 'registry' }, { kind: 'legacy', path: 'C:\\Old' })).toBe(true)
+    expect(legacyInPlace('win32', kept, null)).toBe(false)
   })
 
   it('asks the downgrade question once, saying data is kept', () => {

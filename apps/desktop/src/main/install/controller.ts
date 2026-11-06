@@ -13,6 +13,7 @@ import {
   RECORD_FILE,
   appDirName,
   defaultInstallRoot,
+  keptDataPath,
   launcherName,
   macSupportDir,
   recordPathFor,
@@ -20,8 +21,8 @@ import {
   type HostInfo,
 } from './layout'
 import { directorySize, findLegacyInstall, isLegacyRoot, legacyAt, type LegacyInstall } from './legacy'
-import { canWrite, checkDataLocation, checkInstallLocation, type LocationContext } from './location'
-import { readInstallRecord } from './record'
+import { canWrite, checkDataLocation, checkInstallLocation, isDataRoot, type LocationContext } from './location'
+import { readInstallRecord, readKeptData } from './record'
 import type { Registry } from './registry'
 import type { RunContext } from './runContext'
 import { compareSemver } from '@shared/update'
@@ -68,6 +69,18 @@ export function locatedInstall(context: RunContext): Located | null {
 }
 
 /**
+ * Windows/Linux: the data a keep-data uninstall left behind (kept-data.json beside the locator),
+ * while it is still there and still MossStudio data. Shown like an old install (source kept):
+ * root is the folder it was installed in, dataDir the data root to keep using.
+ */
+export function keptDataInstall(host: HostInfo): LegacyInstall | null {
+  if (host.platform === 'darwin') return null
+  const kept = readKeptData(keptDataPath(host))
+  if (!kept || !isDataRoot(host.platform, kept.dataRoot)) return null
+  return { root: kept.root, dataDir: kept.dataRoot, dataBytes: null, version: kept.version, source: 'kept' }
+}
+
+/**
  * The old install as the page sees it, with a note per choice. reuse keeps using <old>\data,
  * so the note must say NOT to delete the old folder; fresh leaves it free to delete. On
  * Windows a new install elsewhere also takes over the HKCU Uninstall entry, so either way
@@ -75,6 +88,16 @@ export function locatedInstall(context: RunContext): Located | null {
  */
 export function legacyView(legacy: LegacyInstall | null, platform: HostInfo['platform']): SetupLegacyInstall | null {
   if (!legacy) return null
+  if (legacy.source === 'kept') {
+    // Nothing of the old install is left but the data: no program folder, no 设置 › 应用 entry.
+    return {
+      ...legacy,
+      warnings: {
+        reuse: `新版本会继续使用 ${legacy.dataDir} 里的作品、模型和设置：请不要删除这个文件夹。`,
+        fresh: `这些数据仍留在 ${legacy.dataDir}，不会被删除；不再需要时可以手动删除这个文件夹。`,
+      },
+    }
+  }
   const where = `旧版 MossStudio（${legacy.root}）`
   const warnings = platform === 'win32'
     ? {
@@ -117,7 +140,10 @@ export class SetupController {
       root: defaultInstallRoot(host, applicationsWritable),
       dataRoot: platform === 'darwin' ? macSupportDir(host) : null,
     }
-    const legacy = kind === 'first' && platform !== 'darwin' ? await findLegacyInstall({ host, registry: env.registry }) : null
+    // An old 1.0.x install first; else data a keep-data uninstall left behind.
+    const legacy = kind === 'first' && platform !== 'darwin'
+      ? (await findLegacyInstall({ host, registry: env.registry })) ?? keptDataInstall(host)
+      : null
     const proposed = env.context.setup?.installTo ?? installed?.root ?? defaults.root
     const locationContext = (): LocationContext => ({
       host,
@@ -217,7 +243,13 @@ export class SetupController {
       dataRoot = check.path
     }
     let legacy = null
-    if (!located && input.legacy) {
+    const kept = this.legacy?.source === 'kept' ? this.legacy : null
+    if (!located && input.legacy && kept && samePath(platform, input.legacy.root, kept.root)) {
+      // Data a keep-data uninstall left: reuse records it as the data root (installing into its
+      // own folder finds it as R/data anyway). The data is never moved or deleted either way.
+      if (input.legacy.mode === 'reuse') dataRoot = kept.dataDir
+      this.env.install.log(`data kept by an uninstall at ${kept.dataDir}: ${input.legacy.mode}`)
+    } else if (!located && input.legacy) {
       if (!isLegacyRoot(platform, input.legacy.root)) throw codedError('E_NOT_LEGACY', '这个文件夹不是旧版 MossStudio 的安装目录。')
       // Installing into the old folder converts it in place: its data\ stays where it is.
       const inPlace = samePath(platform, input.legacy.root, root)

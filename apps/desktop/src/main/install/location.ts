@@ -3,8 +3,9 @@
  *
  * Install location (Windows/Linux: R itself; macOS: the folder that holds MossStudio.app):
  *   refuse relative paths, drive and share roots, system folders, temp, the setup payload,
- *   and non-empty folders that are neither a MossStudio root nor an old 1.0.x install
- *   (then offer <chosen>/MossStudio); require write access and enough free space.
+ *   and non-empty folders that are neither a MossStudio root, an old 1.0.x install nor a
+ *   folder whose MossStudio data an uninstall kept (then offer <chosen>/MossStudio); require
+ *   write access and enough free space.
  * Data location (macOS 高级): the same refusals; a non-empty folder must already be MossStudio data.
  *
  * `locationRule` is pure (string rules per platform); `checkInstallLocation` and
@@ -232,7 +233,6 @@ function entries(path: string): string[] {
   }
 }
 
-/** What is at `path` now, from the install point of view. */
 /** portable.json that really is a MossStudio portable marker. */
 export function isPortableRoot(path: string): boolean {
   return portableMarkerSchema.safeParse(readJsonObject(join(path, PORTABLE_FILE))).success
@@ -253,7 +253,24 @@ export function inspectInstallLocation(platform: OsPlatform, path: string): Loca
   if (names.length === 0) return 'empty'
   if (readInstallRecord(join(path, RECORD_FILE))) return 'install'
   if (isLegacyRoot(platform, path)) return 'legacy'
+  if (isKeptDataFolder(platform, path)) return 'data'
   return 'occupied'
+}
+
+/**
+ * Windows/Linux: a folder an uninstall left behind with the data kept: no install record, and
+ * a data/ that is MossStudio data (anything else in it is the user's and stays). Installing
+ * there keeps using that data/.
+ */
+export function isKeptDataFolder(platform: OsPlatform, path: string): boolean {
+  const p = pathFor(platform)
+  if (platform === 'darwin' || existsSync(p.join(path, RECORD_FILE))) return false
+  const data = p.join(path, 'data')
+  try {
+    return lstatSync(data).isDirectory() && isDataRoot(platform, data)
+  } catch {
+    return false
+  }
 }
 
 function finish(
@@ -294,7 +311,7 @@ export function checkInstallLocation(input: string, context: LocationContext): L
 }
 
 /** A data folder that already holds MossStudio data (or a locator/record) may be reused. */
-function isDataRoot(platform: OsPlatform, path: string): boolean {
+export function isDataRoot(platform: OsPlatform, path: string): boolean {
   const p = pathFor(platform)
   return ['settings.json', RECORD_FILE, LOCATOR_FILE, 'instances', 'models'].some((name) => existsSync(p.join(path, name)))
 }

@@ -31,7 +31,7 @@ import { PRODUCT_NAME, READY_FILE, type HostInfo } from './layout'
 import { directorySize } from './legacy'
 import { execFileNoShell, type Registry } from './registry'
 import { getRunContext, type RunContext } from './runContext'
-import { buildUninstallPlan, listRoot, startFinishUninstall, uninstallMac, type UninstallTarget } from './uninstall'
+import { buildUninstallPlan, listRoot, noteKeptData, startFinishUninstall, uninstallMac, type UninstallTarget } from './uninstall'
 
 /** Setup and uninstall write here (append): %TEMP%\MossStudio-setup.log, $TMPDIR/MossStudio-setup.log. */
 export function setupLogPath(): string {
@@ -370,6 +370,15 @@ async function startUninstall(context: RunContext, removeData: boolean): Promise
   // Silent (QuietUninstallString, CI): the launcher copy must not stop on a dialog either.
   const started = startFinishUninstall(plan, context.launcher, { silent: context.mode === 'uninstall' && context.silent })
   log(`started ${started.launcher} with ${started.plan} (${plan.remove.length} paths)`)
+  if (!removeData) {
+    try {
+      const note = noteKeptData(target, context.record?.current ?? app.getVersion())
+      if (note) log(`noted the kept data ${target.dataRoot} in ${note}`)
+    } catch (error) {
+      // Only an offer for the next Setup: the uninstall goes on without it.
+      log(`could not note the kept data: ${(error as Error).message}`)
+    }
+  }
 }
 
 /** uninstall:info / uninstall:start, for the uninstall window and Settings › 关于 › 卸载. */

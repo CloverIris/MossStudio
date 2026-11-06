@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process'
 import { copyFileSync, chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, rmSync } from 'original-fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FINISH_UNINSTALL_ARG, SILENT_ARG, uninstallPlanSchema, type PlatformKey, type UninstallPlan } from '@shared/install'
+import { FINISH_UNINSTALL_ARG, SILENT_ARG, uninstallPlanSchema, type KeptData, type PlatformKey, type UninstallPlan } from '@shared/install'
 import { codedError } from '../lib/codedError'
 import { linuxIntegrationPaths, windowsShortcutPaths } from './integration'
 import {
@@ -18,6 +18,7 @@ import {
   RECORD_FILE,
   UNINSTALL_KEY,
   isWithin,
+  keptDataPath,
   launcherName,
   locatorPath,
   pathFor,
@@ -28,7 +29,7 @@ import {
 } from './layout'
 import { locationRule } from './location'
 import { rememberSpawned } from './processTree'
-import { writeJsonAtomic } from './record'
+import { writeJsonAtomic, writeKeptData } from './record'
 
 export interface UninstallTarget {
   host: HostInfo
@@ -226,6 +227,19 @@ export function startFinishUninstall(plan: UninstallPlan, launcher: string, opti
     throw error
   }
   return { dir, plan: planFile, launcher: copy }
+}
+
+/**
+ * Windows/Linux, uninstalling with the data kept: leave kept-data.json beside the locator so a
+ * later Setup (into another folder too) can offer to keep using the data. Returns the file, or
+ * null when there is nothing to note (portable, macOS: its default data folder is found anyway).
+ */
+export function noteKeptData(target: UninstallTarget, version: string, now: Date = new Date()): string | null {
+  if (target.portable || target.host.platform === 'darwin') return null
+  const file = keptDataPath(target.host)
+  const kept: KeptData = { schema: 1, root: target.root, dataRoot: target.dataRoot, version, keptAt: now.toISOString() }
+  writeKeptData(file, kept)
+  return file
 }
 
 export interface MacUninstallDeps {

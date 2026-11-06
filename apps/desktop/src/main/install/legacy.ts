@@ -17,7 +17,8 @@ import { codedError } from '../lib/codedError'
 import { PORTABLE_FILE, RECORD_FILE, defaultInstallRoot, type HostInfo, type OsPlatform } from './layout'
 import { readKey, type Registry } from './registry'
 
-export type LegacySource = 'registry' | 'default' | 'picked'
+/** kept: not a 1.0.x install but data a keep-data uninstall left behind (see keptDataInstall). */
+export type LegacySource = 'registry' | 'default' | 'picked' | 'kept'
 
 export interface LegacyInstall {
   root: string

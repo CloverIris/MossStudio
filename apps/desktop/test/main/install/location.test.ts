@@ -126,6 +126,26 @@ describe('inspectInstallFolder on this machine', () => {
     expect(check(old)).toMatchObject({ ok: true, kind: 'legacy' })
   })
 
+  it('accepts a folder an uninstall left with the data kept (user files may stay), but not a data/ that is not ours', () => {
+    if (process.platform === 'darwin') return
+    const left = join(temp(), '保留 的')
+    mkdirSync(join(left, 'data', 'instances'), { recursive: true })
+    writeFileSync(join(left, 'data', 'settings.json'), '{}')
+    writeFileSync(join(left, 'my notes.txt'), 'mine')
+    expect(check(left)).toMatchObject({ ok: true, kind: 'data', problem: null })
+    const other = join(temp(), 'other')
+    mkdirSync(join(other, 'data'), { recursive: true })
+    writeFileSync(join(other, 'data', 'photo.jpg'), '')
+    expect(check(other)).toMatchObject({ ok: false, kind: 'occupied', problem: { code: 'E_NOT_EMPTY' } })
+    // A data file instead of a folder, or a foreign install.json beside the data: not ours either.
+    const file = join(temp(), 'file')
+    mkdirSync(file)
+    writeFileSync(join(file, 'data'), 'x')
+    expect(check(file)).toMatchObject({ ok: false, kind: 'occupied' })
+    writeFileSync(join(left, 'install.json'), '{"x":1}')
+    expect(check(left)).toMatchObject({ ok: false, kind: 'occupied' })
+  })
+
   it('counts install.json / portable.json only when they really are ours', () => {
     // (macOS installs MossStudio.app into a folder, so other files there never block it.)
     for (const [name, text] of process.platform === 'darwin' ? [] : [['install.json', '{}'], ['install.json', '{"schema":1}'], ['portable.json', '{"app":"other"}'], ['install.json', 'not json']]) {

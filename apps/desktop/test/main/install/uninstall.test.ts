@@ -7,6 +7,7 @@ import {
   assertPlanContained,
   buildUninstallPlan,
   integrationFiles,
+  noteKeptData,
   ownedRootEntries,
   startFinishUninstall,
   uninstallMac,
@@ -185,6 +186,22 @@ describe('Electron profile (app.getPath(\'userData\'))', () => {
     const plan = buildUninstallPlan(winTarget, true, winNames)
     expect(() => assertPlanContained({ ...plan, removeData: false, remove: [] }, [])).toThrow(/配置文件夹/)
     expect(() => assertPlanContained({ ...plan, profileDir: 'C:\\Users\\张 三\\AppData\\Roaming' }, integrationFiles(winTarget))).toThrow(/不合规/)
+  })
+})
+
+describe('noteKeptData', () => {
+  const temp = useTempDir()
+
+  it('leaves kept-data.json beside the locator (Windows/Linux), outside the plan; nothing for portable or macOS', () => {
+    const host: HostInfo = { platform: 'linux', home: temp(), env: { XDG_CONFIG_HOME: join(temp(), 'config') } }
+    const target: UninstallTarget = { host, platformKey: 'linux-x64', root: join(temp(), 'R'), dataRoot: join(temp(), 'R', 'data'), portable: false, desktopDir: '', profileDir: null }
+    const file = noteKeptData(target, '2.0.0', new Date('2026-11-05T09:00:00.000Z'))
+    expect(file).toBe(join(temp(), 'config', 'MossStudio', 'kept-data.json'))
+    expect(JSON.parse(readFileSync(file!, 'utf8'))).toEqual({ schema: 1, root: join(temp(), 'R'), dataRoot: join(temp(), 'R', 'data'), version: '2.0.0', keptAt: '2026-11-05T09:00:00.000Z' })
+    // The launcher's plan never lists it, so it survives the uninstall it describes.
+    expect(buildUninstallPlan(target, false, ['mossstudio', 'data']).remove).not.toContain(file)
+    expect(noteKeptData({ ...target, portable: true }, '2.0.0')).toBeNull()
+    expect(noteKeptData({ ...target, host: { ...host, platform: 'darwin' } }, '2.0.0')).toBeNull()
   })
 })
 

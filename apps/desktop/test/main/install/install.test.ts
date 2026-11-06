@@ -8,13 +8,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installRecordSchema } from '@shared/install'
-import { SetupController, legacyView, type SetupEnvironment } from '@main/install/controller'
+import { SetupController, keptDataInstall, legacyView, type SetupEnvironment } from '@main/install/controller'
 import { performInstall, type InstallDeps } from '@main/install/install'
-import { linuxDesktopFile, locatorPath, type HostInfo, type OsPlatform } from '@main/install/layout'
-import { readInstallRecord, readJsonObject, readLocator } from '@main/install/record'
+import { keptDataPath, linuxDesktopFile, locatorPath, type HostInfo, type OsPlatform } from '@main/install/layout'
+import { readInstallRecord, readJsonObject, readKeptData, readLocator } from '@main/install/record'
 import type { ExecFile } from '@main/install/registry'
 import { detectRunContext } from '@main/install/runContext'
 import type { ShortcutOptions } from '@main/install/integration'
+import { buildUninstallPlan, listRoot, noteKeptData } from '@main/install/uninstall'
 import { useWorkDir } from './helpers'
 
 const work = useWorkDir()
@@ -362,6 +363,79 @@ describe('old 1.0.x install', () => {
     const root = join(work(), 'R')
     const controller = await SetupController.create(harness('2.0.0', root).env)
     expect(() => controller.start({ root, legacy: { root: join(work(), 'nothing'), mode: 'reuse' } })).toThrow(expect.objectContaining({ code: 'E_NOT_LEGACY' }))
+  })
+})
+
+describe('reinstall after an uninstall that kept the data', () => {
+  /** Install into `root`, put work into the data, then uninstall the way the launcher runs the plan. */
+  async function installThenUninstallKeepingData(root: string): Promise<{ host: HostInfo; dataRoot: string }> {
+    const h = harness('2.0.0', root)
+    const { result } = await silentInstall(h)
+    mkdirSync(join(result.dataRoot, 'outputs'), { recursive: true })
+    writeFileSync(join(result.dataRoot, 'settings.json'), '{"theme":"dark"}')
+    writeFileSync(join(result.dataRoot, 'outputs', '作品 1.png'), 'png')
+    const target = { host: h.env.host, platformKey: h.env.context.platformKey!, root, dataRoot: result.dataRoot, portable: false, desktopDir: join(work(), 'Desktop'), profileDir: null }
+    const plan = buildUninstallPlan(target, false, listRoot(root))
+    for (const path of plan.remove) rmSync(path, { recursive: true, force: true })
+    noteKeptData(target, '2.0.0', new Date('2026-11-05T09:00:00.000Z'))
+    return { host: h.env.host, dataRoot: result.dataRoot }
+  }
+
+  it('the same folder is accepted again and its data/ is used as it is', async () => {
+    const root = join(work(), 'R')
+    const { host, dataRoot } = await installThenUninstallKeepingData(root)
+    expect(readdirSync(root)).toEqual(['data'])
+    expect(existsSync(locatorPath(host))).toBe(false)
+    expect(readKeptData(keptDataPath(host))).toEqual({ schema: 1, root, dataRoot, version: '2.0.0', keptAt: '2026-11-05T09:00:00.000Z' })
+
+    const { controller, result } = await silentInstall(harness('2.1.0', root))
+    expect(controller.state).toMatchObject({ kind: 'first', location: { ok: true, kind: 'data' } })
+    expect(result.dataRoot).toBe(dataRoot)
+    expect(readFileSync(join(dataRoot, 'settings.json'), 'utf8')).toBe('{"theme":"dark"}')
+    expect(readFileSync(join(dataRoot, 'outputs', '作品 1.png'), 'utf8')).toBe('png')
+    expect(readLocator(locatorPath(host))?.dataRoot).toBe(dataRoot)
+    expect(existsSync(keptDataPath(host))).toBe(false)
+  })
+
+  it('another folder: Setup offers the kept data (reuse records it, fresh starts anew), never touching it', async () => {
+    const old = join(work(), 'R')
+    const { host, dataRoot } = await installThenUninstallKeepingData(old)
+    const elsewhere = join(work(), '新 位置')
+    const controller = await SetupController.create(harness('2.1.0', elsewhere).env)
+    expect(controller.state.legacy).toMatchObject({ source: 'kept', root: old, dataDir: dataRoot, version: '2.0.0' })
+    expect(controller.state.legacy!.warnings.reuse).toBe(`新版本会继续使用 ${dataRoot} 里的作品、模型和设置：请不要删除这个文件夹。`)
+    expect(controller.state.legacy!.warnings.fresh).toBe(`这些数据仍留在 ${dataRoot}，不会被删除；不再需要时可以手动删除这个文件夹。`)
+    controller.start({ root: elsewhere, legacy: { root: old, mode: 'reuse' } })
+    const result = await controller.completion()
+    expect(result.dataRoot).toBe(dataRoot)
+    expect(readInstallRecord(join(elsewhere, 'install.json'))?.dataRoot).toBe(dataRoot)
+    expect(existsSync(join(elsewhere, 'data'))).toBe(false)
+    expect(readFileSync(join(dataRoot, 'outputs', '作品 1.png'), 'utf8')).toBe('png')
+    expect(existsSync(keptDataPath(host))).toBe(false)
+
+    // The same, but 重新开始: a new data folder, the kept one left exactly as it was.
+    const again = join(work(), 'again')
+    const second = await installThenUninstallKeepingData(again)
+    const freshRoot = join(work(), 'fresh')
+    const fresh = await SetupController.create(harness('2.1.0', freshRoot).env)
+    expect(fresh.state.legacy).toMatchObject({ source: 'kept', dataDir: second.dataRoot })
+    fresh.start({ root: freshRoot, legacy: { root: again, mode: 'fresh' } })
+    expect((await fresh.completion()).dataRoot).toBe(join(freshRoot, 'data'))
+    expect(readFileSync(join(second.dataRoot, 'settings.json'), 'utf8')).toBe('{"theme":"dark"}')
+  })
+
+  it('offers nothing once the kept data is gone or is not MossStudio data', () => {
+    const h = host()
+    expect(keptDataInstall(h)).toBeNull()
+    const data = join(work(), 'gone', 'data')
+    noteKeptData({ host: h, platformKey: 'linux-x64', root: join(work(), 'gone'), dataRoot: data, portable: false, desktopDir: '', profileDir: null }, '2.0.0')
+    expect(keptDataInstall(h)).toBeNull()
+    mkdirSync(data, { recursive: true })
+    writeFileSync(join(data, 'photo.jpg'), '')
+    expect(keptDataInstall(h)).toBeNull()
+    writeFileSync(join(data, 'settings.json'), '{}')
+    expect(keptDataInstall(h)).toMatchObject({ source: 'kept', dataDir: data })
+    expect(keptDataInstall({ ...h, platform: 'darwin' })).toBeNull()
   })
 })
 

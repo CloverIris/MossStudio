@@ -20,6 +20,7 @@ import {
   RECORD_FILE,
   appDirName,
   defaultDataRoot,
+  keptDataPath,
   launcherName,
   locatorPath,
   macSupportDir,
@@ -230,6 +231,8 @@ async function installWindowsLinux(request: InstallRequest, deps: InstallDeps): 
     const locator = locatorPath(host)
     writeLocator(locator, locatorOf(record))
     deps.log(`wrote ${recordPath} (current=${record.current}, previous=${record.previous ?? '-'}) and ${locator}`)
+    // Kept data was offered (and reused or not): the locator names the install from now on.
+    rmSync(keptDataPath(host), { force: true })
 
     staged?.commit()
     staged = null
