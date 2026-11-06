@@ -29,6 +29,7 @@ const twMerge = extendTailwindMerge({
         'ok',
         'warn',
         'danger',
+        'on-danger',
         'ok-soft',
         'warn-soft',
         'danger-soft',
