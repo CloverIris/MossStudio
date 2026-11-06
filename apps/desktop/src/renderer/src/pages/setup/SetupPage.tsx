@@ -20,7 +20,7 @@ function StepMark({ step, index }: { step: SetupStep; index: number }): React.JS
     )
   if (step.state === 'error' || (step.state === 'blocked' && step.id === 'gpu')) {
     return (
-      <span className={cn(base, 'bg-danger-soft text-danger')}>
+      <span className={cn(base, 'bg-danger text-on-danger')}>
         <AlertCircle className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
       </span>
     )
@@ -126,7 +126,7 @@ export function SetupPage(): React.JSX.Element {
       <div className="flex w-full max-w-[560px] flex-col gap-8">
         <div className="flex flex-col gap-3">
           <h1 className="text-display font-semibold text-ink">{done ? '一切就绪' : '准备好你的电脑'}</h1>
-          <p className="text-control leading-6 text-ink-2">
+          <p className="text-ui leading-[22px] text-ink-2">
             {done
               ? '显卡、推理引擎和推荐模型都已准备好，可以开始创作了。'
               : `MossStudio 会检测显卡、安装推理引擎并下载推荐模型。${space ? `需要${space} 空间，` : ''}耗时取决于网速。你可以离开这个页面，准备会在后台继续。`}
@@ -190,7 +190,7 @@ export function SetupPage(): React.JSX.Element {
             </Button>
           ) : running ? (
             <>
-              <Button size="lg" tone="secondary" disabled={leaving} onClick={() => void leave('active', '/studio')}>
+              <Button size="lg" tone="ghost" disabled={leaving} onClick={() => void leave('active', '/studio')}>
                 在后台继续
               </Button>
               {pending.length > 0 ? (

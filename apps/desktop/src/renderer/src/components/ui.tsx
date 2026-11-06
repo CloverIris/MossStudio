@@ -229,7 +229,7 @@ export function FieldLabel({
   children: ReactNode
   value?: ReactNode
   htmlFor?: string
-  as?: 'span' | 'h3'
+  as?: 'span' | 'h2' | 'h3'
   className?: string
 }): React.JSX.Element {
   const label = 'text-caption font-medium text-ink-2'

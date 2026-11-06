@@ -1,5 +1,5 @@
-import { Check, FileText, Info, RotateCw } from 'lucide-react'
-import { Advanced, Button, Spinner } from '../../components/ui'
+import { Check, FileText, Info } from 'lucide-react'
+import { Advanced, Button, FieldLabel, Spinner } from '../../components/ui'
 import { Checkbox } from '../../components/common/Checkbox'
 import {
   downgradeText,
@@ -41,7 +41,9 @@ function LegacyCard({ setup }: { setup: SetupController }): React.JSX.Element | 
   return (
     <section aria-label={kept ? '保留的数据' : '旧版数据'} className="flex flex-col gap-1 rounded-xl bg-surface p-1.5" data-legacy-card>
       <div className="flex flex-col gap-0.5 px-3.5 pb-1.5 pt-2">
-        <h2 className="text-control font-semibold text-ink">{old.title}</h2>
+        {/* Same shape as the location card: a label, the main line, then the detail. */}
+        <FieldLabel as="h2">{kept ? '保留的数据' : '旧版数据'}</FieldLabel>
+        <p className="text-control text-ink">{old.title}</p>
         <p className="text-caption text-ink-2 [overflow-wrap:anywhere]">{old.description}</p>
       </div>
       {inPlace ? (
@@ -111,7 +113,7 @@ function ChooseScreen({ setup }: { setup: SetupController }): React.JSX.Element 
       <LegacyCard setup={setup} />
 
       {mac && dataPath ? (
-        <Advanced summary={`数据位置：${dataPath}`} className="-mx-1">
+        <Advanced summary={`数据位置：${dataPath}`} className="rounded-xl bg-surface p-1.5">
           <div className="px-1 pt-1">
             <FolderField
               label="数据位置"
@@ -127,7 +129,7 @@ function ChooseScreen({ setup }: { setup: SetupController }): React.JSX.Element 
       ) : null}
 
       {!mac && !setup.legacy ? (
-        <Advanced summary="旧版装在别的位置？" className="-mx-1">
+        <Advanced summary="旧版装在别的位置？" className="rounded-xl bg-surface p-1.5">
           <div className="flex flex-col gap-2 px-1 pt-1">
             <div className="flex items-center gap-4 rounded-xl bg-surface px-5 py-3.5">
               <p className="min-w-0 flex-1 text-caption text-ink-2">
@@ -254,7 +256,7 @@ function FailedScreen({ setup }: { setup: SetupController }): React.JSX.Element 
             查看日志
           </Button>
           <Button tone="primary" size="lg" disabled={setup.starting} onClick={setup.retry}>
-            {setup.starting ? <Spinner /> : <RotateCw className="size-4" strokeWidth={1.6} />}重试
+            {setup.starting ? <Spinner /> : null}重试
           </Button>
         </>
       }
