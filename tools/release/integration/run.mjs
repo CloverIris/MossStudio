@@ -13,7 +13,9 @@
 //  4. the feed moves to X+2, which the control file makes exit non-zero at start; assert the
 //     rollback: current=X+1 running again and X+2 in `failed`
 //  5. silent uninstall; assert the temp launcher really ran the plan: the program files, record,
-//     locator and integration are gone while data/ and a file the user put in R survive
+//     locator and integration are gone while data/ and a file the user put in R survive, and
+//     (Windows/Linux) kept-data.json notes the kept data
+//  6. Linux: silent-install X again into that folder; assert it is accepted and its data/ reused
 // The user-profile locations the installer writes (locator, .desktop, shortcuts) are pointed
 // at a sandbox through HOME/XDG_*/LOCALAPPDATA/APPDATA, except on macOS: there the swap helper
 // relaunches with `open` (LaunchServices drops the environment), so the real home is used and
@@ -294,6 +296,21 @@ main(async () => {
       const reg = spawnSync('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MossStudio'], { stdio: 'ignore', windowsHide: true })
       if (reg.status === 0) throw new Error('the Uninstall registry key survives')
       if (existsSync(join(env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'MossStudio.lnk'))) throw new Error('Start menu shortcut survives')
+    }
+    if (os !== 'darwin') {
+      // The kept data is noted beside the (removed) locator, for a later Setup to offer.
+      const kept = readJsonOrNull(join(locator, '..', 'kept-data.json'))
+      if (kept?.dataRoot !== dataRoot || kept?.root !== R) throw new Error(`kept-data.json after uninstall: ${JSON.stringify(kept)}`)
+    }
+    if (os === 'linux') {
+      // 6. Reinstall into the folder the uninstall left: accepted, and its data/ is used as it is.
+      // (Linux only: on Windows it would leave a real HKCU Uninstall entry behind.)
+      runChecked('silent reinstall', join(artifacts, names.setup), ['--moss-silent', `--moss-install-to=${R}`], { env })
+      const again = record()
+      if (again?.current !== x || again.dataRoot !== dataRoot) throw new Error(`install.json after reinstall: ${JSON.stringify(again)}`)
+      if (!existsSync(join(dataRoot, 'user-work.txt'))) throw new Error('the kept data was not reused by the reinstall')
+      if (existsSync(join(locator, '..', 'kept-data.json'))) throw new Error('kept-data.json survives the reinstall')
+      log(`reinstalled ${x} into ${R}, keeping its data`)
     }
     log(`PASS: installed ${x}, updated to ${x1}, rolled back from ${x2}, uninstalled (home: ${home})`)
   } catch (error) {
