@@ -3,7 +3,7 @@
  * popover under it and the status lines in 设置 › 通知与更新. No React here.
  */
 import { failedUpdateText, type UpdateBusyReason, type UpdateRestartResult, type UpdaterState } from '@shared/update'
-import { bytes, dateTime, relative } from '../../lib/format'
+import { bytes, date, dateTime, relative } from '../../lib/format'
 
 export type ChipTone = 'quiet' | 'ready' | 'warn'
 
@@ -162,11 +162,15 @@ export const ACTION_LABEL: Record<PopoverAction, string> = {
   'dismiss-failed': '知道了',
 }
 
-function dateOnly(iso: string | undefined): string | null {
-  if (!iso) return null
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(date)
+/**
+ * Release notes without their own leading "## MossStudio 1.1.0" heading: the
+ * popover already shows that title right above them.
+ */
+export function releaseNotes(notes: string | undefined, version: string | null): string {
+  const text = notes?.trim() ?? ''
+  const [first = '', ...rest] = text.split(/\r?\n/)
+  const repeatsTitle = version !== null && /^#{1,6}\s/.test(first) && first.includes(version)
+  return (repeatsTitle ? rest.join('\n').trim() : text) || '这次更新没有附加说明。'
 }
 
 /**
@@ -178,7 +182,7 @@ export function popoverView(state: UpdaterState, busy: UpdateBusyReason[] = []):
   const available = state.available
   const meta = [
     `当前 ${state.current}`,
-    dateOnly(available?.publishedAt) ? `${dateOnly(available?.publishedAt)}发布` : null,
+    available?.publishedAt && date(available.publishedAt) !== '—' ? `${date(available.publishedAt)}发布` : null,
     available && state.phase === 'available' ? bytes(available.downloadSize) : null,
   ]
     .filter(Boolean)
@@ -188,7 +192,7 @@ export function popoverView(state: UpdaterState, busy: UpdateBusyReason[] = []):
     meta,
     status: null,
     statusTone: 'neutral',
-    notes: available?.notes.trim() || '这次更新没有附加说明。',
+    notes: releaseNotes(available?.notes, version),
     notesUrl: available?.notesUrl,
     required: state.required,
     primary: null,

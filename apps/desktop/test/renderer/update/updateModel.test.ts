@@ -10,6 +10,7 @@ import {
   isDownloading,
   notesLink,
   popoverView,
+  releaseNotes,
   restartFeedback,
   settingsStatus,
   targetVersion,
@@ -156,13 +157,22 @@ describe('popoverView', () => {
     const view = popoverView(updateAvailableFixture('1.1.0'))
     expect(view).toMatchObject({
       title: 'MossStudio 1.1.0',
-      meta: '当前 1.0.3 · 2026年10月30日发布 · 46 MB',
+      meta: '当前 1.0.3 · 2026 年 10 月 30 日发布 · 46 MB',
       primary: 'download',
       secondary: 'later',
       required: false,
       notesUrl: 'https://github.com/CloverIris/MossStudio/releases/tag/v1.1.0',
     })
     expect(view.notes).toContain('生成更快')
+    // The popover title already names the version: the notes do not repeat it.
+    expect(view.notes).not.toContain('## MossStudio 1.1.0')
+  })
+
+  it('drops a leading heading only when it repeats the version', () => {
+    expect(releaseNotes('## MossStudio 1.1.0\n\n- 更快', '1.1.0')).toBe('- 更快')
+    expect(releaseNotes('## 新功能\n- 更快', '1.1.0')).toBe('## 新功能\n- 更快')
+    expect(releaseNotes('## MossStudio 1.1.0', '1.1.0')).toBe('这次更新没有附加说明。')
+    expect(releaseNotes(undefined, null)).toBe('这次更新没有附加说明。')
   })
 
   it('falls back to a plain line when the release has no notes', () => {
@@ -176,7 +186,7 @@ describe('popoverView', () => {
     const view = popoverView(updateDownloadingFixture('1.1.0', 50))
     expect(view).toMatchObject({ progress: 50, primary: null, secondary: 'cancel-download' })
     expect(view.status).toBe('正在下载 23 MB / 46 MB。下载完成后，重启即可更新。')
-    expect(view.meta).toBe('当前 1.0.3 · 2026年10月30日发布')
+    expect(view.meta).toBe('当前 1.0.3 · 2026 年 10 月 30 日发布')
     expect(popoverView(updateDownloadingFixture('1.1.0', 0, { progress: null })).status).toBe('正在下载。下载完成后，重启即可更新。')
     expect(popoverView(updateDownloadingFixture('1.1.0', 100, { phase: 'verifying' }))).toMatchObject({
       progress: null,
