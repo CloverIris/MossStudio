@@ -10,7 +10,8 @@ interface ProbeTarget {
 
 const GITHUB = 'https://github.com'
 const RAW_BASE = 'https://raw.githubusercontent.com/CloverIris/MossStudio/main'
-const MANIFEST_PATH = '/release/manifest.json'
+// Probed for reachability; the catalog fallback in services/models.ts fetches this same file.
+const MANIFEST_PATH = '/apps/desktop/resources/models.json'
 
 const TARGETS: ProbeTarget[] = [
   { id: 'github', label: 'GitHub 直连', url: GITHUB, category: 'git', value: null },

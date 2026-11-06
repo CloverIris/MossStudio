@@ -13,9 +13,10 @@ export type InputBlockerId = 'input-source' | 'input-adapter' | 'input-unsupport
  */
 
 export interface Blocker {
-  id: 'model-none' | 'model-missing' | 'model-engine' | 'engine' | 'remote-path' | 'adapters' | 'remote-adapters' | 'lora-unsupported' | 'prompt' | InputBlockerId
+  id: 'update-required' | 'model-none' | 'model-missing' | 'model-engine' | 'engine' | 'remote-path' | 'adapters' | 'remote-adapters' | 'lora-unsupported' | 'prompt' | InputBlockerId
   message: string
-  action?: { label: string; to: string }
+  /** Where the fix lives; `opens: 'update'` opens the title bar update popover instead of going to `to`. */
+  action?: { label: string; to: string; opens?: 'update' }
 }
 
 /** A bundle is usable when every file it needs is installed. */
@@ -72,6 +73,8 @@ export interface ReadinessInput {
   remote: { name: string; modelPath?: string } | null
   /** What is wrong with the canvas's pictures and sampling (from `resolveJobInputs`). */
   inputBlockers?: readonly Blocker[]
+  /** The app update state: this version may be too old to generate (main refuses it too). */
+  update?: { supported: boolean; required: boolean; minimumVersion: string | null } | null
   /** What the engine this run goes to can do; undefined while reading, null when none is usable. */
   features?: EngineFeatures | null
 }
@@ -81,9 +84,24 @@ export interface Readiness {
   prompt: CompiledPrompt | null
 }
 
+/** The reason generation is blocked by a required update, or null when it is not. */
+export function updateRequiredReason(update: ReadinessInput['update']): string | null {
+  if (!update?.required) return null
+  return update.minimumVersion ? `必须更新到 ${update.minimumVersion} 才能继续生成` : '必须更新后才能继续生成'
+}
+
 export function deriveReadiness(input: ReadinessInput): Readiness {
   const blockers: Blocker[] = []
   const toModels = { label: '去下载', to: '/models' }
+  const updateReason = updateRequiredReason(input.update)
+  if (input.update && updateReason) {
+    blockers.push({
+      id: 'update-required',
+      message: updateReason,
+      // A copy that cannot update itself has no popover to open: 设置 says why and links the download.
+      action: input.update.supported ? { label: '更新', to: '/settings/updates', opens: 'update' } : { label: '查看', to: '/settings/updates' },
+    })
+  }
   if (input.catalog) {
     if (input.bundle.unavailable) {
       blockers.push({ id: 'model-missing', message: '这个画面用的模型已经不在模型库里，请换一个模型', action: installedBundles(input.catalog).length ? undefined : toModels })
@@ -154,8 +172,11 @@ export interface RerunCheck {
  */
 export function rerunEligibility(
   canvas: Pick<ProjectCanvas, 'id' | 'prompt' | 'summary' | 'layers' | 'width' | 'height'>,
-  state: { busy: boolean; submitting: boolean },
+  state: { busy: boolean; submitting: boolean; update?: ReadinessInput['update'] },
 ): RerunCheck {
+  // Main would refuse it anyway (E_UPDATE_REQUIRED); say so on the button instead.
+  const updateReason = updateRequiredReason(state.update)
+  if (updateReason) return { ok: false, reason: updateReason }
   if (state.submitting) return { ok: false, reason: '正在提交' }
   if (state.busy) return { ok: false, reason: '这个画面或它的结果正在生成' }
   const compiled = compileCanvasPrompt(canvas)

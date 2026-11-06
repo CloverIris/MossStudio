@@ -29,9 +29,9 @@ import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
 import { assertFreeSpace } from '../lib/disk'
 import { getLastNetwork } from './network'
-import { localReleaseDir } from './updates'
+import { contentDir } from '../lib/content'
 import { listJobs } from './supervisor'
-import packagedCatalog from '../../../../../release/models.json'
+import packagedCatalog from '../../../resources/models.json'
 import {
   importModelFolder as importModelDirectory,
   inspectDiffusersFolder,
@@ -370,7 +370,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
   if (catalogCache && catalogRoot === key && !force) return catalogCache
   let raw = BUILTIN
   let source: Catalog['source'] = 'builtin'
-  const local = localReleaseDir()
+  const local = contentDir()
   try {
     if (local && existsSync(join(local, 'models.json'))) {
       raw = JSON.parse(await readFile(join(local, 'models.json'), 'utf8')) as RawCatalog
@@ -380,7 +380,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
         getLastNetwork()?.selected.manifest ??
         'https://raw.githubusercontent.com/CloverIris/MossStudio/main'
       raw = JSON.parse(
-        await fetchText(`${base.replace(/\/$/, '')}/release/models.json`),
+        await fetchText(`${base.replace(/\/$/, '')}/apps/desktop/resources/models.json`),
       ) as RawCatalog
       source = 'remote'
     }

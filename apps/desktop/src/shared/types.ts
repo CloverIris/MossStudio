@@ -1,4 +1,3 @@
-import type { ReleaseHomeCopy, ReleaseInstaller } from './release'
 import type { EngineComputeCapability, EngineDevice } from './engineProtocol'
 import type { EngineMachine, EnginePlan } from './engineChoice'
 
@@ -164,14 +163,16 @@ export interface Settings {
   pythonPath: string | null
   torchBackend: 'auto' | 'cpu' | 'cuda'
   torchIndex: string | null
-  autoCheckUpdates: boolean
   desktopNotifications: boolean
   lanWebEnabled: boolean
   lanWebPort: number | null
   lanWebInstanceId: string | null
   updateChannel: 'stable' | 'beta'
+  /** 自动下载更新: download and prepare new versions in the background (applied on restart). */
+  autoDownloadUpdates: boolean
+  /** Set by 回到上一个版本: this version (and older) is not offered again until the user asks. */
+  skippedUpdateVersion: string | null
   dismissedAnnouncements: string[]
-  dismissedUpdateVersion: string | null
   sidebarCollapsed: boolean
   onboardingState: 'pending' | 'active' | 'dismissed' | 'completed'
   onboardingHostId: string
@@ -404,36 +405,6 @@ export interface AppNotification {
   message: string
   createdAt: string
   read: boolean
-}
-
-export interface Announcement {
-  id: string
-  level: 'info' | 'success' | 'warning' | 'critical'
-  title: string
-  body: string
-  bodyUrl?: string
-  startsAt?: string
-  endsAt?: string | null
-  dismissible: boolean
-  pinned: boolean
-  action?: { label: string; kind: 'open_url' | 'check_update' | 'open_settings'; url?: string }
-}
-
-export interface UpdateState {
-  checkedAt: string
-  currentVersion: string
-  latestVersion: string | null
-  updateAvailable: boolean
-  channel: 'stable' | 'beta'
-  manifestSource: 'local' | 'remote' | 'cache' | 'none'
-  home?: ReleaseHomeCopy
-  announcements: Announcement[]
-  releaseNotes?: string
-  publishedAt?: string
-  releaseUrl?: string
-  installer?: ReleaseInstaller | null
-  mandatory?: boolean
-  error?: string
 }
 
 export interface BranchInfo {

@@ -4,14 +4,13 @@
  * Every export is a factory returning a fresh object so tests can mutate their
  * copy freely. Unit tests (test/) and the E2E suite (e2e/) share them.
  */
-import releaseCatalog from '../../../../../release/models.json'
+import releaseCatalog from '../../../resources/models.json'
 import type { AiConversationInfo, AiProviderInfo } from '@shared/ai'
-import type { UpdateDownloadState } from '@shared/release'
+import type { UpdateAnnouncement, UpdaterState } from '@shared/update'
 import type {
   AdapterEntry,
   ControlAdapterEntry,
   EngineFeatures,
-  Announcement,
   Catalog,
   Diagnostic,
   DownloadTask,
@@ -36,7 +35,6 @@ import type {
   ProjectDocument,
   Settings,
   TrainerVersion,
-  UpdateState,
 } from '@shared/types'
 
 /** Deterministic clock used by every fixture timestamp. */
@@ -65,14 +63,14 @@ export function settingsFixture(patch: Partial<Settings> = {}): Settings {
     pythonPath: null,
     torchBackend: 'auto',
     torchIndex: null,
-    autoCheckUpdates: true,
     desktopNotifications: true,
     lanWebEnabled: false,
     lanWebPort: null,
     lanWebInstanceId: null,
     updateChannel: 'stable',
+    autoDownloadUpdates: true,
     dismissedAnnouncements: [],
-    dismissedUpdateVersion: null,
+    skippedUpdateVersion: null,
     sidebarCollapsed: false,
     onboardingState: 'pending',
     onboardingHostId: 'local',
@@ -101,7 +99,7 @@ export function settingsFixture(patch: Partial<Settings> = {}): Settings {
 }
 
 // ---------------------------------------------------------------------------
-// Model catalog (the real release/models.json, normalised like main/services/models.ts)
+// Model catalog (the real resources/models.json, normalised like main/services/models.ts)
 
 type RawModel = (typeof releaseCatalog.models)[number]
 type RawAdapter = (typeof releaseCatalog.adapters)[number]
@@ -407,36 +405,50 @@ export function diagnosticFixture(patch: Partial<Diagnostic> = {}): Diagnostic {
 // ---------------------------------------------------------------------------
 // Updates
 
-export function announcementFixture(patch: Partial<Announcement> = {}): Announcement {
+// The update runtime's state (src/shared/update.ts) as main/update pushes it.
+
+export function announcementFixture(patch: Partial<UpdateAnnouncement> = {}): UpdateAnnouncement {
+  return { id: 'notice-1', level: 'info', title: '公告', body: '**MossStudio** 发布了新的 `模型`。', ...patch }
+}
+
+/** Installed build on the newest version: nothing to do. */
+export function updaterStateFixture(patch: Partial<UpdaterState> = {}): UpdaterState {
   return {
-    id: 'notice-1', level: 'info', title: '公告', body: '**MossStudio** 发布了新的 `模型`。', dismissible: true,
-    pinned: false, ...patch,
+    supported: true, unsupportedReason: null, current: '1.0.3', channel: 'stable', autoDownload: true,
+    phase: 'idle', checkedAt: FIXTURE_NOW, available: null, progress: null, pending: null,
+    previous: null, canRollback: false, minimumVersion: null, required: false, busy: [],
+    restartWhenIdle: false, error: null, announcements: [], skippedVersion: null, ...patch,
   }
 }
 
-export function updateStateFixture(patch: Partial<UpdateState> = {}): UpdateState {
-  return {
-    checkedAt: FIXTURE_NOW, currentVersion: '1.0.3', latestVersion: '1.0.3', updateAvailable: false,
-    channel: 'stable', manifestSource: 'remote', announcements: [], installer: null, ...patch,
-  }
-}
-
-export function updateAvailableFixture(version = '1.1.0', patch: Partial<UpdateState> = {}): UpdateState {
-  return updateStateFixture({
-    latestVersion: version,
-    updateAvailable: true,
-    releaseNotes: `MossStudio ${version}`,
-    installer: {
-      platform: 'win32', arch: 'x64', kind: 'exe',
-      url: `https://github.com/example/mossstudio/releases/download/v${version}/MossStudio-Setup.exe`,
-      sha256: 'a'.repeat(64), size_bytes: 120_000_000,
+/** A newer version offered by the feed and not downloaded yet (自动下载更新 off). */
+export function updateAvailableFixture(version = '1.1.0', patch: Partial<UpdaterState> = {}): UpdaterState {
+  return updaterStateFixture({
+    phase: 'available',
+    autoDownload: false,
+    available: {
+      version, publishedAt: '2026-10-30T08:00:00.000Z', kind: 'delta', downloadSize: 48_000_000,
+      notes: `## MossStudio ${version}\n\n- 生成更快，显存占用更少\n- 作品页可以按日期筛选\n- 修复了若干问题`,
+      notesUrl: `https://github.com/CloverIris/MossStudio/releases/tag/v${version}`,
     },
     ...patch,
   })
 }
 
-export function updateDownloadFixture(patch: Partial<UpdateDownloadState> = {}): UpdateDownloadState {
-  return { version: '1.1.0', phase: 'downloading', bytes: 0, totalBytes: 120_000_000, percent: 0, speedBps: 0, updatedAt: FIXTURE_NOW, ...patch }
+/** Downloading `version` at `percent`. */
+export function updateDownloadingFixture(version = '1.1.0', percent = 40, patch: Partial<UpdaterState> = {}): UpdaterState {
+  const available = updateAvailableFixture(version).available!
+  const totalBytes = available.downloadSize
+  return updaterStateFixture({
+    phase: 'downloading', available,
+    progress: { bytes: Math.round((totalBytes * percent) / 100), totalBytes, speedBps: 6_000_000, percent },
+    ...patch,
+  })
+}
+
+/** Downloaded and materialized: restart to switch to `version`. */
+export function updateReadyFixture(version = '1.1.0', patch: Partial<UpdaterState> = {}): UpdaterState {
+  return updaterStateFixture({ phase: 'ready', available: updateAvailableFixture(version).available, pending: version, ...patch })
 }
 
 // ---------------------------------------------------------------------------

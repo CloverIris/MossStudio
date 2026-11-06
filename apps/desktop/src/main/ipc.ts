@@ -16,10 +16,8 @@ import { galleryDetail, listGallery, recordJobOutputs, revealInFolder, trashGall
 import { activeJobInputPaths, cancelJob, getJob, getJobLogs, inputJob, listJobs, onJobCompleted } from './services/supervisor'
 import { clearDiagnostics, dismissDiagnostic, listDiagnostics } from './services/diagnostics'
 import { getSettings, updateSettings } from './services/settings'
-import { checkUpdates, dismissAnnouncement } from './services/updates'
-import { markUpdateCheck } from './services/updateWatcher'
+import { updaterApi } from './update'
 import { clearEngineAutoUpdateHold, recordManualEngineInstall, startEngineAutoUpdate } from './services/engineAutoUpdate'
-import { cancelUpdateDownload, downloadUpdate } from './services/updateDownload'
 import {
   cancelMossInferDownload,
   getMossInferDownloadState,
@@ -408,19 +406,16 @@ export function registerIpc(): void {
 
   handle(Ipc.envScan, null, () => scanEnvironment(getSettings(), (event) => emit(Events.envProgress, event)))
 
-  handle(Ipc.updatesCheck, null, async () => {
-    // A check the user asked for must not answer from the startup cache.
-    const state = await checkUpdates(getSettings(), { force: true })
-    // Keep the background watcher's focus throttle in sync with manual checks.
-    markUpdateCheck()
-    return state
-  })
-
-  handle(Ipc.updatesDownload, schemas.updatesDownload, ({ version, installer }) =>
-    downloadUpdate(version, installer),
-  )
-
-  handle(Ipc.updatesCancel, schemas.updatesCancel, ({ version }) => cancelUpdateDownload(version))
+  handle(Ipc.updateState, null, () => updaterApi.state())
+  handle(Ipc.updateCheck, null, () => updaterApi.check())
+  handle(Ipc.updateDownload, null, () => updaterApi.download())
+  handle(Ipc.updateCancel, null, () => updaterApi.cancel())
+  handle(Ipc.updateRestart, null, () => updaterApi.restart())
+  handle(Ipc.updateRestartWhenIdle, schemas.updateToggle, ({ enabled }) => updaterApi.restartWhenIdle(enabled))
+  handle(Ipc.updateRollback, null, () => updaterApi.rollback())
+  handle(Ipc.updateSetChannel, schemas.updateSetChannel, ({ channel }) => updaterApi.setChannel(channel))
+  handle(Ipc.updateSetAutoDownload, schemas.updateToggle, ({ enabled }) => updaterApi.setAutoDownload(enabled))
+  handle(Ipc.updateUnskip, null, () => updaterApi.unskip())
 
   handle(Ipc.mossInferDownload, schemas.mossInferDownload, async ({ channel, packages, cudaWheels, releaseTag, all }) => {
     // Without packages: whatever the plan says this computer is missing (one package per kind of GPU).
@@ -499,7 +494,7 @@ export function registerIpc(): void {
   handle(Ipc.notificationTest, null, () => pushTestNotification())
 
   handle(Ipc.announcementsDismiss, schemas.announcementsDismiss, ({ id }) => {
-    dismissAnnouncement(id)
+    updaterApi.dismissAnnouncement(id)
     return true
   })
 

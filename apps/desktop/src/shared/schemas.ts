@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { releaseInstallerSchema } from './release'
 
 const pathLike = z.string().trim().min(1, '目录路径不能为空').max(4096)
 const urlLike = z.string().min(8).max(2048).regex(/^https?:\/\//)
@@ -218,13 +217,12 @@ export const schemas = {
       pythonPath: z.string().max(4096).nullable(),
       torchBackend: z.enum(['auto', 'cpu', 'cuda']),
       torchIndex: z.string().max(2048).nullable(),
-      autoCheckUpdates: z.boolean(),
       desktopNotifications: z.boolean(),
       lanWebEnabled: z.boolean(),
       lanWebPort: z.number().int().min(1024).max(65535).nullable(),
       lanWebInstanceId: z.string().max(120).nullable(),
       updateChannel: z.enum(['stable', 'beta']),
-      dismissedUpdateVersion: z.string().max(80).nullable(),
+      autoDownloadUpdates: z.boolean(),
       sidebarCollapsed: z.boolean(),
       onboardingState: z.enum(['pending', 'active', 'dismissed', 'completed']),
       onboardingHostId: z.string().min(1).max(80),
@@ -385,12 +383,10 @@ export const schemas = {
 
   copyText: z.object({ text: z.string().max(4096) }),
 
-  updatesDownload: z.object({
-    version: z.string().min(1).max(80),
-    installer: releaseInstallerSchema,
-  }),
+  updateSetChannel: z.object({ channel: z.enum(['stable', 'beta']) }),
 
-  updatesCancel: z.object({ version: z.string().min(1).max(80) }),
+  /** update:set-auto-download and update:restart-when-idle. */
+  updateToggle: z.object({ enabled: z.boolean() }),
 
   trainerCommits: z.object({
     branch: z.string().min(1).max(120),

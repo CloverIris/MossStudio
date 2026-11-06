@@ -9,7 +9,6 @@ import { useApp } from './store'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { MotionPanel } from './components/motion'
 import { ToastProvider, cn, useToast } from './components/ui'
-import { UpdateDialog } from './components/UpdateDialog'
 import { ActivityPanel } from './components/shell/ActivityPanel'
 import { Rail } from './components/shell/Rail'
 import { LEGACY_REDIRECTS, routeRoot, visibleRoutes } from './components/shell/routes'
@@ -18,6 +17,8 @@ import { LibraryPage } from './pages/Library'
 import { ModelsPage } from './pages/Models'
 import { SettingsPage } from './pages/Settings'
 import { SetupPage } from './pages/Setup'
+import { InstallPage } from './pages/install/InstallPage'
+import { UninstallPage } from './pages/install/UninstallPage'
 import { StudioPage } from './pages/Studio'
 import { TrainerWindow } from './pages/TrainerWindow'
 import { TrainingPage } from './pages/Training'
@@ -111,7 +112,6 @@ function StudioShell(): React.JSX.Element {
         <main className="min-h-0 flex-1 overflow-hidden">
           <ErrorBoundary><SetupPage /></ErrorBoundary>
         </main>
-        <UpdateDialog />
       </div>
     )
   }
@@ -130,7 +130,6 @@ function StudioShell(): React.JSX.Element {
           <ActivityPanel />
         </main>
       </div>
-      <UpdateDialog />
     </div>
   )
 }
@@ -146,7 +145,21 @@ function TrainerShell(): React.JSX.Element {
   )
 }
 
-export function App(): React.JSX.Element {
+/**
+ * The setup and uninstall windows run outside the installed app (from the
+ * installer's temporary folder, or while removing it), so they get their own
+ * frame and never load settings, models or jobs.
+ */
+const STANDALONE: Record<string, () => React.JSX.Element> = {
+  '/install': InstallPage,
+  '/uninstall': UninstallPage,
+}
+
+function standaloneRoute(): (() => React.JSX.Element) | undefined {
+  return STANDALONE[window.location.hash.replace(/^#/, '').split('?')[0]!.replace(/\/+$/, '')]
+}
+
+function MainApp(): React.JSX.Element {
   const init = useApp((state) => state.init)
   const kind = window.clover.windowKind
   useEffect(() => { void init() }, [init])
@@ -157,4 +170,16 @@ export function App(): React.JSX.Element {
       </HashRouter>
     </ToastProvider>
   )
+}
+
+export function App(): React.JSX.Element {
+  const Standalone = standaloneRoute()
+  if (Standalone) {
+    return (
+      <ToastProvider>
+        <ErrorBoundary><Standalone /></ErrorBoundary>
+      </ToastProvider>
+    )
+  }
+  return <MainApp />
 }

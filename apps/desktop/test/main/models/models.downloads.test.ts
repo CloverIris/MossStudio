@@ -17,10 +17,10 @@ import {
   type FakeHf,
 } from './modelFixtures'
 
-const localReleaseDir = vi.hoisted(() => vi.fn<() => string | null>())
+const contentDir = vi.hoisted(() => vi.fn<() => string | null>())
 const listJobs = vi.hoisted(() => vi.fn<() => Promise<Array<{ state: string }>>>())
 const fetchHf = vi.hoisted(() => vi.fn<(url: string) => Promise<Response>>())
-vi.mock('@main/services/updates', () => ({ localReleaseDir }))
+vi.mock('@main/lib/content', () => ({ contentDir }))
 vi.mock('@main/services/supervisor', () => ({ listJobs }))
 vi.mock('@main/services/network', () => ({ getLastNetwork: () => null }))
 vi.mock('@main/services/hfNetwork', () => ({ fetchHf }))
@@ -54,7 +54,7 @@ beforeEach(async () => {
     'org/support': { sha: SUPPORT_SHA, files: { 'model_index.json': '{}', 'pipeline_moss_image.py': 'x', 'scheduler/scheduler_config.json': '{}' } },
     'org/lora': { sha: LORA_SHA, files: { 'a.safetensors': 'abc' } },
   })
-  localReleaseDir.mockReset().mockImplementation(() => releaseDir())
+  contentDir.mockReset().mockImplementation(() => releaseDir())
   listJobs.mockReset().mockResolvedValue([])
   fetchHf.mockReset().mockImplementation((url) => fetch(url))
   writeCatalog(releaseDir(), { schema_version: 2, models: [vae, vaeBig, support, broken], bundles: [bundle], adapters: [lora] })

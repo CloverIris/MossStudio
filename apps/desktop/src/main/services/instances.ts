@@ -29,7 +29,6 @@ import {
 } from './remoteInstances'
 import { posixQuote, sshExec } from './ssh'
 import { validateBinding } from './modelBundles'
-import { getRecommendedCommit } from './updates'
 
 export interface InstanceRecord {
   schemaVersion: 1
@@ -83,10 +82,8 @@ function channelFor(
   branch: string,
   commit: string,
   mainSha: string | null,
-  source = DEFAULT_SOURCE,
 ): InstanceInfo['channel'] {
-  const recommended = source === DEFAULT_SOURCE ? getRecommendedCommit() : null
-  if (branch === 'main' && (commit === mainSha || (!!recommended && commit.startsWith(recommended)))) return 'stable'
+  if (branch === 'main' && commit === mainSha) return 'stable'
   return branch === 'main' ? 'experimental' : 'custom'
 }
 
@@ -109,7 +106,7 @@ async function toInfo(record: InstanceRecord): Promise<InstanceInfo> {
     commitDate: record.commitDate,
     subject: record.subject,
     author: record.author,
-    channel: channelFor(record.branch, record.commit, mainSha, record.source),
+    channel: channelFor(record.branch, record.commit, mainSha),
     runtimeId: record.runtimeId,
     runtimeMode: record.runtimeMode,
     runtimeState: runtime?.state ?? 'missing',
@@ -197,7 +194,7 @@ export async function createInstance(input: CreateInstanceInput, settings: Setti
     commitDate: commit?.date ?? new Date().toISOString(),
     subject: commit?.subject ?? '',
     author: commit?.author ?? '',
-    channel: channelFor(input.branch, sha, await branchStableSha(source), source),
+    channel: channelFor(input.branch, sha, await branchStableSha(source)),
     runtimeId: runtime.id,
     runtimeMode: input.runtimeMode,
     placement: { kind: 'local' },
@@ -242,7 +239,7 @@ async function createRemoteInstance(input: CreateInstanceInput, settings: Settin
     commitDate: commit?.date ?? new Date().toISOString(),
     subject: commit?.subject ?? '',
     author: commit?.author ?? '',
-    channel: channelFor(input.branch, sha, await branchStableSha(source), source),
+    channel: channelFor(input.branch, sha, await branchStableSha(source)),
     runtimeId: runtime.id,
     runtimeMode: 'isolated',
     placement: {
@@ -332,7 +329,7 @@ export async function updateInstance(
   record.commitDate = info?.date ?? new Date().toISOString()
   record.subject = info?.subject ?? ''
   record.author = info?.author ?? ''
-  record.channel = channelFor(record.branch, record.commit, await branchStableSha(record.source), record.source)
+  record.channel = channelFor(record.branch, record.commit, await branchStableSha(record.source))
   await writeRecord(record)
   emit(Events.instancesChanged, { id })
   return toInfo(record)

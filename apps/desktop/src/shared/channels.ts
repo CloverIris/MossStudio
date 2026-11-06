@@ -55,9 +55,23 @@ export const Ipc = {
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   envScan: 'env:scan',
-  updatesCheck: 'updates:check',
-  updatesDownload: 'updates:download',
-  updatesCancel: 'updates:cancel',
+  /** App updates (src/main/update): every call returns UpdaterState unless noted. */
+  updateState: 'update:state',
+  updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateCancel: 'update:cancel',
+  /** → UpdateRestartResult: restarts into `pending`, or reports what is busy. */
+  updateRestart: 'update:restart',
+  /** `{ enabled }`: restart as soon as nothing is busy (空闲后自动重启). */
+  updateRestartWhenIdle: 'update:restart-when-idle',
+  /** → UpdateRestartResult: 回到上一个版本 (switch current/previous, restart). */
+  updateRollback: 'update:rollback',
+  /** `{ channel: 'stable' | 'beta' }`. */
+  updateSetChannel: 'update:set-channel',
+  /** `{ enabled }`: 自动下载更新. */
+  updateSetAutoDownload: 'update:set-auto-download',
+  /** Offer the version skipped by a rollback again (安装 <v>) → UpdaterState. */
+  updateUnskip: 'update:unskip',
   notificationTest: 'notification:test',
   webAccessInfo: 'web:access-info',
   webAccessRestart: 'web:access-restart',
@@ -159,6 +173,27 @@ export const Ipc = {
   /** Register a control adapter file (checked with the engine's `inspect`): `{ path }` → ControlAdapterEntry. */
   controlAdaptersAdd: 'control-adapters:add',
   controlAdaptersRemove: 'control-adapters:remove',
+  // Setup window (/install) and uninstall (/uninstall, Settings › 关于 › 卸载). Types: shared/setup.ts.
+  /** → SetupState. Setup mode only. */
+  installState: 'install:state',
+  /** `{ purpose: install|data|legacy, defaultPath? }` → SetupFolderChoice. */
+  installChooseFolder: 'install:choose-folder',
+  /** `{ path, purpose: install|data }` → SetupLocationCheck. */
+  installValidate: 'install:validate',
+  /** `{ path }` → SetupLegacyInstall | null: is this folder an old 1.0.x install? */
+  installInspectLegacy: 'install:inspect-legacy',
+  /** SetupStartInput → SetupState (phase installing); progress/done/failed follow as events. */
+  installStart: 'install:start',
+  /** `{ eject? }` → true: start the installed app (macOS: optionally eject the DMG) and quit. */
+  installLaunch: 'install:launch',
+  /** `{ log: setup|launcher }` → true: open SetupState.logPath or .launcherLogPath. */
+  installOpenLog: 'install:open-log',
+  /** → true: close the setup or uninstall window and quit (nothing is changed). */
+  installQuit: 'install:quit',
+  /** → UninstallInfo. Uninstall mode, and Settings on any installed or portable app. */
+  uninstallInfo: 'uninstall:info',
+  /** `{ removeData }` → true; the app quits right after and the files are removed. */
+  uninstallStart: 'uninstall:start',
 } as const
 
 export type IpcChannel = (typeof Ipc)[keyof typeof Ipc]
@@ -180,14 +215,22 @@ export const Events = {
   job: 'event:job',
   jobLog: 'event:job-log',
   diagnostic: 'event:diagnostic',
-  updateDownload: 'event:update-download',
-  updatesChanged: 'event:updates-changed',
+  /** UpdaterState, on every change of the update runtime (progress throttled). */
+  updateState: 'event:update-state',
   mossInferDownload: 'event:mossinfer-download',
   engineRemoteProgress: 'event:engine-remote-progress',
   terminalData: 'event:ssh-terminal-data',
   terminalExit: 'event:ssh-terminal-exit',
   aiStream: 'event:ai-stream',
   aiToolCall: 'event:ai-tool-call',
+  /** SetupProgress while installing. */
+  installProgress: 'event:install-progress',
+  /** SetupResult once the install succeeded. */
+  installDone: 'event:install-done',
+  /** `{ code, message }` when the install failed (the state's phase is failed; start may be called again). */
+  installFailed: 'event:install-failed',
+  /** SetupState whenever it changes on its own (e.g. the old install's data size was measured). */
+  installState: 'event:install-state',
 } as const
 
 export type EventChannel = (typeof Events)[keyof typeof Events]

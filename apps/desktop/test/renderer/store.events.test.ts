@@ -13,7 +13,9 @@ import {
   scenario,
   settingsFixture,
   updateAvailableFixture,
-  updateDownloadFixture,
+  updateDownloadingFixture,
+  updateReadyFixture,
+  updaterStateFixture,
 } from '../mocks/backend'
 import { flush, loadStore } from '../helpers/renderer'
 
@@ -45,7 +47,7 @@ describe('Events.download', () => {
   it('keeps the initial queue order through every state change and later downloads', async () => {
     const initial = ['a', 'b', 'c'].map((id) => downloadFixture({ id: `model:${id}`, targetId: id, label: id, totalBytes: 1000, filesTotal: 2 }))
     const { backend, store } = await ready(scenario('ready', {
-      settings: settingsFixture({ autoCheckUpdates: false, onboardingState: 'completed' }),
+      settings: settingsFixture({ onboardingState: 'completed' }),
       downloads: initial,
       catalog: { ...scenario('ready').catalog, models: [], adapters: [] },
     }))
@@ -248,52 +250,50 @@ describe('Events.settingsChanged', () => {
   })
 })
 
-describe('Events.updatesChanged', () => {
-  it('opens the dialog for a background-discovered release even while onboarding is pending', async () => {
+describe('Events.updateState', () => {
+  it('stores a background-discovered release and notifies once, even while onboarding is pending', async () => {
     const { backend, store } = await ready(scenario('ready', { settings: settingsFixture({ onboardingState: 'pending' }) }))
-    backend.emit(Events.updatesChanged, updateAvailableFixture('2.0.0'))
-    expect(store().updates!.latestVersion).toBe('2.0.0')
-    expect(store().updateDialogOpen).toBe(true)
+    backend.emit(Events.updateState, updateAvailableFixture('2.0.0'))
+    backend.emit(Events.updateState, updateAvailableFixture('2.0.0', { checkedAt: '2026-11-02T00:00:00.000Z' }))
+    expect(store().update!.available!.version).toBe('2.0.0')
+    expect(store().notifications).toHaveLength(1)
+    expect(store().notifications[0]).toMatchObject({ tone: 'info', title: '发现新版本' })
     expect(store().notifications[0]!.message).toContain('2.0.0')
   })
 
-  it('does nothing interruptive when no update is available', async () => {
+  it('says a new version downloads in the background when 自动下载更新 is on', async () => {
     const { backend, store } = await ready()
-    backend.emit(Events.updatesChanged, { ...backend.state.updates, checkedAt: '2026-11-02T00:00:00.000Z' })
-    expect(store().updates!.checkedAt).toBe('2026-11-02T00:00:00.000Z')
-    expect(store().updateDialogOpen).toBe(false)
+    backend.emit(Events.updateState, updateAvailableFixture('2.0.0', { autoDownload: true }))
+    expect(store().notifications[0]!.message).toBe('MossStudio 2.0.0 正在后台下载')
+  })
+
+  it('stays quiet for progress and notifies once when the update is ready', async () => {
+    const { backend, store } = await ready()
+    backend.emit(Events.updateState, updateDownloadingFixture('1.1.0', 10))
+    backend.emit(Events.updateState, updateDownloadingFixture('1.1.0', 80))
     expect(store().notifications).toEqual([])
-  })
-})
-
-describe('Events.updateDownload', () => {
-  it.each([
-    ['ready', undefined, 'success', '更新包已就绪'],
-    ['opened', undefined, 'success', '正在应用更新'],
-    ['error', 'checksum mismatch', 'error', '更新下载失败'],
-  ] as const)('phase %s notifies %s', async (phase, error, tone, title) => {
-    const { backend, store } = await ready()
-    backend.emit(Events.updateDownload, updateDownloadFixture({ phase, error }))
-    expect(store().updateDownload!.phase).toBe(phase)
-    expect(store().notifications).toHaveLength(1)
-    expect(store().notifications[0]).toMatchObject({ tone, title })
-    if (error) expect(store().notifications[0]!.message).toBe(error)
-    else expect(store().notifications[0]!.message).toContain('1.1.0')
+    backend.emit(Events.updateState, updateReadyFixture('1.1.0'))
+    backend.emit(Events.updateState, updateReadyFixture('1.1.0'))
+    expect(store().notifications).toMatchObject([{ tone: 'success', title: '更新已准备好', message: '重启 MossStudio 即可更新到 1.1.0' }])
   })
 
-  it('falls back to a generic message for an error without text', async () => {
+  it('warns once about a required update and reports a failure once', async () => {
     const { backend, store } = await ready()
-    backend.emit(Events.updateDownload, updateDownloadFixture({ phase: 'error' }))
-    expect(store().notifications[0]!.message).toBe('安装包下载失败')
+    backend.emit(Events.updateState, updateAvailableFixture('1.1.0', { required: true, minimumVersion: '1.1.0' }))
+    backend.emit(Events.updateState, updaterStateFixture({ phase: 'error', error: '下载的文件校验失败' }))
+    backend.emit(Events.updateState, updaterStateFixture({ phase: 'error', error: '下载的文件校验失败' }))
+    const titles = store().notifications.map((item) => item.title)
+    expect(titles.filter((title) => title === '必须更新')).toHaveLength(1)
+    expect(titles.filter((title) => title === '更新没有完成')).toHaveLength(1)
+    expect(store().notifications.find((item) => item.title === '必须更新')!.message).toContain('1.1.0')
   })
 
-  it('stays quiet for progress phases and for a ready state that carries an error', async () => {
+  it('does nothing when there is nothing new, and nothing at all for a copy that cannot update', async () => {
     const { backend, store } = await ready()
-    backend.emit(Events.updateDownload, updateDownloadFixture({ phase: 'downloading', percent: 40 }))
-    backend.emit(Events.updateDownload, updateDownloadFixture({ phase: 'verifying' }))
-    backend.emit(Events.updateDownload, updateDownloadFixture({ phase: 'ready', error: 'stale' }))
+    backend.emit(Events.updateState, updaterStateFixture({ checkedAt: '2026-11-02T00:00:00.000Z' }))
+    expect(store().update!.checkedAt).toBe('2026-11-02T00:00:00.000Z')
+    backend.emit(Events.updateState, updateAvailableFixture('3.0.0', { supported: false, unsupportedReason: '开发版本' }))
     expect(store().notifications).toEqual([])
-    expect(store().updateDownload!.phase).toBe('ready')
   })
 })
 

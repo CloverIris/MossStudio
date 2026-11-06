@@ -10,11 +10,15 @@ import { Events } from '@shared/channels'
 import { DEFAULT_SOURCE } from '@shared/git'
 import { applyGitMirror, getLastNetwork } from './network'
 import { checkBareMirror } from './gitHealth'
-import { getRecommendedCommit } from './updates'
 
 export { DEFAULT_SOURCE }
 
 const ensuring = new Map<string, Promise<void>>()
+
+/** Mirror clones/fetches running right now (the app updater will not restart through them). */
+export function mirrorOperationsInFlight(): number {
+  return ensuring.size
+}
 
 function progress(phase: string, message: string): void {
   emit(Events.gitProgress, { phase, message, at: new Date().toISOString() })
@@ -125,7 +129,6 @@ export async function listBranches(source = DEFAULT_SOURCE): Promise<BranchInfo[
     timeoutMs: 5000,
   })
   const main = firstLine(mainResult.stdout)
-  const recommended = source === DEFAULT_SOURCE ? getRecommendedCommit() : null
   return lines
     .map((line) => {
       const [name = '', sha = '', head = ''] = line.split('|')
@@ -133,7 +136,7 @@ export async function listBranches(source = DEFAULT_SOURCE): Promise<BranchInfo[
         name,
         sha,
         isDefault: name === 'main' || head.trim() === '*',
-        isStable: name === 'main' && (sha === main || (!!recommended && sha.startsWith(recommended))),
+        isStable: name === 'main' && sha === main,
       }
     })
     .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name))

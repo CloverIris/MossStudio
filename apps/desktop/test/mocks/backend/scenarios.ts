@@ -5,7 +5,7 @@
  * a test changes what the "main process" knows by editing `backend.state`.
  */
 import type { AiConversationInfo, AiProviderInfo } from '@shared/ai'
-import type { UpdateDownloadState } from '@shared/release'
+import type { UpdaterState } from '@shared/update'
 import { cliEngineFeatures } from '@shared/cliEngine'
 import type { EngineAssetList, EngineMachine } from '@shared/engineChoice'
 import { RELEASE_220, inventoryDevicesFor, machineFixture, type MachineName } from './machines'
@@ -30,9 +30,9 @@ import type {
   ProjectDocument,
   Settings,
   TrainerVersion,
-  UpdateState,
 } from '@shared/types'
 import {
+  FIXTURE_NOW,
   SFT_BUNDLE_IDS,
   catalogFixture,
   diagnosticFixture,
@@ -52,14 +52,15 @@ import {
   sshHostFixture,
   trainerVersionFixture,
   updateAvailableFixture,
-  updateStateFixture,
+  updaterStateFixture,
 } from './fixtures'
+import { installStateFixture, type MockInstallState } from './install'
 
 export interface MockBackendState {
   settings: Settings
   env: EnvReport | null
-  updates: UpdateState
-  updateDownload: UpdateDownloadState | null
+  /** The update runtime (main/update); handlers keep it in step like main does. */
+  update: UpdaterState
   catalog: Catalog
   downloads: DownloadTask[]
   jobs: JobRecord[]
@@ -87,6 +88,8 @@ export interface MockBackendState {
   /** What `engine:features` answers; null = no usable engine. */
   engineFeatures: EngineFeatures | null
   controlAdapters: ControlAdapterEntry[]
+  /** Setup and uninstall windows (see ./install.ts). */
+  install: MockInstallState
 }
 
 export type ScenarioName =
@@ -118,8 +121,7 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
   const base: MockBackendState = {
     settings: settingsFixture({ onboardingState: 'completed' }),
     env: envReportFixture(),
-    updates: updateStateFixture(),
-    updateDownload: null,
+    update: updaterStateFixture(),
     catalog: catalogFixture({ installed: SFT_BUNDLE_IDS }),
     downloads: [],
     jobs: [],
@@ -140,6 +142,7 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     conversations: [],
     engineFeatures: engineFeaturesFixture(),
     controlAdapters: [],
+    install: installStateFixture(),
     engineMachine: machineFixture('nvidia'),
     engineAssets: RELEASE_220,
     localModelFolder: null,
@@ -178,11 +181,11 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     ready: () => ({}),
     /** Ready, with one failed job in history and its diagnostic. */
     jobFailure: () => ({
-      jobs: [jobFixture({ id: 'job-failed', state: 'failed', stage: 'denoise', error: { code: 'E_CUDA_OOM', message: 'CUDA out of memory' }, endedAt: base.updates.checkedAt })],
+      jobs: [jobFixture({ id: 'job-failed', state: 'failed', stage: 'denoise', error: { code: 'E_CUDA_OOM', message: 'CUDA out of memory' }, endedAt: FIXTURE_NOW })],
       diagnostics: [diagnosticFixture({ jobId: 'job-failed' })],
     }),
     /** Ready, and a newer release is published. */
-    updateAvailable: () => ({ updates: updateAvailableFixture('1.1.0') }),
+    updateAvailable: () => ({ update: updateAvailableFixture('1.1.0') }),
     /** Ready locally plus one SSH host with a GPU. */
     remoteHost: () => ({ hosts: [sshHostFixture()] }),
     /** Ready on an Intel Arc that only moss-infer-vulkan runs (兼容模式): text to image only, no LoRA. */

@@ -5,7 +5,7 @@ import { useTempDataRoot } from '@test/helpers/tempDir'
 
 const emitted: Array<{ channel: string; payload: unknown }> = []
 vi.mock('@main/lib/events', () => ({ emit: (channel: string, payload: unknown) => emitted.push({ channel, payload }) }))
-vi.mock('@main/services/updates', () => ({ localReleaseDir: () => null }))
+vi.mock('@main/lib/content', () => ({ contentDir: () => null }))
 
 const root = useTempDataRoot()
 const file = () => join(root(), 'diagnostics.json')

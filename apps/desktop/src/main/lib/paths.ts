@@ -1,23 +1,24 @@
 import { app } from 'electron'
 import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import type { ModelDirectories, ModelEntry } from '@shared/types'
+import { contextDataRoot, envDataRoot, setupScratchRoot } from '../install/dataRoot'
+import { getRunContext } from '../install/runContext'
 
 let dataRootOverride: string | null = null
 let engineRootOverride: string | null = null
 
 /**
- * Application data lives next to the executable when packaged (portable installs
- * keep everything in one folder). Dev keeps using the repo's .dev-data, and
- * MOSSSTUDIO_DATA wins over everything for tests and relocated installs.
+ * The data root: MOSSSTUDIO_DATA, then the setDataRoot override, then what the run
+ * context says (install.json `dataRoot`, portable R/data, a temp folder in setup mode,
+ * Electron userData in dev). See install/dataRoot.ts for the full order.
  */
 export function root(): string {
-  const env = process.env['MOSSSTUDIO_DATA']?.trim()
-  if (env) return resolve(env)
+  const env = envDataRoot(process.env)
+  if (env) return env
   if (dataRootOverride) return resolve(dataRootOverride)
-  if (!app.isPackaged) return app.getPath('userData')
-  return join(dirname(app.getPath('exe')), 'data')
+  return contextDataRoot(getRunContext(), { userData: () => app.getPath('userData'), scratch: setupScratchRoot })
 }
 
 export function setDataRoot(next: string | null): void {

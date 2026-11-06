@@ -22,6 +22,7 @@ import { Events, Ipc } from '@shared/channels'
 import type { AiChatInput, AiConversationInfo, AiMessage } from '@shared/ai'
 import type { WebAccessInfo } from '@shared/backend'
 import type { EngineHello } from '@shared/engineProtocol'
+import type { UpdateBusyReason, UpdateRestartResult, UpdaterState } from '@shared/update'
 import { enginePlanFor } from './machines'
 import type {
   DownloadTask,
@@ -50,9 +51,11 @@ import {
   type JobLifecycleOptions,
 } from './fixtures'
 import { scenario, type MockBackendState, type ScenarioName } from './scenarios'
+import { addInstallHandlers } from './install'
 
 export * from './fixtures'
 export * from './scenarios'
+export * from './install'
 
 export type CloverBridge = Window['clover']
 
@@ -171,22 +174,74 @@ function defaultHandlers(): Map<string, Handler> {
 
   // Environment & updates
   h.set(Ipc.envScan, (_, { state }) => state.env)
-  h.set(Ipc.updatesCheck, (_, { state }) => state.updates)
-  h.set(Ipc.updatesDownload, (payload, { state }) => {
-    const { version } = p<{ version: string }>(payload)
-    state.updateDownload = { version, phase: 'downloading', bytes: 0, totalBytes: state.updates.installer?.size_bytes ?? 0, percent: 0, speedBps: 0, updatedAt: FIXTURE_NOW }
-    return state.updateDownload
+
+  // App updates (main/update): every call answers the whole UpdaterState, and
+  // each change is also pushed on Events.updateState, as main does.
+  const pushUpdate = (context: HandlerContext, patch: Partial<UpdaterState>): UpdaterState => {
+    context.state.update = { ...context.state.update, ...patch }
+    context.emit(Events.updateState, context.state.update)
+    return context.state.update
+  }
+  /** What a restart would interrupt: running generation/training jobs and model downloads. */
+  const updateBusy = (state: MockBackendState): UpdateBusyReason[] => {
+    const active = state.jobs.filter((job) => ['queued', 'starting', 'running'].includes(job.state))
+    const inference = active.filter((job) => job.kind !== 'training').length
+    const training = active.length - inference
+    const downloads = state.downloads.filter((task) => ['queued', 'running', 'verifying'].includes(task.state)).length
+    const engine = Boolean(state.engineDownload && !['done', 'error', 'canceled'].includes(state.engineDownload.phase))
+    return [
+      ...(inference ? [{ kind: 'inference' as const, count: inference, label: `${inference} 个生成任务` }] : []),
+      ...(training ? [{ kind: 'training' as const, count: training, label: `${training} 个训练任务` }] : []),
+      ...(downloads ? [{ kind: 'model-download' as const, count: downloads, label: `${downloads} 个模型下载` }] : []),
+      ...(engine ? [{ kind: 'engine-download' as const, count: 1, label: '推理引擎下载或安装' }] : []),
+    ]
+  }
+  h.set(Ipc.updateState, (_, { state }) => state.update)
+  h.set(Ipc.updateCheck, (_, context) => pushUpdate(context, { checkedAt: FIXTURE_NOW }))
+  h.set(Ipc.updateDownload, (_, context) => {
+    const available = context.state.update.available
+    if (!available) throw new MockIpcError('E_UPDATE', '没有可以下载的新版本')
+    return pushUpdate(context, { phase: 'downloading', error: null, progress: { bytes: 0, totalBytes: available.downloadSize, speedBps: 0, percent: 0 } })
   })
-  h.set(Ipc.updatesCancel, (payload, { state }) => {
-    const { version } = p<{ version: string }>(payload)
-    if (state.updateDownload?.version !== version) return null
-    state.updateDownload = { ...state.updateDownload, phase: 'canceled' }
-    return state.updateDownload
+  h.set(Ipc.updateCancel, (_, context) => pushUpdate(context, { phase: context.state.update.available ? 'available' : 'idle', progress: null }))
+  const restartInto = (context: HandlerContext): UpdateRestartResult => {
+    const busy = updateBusy(context.state)
+    if (busy.length) {
+      pushUpdate(context, { busy })
+      return { status: 'busy', busy }
+    }
+    pushUpdate(context, { phase: 'restarting', busy: [] })
+    return { status: 'restarting' }
+  }
+  h.set(Ipc.updateRestart, (_, context) => {
+    const update = context.state.update
+    if (!update.supported) return { status: 'unsupported', reason: update.unsupportedReason ?? '不能在这里更新' }
+    if (!update.pending || !['ready', 'waiting-idle'].includes(update.phase)) return { status: 'nothing-pending' }
+    return restartInto(context)
+  })
+  h.set(Ipc.updateRestartWhenIdle, (payload, context) => {
+    const { enabled } = p<{ enabled: boolean }>(payload)
+    // Like main: no pending needed; a running download is waited for, then idle.
+    return pushUpdate(context, enabled
+      ? { restartWhenIdle: true, phase: 'waiting-idle', busy: updateBusy(context.state) }
+      : { restartWhenIdle: false, phase: 'ready', busy: [] })
+  })
+  h.set(Ipc.updateRollback, (_, context) => {
+    const update = context.state.update
+    if (!update.supported) return { status: 'unsupported', reason: update.unsupportedReason ?? '不能在这里更新' }
+    if (!update.canRollback || !update.previous) return { status: 'nothing-pending' } satisfies UpdateRestartResult
+    return restartInto(context)
+  })
+  h.set(Ipc.updateSetChannel, (payload, context) => pushUpdate(context, { channel: p<{ channel: UpdaterState['channel'] }>(payload).channel }))
+  h.set(Ipc.updateSetAutoDownload, (payload, context) => pushUpdate(context, { autoDownload: p<{ enabled: boolean }>(payload).enabled }))
+  h.set(Ipc.updateUnskip, (_, context) => {
+    context.state.settings = { ...context.state.settings, skippedUpdateVersion: null }
+    return pushUpdate(context, { skippedVersion: null })
   })
   h.set(Ipc.announcementsDismiss, (payload, { state }) => {
     const { id } = p<{ id: string }>(payload)
     state.settings = { ...state.settings, dismissedAnnouncements: [...state.settings.dismissedAnnouncements, id] }
-    state.updates = { ...state.updates, announcements: state.updates.announcements.filter((item) => item.id !== id) }
+    state.update = { ...state.update, announcements: state.update.announcements.filter((item) => item.id !== id) }
     return null
   })
 
@@ -485,6 +540,7 @@ function defaultHandlers(): Map<string, Handler> {
   // Shell integrations: accepted and recorded via `calls`.
   for (const channel of [Ipc.windowOpen, Ipc.openPath, Ipc.openExternal, Ipc.copyText, Ipc.galleryReveal]) h.set(channel, () => null)
   h.set(Ipc.pickDialog, () => null)
+  addInstallHandlers((channel, handler) => h.set(channel, handler), (code, message) => new MockIpcError(code, message))
   return h
 }
 

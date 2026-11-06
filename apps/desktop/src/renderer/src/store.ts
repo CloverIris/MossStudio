@@ -19,10 +19,10 @@ import type {
   LaunchRow,
   LaunchStartInput,
   Settings,
-  UpdateState,
 } from '@shared/types'
+import type { UpdateChannel } from '@shared/install'
+import { requiredUpdateMessage, type UpdateBusyReason, type UpdateRestartResult, type UpdaterState } from '@shared/update'
 import { isStudioReuseRequest, type StudioReuseRequest } from './lib/studioReuse'
-import type { UpdateDownloadState } from '@shared/release'
 import { call, onEvent } from './lib/api'
 
 export type { StudioReuseRequest } from './lib/studioReuse'
@@ -50,9 +50,12 @@ interface AppStore {
   loading: boolean
   settings: Settings | null
   env: EnvReport | null
-  updates: UpdateState | null
-  updateDialogOpen: boolean
-  updateDownload: UpdateDownloadState | null
+  /** The app update runtime (main/update), pushed on every change. */
+  update: UpdaterState | null
+  /** The title bar update popover; Settings opens it to ask about a busy restart. */
+  updatePopoverOpen: boolean
+  /** What the last restart attempt said it would interrupt. */
+  updateBusy: UpdateBusyReason[]
   mossInferDownload: MossInferDownloadState | null
   engineReadiness: EngineReadiness | null
   instances: InstanceInfo[]
@@ -83,11 +86,22 @@ interface AppStore {
   init: () => Promise<void>
   refreshEnv: () => Promise<void>
   refreshCatalog: () => Promise<void>
-  refreshUpdates: () => Promise<void>
-  checkForUpdates: () => Promise<UpdateState | null>
-  setUpdateDialogOpen: (open: boolean) => void
-  startUpdateDownload: () => Promise<void>
+  refreshUpdate: () => Promise<void>
+  setUpdatePopoverOpen: (open: boolean) => void
+  /** Check the feed now; null when the call itself failed. */
+  checkForUpdates: () => Promise<UpdaterState | null>
+  downloadUpdate: () => Promise<void>
   cancelUpdateDownload: () => Promise<void>
+  /** Restart into the downloaded version, or learn what a restart would interrupt. */
+  restartToUpdate: () => Promise<UpdateRestartResult>
+  /** 空闲后自动重启 on or off. */
+  setRestartWhenIdle: (enabled: boolean) => Promise<void>
+  /** 回到上一个版本: switch back and restart. */
+  rollbackUpdate: () => Promise<UpdateRestartResult>
+  setUpdateChannel: (channel: UpdateChannel) => Promise<void>
+  setAutoDownloadUpdates: (enabled: boolean) => Promise<void>
+  /** Offer the version skipped by a rollback again (安装 <v>). */
+  unskipUpdate: () => Promise<void>
   saveSettings: (patch: Partial<Settings> & { hfToken?: string | null }) => Promise<void>
   toggleSidebar: () => Promise<void>
   toggleNotifications: () => void
@@ -164,44 +178,53 @@ function withEngineDownload(
 
 export const useApp = create<AppStore>((set, get) => {
   const startupDownloads = new Map<string, DownloadTask>()
-  /** Versions and announcement ids already surfaced, so repeated checks stay quiet. */
-  const announcedVersions = new Set<string>()
+  /**
+   * Events that arrive while init's snapshots are in flight are newer than those
+   * snapshots (one slow call, e.g. envScan, holds them all back). Keep them so the
+   * snapshot cannot overwrite them: whole-state slices by a per-slice event count,
+   * list slices by the items the events delivered.
+   */
+  const startupJobs = new Map<string, JobRecord>()
+  const startupDiagnostics = new Map<string, Diagnostic>()
+  const eventCounts = { update: 0, mossInferDownload: 0 }
+  /** Versions, steps and announcement ids already surfaced, so repeated pushes stay quiet. */
+  const announced = new Set<string>()
   const announcedAnnouncements = new Set<string>()
 
+  function once(key: string): boolean {
+    if (announced.has(key)) return false
+    announced.add(key)
+    return true
+  }
+
   /**
-   * Turn a fresh release document into user-visible signals.
-   *
-   * Called once at startup and again for every background check, which is what
-   * makes a release published while the app is open show up without the user
-   * opening Settings. `initial` only controls the interruptive dialog: a later
-   * check opens it immediately, the startup check respects the onboarding state.
+   * Turn an update state into notifications: a new version, a downloaded one
+   * ready for a restart, a required update, and the feed's announcements.
+   * Called for the first state and for every push, each signal once.
    */
-  function announceUpdates(state: UpdateState, options: { initial?: boolean } = {}): void {
-    const settings = get().settings
-    const version = state.latestVersion
-    if (state.updateAvailable && version && !announcedVersions.has(version) && settings?.dismissedUpdateVersion !== version) {
-      announcedVersions.add(version)
+  function announceUpdate(state: UpdaterState): void {
+    const version = state.available?.version ?? state.pending
+    if (state.supported && state.phase === 'available' && version && once(`available:${version}`)) {
       get().pushNotification({
         tone: 'info',
         title: '发现新版本',
-        message: `MossStudio ${version} 可用，点击查看更新说明`,
+        message: state.autoDownload ? `MossStudio ${version} 正在后台下载` : `MossStudio ${version} 可以更新，点击标题栏的更新按钮下载`,
       })
-      if (settings?.autoCheckUpdates !== false && (!options.initial || settings?.onboardingState !== 'pending')) {
-        set({ updateDialogOpen: true })
-      }
     }
-    for (const announcement of [...state.announcements].slice(0, 3)) {
+    if (state.supported && state.phase === 'ready' && version && once(`ready:${version}`)) {
+      get().pushNotification({ tone: 'success', title: '更新已准备好', message: `重启 MossStudio 即可更新到 ${version}` })
+    }
+    if (state.required && state.minimumVersion && once(`required:${state.minimumVersion}`)) {
+      get().pushNotification({ tone: 'warning', title: '必须更新', message: requiredUpdateMessage(state.minimumVersion) })
+    }
+    if (state.phase === 'error' && state.error && once(`error:${state.error}`)) {
+      get().pushNotification({ tone: 'error', title: '更新没有完成', message: state.error })
+    }
+    for (const announcement of state.announcements.slice(0, 3)) {
       if (announcedAnnouncements.has(announcement.id)) continue
       announcedAnnouncements.add(announcement.id)
       get().pushNotification({
-        tone:
-          announcement.level === 'critical'
-            ? 'error'
-            : announcement.level === 'warning'
-              ? 'warning'
-              : announcement.level === 'success'
-                ? 'success'
-                : 'info',
+        tone: announcement.level === 'critical' ? 'error' : announcement.level === 'warning' ? 'warning' : 'info',
         title: announcement.title,
         message:
           announcement.body
@@ -211,6 +234,17 @@ export const useApp = create<AppStore>((set, get) => {
             .slice(0, 180) || '打开通知面板查看公告详情。',
       })
     }
+  }
+
+  function setUpdate(state: UpdaterState): UpdaterState {
+    set({ update: state })
+    announceUpdate(state)
+    return state
+  }
+
+  /** The snapshot list with every item an event delivered during startup put over it. */
+  function mergeStartup<T extends { id: string }>(snapshot: T[], fromEvents: Map<string, T>, upsert: (list: T[], item: T) => T[]): T[] {
+    return [...fromEvents.values()].reduce(upsert, snapshot.filter((item) => !fromEvents.has(item.id)))
   }
 
   function mergeDownloadSnapshot(snapshot: DownloadTask[]): DownloadTask[] {
@@ -223,9 +257,9 @@ export const useApp = create<AppStore>((set, get) => {
     if (subscribed) return
     subscribed = true
 
-    onEvent<UpdateState>(Events.updatesChanged, (state) => {
-      set({ updates: state })
-      announceUpdates(state)
+    onEvent<UpdaterState>(Events.updateState, (state) => {
+      eventCounts.update += 1
+      setUpdate(state)
     })
     onEvent<DownloadTask>(Events.download, (task) => {
       if (!get().ready) startupDownloads.set(task.id, task)
@@ -251,6 +285,7 @@ export const useApp = create<AppStore>((set, get) => {
       }
     })
     onEvent<JobRecord>(Events.job, (job) => {
+      if (!get().ready) startupJobs.set(job.id, job)
       const previous = get().jobs.find((item) => item.id === job.id)
       set((state) => ({
         jobs: upsertJob(state.jobs, job),
@@ -306,6 +341,7 @@ export const useApp = create<AppStore>((set, get) => {
     })
 
     onEvent<Diagnostic>(Events.diagnostic, (diagnostic) => {
+      if (!get().ready) startupDiagnostics.set(diagnostic.id, diagnostic)
       set((state) => ({ diagnostics: upsertDiagnostic(state.diagnostics, diagnostic) }))
     })
     onEvent<GpuTelemetrySnapshot>(Events.gpuTelemetry, (gpuTelemetry) => {
@@ -317,26 +353,8 @@ export const useApp = create<AppStore>((set, get) => {
       set({ settings })
       void get().refreshEngineReadiness()
     })
-    onEvent<UpdateDownloadState>(Events.updateDownload, (state) => {
-      set({ updateDownload: state })
-      if (state.phase === 'opened' || (state.phase === 'ready' && !state.error)) {
-        get().pushNotification({
-          tone: 'success',
-          title: state.phase === 'opened' ? '正在应用更新' : '更新包已就绪',
-          message:
-            state.phase === 'opened'
-              ? `MossStudio ${state.version} 更新程序已启动，应用即将重启`
-              : `MossStudio ${state.version} 更新包已下载并完成校验`,
-        })
-      } else if (state.phase === 'error') {
-        get().pushNotification({
-          tone: 'error',
-          title: '更新下载失败',
-          message: state.error ?? '安装包下载失败',
-        })
-      }
-    })
     onEvent<MossInferDownloadState>(Events.mossInferDownload, (download) => {
+      eventCounts.mossInferDownload += 1
       const previous = get().mossInferDownload
       set((state) => ({
         mossInferDownload: download,
@@ -400,9 +418,9 @@ export const useApp = create<AppStore>((set, get) => {
     loading: false,
     settings: null,
     env: null,
-    updates: null,
-    updateDialogOpen: false,
-    updateDownload: null,
+    update: null,
+    updatePopoverOpen: false,
+    updateBusy: [],
     mossInferDownload: null,
     engineReadiness: null,
     instances: [],
@@ -436,10 +454,11 @@ export const useApp = create<AppStore>((set, get) => {
         set({ settings })
         subscribe()
 
-        const [env, updates, catalog, downloads, jobs, diagnostics, devices, queuedRows, engineDownload, readiness] =
+        const before = { ...eventCounts }
+        const [env, update, catalog, downloads, jobs, diagnostics, devices, queuedRows, engineDownload, readiness] =
           await Promise.allSettled([
             call<EnvReport>(Ipc.envScan),
-            call<UpdateState>(Ipc.updatesCheck),
+            call<UpdaterState>(Ipc.updateState),
             call<Catalog>(Ipc.modelsCatalog),
             call<DownloadTask[]>(Ipc.downloadsList),
             call<JobRecord[]>(Ipc.jobList),
@@ -449,33 +468,39 @@ export const useApp = create<AppStore>((set, get) => {
             call<MossInferDownloadState | null>(Ipc.mossInferDownloadState),
             call<EngineReadiness>(Ipc.engineStatus),
           ])
+        // An event since the call went out is newer than its answer: keep what the event set.
+        const current = get()
+        const updateState = eventCounts.update !== before.update
+          ? current.update
+          : update.status === 'fulfilled' ? update.value : null
+        const engineDownloadState = eventCounts.mossInferDownload !== before.mossInferDownload
+          ? current.mossInferDownload
+          : engineDownload.status === 'fulfilled' ? engineDownload.value : null
+        const jobList = mergeStartup(jobs.status === 'fulfilled' ? jobs.value : [], startupJobs, upsertJob)
         set({
           env: env.status === 'fulfilled' ? env.value : null,
-          updates: updates.status === 'fulfilled' ? updates.value : null,
+          update: updateState,
           catalog: catalog.status === 'fulfilled' ? catalog.value : null,
           downloads: mergeDownloadSnapshot(downloads.status === 'fulfilled' ? downloads.value : []),
-          jobs: jobs.status === 'fulfilled' ? jobs.value : [],
-          diagnostics: diagnostics.status === 'fulfilled' ? diagnostics.value : [],
+          jobs: jobList,
+          diagnostics: mergeStartup(diagnostics.status === 'fulfilled' ? diagnostics.value : [], startupDiagnostics, upsertDiagnostic),
           devices: devices.status === 'fulfilled' ? devices.value : [],
           launchRows: queuedRows.status === 'fulfilled' ? queuedRows.value : [],
-          mossInferDownload: engineDownload.status === 'fulfilled' ? engineDownload.value : null,
-          engineReadiness: readiness.status === 'fulfilled'
-            ? withEngineDownload(readiness.value, engineDownload.status === 'fulfilled' ? engineDownload.value : null)
-            : null,
-          activeJobId:
-            jobs.status === 'fulfilled'
-              ? (jobs.value.find((job) => job.state === 'running' || job.state === 'starting')?.id ?? null)
-              : null,
+          mossInferDownload: engineDownloadState,
+          engineReadiness: readiness.status === 'fulfilled' ? withEngineDownload(readiness.value, engineDownloadState) : null,
+          activeJobId: jobList.find((job) => job.state === 'running' || job.state === 'starting')?.id ?? null,
           ready: true,
         })
         startupDownloads.clear()
+        startupJobs.clear()
+        startupDiagnostics.clear()
         const queued = queuedRows.status === 'fulfilled' ? queuedRows.value.filter((row) => row.state === 'queued') : []
         for (const deviceId of new Set(queued.map((row) => row.deviceId))) {
           setTimeout(() => {
             void get().startNextQueued(deviceId)
           }, 800)
         }
-        if (updates.status === 'fulfilled') announceUpdates(updates.value, { initial: true })
+        if (updateState) announceUpdate(updateState)
       } catch (error) {
         set({ error: error instanceof Error ? error.message : String(error) })
       } finally {
@@ -504,10 +529,9 @@ export const useApp = create<AppStore>((set, get) => {
       }
     },
 
-    async refreshUpdates() {
+    async refreshUpdate() {
       try {
-        const updates = await call<UpdateState>(Ipc.updatesCheck)
-        set({ updates })
+        setUpdate(await call<UpdaterState>(Ipc.updateState))
       } catch {
         // keep previous
       }
@@ -515,37 +539,50 @@ export const useApp = create<AppStore>((set, get) => {
 
     async checkForUpdates() {
       try {
-        const updates = await call<UpdateState>(Ipc.updatesCheck)
-        set({ updates })
-        // Same signals as a background check: chip, badge and (when allowed) the dialog.
-        announceUpdates(updates)
-        return updates
+        return setUpdate(await call<UpdaterState>(Ipc.updateCheck))
       } catch {
         return null
       }
     },
 
-    setUpdateDialogOpen(open) {
-      set({ updateDialogOpen: open })
-    },
-
-    async startUpdateDownload() {
-      const updates = get().updates
-      if (!updates?.latestVersion || !updates.installer) {
-        throw new Error('当前平台没有可用的安装包')
-      }
-      const state = await call<UpdateDownloadState>(Ipc.updatesDownload, {
-        version: updates.latestVersion,
-        installer: updates.installer,
-      })
-      set({ updateDownload: state })
+    async downloadUpdate() {
+      setUpdate(await call<UpdaterState>(Ipc.updateDownload))
     },
 
     async cancelUpdateDownload() {
-      const version = get().updates?.latestVersion
-      if (!version) return
-      const state = await call<UpdateDownloadState | null>(Ipc.updatesCancel, { version })
-      if (state) set({ updateDownload: state })
+      setUpdate(await call<UpdaterState>(Ipc.updateCancel))
+    },
+
+    setUpdatePopoverOpen(open) {
+      set(open ? { updatePopoverOpen: true } : { updatePopoverOpen: false, updateBusy: [] })
+    },
+
+    async restartToUpdate() {
+      const result = await call<UpdateRestartResult>(Ipc.updateRestart)
+      // A restart would interrupt work: ask in the popover (空闲后自动重启 / 稍后).
+      if (result.status === 'busy') set({ updateBusy: result.busy, updatePopoverOpen: true })
+      return result
+    },
+
+    async setRestartWhenIdle(enabled) {
+      setUpdate(await call<UpdaterState>(Ipc.updateRestartWhenIdle, { enabled }))
+      set({ updateBusy: [] })
+    },
+
+    async rollbackUpdate() {
+      return call<UpdateRestartResult>(Ipc.updateRollback)
+    },
+
+    async setUpdateChannel(channel) {
+      setUpdate(await call<UpdaterState>(Ipc.updateSetChannel, { channel }))
+    },
+
+    async setAutoDownloadUpdates(enabled) {
+      setUpdate(await call<UpdaterState>(Ipc.updateSetAutoDownload, { enabled }))
+    },
+
+    async unskipUpdate() {
+      setUpdate(await call<UpdaterState>(Ipc.updateUnskip))
     },
 
     async saveSettings(patch) {
@@ -613,7 +650,7 @@ export const useApp = create<AppStore>((set, get) => {
 
     async dismissAnnouncement(id) {
       await call(Ipc.announcementsDismiss, { id })
-      await get().refreshUpdates()
+      await get().refreshUpdate()
     },
 
     async downloadModel(modelId) {

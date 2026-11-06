@@ -1,7 +1,7 @@
 /**
  * Port of tools/test-onboarding.mjs (the old script hand-transpiled TS and broke
  * when onboarding switched to engineReadiness). Every collaborator is mocked;
- * the catalog is the real release/models.json via catalogFixture.
+ * the catalog is the real resources/models.json via catalogFixture.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Catalog, LaunchDevice, TrainingHost } from '@shared/types'

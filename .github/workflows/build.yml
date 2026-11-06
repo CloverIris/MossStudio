@@ -1,20 +1,24 @@
 name: Build
 
-# Started by hand from the Actions tab (or `gh workflow run build.yml --ref <branch>`;
-# GitHub only offers that once this file is on the default branch), and on pushes
-# to feature branches.
+# Pull requests, pushes to feature branches, and by hand from the Actions tab.
+# Every package built here is a TEST build: it trusts an ephemeral key generated in the job
+# and reads its update feed from a local server, so it can never update from the real feed.
 on:
-  workflow_dispatch:
+  pull_request:
   push:
     branches: ['feat/**']
+  workflow_dispatch:
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  linux:
-    name: Typecheck, tests, build and E2E (Linux)
+  checks:
+    name: Typecheck, unit tests, launcher tests, E2E (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -26,6 +30,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: launcher/go.mod
+          cache-dependency-path: launcher/go.mod
       - name: Install system packages for Electron under a virtual display
         run: |
           sudo apt-get update
@@ -33,6 +41,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test:unit
+      - name: Launcher tests (go test)
+        working-directory: launcher
+        run: |
+          go vet ./...
+          go test ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
       - run: pnpm build
       - name: End-to-end tests (mock backend, Electron)
         run: pnpm test:e2e
@@ -46,10 +60,26 @@ jobs:
           path: e2e-shots
           if-no-files-found: ignore
 
-  windows:
-    name: Typecheck, unit tests, build and package (Windows)
-    runs-on: windows-latest
-    timeout-minutes: 45
+  package:
+    name: Package and install/update/rollback test (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, platform: win32-x64 }
+          - { runner: ubuntu-latest, platform: linux-x64 }
+          - { runner: macos-latest, platform: darwin-arm64 }
+          # The last hosted Intel image; GitHub's x64 macOS runners.
+          - { runner: macos-15-intel, platform: darwin-x64 }
+    env:
+      # Must match MOSS_IT_PORT of the test server (tools/release/integration/server.mjs).
+      MOSS_IT_PORT: '47613'
+      IT_REPORT: ${{ github.workspace }}/it-report
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -57,21 +87,70 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test:unit
-      - run: pnpm build
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-go@v5
+        if: ${{ !startsWith(matrix.platform, 'darwin') }}
         with:
-          dotnet-version: 10.0.x
-      - name: Package the Setup exe and portable ZIP
-        run: pnpm release:package
-      - name: Upload Windows installer
+          go-version-file: launcher/go.mod
+          cache-dependency-path: launcher/go.mod
+      - name: Install system packages for Electron under a virtual display
+        if: matrix.platform == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libgbm1 libasound2t64 libgtk-3-0
+      - run: pnpm install --frozen-lockfile
+
+      - name: Ephemeral test signing key
+        run: |
+          node tools/release/keygen.mjs --json > "$RUNNER_TEMP/it-key.json"
+          node -e '
+            const fs = require("fs")
+            const k = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+            fs.writeFileSync(process.argv[2], k.privateKey)
+            console.log("::add-mask::" + k.privateKey)
+            fs.appendFileSync(process.env.GITHUB_ENV, "MOSS_UPDATE_TEST_KEYS=" + JSON.stringify([{ id: k.id, publicKey: k.publicKey }]) + "\n")
+          ' "$RUNNER_TEMP/it-key.json" "$RUNNER_TEMP/it-key.txt"
+          rm "$RUNNER_TEMP/it-key.json"
+          echo "MOSS_IT_KEY_FILE=$RUNNER_TEMP/it-key.txt" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$(node -p 'require("./apps/desktop/package.json").version')" >> "$GITHUB_ENV"
+
+      - name: Test build (trusts the test key, feed on 127.0.0.1)
+        run: pnpm build
+        env:
+          MOSS_UPDATE_FEED_URL: http://127.0.0.1:${{ env.MOSS_IT_PORT }}/feed/
+
+      - name: Launcher
+        if: ${{ !startsWith(matrix.platform, 'darwin') }}
+        working-directory: launcher
+        run: bash build.sh
+
+      - name: Package X, X+1, X+2 and build their setup, portable, full, delta and feed files
+        run: pnpm test:install:prepare --platform ${{ matrix.platform }} --key-file "$MOSS_IT_KEY_FILE"
+
+      - name: Install → update → rollback → uninstall (xvfb)
+        if: matrix.platform == 'linux-x64'
+        run: xvfb-run -a -s '-screen 0 1600x1000x24' node tools/release/integration/run.mjs --platform ${{ matrix.platform }} --report "$IT_REPORT"
+
+      - name: Install → update → rollback → uninstall
+        if: matrix.platform != 'linux-x64'
+        run: node tools/release/integration/run.mjs --platform ${{ matrix.platform }} --report "$IT_REPORT"
+
+      - name: Upload the test-build artifacts of ${{ env.APP_VERSION }}
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MossStudio-windows-x64
+          name: MossStudio-test-build-${{ matrix.platform }}
           path: |
-            release/artifacts/MossStudio-Setup-*-x64.exe
-            release/artifacts/MossStudio-*-win32-x64.zip
-          if-no-files-found: error
+            dist/it/${{ matrix.platform }}/artifacts/MossStudio-Setup-${{ env.APP_VERSION }}-*
+            dist/it/${{ matrix.platform }}/artifacts/MossStudio-${{ env.APP_VERSION }}-*
+            dist/it/${{ matrix.platform }}/artifacts/files-${{ env.APP_VERSION }}-*
+          if-no-files-found: ignore
           compression-level: 0
+          retention-days: 7
+
+      - name: Upload the integration report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-test-report-${{ matrix.platform }}
+          path: ${{ env.IT_REPORT }}
+          if-no-files-found: ignore

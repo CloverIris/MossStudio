@@ -12,8 +12,6 @@ import { getBackendInfo, getWebAccessInfo, startBackend, stopBackend } from './s
 import { listProviders, removeProvider, saveProvider } from './services/ai'
 import { gbcStatus } from './services/gbc'
 import type { JobRecord } from '@shared/types'
-import { compareSemver, findInstaller, parseReleaseMarkdown } from '@shared/release'
-import { downloadUpdate } from './services/updateDownload'
 import { localNotificationsSupported, pushTestNotification } from './services/desktopNotifications'
 import { checkBareMirror } from './services/gitHealth'
 import WebSocket from 'ws'
@@ -46,11 +44,13 @@ import { run } from './lib/run'
 import { archiveLegacyInferenceData } from './services/legacyMigration'
 import { matchRule, parseTqdm } from './services/parsers'
 import { registerIpc } from './ipc'
+import { configureInstallModeSwitches, registerUninstallIpc, runInstallMode } from './install/app'
+import { applyAppUserModelId } from './install/identity'
+import { acquireAppLock } from './install/singleInstance'
 import { scanEnvironment } from './services/env'
 import { getSettings, updateSettings } from './services/settings'
 import { collectTrainerArtifact } from './services/trainerArtifacts'
-import { checkUpdates } from './services/updates'
-import { startUpdateWatcher, stopUpdateWatcher } from './services/updateWatcher'
+import { armUpdateHealth, startUpdater, stopUpdater, updaterSummary } from './update'
 import { downloadCustomModel, getCatalog, listDownloads } from './services/models'
 import { startRequestedEngineJob } from './services/engineJobStart'
 import { registerGalleryProtocol } from './services/gallery'
@@ -79,7 +79,8 @@ if (scenario) {
   app.setPath('userData', scenarioRoot)
 }
 app.setName('MossStudio')
-if (process.platform === 'win32') app.setAppUserModelId('com.mossstudio.app')
+applyAppUserModelId()
+configureInstallModeSwitches()
 nativeTheme.themeSource = getSettings().theme
 
 protocol.registerSchemesAsPrivileged([
@@ -100,11 +101,11 @@ if (smoke || screenshot) {
 async function runSmoke(): Promise<void> {
   const settings = getSettings()
   const started = Date.now()
-  const [env, updates, catalog] = await Promise.all([
+  const [env, catalog] = await Promise.all([
     scanEnvironment(settings),
-    checkUpdates(settings),
     getCatalog(settings),
   ])
+  const updates = updaterSummary()
   console.log(
     JSON.stringify(
       {
@@ -117,13 +118,7 @@ async function runSmoke(): Promise<void> {
         checks: env.checks.map((check) => `${check.id}:${check.status}`),
         recommendation: env.recommendation,
         network: env.network.selected,
-        updates: {
-          source: updates.manifestSource,
-          current: updates.currentVersion,
-          latest: updates.latestVersion,
-          announcements: updates.announcements.length,
-          error: updates.error,
-        },
+        updates,
         catalog: {
           source: catalog.source,
           models: catalog.models.length,
@@ -138,6 +133,13 @@ async function runSmoke(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // Setup (--moss-setup, macOS DMG) and uninstall (--moss-uninstall) take over the process.
+  // Any single-instance lock must be requested after this line, never at module top level:
+  // setup shares userData with the installed app and would otherwise quit when it is running.
+  if (await runInstallMode()) return
+  // One MossStudio per user: a second instance (e.g. the launcher starting the app while it
+  // runs) hands its arguments over and quits; the first focuses its window.
+  if (!scenario && !smoke && !screenshot && !acquireAppLock(() => openWindow('studio'))) return
   ensureDirs(getSettings().modelsRoot, getSettings().modelDirectories)
   try { await recoverEngineInstall(paths.mossinfer()) } catch (error) { console.error('[engine] install recovery', error) }
   try { archiveLegacyInferenceData() } catch (error) { console.error('[migration]', error) }
@@ -147,6 +149,7 @@ app.whenReady().then(async () => {
   })
   registerGalleryProtocol()
   registerIpc()
+  registerUninstallIpc()
   if (scenario === 'model-management') {
     try { await runModelManagementTests(); app.exit(0) }
     catch (error) { console.error(error); app.exit(1) }
@@ -278,231 +281,6 @@ app.whenReady().then(async () => {
           ? 0
           : 1,
       )
-    } catch (error) {
-      console.error(error)
-      app.exit(1)
-    }
-    return
-  }
-
-  if (scenario === 'release-parse') {
-    const machine = {
-      schema_version: 2,
-      app: {
-        name: 'MossStudio',
-        channel: 'stable',
-        version: '0.2.0',
-        min_supported: '0.1.0',
-        published_at: '2026-10-20T00:00:00Z',
-        notes_url: 'https://example.com/release',
-      },
-      home: {
-        chapter: '万象初绘',
-        title: '一念落纸上，万象入画来。',
-        subtitle: '开始今天的创作。',
-      },
-      installers: [
-        {
-          platform: 'darwin',
-          arch: 'arm64',
-          kind: 'dmg',
-          url: 'https://example.com/MossStudio-0.2.0.dmg',
-          sha256: 'a'.repeat(64),
-          size_bytes: 1234,
-        },
-      ],
-      catalog: {
-        updated_at: '2026-10-20T00:00:00Z',
-        models_url: 'https://example.com/models.json',
-        models_sha256: 'b'.repeat(64),
-      },
-      announcements: [
-        {
-          id: 'test',
-          level: 'info',
-          title: 'test announcement',
-          body_markdown: 'hello',
-        },
-      ],
-    }
-    const markdown = `# MossStudio 0.2.0\n\nRelease notes.\n\n\`\`\`json clover-release\n${JSON.stringify(machine, null, 2)}\n\`\`\``
-    try {
-      const parsed = parseReleaseMarkdown(markdown)
-      const legacyMachine = Object.fromEntries(
-        Object.entries(machine).filter(([key]) => key !== 'home'),
-      )
-      const legacy = parseReleaseMarkdown(
-        `# MossStudio 0.2.0\n\n\`\`\`json clover-release\n${JSON.stringify(legacyMachine, null, 2)}\n\`\`\``,
-      )
-      const installer = findInstaller(parsed.document.installers, 'darwin', 'arm64')
-      const wrongArchitectureMissing =
-        findInstaller(parsed.document.installers, 'darwin', 'x64') === null
-      const result = {
-        scenario: 'release-parse',
-        version: parsed.document.app.version,
-        homeTitle: parsed.document.home?.title ?? null,
-        legacyHomeAbsent: legacy.document.home === undefined,
-        body: parsed.body,
-        installer: installer?.kind ?? null,
-        wrongArchitectureMissing,
-        newer: compareSemver(parsed.document.app.version, '0.1.0'),
-        betaPrerelease: compareSemver('0.2.0-beta.1', '0.2.0'),
-        equal: compareSemver('0.2.0', '0.2.0'),
-      }
-      console.log(JSON.stringify(result, null, 2))
-      app.exit(
-        result.version === '0.2.0' &&
-          result.homeTitle === '一念落纸上，万象入画来。' &&
-          result.legacyHomeAbsent &&
-          result.wrongArchitectureMissing &&
-          result.installer === 'dmg' &&
-          result.newer === 1 &&
-          result.betaPrerelease === -1 &&
-          result.equal === 0 &&
-          result.body.includes('Release notes')
-          ? 0
-          : 1,
-      )
-    } catch (error) {
-      console.error(error)
-      app.exit(1)
-    }
-    return
-  }
-
-  if (scenario === 'update-download') {
-    const payload = Buffer.from('fake installer payload for clover update test')
-    const sha256 = createHash('sha256').update(payload).digest('hex')
-    const server = createServer((_req, res) => {
-      res.writeHead(200, {
-        'content-type': 'application/octet-stream',
-        'content-length': payload.length,
-      })
-      res.end(payload)
-    })
-    try {
-      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
-      const address = server.address()
-      if (!address || typeof address === 'string') throw new Error('test server did not bind a port')
-      process.env['CLOVER_UPDATE_TEST'] = '1'
-      const state = await downloadUpdate('9.9.9', {
-        platform: process.platform as 'darwin' | 'win32' | 'linux',
-        arch: process.arch === 'arm64' ? 'arm64' : 'x64',
-        kind: 'nsis',
-        url: `http://127.0.0.1:${address.port}/fake.dmg`,
-        sha256,
-        size_bytes: payload.length,
-      })
-      const wrongSize = await downloadUpdate('9.9.9-size', {
-        platform: process.platform as 'darwin' | 'win32' | 'linux',
-        arch: process.arch === 'arm64' ? 'arm64' : 'x64',
-        kind: 'nsis',
-        url: `http://127.0.0.1:${address.port}/fake.dmg`,
-        sha256,
-        size_bytes: payload.length + 1,
-      })
-      const downloaded = state.path && existsSync(state.path) ? readFileSync(state.path) : null
-      const digest = downloaded ? createHash('sha256').update(downloaded).digest('hex') : null
-      console.log(
-        JSON.stringify(
-          {
-            scenario: 'update-download',
-            phase: state.phase,
-            bytes: state.bytes,
-            path: state.path,
-            digestMatches: digest === sha256,
-            exactSizeEnforced: wrongSize.phase === 'error' && wrongSize.error?.includes('大小不匹配'),
-          },
-          null,
-          2,
-        ),
-      )
-      server.close()
-      rmSync(join(app.getPath('userData'), 'downloads', 'updates', '9.9.9'), {
-        recursive: true,
-        force: true,
-      })
-      rmSync(join(app.getPath('userData'), 'downloads', 'updates', '9.9.9-size'), {
-        recursive: true,
-        force: true,
-      })
-      app.exit(
-        state.phase === 'ready' &&
-          digest === sha256 &&
-          wrongSize.phase === 'error' &&
-          wrongSize.error?.includes('大小不匹配')
-          ? 0
-          : 1,
-      )
-    } catch (error) {
-      console.error(error)
-      server.close()
-      app.exit(1)
-    }
-    return
-  }
-
-  if (scenario === 'update-zip') {
-    const zipPath = process.env['MOSS_UPDATE_TEST_ZIP']
-    if (!zipPath || !existsSync(zipPath)) {
-      console.error('MOSS_UPDATE_TEST_ZIP must point to a built release ZIP')
-      app.exit(1)
-      return
-    }
-    const size = statSync(zipPath).size
-    const hash = createHash('sha256')
-    try {
-      await new Promise<void>((resolvePromise, rejectPromise) => {
-        createReadStream(zipPath)
-          .on('data', (chunk: string | Buffer) => hash.update(chunk))
-          .on('end', resolvePromise)
-          .on('error', rejectPromise)
-      })
-      const sha256 = hash.digest('hex')
-      const server = createServer((_req, res) => {
-        res.writeHead(200, {
-          'content-type': 'application/zip',
-          'content-length': size,
-        })
-        createReadStream(zipPath).pipe(res)
-      })
-      await new Promise<void>((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise))
-      const address = server.address()
-      if (!address || typeof address === 'string') throw new Error('test server did not bind a port')
-      process.env['CLOVER_UPDATE_TEST'] = '1'
-      const state = await downloadUpdate('9.9.9-zip', {
-        platform: 'win32',
-        arch: 'x64',
-        kind: 'zip',
-        url: `http://127.0.0.1:${address.port}/MossStudio-test.zip`,
-        sha256,
-        size_bytes: size,
-      })
-      const stage = state.path ?? ''
-      const packageValid =
-        state.phase === 'ready' &&
-        existsSync(join(stage, 'MossStudio.exe')) &&
-        existsSync(join(stage, 'resources', 'app.asar')) &&
-        existsSync(join(stage, 'resources', 'release', 'updater.ps1'))
-      console.log(
-        JSON.stringify(
-          {
-            scenario: 'update-zip',
-            phase: state.phase,
-            size,
-            packageValid,
-            error: state.error,
-          },
-          null,
-          2,
-        ),
-      )
-      server.close()
-      rmSync(join(app.getPath('userData'), 'downloads', 'updates', '9.9.9-zip'), {
-        recursive: true,
-        force: true,
-      })
-      app.exit(packageValid ? 0 : 1)
     } catch (error) {
       console.error(error)
       app.exit(1)
@@ -2032,51 +1810,6 @@ exit 0
     return
   }
 
-  if (scenario === 'update-dialog') {
-    const file = join(app.getPath('userData'), 'update-test-release.md')
-    const machine = {
-      schema_version: 2,
-      app: {
-        name: 'MossStudio',
-        channel: 'stable',
-        version: '9.9.9',
-        min_supported: '0.1.0',
-        published_at: new Date().toISOString(),
-        notes_url: 'https://github.com/CloverIris/MossStudio/releases',
-      },
-      installers: [
-        {
-          platform: 'darwin',
-          arch: 'arm64',
-          kind: 'dmg',
-          url: 'https://example.com/MossStudio-9.9.9-arm64.dmg',
-          sha256: 'c'.repeat(64),
-          size_bytes: 123456789,
-        },
-      ],
-      announcements: [],
-    }
-    writeFileSync(
-      file,
-      `# MossStudio 9.9.9\n\n这是更新弹窗的预览数据，不会下载真实安装包。\n\n## 本次更新\n\n- 聚合 GitHub Release 发布源\n- 公告、模型表与版本文档\n\n\`\`\`json clover-release\n${JSON.stringify(machine, null, 2)}\n\`\`\``,
-      'utf8',
-    )
-    process.env['CLOVER_RELEASE_FILE'] = file
-    updateSettings({ autoCheckUpdates: true, dismissedUpdateVersion: null })
-    const win = createAppWindow('studio', false)
-    await new Promise<void>((resolve) => win.webContents.once('did-finish-load', () => resolve()))
-    await new Promise((resolve) => setTimeout(resolve, 4500))
-    await win.webContents.executeJavaScript(
-      "[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '本次跳过')?.click()",
-    )
-    await new Promise((resolve) => setTimeout(resolve, 900))
-    const image = await win.webContents.capturePage()
-    writeFileSync(join(app.getPath('userData'), 'screenshot-update.png'), image.toPNG())
-    console.log('update dialog screenshot written')
-    app.exit(0)
-    return
-  }
-
   if (screenshot) {
     const studio = createAppWindow('studio', false)
     await new Promise<void>((resolve) => studio.webContents.once('did-finish-load', () => resolve()))
@@ -2111,10 +1844,11 @@ exit 0
     return
   }
 
+  armUpdateHealth()
   createAppWindow('studio')
   void refreshGpuInventory()
   startGpuTelemetry()
-  startUpdateWatcher()
+  void startUpdater()
   app.on('activate', () => {
     openWindow('studio')
   })
@@ -2129,7 +1863,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   closeAllSshTerminals()
-  stopUpdateWatcher()
+  stopUpdater()
   stopBackend()
   void shutdownMossInfer()
   void shutdownCliEngines()

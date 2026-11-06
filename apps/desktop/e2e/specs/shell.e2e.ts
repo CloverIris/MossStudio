@@ -151,12 +151,11 @@ describe('title bar', () => {
   it('offers an update only when one is available', async () => {
     let page = await app.open({ scenario: 'ready', route: '/studio' })
     expect(await page.locator('[data-update-chip]').count()).toBe(0)
-    page = await app.open({ scenario: 'updateAvailable', route: '/studio', theme: 'light', settings: { autoCheckUpdates: false } })
+    page = await app.open({ scenario: 'updateAvailable', route: '/studio', theme: 'light' })
     const chip = page.locator('[data-update-chip]')
-    await expect.poll(() => chip.textContent()).toContain('更新到 1.1.0')
+    await expect.poll(() => chip.textContent()).toContain('新版本 1.1.0')
     await chip.click()
-    await expect.poll(() => page.getByRole('dialog').getByText(/1\.1\.0/).first().isVisible()).toBe(true)
-    await app.screenshot('update-dialog-light')
+    await expect.poll(() => page.getByRole('dialog', { name: '更新' }).getByRole('button', { name: '下载更新' }).isVisible()).toBe(true)
   })
 })
 

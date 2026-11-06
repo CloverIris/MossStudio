@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useTempDir } from '@test/helpers/tempDir'
 
 const release = { dir: null as string | null }
-vi.mock('@main/services/updates', () => ({ localReleaseDir: () => release.dir }))
+vi.mock('@main/lib/content', () => ({ contentDir: () => release.dir }))
 
 const temp = useTempDir()
 

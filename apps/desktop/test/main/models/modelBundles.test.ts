@@ -6,8 +6,8 @@ import { DEFAULT_SETTINGS } from '@main/services/settings'
 import { useTempDataRoot } from '@test/helpers/tempDir'
 import { cacheDirFor, installOnDisk, rawModel, testSettings, writeCatalog } from './modelFixtures'
 
-const localReleaseDir = vi.hoisted(() => vi.fn<() => string | null>())
-vi.mock('@main/services/updates', () => ({ localReleaseDir }))
+const contentDir = vi.hoisted(() => vi.fn<() => string | null>())
+vi.mock('@main/lib/content', () => ({ contentDir }))
 vi.mock('@main/services/supervisor', () => ({ listJobs: async () => [] }))
 vi.mock('@main/services/network', () => ({ getLastNetwork: () => null }))
 vi.mock('@main/services/hfNetwork', () => ({ fetchHf: (url: string) => fetch(url) }))
@@ -47,7 +47,7 @@ function installAll(): void {
 
 beforeEach(async () => {
   vi.resetModules()
-  localReleaseDir.mockReset().mockImplementation(() => releaseDir())
+  contentDir.mockReset().mockImplementation(() => releaseDir())
   writeCatalog(releaseDir(), {
     schema_version: 2,
     models: [...Object.values(components).map((c) => c.model), comfyDit, otherFamily],
