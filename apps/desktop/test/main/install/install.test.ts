@@ -372,6 +372,9 @@ describe('reinstall after an uninstall that kept the data', () => {
     const h = harness('2.0.0', root)
     const { result } = await silentInstall(h)
     mkdirSync(join(result.dataRoot, 'outputs'), { recursive: true })
+    // What a used install has: the launcher logs every start into <data>/logs.
+    mkdirSync(join(result.dataRoot, 'logs'), { recursive: true })
+    writeFileSync(join(result.dataRoot, 'logs', 'launcher.log'), 'started')
     writeFileSync(join(result.dataRoot, 'settings.json'), '{"theme":"dark"}')
     writeFileSync(join(result.dataRoot, 'outputs', '作品 1.png'), 'png')
     const target = { host: h.env.host, platformKey: h.env.context.platformKey!, root, dataRoot: result.dataRoot, portable: false, desktopDir: join(work(), 'Desktop'), profileDir: null }

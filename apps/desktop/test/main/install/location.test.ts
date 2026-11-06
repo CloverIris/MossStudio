@@ -137,6 +137,16 @@ describe('inspectInstallFolder on this machine', () => {
     mkdirSync(join(other, 'data'), { recursive: true })
     writeFileSync(join(other, 'data', 'photo.jpg'), '')
     expect(check(other)).toMatchObject({ ok: false, kind: 'occupied', problem: { code: 'E_NOT_EMPTY' } })
+    // A project folder whose data/ merely has a models/ or a settings.json is not ours.
+    const project = join(temp(), 'ml project')
+    mkdirSync(join(project, 'data', 'models'), { recursive: true })
+    writeFileSync(join(project, 'data', 'settings.json'), '{}')
+    expect(check(project)).toMatchObject({ ok: false, kind: 'occupied' })
+    // The launcher's log alone identifies our data (settings.json is only written once changed).
+    const logged = join(temp(), 'logged')
+    mkdirSync(join(logged, 'data', 'logs'), { recursive: true })
+    writeFileSync(join(logged, 'data', 'logs', 'launcher.log'), 'started')
+    expect(check(logged)).toMatchObject({ ok: true, kind: 'data' })
     // A data file instead of a folder, or a foreign install.json beside the data: not ours either.
     const file = join(temp(), 'file')
     mkdirSync(file)

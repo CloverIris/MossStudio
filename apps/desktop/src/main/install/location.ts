@@ -261,16 +261,35 @@ export function inspectInstallLocation(platform: OsPlatform, path: string): Loca
  * Windows/Linux: a folder an uninstall left behind with the data kept: no install record, and
  * a data/ that is MossStudio data (anything else in it is the user's and stays). Installing
  * there keeps using that data/.
+ *
+ * Stricter than isDataRoot, because this decides on a folder the user merely pointed at: a
+ * project folder with a data/models/ must not be taken over. MossStudio's own data has the
+ * launcher's log (written on every start) or settings.json together with instances/.
  */
 export function isKeptDataFolder(platform: OsPlatform, path: string): boolean {
   const p = pathFor(platform)
   if (platform === 'darwin' || existsSync(p.join(path, RECORD_FILE))) return false
   const data = p.join(path, 'data')
+  const isFile = (name: string[]): boolean => {
+    try {
+      return lstatSync(p.join(data, ...name)).isFile()
+    } catch {
+      return false
+    }
+  }
+  const isDir = (name: string): boolean => {
+    try {
+      return lstatSync(p.join(data, name)).isDirectory()
+    } catch {
+      return false
+    }
+  }
   try {
-    return lstatSync(data).isDirectory() && isDataRoot(platform, data)
+    if (!lstatSync(data).isDirectory()) return false
   } catch {
     return false
   }
+  return isFile(['logs', 'launcher.log']) || (isFile(['settings.json']) && isDir('instances'))
 }
 
 function finish(
