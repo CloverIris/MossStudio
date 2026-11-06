@@ -189,7 +189,11 @@ export function Advanced({
           dense ? 'min-h-9 gap-2' : 'min-h-11 gap-3',
         )}
       >
-        <ChevronRight className={cn('size-4 shrink-0 text-ink-2 transition-transform', open && 'rotate-90')} aria-hidden="true" />
+        <ChevronRight
+          className={cn('size-4 shrink-0 text-ink-2 transition-transform', open && 'rotate-90')}
+          aria-hidden="true"
+          strokeWidth={1.6}
+        />
         <span className={cn('font-medium text-ink-2', dense ? 'text-caption' : 'text-ui')}>{title}</span>
         {summary && !open ? <span className="min-w-0 flex-1 truncate text-caption text-ink-2">{summary}</span> : null}
       </button>
@@ -325,7 +329,7 @@ export function ProgressBar({
 }
 
 export function Spinner({ className }: { className?: string }): React.JSX.Element {
-  return <Loader2 aria-hidden="true" className={cn('size-4 animate-spin', className)} />
+  return <Loader2 aria-hidden="true" className={cn('size-4 animate-spin', className)} strokeWidth={1.6} />
 }
 
 /** The one loading line: a spinner and what is being read. */
@@ -600,7 +604,7 @@ function Dialog({
           ) : null}
         </div>
         <IconButton label="关闭" onClick={onClose} className="-mr-2 -mt-1">
-          <X className="size-4" />
+          <X className="size-4" strokeWidth={1.6} />
         </IconButton>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">{children}</div>
@@ -736,9 +740,9 @@ export function useCopyText(): (text: string, message?: string) => Promise<void>
 }
 
 const toastIcon: Record<ToastTone, ReactNode> = {
-  info: <Info className="size-4 text-ink-2" aria-hidden="true" />,
-  success: <Check className="size-4 text-ok" aria-hidden="true" />,
-  error: <AlertCircle className="size-4 text-danger" aria-hidden="true" />,
+  info: <Info className="size-4 text-ink-2" aria-hidden="true" strokeWidth={1.6} />,
+  success: <Check className="size-4 text-ok" aria-hidden="true" strokeWidth={1.6} />,
+  error: <AlertCircle className="size-4 text-danger" aria-hidden="true" strokeWidth={1.6} />,
 }
 
 export function ToastProvider({ children }: { children: ReactNode }): React.JSX.Element {
@@ -793,7 +797,7 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
                 setItems((previous) => previous.map((entry) => (entry.id === item.id ? { ...entry, open: false } : entry)))
               }}
             >
-              <X className="size-3.5" />
+              <X className="size-3.5" strokeWidth={1.6} />
             </IconButton>
           </Presence>
         ))}

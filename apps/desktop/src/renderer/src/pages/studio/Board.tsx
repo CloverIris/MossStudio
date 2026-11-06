@@ -438,7 +438,7 @@ export function Board(props: BoardProps): React.JSX.Element {
           className="absolute flex items-center justify-center gap-1.5 rounded-md bg-well text-ui text-ink-2 transition-colors hover:bg-well-strong hover:text-ink"
           style={{ left: tileRect.x, top: tileRect.y + CARD_HEADER, width: tileRect.w, height: tileRect.h - CARD_HEADER }}
         >
-          <Plus className="size-4" aria-hidden="true" />
+          <Plus className="size-4" aria-hidden="true" strokeWidth={1.6} />
           新建画面
         </button>
       </div>

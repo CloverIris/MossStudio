@@ -1,10 +1,23 @@
-import { Pencil, Plus, SquareTerminal, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { DownloadTask, EngineRemoteProgress, ManagedHost, RemoteEngineInfo } from '@shared/types'
 import { call, onEvent } from '../../lib/api'
 import { SshTerminalSheet } from '../Terminal'
-import { Button, ConfirmDialog, Group, IconButton, ProgressBar, Row, Section, Spinner, StatusDot, useToast } from '../../components/ui'
+import { MenuItem, Popover } from '../../components/common/Popover'
+import {
+  Button,
+  ConfirmDialog,
+  Group,
+  IconButton,
+  LoadingRow,
+  ProgressBar,
+  Row,
+  Section,
+  Spinner,
+  StatusDot,
+  useToast,
+} from '../../components/ui'
 import { hostSummary, remoteInstallOptions } from './devicesModel'
 import { errorText } from './fields'
 import { HostDialog } from './HostDialog'
@@ -154,13 +167,13 @@ export function RemoteHosts(): React.JSX.Element {
       title="远程主机"
       actions={
         <Button onClick={() => setDialog(emptyHostForm())}>
-          <Plus className="size-4" />
+          <Plus className="size-4" strokeWidth={1.6} />
           添加 SSH 主机
         </Button>
       }
     >
       <Group>
-        {hosts === null ? <Row title="正在读取…" leading={<Spinner />} /> : null}
+        {hosts === null ? <LoadingRow className="px-3.5" /> : null}
         {hosts?.length === 0 ? (
           <Row title="还没有远程主机" description="添加一台装有 NVIDIA 显卡的 Linux 电脑，就可以在创作时选择在它上面运行。" />
         ) : null}
@@ -181,18 +194,55 @@ export function RemoteHosts(): React.JSX.Element {
                   {working ? <Spinner /> : null}
                   {engine?.available ? '准备模型' : '准备引擎和模型'}
                 </Button>
-                <Button tone="ghost" onClick={() => void test(host)} disabled={Boolean(working)}>
+                <Button onClick={() => void test(host)} disabled={Boolean(working)}>
                   测试
                 </Button>
-                <IconButton label={`打开 ${host.name} 的终端`} onClick={() => setTerminal(host)}>
-                  <SquareTerminal className="size-4" />
-                </IconButton>
-                <IconButton label={`编辑 ${host.name}`} onClick={() => setDialog(hostFormFrom(host))}>
-                  <Pencil className="size-4" />
-                </IconButton>
-                <IconButton label={`移除 ${host.name}`} onClick={() => setRemoving(host)}>
-                  <Trash2 className="size-4" />
-                </IconButton>
+                {/* The main action and 测试 stay in the row; the rest of a host's actions in one menu. */}
+                <Popover
+                  align="end"
+                  label={`${host.name} 的操作`}
+                  trigger={(menu) => (
+                    <IconButton
+                      label={`${host.name} 更多操作`}
+                      onClick={menu.toggle}
+                      aria-expanded={menu['aria-expanded']}
+                      aria-controls={menu['aria-controls']}
+                      aria-haspopup="menu"
+                    >
+                      <MoreHorizontal className="size-4" strokeWidth={1.6} />
+                    </IconButton>
+                  )}
+                >
+                  {(close) => (
+                    <>
+                      <MenuItem
+                        onSelect={() => {
+                          close()
+                          setTerminal(host)
+                        }}
+                      >
+                        打开终端
+                      </MenuItem>
+                      <MenuItem
+                        onSelect={() => {
+                          close()
+                          setDialog(hostFormFrom(host))
+                        }}
+                      >
+                        编辑
+                      </MenuItem>
+                      <MenuItem
+                        tone="danger"
+                        onSelect={() => {
+                          close()
+                          setRemoving(host)
+                        }}
+                      >
+                        移除
+                      </MenuItem>
+                    </>
+                  )}
+                </Popover>
               </Row>
               {installing && typeof install.percent === 'number' ? (
                 <div className="px-3.5 pb-3 pl-10">

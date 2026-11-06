@@ -43,7 +43,7 @@ export function NetworkSection(): React.JSX.Element {
             }
             type="password"
             value={null}
-            placeholder={settings.hasHfToken ? '已保存' : 'hf_…'}
+            placeholder={settings.hasHfToken ? '已保存，留空不修改' : 'hf_…'}
             validate={singleLineToken}
             clearOnSave
             onSave={(hfToken) => (hfToken ? save({ hfToken }, '令牌已保存') : Promise.resolve(true))}
@@ -130,8 +130,15 @@ export function NetworkSection(): React.JSX.Element {
               value={settings.githubToken}
               placeholder="github_pat_…"
               validate={singleLineToken}
-              mono
               onSave={(githubToken) => save({ githubToken }, githubToken ? 'GitHub 令牌已保存' : 'GitHub 令牌已清除')}
+              trailing={
+                // Both tokens clear the same way: a ghost 清除 next to the field.
+                settings.githubToken ? (
+                  <Button tone="ghost" onClick={() => void save({ githubToken: null }, 'GitHub 令牌已清除')}>
+                    清除
+                  </Button>
+                ) : null
+              }
             />
           </div>
         </Advanced>

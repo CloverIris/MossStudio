@@ -247,7 +247,7 @@ function CanvasParams({
                 <span className="text-ui text-ink-2">LoRA</span>
                 {readOnly || loraUnsupported ? null : (
                   <Button tone="ghost" size="sm" className="-mr-2 h-[26px] px-2" onClick={onOpenAdapters} data-adapter-picker>
-                    <Plus className="size-3.5" aria-hidden="true" />
+                    <Plus className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
                     添加
                   </Button>
                 )}
@@ -288,7 +288,7 @@ function CanvasParams({
                         className="size-7"
                         onClick={() => setAdapters(adapters.filter((item) => item.id !== adapter.id))}
                       >
-                        <X className="size-3.5" />
+                        <X className="size-3.5" strokeWidth={1.6} />
                       </IconButton>
                     )}
                   </li>
@@ -375,7 +375,7 @@ function CanvasParams({
                     className={cn(seedLocked && 'bg-well-strong text-ink')}
                     onClick={() => onChange((current) => ({ ...current, seedLocked: !isSeedLocked(current) }))}
                   >
-                    {seedLocked ? <Lock className="size-4" /> : <LockOpen className="size-4" />}
+                    {seedLocked ? <Lock className="size-4" strokeWidth={1.6} /> : <LockOpen className="size-4" strokeWidth={1.6} />}
                   </IconButton>
                 </div>
                 <p className="text-caption text-ink-2">

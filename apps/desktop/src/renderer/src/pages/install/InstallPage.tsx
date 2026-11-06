@@ -65,7 +65,7 @@ function LegacyCard({ setup }: { setup: SetupController }): React.JSX.Element | 
       {/* Per choice: reuse keeps using the old data\ (do not delete the folder); fresh may delete it. */}
       {warning ? (
         <p className="flex items-start gap-2 px-3.5 pb-2 pt-1 text-caption text-ink-2" data-legacy-warning={setup.legacyMode}>
-          <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" strokeWidth={1.6} />
           <span className="[overflow-wrap:anywhere]">{warning}</span>
         </p>
       ) : null}
@@ -102,7 +102,7 @@ function ChooseScreen({ setup }: { setup: SetupController }): React.JSX.Element 
         <FolderCheckLine check={location} onUse={setup.selectLocation} />
         {note && !setup.checking ? (
           <p className="flex items-start gap-2 px-3.5 pb-2 text-caption text-ink-2" data-folder-note>
-            <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" strokeWidth={1.6} />
             <span className="[overflow-wrap:anywhere]">{note}</span>
           </p>
         ) : null}
@@ -224,7 +224,7 @@ function DoneScreen({ setup }: { setup: SetupController }): React.JSX.Element {
       ) : (
         <div className="flex items-center gap-2.5 text-control text-ink" role="status">
           <span className="flex size-6 items-center justify-center rounded-full bg-ok-soft text-ok">
-            <Check className="size-4" aria-hidden="true" />
+            <Check className="size-4" aria-hidden="true" strokeWidth={1.6} />
           </span>
           正在打开 MossStudio…
           <Spinner className="text-ink-2" />
@@ -250,11 +250,11 @@ function FailedScreen({ setup }: { setup: SetupController }): React.JSX.Element 
             关闭
           </Button>
           <Button size="lg" onClick={setup.openLog}>
-            <FileText className="size-4" />
+            <FileText className="size-4" strokeWidth={1.6} />
             查看日志
           </Button>
           <Button tone="primary" size="lg" disabled={setup.starting} onClick={setup.retry}>
-            {setup.starting ? <Spinner /> : <RotateCw className="size-4" />}重试
+            {setup.starting ? <Spinner /> : <RotateCw className="size-4" strokeWidth={1.6} />}重试
           </Button>
         </>
       }

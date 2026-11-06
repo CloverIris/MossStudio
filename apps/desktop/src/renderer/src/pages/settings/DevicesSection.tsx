@@ -90,7 +90,7 @@ function GpuGroup({ gpu, engine }: { gpu: ReturnType<typeof useGpuInventory>; en
       }
       actions={
         <IconButton label="重新检测显卡" onClick={() => void redetect()} disabled={redetecting || gpu.refreshing}>
-          <RefreshCw className={redetecting || gpu.refreshing ? 'size-4 animate-spin' : 'size-4'} />
+          <RefreshCw className={redetecting || gpu.refreshing ? 'size-4 animate-spin' : 'size-4'} strokeWidth={1.6} />
         </IconButton>
       }
     >
@@ -204,7 +204,7 @@ function EngineGroup({ engine }: { engine: EngineState }): React.JSX.Element {
   if (installing) {
     action = (
       <IconButton label="取消安装" onClick={() => void engine.cancelInstall()}>
-        <X className="size-4" />
+        <X className="size-4" strokeWidth={1.6} />
       </IconButton>
     )
   } else if (!ready) {
@@ -221,7 +221,8 @@ function EngineGroup({ engine }: { engine: EngineState }): React.JSX.Element {
     )
   } else if (status?.kind === 'available') {
     action = (
-      <Button onClick={() => void update()} disabled={starting}>
+      // An available update is the same state as MossStudio's own: the same primary tone.
+      <Button tone="primary" onClick={() => void update()} disabled={starting}>
         {starting ? <Spinner /> : null}更新
       </Button>
     )

@@ -21,7 +21,7 @@ function StepMark({ step, index }: { step: SetupStep; index: number }): React.JS
   if (step.state === 'error' || (step.state === 'blocked' && step.id === 'gpu')) {
     return (
       <span className={cn(base, 'bg-danger-soft text-danger')}>
-        <AlertCircle className="size-3.5" aria-hidden="true" />
+        <AlertCircle className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
       </span>
     )
   }

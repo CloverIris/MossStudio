@@ -49,9 +49,9 @@ function ToolLine({ status, name, detail }: { status: ToolTrace['status']; name:
       {status === 'running' ? (
         <Spinner className="mt-0.5 size-3.5 shrink-0" />
       ) : status === 'ok' ? (
-        <Check className="mt-0.5 size-3.5 shrink-0 text-ok" aria-hidden="true" />
+        <Check className="mt-0.5 size-3.5 shrink-0 text-ok" aria-hidden="true" strokeWidth={1.6} />
       ) : (
-        <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-danger" aria-hidden="true" />
+        <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-danger" aria-hidden="true" strokeWidth={1.6} />
       )}
       <span className="min-w-0 [overflow-wrap:anywhere]">
         <span className="text-ink">{toolLabel(name)}</span>
@@ -298,13 +298,13 @@ export function Assistant(): React.JSX.Element {
           ))}
         </Select>
         <IconButton label="新对话" disabled={busy} onClick={newChat}>
-          <Plus className="size-4" />
+          <Plus className="size-4" strokeWidth={1.6} />
         </IconButton>
         <IconButton label="历史对话" onClick={() => setHistoryOpen(true)}>
-          <History className="size-4" />
+          <History className="size-4" strokeWidth={1.6} />
         </IconButton>
         <IconButton label="连接设置" onClick={() => setSettingsOpen(true)}>
-          <Settings2 className="size-4" />
+          <Settings2 className="size-4" strokeWidth={1.6} />
         </IconButton>
       </div>
 
@@ -456,7 +456,7 @@ export function Assistant(): React.JSX.Element {
               'absolute bottom-2 right-2 size-7 bg-ink text-on-ink enabled:hover:bg-ink enabled:hover:text-on-ink enabled:hover:opacity-90',
             )}
           >
-            {busy ? <Spinner className="size-3.5" /> : <ArrowUp className="size-4" />}
+            {busy ? <Spinner className="size-3.5" /> : <ArrowUp className="size-4" strokeWidth={1.6} />}
           </IconButton>
         </div>
         <p className="text-micro text-ink-2">Enter 发送，Shift+Enter 换行</p>
@@ -517,7 +517,7 @@ export function Assistant(): React.JSX.Element {
                 </button>
               )}
               <IconButton label={`删除对话 ${item.title}`} onClick={() => void removeConversation(item.id)}>
-                <X className="size-4" />
+                <X className="size-4" strokeWidth={1.6} />
               </IconButton>
             </div>
           ))}

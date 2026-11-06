@@ -32,7 +32,7 @@ export function OutputImage({
         title={`图片文件找不到了：${path}`}
         className="flex size-full items-center justify-center px-3 text-center text-caption text-ink-2"
       >
-        {compact ? <ImageOff className="size-4 text-ink-3" aria-label="图片文件找不到了" /> : '图片文件找不到了'}
+        {compact ? <ImageOff className="size-4 text-ink-3" aria-label="图片文件找不到了" strokeWidth={1.6} /> : '图片文件找不到了'}
       </span>
     )
   }
@@ -173,7 +173,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
               aria-expanded={menu['aria-expanded']}
               aria-haspopup="menu"
             >
-              <MoreHorizontal className="size-4" />
+              <MoreHorizontal className="size-4" strokeWidth={1.6} />
             </IconButton>
           )}
         >
@@ -405,7 +405,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
                 props.onRerun('same')
               }}
             >
-              <RotateCcw className="size-3.5" />
+              <RotateCcw className="size-3.5" strokeWidth={1.6} />
             </IconButton>
           </>
         ) : view.state === 'failed' ? (

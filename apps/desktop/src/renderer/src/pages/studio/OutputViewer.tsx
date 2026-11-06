@@ -95,14 +95,14 @@ export function OutputViewer({
                   onClick={() => onIndex((index - 1 + count) % count)}
                   className="absolute left-3 top-1/2 -translate-y-1/2 bg-raised text-ink shadow-float"
                 >
-                  <ChevronLeft className="size-5" />
+                  <ChevronLeft className="size-5" strokeWidth={1.6} />
                 </IconButton>
                 <IconButton
                   label="下一张"
                   onClick={() => onIndex((index + 1) % count)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 bg-raised text-ink shadow-float"
                 >
-                  <ChevronRight className="size-5" />
+                  <ChevronRight className="size-5" strokeWidth={1.6} />
                 </IconButton>
               </>
             ) : null}

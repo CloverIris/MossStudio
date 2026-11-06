@@ -29,7 +29,7 @@ export function ProjectSwitcher({ project }: { project: StudioProject }): React.
             className="inline-flex h-7 max-w-[260px] items-center gap-1.5 rounded-md px-2.5 text-ui font-semibold text-ink transition-colors hover:bg-well"
           >
             <span className="truncate">{project.projectName}</span>
-            <ChevronDown className="size-3.5 shrink-0 text-ink-2" aria-hidden="true" />
+            <ChevronDown className="size-3.5 shrink-0 text-ink-2" aria-hidden="true" strokeWidth={1.6} />
           </button>
         )}
       >

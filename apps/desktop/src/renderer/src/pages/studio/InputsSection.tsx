@@ -124,7 +124,7 @@ function AddButton({
           aria-haspopup={props['aria-haspopup']}
           onClick={props.toggle}
         >
-          <Plus className="size-3.5" aria-hidden="true" />
+          <Plus className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
           添加
         </Button>
       )}
@@ -266,7 +266,7 @@ export function InputsSection({
           <SlotHeader title="控制" hint={noAdapters ? '需要控制适配器' : '按深度、边缘或姿态引导构图'}>
             {noAdapters ? (
               <Button tone="ghost" size="xs" className="-mr-2" disabled={disabled} onClick={() => wiring.onNavigate('/models')}>
-                <Plus className="size-3.5" aria-hidden="true" />
+                <Plus className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
                 去添加
               </Button>
             ) : null}

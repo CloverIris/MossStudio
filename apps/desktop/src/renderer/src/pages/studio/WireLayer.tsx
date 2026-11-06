@@ -169,7 +169,7 @@ export function WireChips({
                 }}
                 className="inline-flex size-5 items-center justify-center rounded-full bg-raised text-ink-2 hover:bg-danger-soft hover:text-danger"
               >
-                <X className="size-3" aria-hidden="true" />
+                <X className="size-3" aria-hidden="true" strokeWidth={1.6} />
               </button>
             ) : null}
           </div>

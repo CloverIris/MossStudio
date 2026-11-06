@@ -116,7 +116,7 @@ export function UpdatesSection(): React.JSX.Element {
                   })
                 }
               >
-                <RotateCw className="size-4" />
+                <RotateCw className="size-4" strokeWidth={1.6} />
                 重启以更新
               </Button>
             ) : supported ? (
@@ -167,7 +167,7 @@ export function UpdatesSection(): React.JSX.Element {
           <Row title="更新说明" description="每个版本改了什么。">
             <Button tone="ghost" onClick={() => void call(Ipc.openExternal, { url: notesLink(update) })}>
               查看
-              <ExternalLink className="size-4" />
+              <ExternalLink className="size-4" strokeWidth={1.6} />
             </Button>
           </Row>
         </Group>

@@ -11,6 +11,7 @@ export function PathValue({
   empty = '—',
   suffix,
   copy = false,
+  copyLabel = '复制',
   className,
 }: {
   value: string | null | undefined
@@ -19,6 +20,8 @@ export function PathValue({
   /** Plain text after the value, e.g. "（默认）". */
   suffix?: string
   copy?: boolean
+  /** Accessible name of the copy button, e.g. 复制地址 when several values sit together. */
+  copyLabel?: string
   className?: string
 }): React.JSX.Element {
   const copyText = useCopyText()
@@ -29,7 +32,7 @@ export function PathValue({
         {value && suffix ? suffix : ''}
       </span>
       {copy && value ? (
-        <IconButton label="复制" className="mr-0.5 size-7" onClick={() => void copyText(value)}>
+        <IconButton label={copyLabel} className="mr-0.5 size-7" onClick={() => void copyText(value)}>
           <Copy className="size-3.5" strokeWidth={1.6} />
         </IconButton>
       ) : null}

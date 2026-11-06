@@ -276,7 +276,7 @@ export function FolderRow({
           </Button>
         ) : null}
         <IconButton label="在文件管理器中打开" disabled={!shown} onClick={() => openPath(shown)}>
-          <FolderOpen className="size-4" />
+          <FolderOpen className="size-4" strokeWidth={1.6} />
         </IconButton>
       </div>
     </StackRow>

@@ -87,10 +87,10 @@ function JobsTab(): React.JSX.Element {
 }
 
 const toneIcon: Record<AppNotification['tone'], React.JSX.Element> = {
-  info: <Info className="size-4 text-ink-2" aria-hidden="true" />,
-  success: <CheckCircle2 className="size-4 text-ok" aria-hidden="true" />,
-  warning: <AlertTriangle className="size-4 text-warn" aria-hidden="true" />,
-  error: <AlertCircle className="size-4 text-danger" aria-hidden="true" />,
+  info: <Info className="size-4 text-ink-2" aria-hidden="true" strokeWidth={1.6} />,
+  success: <CheckCircle2 className="size-4 text-ok" aria-hidden="true" strokeWidth={1.6} />,
+  warning: <AlertTriangle className="size-4 text-warn" aria-hidden="true" strokeWidth={1.6} />,
+  error: <AlertCircle className="size-4 text-danger" aria-hidden="true" strokeWidth={1.6} />,
 }
 
 function NotificationsTab(): React.JSX.Element {
@@ -215,7 +215,7 @@ function ProblemsTab(): React.JSX.Element {
                 <p className="mt-0.5 text-caption text-ink-2 [overflow-wrap:anywhere]">{diagnostic.explain}</p>
               </div>
               <IconButton label="忽略" className="-mr-1 -mt-1 size-7" onClick={() => void dismissDiagnostic(diagnostic.id)}>
-                <X className="size-3.5" />
+                <X className="size-3.5" strokeWidth={1.6} />
               </IconButton>
             </div>
             {solutions.length ? (
@@ -269,7 +269,7 @@ export function ActivityPanel(): React.JSX.Element | null {
       <div className="flex items-center justify-between px-5 pb-3 pt-4">
         <h2 className="text-section font-semibold">活动</h2>
         <IconButton label="关闭活动" onClick={close}>
-          <X className="size-4" />
+          <X className="size-4" strokeWidth={1.6} />
         </IconButton>
       </div>
       <Tabs<ActivityTab>

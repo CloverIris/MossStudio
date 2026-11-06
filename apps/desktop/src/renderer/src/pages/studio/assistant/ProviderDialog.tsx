@@ -114,7 +114,7 @@ export function ProviderDialog({
                   编辑
                 </Button>
                 <IconButton label={`删除 ${provider.name}`} disabled={busy} onClick={() => void remove(provider.id)}>
-                  <Trash2 className="size-4" />
+                  <Trash2 className="size-4" strokeWidth={1.6} />
                 </IconButton>
               </div>
             ))}

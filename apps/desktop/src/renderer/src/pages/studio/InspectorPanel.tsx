@@ -169,7 +169,7 @@ export function InspectorPanel({
                 dropId === layer.id && 'bg-accent-soft',
               )}
             >
-              <GripVertical className="size-3.5 shrink-0 cursor-grab text-ink-3" aria-hidden="true" />
+              <GripVertical className="size-3.5 shrink-0 cursor-grab text-ink-3" aria-hidden="true" strokeWidth={1.6} />
               <button
                 type="button"
                 data-layer-select
@@ -181,13 +181,17 @@ export function InspectorPanel({
                 <span className="shrink-0 px-1 text-micro text-ink-2">{KIND_LABEL[layer.kind]}</span>
                 <span className="min-w-0 flex-1 truncate">{layer.caption || layer.text || '还没有描述'}</span>
               </button>
-              {layer.locked ? <Lock className="size-3.5 shrink-0 text-ink-2" aria-label="已锁定" /> : null}
+              {layer.locked ? <Lock className="size-3.5 shrink-0 text-ink-2" aria-label="已锁定" strokeWidth={1.6} /> : null}
               <IconButton
                 label={layer.visible === false ? `显示区域 ${index + 1}` : `隐藏区域 ${index + 1}`}
                 className="size-7"
                 onClick={() => patch(layer.id, { visible: layer.visible === false })}
               >
-                {layer.visible === false ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                {layer.visible === false ? (
+                  <EyeOff className="size-3.5" strokeWidth={1.6} />
+                ) : (
+                  <Eye className="size-3.5" strokeWidth={1.6} />
+                )}
               </IconButton>
             </li>
           ))}

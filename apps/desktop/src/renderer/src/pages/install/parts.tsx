@@ -68,7 +68,7 @@ export function FolderProblem({ text, action }: { text: string; action?: { label
   return (
     <div role="alert" className="flex flex-col gap-2.5 rounded-lg bg-warn-soft px-3.5 py-3">
       <p className="flex items-start gap-2 text-ui text-ink">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden="true" />
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden="true" strokeWidth={1.6} />
         <span className="[overflow-wrap:anywhere]">{text}</span>
       </p>
       {action ? (
@@ -157,7 +157,7 @@ export function ProgressBlock({
 export function FailureBlock({ children }: { children: ReactNode }): React.JSX.Element {
   return (
     <div role="alert" className="flex items-start gap-2.5 rounded-xl bg-danger-soft px-4 py-3.5 text-ui text-ink">
-      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" strokeWidth={1.6} />
       <div className="min-w-0 [overflow-wrap:anywhere]">{children}</div>
     </div>
   )

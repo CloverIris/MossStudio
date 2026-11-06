@@ -177,7 +177,7 @@ export function Toolbar({
         trigger={(menu) => (
           <ToolButton title="新画的框是什么" onClick={menu.toggle} aria-expanded={menu['aria-expanded']} aria-haspopup="menu">
             {KIND_LABEL[regionKind]}
-            <ChevronDown className="size-3.5 text-ink-2" aria-hidden="true" />
+            <ChevronDown className="size-3.5 text-ink-2" aria-hidden="true" strokeWidth={1.6} />
           </ToolButton>
         )}
       >
@@ -229,7 +229,7 @@ export function Toolbar({
       )}
       <span aria-hidden="true" className="w-2" />
       <IconButton label="缩小" onClick={() => onZoom(1 / 1.25)} className="text-ink">
-        <Minus className="size-4" />
+        <Minus className="size-4" strokeWidth={1.6} />
       </IconButton>
       <button
         type="button"
@@ -240,7 +240,7 @@ export function Toolbar({
         {Math.round(zoom * 100)}%
       </button>
       <IconButton label="放大" onClick={() => onZoom(1.25)} className="text-ink">
-        <Plus className="size-4" />
+        <Plus className="size-4" strokeWidth={1.6} />
       </IconButton>
       <IconButton label="适应窗口" onClick={onFit} className="text-ink">
         <Maximize2 className="size-4" strokeWidth={1.6} />

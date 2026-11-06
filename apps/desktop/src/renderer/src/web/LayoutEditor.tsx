@@ -273,7 +273,7 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
           <div className="flex items-center justify-between">
             <span className="text-ui font-medium text-ink-2">已选中：{LABELS.find((entry) => entry.id === selected.label)?.name}</span>
             <IconButton label="删除这个区域" onClick={() => removeItem(selected.id)} className="size-10 text-danger">
-              <Trash2 className="size-4" />
+              <Trash2 className="size-4" strokeWidth={1.6} />
             </IconButton>
           </div>
           <Input
