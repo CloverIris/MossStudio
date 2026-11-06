@@ -46,7 +46,7 @@ function StepRow({ step, index }: { step: SetupStep; index: number }): React.JSX
     >
       <StepMark step={step} index={index} />
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-control font-semibold text-ink">
+        <span className="text-control text-ink">
           {step.title}
           <span className="sr-only">：{STATE_LABEL[step.state]}</span>
         </span>

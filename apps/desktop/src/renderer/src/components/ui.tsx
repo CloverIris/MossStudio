@@ -252,17 +252,14 @@ export function StatusDot({ status, className }: { status: CheckStatus; classNam
   return <span aria-hidden="true" className={cn('inline-block size-2 shrink-0 rounded-full', statusColor[status], className)} />
 }
 
-type PillTone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger' | 'amber' | 'red' | 'blue'
+type PillTone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger'
 
 const pillTone: Record<PillTone, string> = {
   neutral: 'bg-well text-ink-2',
-  blue: 'bg-well text-ink-2',
   accent: 'bg-accent-soft text-ink',
   ok: 'bg-ok-soft text-ok',
   warn: 'bg-warn-soft text-warn',
-  amber: 'bg-warn-soft text-warn',
   danger: 'bg-danger-soft text-danger',
-  red: 'bg-danger-soft text-danger',
 }
 
 /** A small status label. Colour is reserved for state: ok, warn, danger. */

@@ -1,5 +1,6 @@
 import { Lock, LockOpen, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { Notice } from '../../components/common/Notice'
 import type { Catalog, GpuInventorySnapshot, ManagedHost, ProjectCanvas, Settings } from '@shared/types'
 import {
   ADAPTER_STRENGTH_MAX,
@@ -194,14 +195,20 @@ function CanvasParams({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-5">
-        {readOnly ? (
-          <p className="mb-5 rounded-lg bg-well px-3 py-2.5 text-caption text-ink-2">
-            这是一次生成的结果，参数已固定。想改动就复制成新画面。
-          </p>
-        ) : null}
+        {readOnly ? <Notice className="mb-5">这是一次生成的结果，参数已固定。想改动就复制成新画面。</Notice> : null}
         <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-6">
           <section className="flex flex-col gap-2.5">
-            <FieldLabel htmlFor="studio-description">描述</FieldLabel>
+            {/* What the model is finally sent sits next to the description it is built from. */}
+            <FieldLabel
+              htmlFor="studio-description"
+              value={
+                <Button tone="ghost" size="xs" className="-mr-2" onClick={() => setPromptOpen(true)}>
+                  查看最终提示词
+                </Button>
+              }
+            >
+              描述
+            </FieldLabel>
             <Textarea
               id="studio-description"
               aria-label="描述"
@@ -326,7 +333,7 @@ function CanvasParams({
             />
           </section>
 
-          <Advanced summary={advancedSummary} className="-mx-3.5">
+          <Advanced dense summary={advancedSummary} className="-mx-3.5">
             <div className="flex flex-col gap-5 px-3.5 pb-2 pt-2">
               <section className="flex flex-col gap-2">
                 <FieldLabel htmlFor="studio-seed">种子</FieldLabel>
@@ -401,7 +408,7 @@ function CanvasParams({
               {remoteHost ? (
                 remoteHost.devices.length ? (
                   <section className="flex flex-col gap-2">
-                    <FieldLabel htmlFor="studio-remote-gpu">GPU</FieldLabel>
+                    <FieldLabel htmlFor="studio-remote-gpu">显卡</FieldLabel>
                     <Select
                       id="studio-remote-gpu"
                       value={canvas.deviceId ?? ''}
@@ -418,7 +425,7 @@ function CanvasParams({
                 ) : null
               ) : (
                 <section className="flex flex-col gap-2">
-                  <FieldLabel htmlFor="studio-gpu">GPU</FieldLabel>
+                  <FieldLabel htmlFor="studio-gpu">显卡</FieldLabel>
                   <Select
                     id="studio-gpu"
                     value={canvas.deviceUuid ?? ''}
@@ -427,22 +434,18 @@ function CanvasParams({
                     <option value="">{defaultGpu ? `跟随默认（${defaultGpu}）` : '跟随默认'}</option>
                     {boundMissing ? (
                       <option value={canvas.deviceUuid} disabled>
-                        之前选的 GPU 现在找不到
+                        之前选的显卡现在找不到
                       </option>
                     ) : null}
                     {(gpuInventory?.devices ?? []).map((device) => (
                       <option key={device.uuid} value={device.uuid}>
-                        {device.name} · GPU {device.index}
+                        {device.name} · 显卡 {device.index}
                       </option>
                     ))}
                   </Select>
-                  {boundMissing ? <p className="text-caption text-warn">之前选的 GPU 现在找不到，生成前请换一个或改回默认。</p> : null}
+                  {boundMissing ? <Notice tone="warn">之前选的显卡现在找不到，生成前请换一个或改回默认。</Notice> : null}
                 </section>
               )}
-
-              <Button tone="ghost" size="sm" className="self-start" onClick={() => setPromptOpen(true)}>
-                查看最终提示词
-              </Button>
             </div>
           </Advanced>
         </fieldset>
@@ -458,18 +461,22 @@ function CanvasParams({
             {blockers.length ? (
               <ul aria-live="polite" className="flex flex-col gap-1.5">
                 {blockers.map((blocker, index) => (
-                  <li key={`${blocker.id}-${index}`} className="flex items-center gap-2 text-caption text-ink-2">
-                    <span className="min-w-0 flex-1">{blocker.message}</span>
-                    {blocker.action ? (
-                      <Button
-                        tone="secondary"
-                        size="sm"
-                        className="h-7 px-2.5"
-                        onClick={() => (blocker.action!.opens === 'update' ? openUpdate(true) : onNavigate(blocker.action!.to))}
-                      >
-                        {blocker.action.label}
-                      </Button>
-                    ) : null}
+                  // Every reason not to generate reads the same: a Notice with the action that fixes it.
+                  <li key={`${blocker.id}-${index}`}>
+                    <Notice
+                      action={
+                        blocker.action ? (
+                          <Button
+                            size="xs"
+                            onClick={() => (blocker.action!.opens === 'update' ? openUpdate(true) : onNavigate(blocker.action!.to))}
+                          >
+                            {blocker.action.label}
+                          </Button>
+                        ) : undefined
+                      }
+                    >
+                      {blocker.message}
+                    </Notice>
                   </li>
                 ))}
               </ul>

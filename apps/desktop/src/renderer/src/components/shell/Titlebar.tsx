@@ -111,8 +111,8 @@ export function PerfMonitor(): React.JSX.Element {
               {(telemetry?.devices ?? []).map((device) => (
                 <div key={device.uuid} className={cn('flex flex-col gap-2 rounded-lg px-2 py-2.5', device.uuid === gpu?.uuid && 'bg-well')}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-ui font-medium">{device.name}</span>
-                    <span className="shrink-0 text-caption text-ink-2">{device.uuid === gpu?.uuid ? '默认' : `GPU ${device.index}`}</span>
+                    <span className="truncate text-control text-ink">{device.name}</span>
+                    <span className="shrink-0 text-caption text-ink-2">{device.uuid === gpu?.uuid ? '默认' : `显卡 ${device.index}`}</span>
                   </div>
                   <div className="tabular grid grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 text-caption">
                     <span className="text-ink-2">负载</span>

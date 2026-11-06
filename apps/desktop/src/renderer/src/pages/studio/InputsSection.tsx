@@ -73,7 +73,7 @@ function SourceRow({
           )}
         </span>
       }
-      title={source?.title ?? '图片找不到了'}
+      title={source?.title ?? '图片文件找不到了'}
       caption={picture ? label : source ? `${label} · 还没生成` : label}
       removeLabel={`移除${label}`}
       onRemove={onRemove}

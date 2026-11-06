@@ -1,8 +1,22 @@
-import { AlertCircle, ArrowUp, Check, History, Plus, Settings2, X } from 'lucide-react'
+import { AlertCircle, ArrowUp, Check, History, Plus, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { AiConversationInfo, AiMessage, AiProviderInfo, AiStreamEvent, AiToolCall } from '@shared/ai'
-import { Button, IconButton, Input, MarkdownBody, Modal, Select, Spinner, cn, useCopyText, useToast } from '../../../components/ui'
+import { Notice } from '../../../components/common/Notice'
+import {
+  Button,
+  cn,
+  ConfirmDialog,
+  FieldLabel,
+  IconButton,
+  Input,
+  MarkdownBody,
+  Modal,
+  Select,
+  Spinner,
+  useCopyText,
+  useToast,
+} from '../../../components/ui'
 import { useUiAnimationEnabled } from '../../../components/motion'
 import { call, onEvent } from '../../../lib/api'
 import { applyStudioDescription, formatStudioContext, readStudioSnapshot } from '../../../lib/agentTools'
@@ -85,6 +99,7 @@ export function Assistant(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [removingChat, setRemovingChat] = useState<AiConversationInfo | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [proposal, setProposal] = useState<{ current: string; next: string } | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
@@ -341,25 +356,14 @@ export function Assistant(): React.JSX.Element {
                     {message.toolCalls?.length ? renderToolCalls(message.toolCalls) : null}
                     {message.role === 'assistant' && message.content ? (
                       <div className="-ml-2 flex items-center gap-0.5">
-                        <Button
-                          tone="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-caption"
-                          onClick={() => proposeDescription(message.content)}
-                        >
+                        <Button tone="ghost" size="xs" onClick={() => proposeDescription(message.content)}>
                           用作描述
                         </Button>
-                        <Button tone="ghost" size="sm" className="h-7 px-2 text-caption" onClick={() => void copyText(message.content)}>
+                        <Button tone="ghost" size="xs" onClick={() => void copyText(message.content)}>
                           复制
                         </Button>
                         {message.id === lastAssistantId ? (
-                          <Button
-                            tone="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-caption"
-                            disabled={busy}
-                            onClick={() => void regenerate()}
-                          >
+                          <Button tone="ghost" size="xs" disabled={busy} onClick={() => void regenerate()}>
                             重新回答
                           </Button>
                         ) : null}
@@ -399,33 +403,28 @@ export function Assistant(): React.JSX.Element {
 
       <div className="flex shrink-0 flex-col gap-2 pt-2">
         {failedText ? (
-          <div className="flex items-center gap-2 rounded-lg bg-danger-soft px-3 py-1.5 text-caption">
-            <span className="min-w-0 flex-1 truncate text-danger">上一条没有发出去</span>
-            <Button
-              tone="ghost"
-              size="sm"
-              className="h-6 px-2"
-              onClick={() => {
-                const text = failedText
-                setFailedText(null)
-                void sendText(text)
-              }}
-            >
-              重试
-            </Button>
-          </div>
+          <Notice
+            tone="danger"
+            action={
+              <Button
+                size="xs"
+                onClick={() => {
+                  const text = failedText
+                  setFailedText(null)
+                  void sendText(text)
+                }}
+              >
+                重试
+              </Button>
+            }
+          >
+            上一条没有发出去
+          </Notice>
         ) : null}
         {providers.length ? (
           <div className="flex flex-wrap gap-1">
             {SUGGESTIONS.map((item) => (
-              <Button
-                key={item.label}
-                tone="secondary"
-                size="sm"
-                className="h-7 px-2.5 text-caption"
-                disabled={busy}
-                onClick={() => void sendText(item.text)}
-              >
+              <Button key={item.label} size="xs" disabled={busy} onClick={() => void sendText(item.text)}>
                 {item.label}
               </Button>
             ))}
@@ -516,13 +515,29 @@ export function Assistant(): React.JSX.Element {
                   </span>
                 </button>
               )}
-              <IconButton label={`删除对话 ${item.title}`} onClick={() => void removeConversation(item.id)}>
-                <X className="size-4" strokeWidth={1.6} />
+              {/* Deleting a conversation loses it: Trash2 and a confirm (X only unlinks). */}
+              <IconButton
+                label={`删除对话 ${item.title}`}
+                className="text-danger enabled:hover:text-danger"
+                onClick={() => setRemovingChat(item)}
+              >
+                <Trash2 className="size-4" strokeWidth={1.6} />
               </IconButton>
             </div>
           ))}
         </div>
       </Modal>
+      <ConfirmDialog
+        open={removingChat !== null}
+        onClose={() => setRemovingChat(null)}
+        title={`删除对话「${removingChat?.title ?? ''}」？`}
+        description="这段对话的全部消息都会删除，不能恢复。"
+        confirmLabel="删除对话"
+        onConfirm={() => {
+          if (removingChat) void removeConversation(removingChat.id)
+          setRemovingChat(null)
+        }}
+      />
 
       <ProviderDialog open={settingsOpen} providers={providers} busy={busy} onClose={() => setSettingsOpen(false)} onChanged={refresh} />
 
@@ -554,13 +569,13 @@ export function Assistant(): React.JSX.Element {
         {proposal ? (
           <div className="grid gap-4 md:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <div className="text-caption font-medium text-ink-2">现在</div>
+              <FieldLabel>现在</FieldLabel>
               <p className="selectable max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-panel p-3 text-ui text-ink-2">
                 {proposal.current || '（空）'}
               </p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <div className="text-caption font-medium text-ink-2">替换为</div>
+              <FieldLabel>替换为</FieldLabel>
               <p className="selectable max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-panel p-3 text-ui text-ink">
                 {proposal.next}
               </p>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AiProviderInfo, AiProviderKind } from '@shared/ai'
 import { AI_PROVIDER_PRESETS } from '@shared/ai'
 import { Ipc } from '@shared/channels'
-import { Button, Field, IconButton, Input, Modal, Select, useToast } from '../../../components/ui'
+import { Button, Field, FieldLabel, IconButton, Input, Modal, Select, useToast } from '../../../components/ui'
 import { call } from '../../../lib/api'
 import { Trash2 } from 'lucide-react'
 
@@ -90,7 +90,7 @@ export function ProviderDialog({
       <div className="flex flex-col gap-5">
         {providers.length ? (
           <section className="flex flex-col gap-1">
-            <div className="text-caption font-semibold text-ink-2">已连接</div>
+            <FieldLabel as="h3">已连接</FieldLabel>
             {providers.map((provider) => (
               <div key={provider.id} className="flex items-center gap-2 rounded-lg bg-panel py-1 pl-3 pr-1">
                 <span className="min-w-0 flex-1 truncate text-ui text-ink">
@@ -122,7 +122,7 @@ export function ProviderDialog({
         ) : null}
 
         <section className="flex flex-col gap-3">
-          <div className="text-caption font-semibold text-ink-2">{draft.id ? `编辑「${draft.name}」` : '添加新的'}</div>
+          <FieldLabel as="h3">{draft.id ? `编辑「${draft.name}」` : '添加新的'}</FieldLabel>
           {!draft.id ? (
             <div className="flex flex-wrap gap-1.5">
               {AI_PROVIDER_PRESETS.map((preset) => (

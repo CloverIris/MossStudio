@@ -6,7 +6,7 @@ import { ACTIVE_JOB_STATES, jobSummary, jobTitle, relative } from '../../lib/for
 import { useShell, type ActivityTab } from '../../lib/shell'
 import { useApp } from '../../store'
 import { cn } from '../cn'
-import { Button, EmptyState, IconButton, ProgressBar, Tabs, useToast } from '../ui'
+import { Button, ConfirmDialog, EmptyState, FieldLabel, IconButton, ProgressBar, Tabs, useToast } from '../ui'
 
 const isActive = (job: JobRecord): boolean => ACTIVE_JOB_STATES.has(job.state)
 
@@ -48,7 +48,7 @@ function JobsTab(): React.JSX.Element {
       <div key={job.id} data-job-row={job.id} className={cn('flex flex-col gap-2 rounded-lg px-3 py-2.5', open && 'bg-well')}>
         <div className="flex items-start gap-3">
           <button type="button" aria-expanded={open} onClick={() => focusJob(open ? null : job.id)} className="min-w-0 flex-1 text-left">
-            <div className="truncate text-ui font-medium text-ink">{jobTitle(job)}</div>
+            <div className="truncate text-control text-ink">{jobTitle(job)}</div>
             <div className={cn('tabular mt-0.5 truncate text-caption', job.state === 'failed' ? 'text-danger' : 'text-ink-2')}>
               {jobSummary(job)}
             </div>
@@ -56,6 +56,7 @@ function JobsTab(): React.JSX.Element {
           {running ? (
             <Button
               tone="ghost"
+              size="xs"
               onClick={() => {
                 void cancelJob(job.id).catch((error: unknown) =>
                   toast.push(error instanceof Error ? error.message : String(error), 'error'),
@@ -80,7 +81,11 @@ function JobsTab(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-1">
       {active.map(row)}
-      {finished.length ? <div className="px-3 pb-1 pt-4 text-caption font-medium text-ink-2">已结束</div> : null}
+      {finished.length ? (
+        <FieldLabel as="h3" className="px-3 pb-1 pt-4">
+          已结束
+        </FieldLabel>
+      ) : null}
       {finished.map(row)}
     </div>
   )
@@ -113,7 +118,7 @@ function NotificationsTab(): React.JSX.Element {
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between gap-3">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate text-ui font-medium text-ink">{item.title}</span>
+                <span className="truncate text-control text-ink">{item.title}</span>
                 {/* Unread is a dot, not a fill: fills mean selected (well) or a card (surface). */}
                 {unreadOnOpen.has(item.id) ? (
                   <span role="img" aria-label="未读" className="size-1.5 shrink-0 rounded-full bg-accent" />
@@ -157,6 +162,7 @@ export function solutionTarget(solution: DiagnosticSolution): { route?: string; 
 }
 
 function ProblemsTab(): React.JSX.Element {
+  const [clearing, setClearing] = useState(false)
   const diagnostics = useApp((state) => state.diagnostics)
   const dismissDiagnostic = useApp((state) => state.dismissDiagnostic)
   const clearDiagnostics = useApp((state) => state.clearDiagnostics)
@@ -189,16 +195,27 @@ function ProblemsTab(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex justify-end px-1 pb-1">
-        <Button tone="ghost" onClick={() => void clearDiagnostics()}>
+        <Button tone="ghost-danger" size="xs" onClick={() => setClearing(true)}>
           全部清除
         </Button>
       </div>
+      <ConfirmDialog
+        open={clearing}
+        onClose={() => setClearing(false)}
+        title="清除所有问题？"
+        description="问题列表会清空；之后再出错时会重新出现。"
+        confirmLabel="全部清除"
+        onConfirm={() => {
+          setClearing(false)
+          void clearDiagnostics()
+        }}
+      />
       {diagnostics.map((diagnostic) => {
         const solutions = diagnostic.solutions.filter(
           (solution) => solutionTarget(solution) && (!solutionTarget(solution)?.job || diagnostic.jobId),
         )
         return (
-          <div key={diagnostic.id} data-problem={diagnostic.id} className="flex flex-col gap-2 rounded-lg bg-surface px-3.5 py-3">
+          <div key={diagnostic.id} data-problem={diagnostic.id} className="flex flex-col gap-2 rounded-lg bg-surface px-3 py-2.5">
             <div className="flex items-start gap-3">
               <span className="mt-0.5 shrink-0">
                 {diagnostic.severity === 'error' ? toneIcon.error : diagnostic.severity === 'warning' ? toneIcon.warning : toneIcon.info}
@@ -206,7 +223,7 @@ function ProblemsTab(): React.JSX.Element {
               <div className="min-w-0 flex-1">
                 {/* The time sits where every Activity list puts it: right of the title, ink-2. */}
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="min-w-0 text-ui font-medium text-ink">{diagnostic.title}</span>
+                  <span className="min-w-0 text-control text-ink">{diagnostic.title}</span>
                   <span className="tabular shrink-0 text-caption text-ink-2">
                     {diagnostic.count > 1 ? `出现 ${diagnostic.count} 次 · ` : ''}
                     {relative(diagnostic.lastAt)}

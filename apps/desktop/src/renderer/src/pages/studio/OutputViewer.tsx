@@ -68,7 +68,7 @@ export function OutputViewer({
             <Button tone="secondary" size="md" onClick={() => run(Ipc.openPath, current.path)}>
               用默认程序打开
             </Button>
-            <Button tone="primary" size="md" onClick={onClose}>
+            <Button tone="ghost" size="md" onClick={onClose}>
               关闭
             </Button>
           </>
