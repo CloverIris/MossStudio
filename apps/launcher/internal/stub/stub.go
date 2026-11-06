@@ -1,27 +1,34 @@
 // Package stub runs the setup stub: a launcher binary with a payload appended (see package
 // payload for the format).
 //
-// Sequence: show the splash (unless --moss-silent), verify the payload's SHA-256, extract it
+// Sequence: refuse to run as root on Linux (MossStudio installs per user; Chromium will not
+// run as root, or would install into root's home), show the splash (unless --moss-silent),
+// verify the payload's SHA-256, extract it
 // into a fresh temp dir P (MossStudio-Setup-*, under the system temp folder or, when that is
 // mounted noexec, under ${XDG_CACHE_HOME:-~/.cache}), start
 //
 //	P/app-<v>/MossStudio(.exe) --moss-setup=<P> <all stub arguments>
 //
 // close the splash when P/.ready appears (the app writes it once its window is up) or the
-// app exits, wait for the app, remove P and exit with the app's exit code.
+// app exits, wait for the app, remove P and exit with the app's exit code. An app that exits
+// non-zero before it wrote P/.ready never showed anything (its own errors appear once it is
+// up): the stub reports it, naming the setup log, instead of ending silently.
 //
 // Exit codes of the stub itself: ExitDamaged (payload missing or checksum mismatch),
-// ExitExtract (could not create or fill P), ExitStart (could not start the app).
+// ExitExtract (could not create or fill P), ExitStart (could not start the app), ExitRoot
+// (run as root on Linux).
 package stub
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/CloverIris/MossStudio/apps/launcher/internal/fsutil"
 	"github.com/CloverIris/MossStudio/apps/launcher/internal/launch"
 	"github.com/CloverIris/MossStudio/apps/launcher/internal/payload"
 	"github.com/CloverIris/MossStudio/apps/launcher/internal/proc"
@@ -33,10 +40,15 @@ const (
 	ExitDamaged = 90
 	ExitExtract = 91
 	ExitStart   = 92
+	ExitRoot    = 93
 )
 
 // ReadyFile is written by the app into the payload dir once its window is visible.
 const ReadyFile = ".ready"
+
+// SetupLogName is the setup app's log in the temp folder (setupLogPath in
+// apps/desktop/src/main/install/app.ts).
+const SetupLogName = "MossStudio-setup.log"
 
 // Options configure Run.
 type Options struct {
@@ -50,6 +62,11 @@ type Options struct {
 	GOOS   string // "" = runtime.GOOS
 	Logf   func(format string, args ...any)
 	Poll   time.Duration // .ready / exit polling; 0 = 100ms
+	// Euid is the effective user id; nil = os.Geteuid (only checked on Linux).
+	Euid func() int
+	// LogPath is the setup app's log, named when it exits before showing anything;
+	// "" = SetupLogName in os.TempDir().
+	LogPath string
 }
 
 // Silent reports whether args ask for an unattended install.
@@ -83,6 +100,16 @@ func Run(o Options) (int, error) {
 	launcherName, appExe := payload.LauncherNameLinux, "MossStudio"
 	if goos == "windows" {
 		launcherName, appExe = payload.LauncherNameWindows, "MossStudio.exe"
+	}
+	euid := o.Euid
+	if euid == nil {
+		euid = os.Geteuid
+	}
+	if goos == "linux" && euid() == 0 {
+		return ExitRoot, &launch.Error{
+			Message: "请不要用 sudo 或 root 身份运行 MossStudio 安装程序。",
+			Detail:  "MossStudio 只为你自己的用户安装，不需要管理员权限。请直接运行安装程序，不要加 sudo。",
+		}
 	}
 
 	f, t, err := payload.Open(o.Self)
@@ -124,12 +151,24 @@ func Run(o Options) (int, error) {
 		poll = 100 * time.Millisecond
 	}
 	ready := filepath.Join(dir, ReadyFile)
+	shown := false
 	for {
 		if code, done := p.Exited(); done {
 			o.logf("setup app exited with %d", code)
+			if code != 0 && !shown && !fsutil.Exists(ready) {
+				logPath := o.LogPath
+				if logPath == "" {
+					logPath = filepath.Join(os.TempDir(), SetupLogName)
+				}
+				return code, &launch.Error{
+					Message: "MossStudio 安装程序没能打开，什么也没有安装。",
+					Detail:  fmt.Sprintf("详细情况在日志里：%s\n（安装程序退出码 %d）", logPath, code),
+				}
+			}
 			return code, nil
 		}
-		if _, err := os.Stat(ready); err == nil {
+		if !shown && fsutil.Exists(ready) {
+			shown = true
 			splash.Close()
 		}
 		time.Sleep(poll)

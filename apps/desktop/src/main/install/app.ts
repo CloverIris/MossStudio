@@ -427,6 +427,8 @@ export async function runInstallMode(context: RunContext = getRunContext()): Pro
       await runSetup(context)
     } catch (error) {
       log(`setup could not start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
+      // This dialog says it: the stub's splash can go, and it must not report the exit again.
+      writeReady(context)
       if (!context.silent) dialog.showErrorBox(`${PRODUCT_NAME} 安装`, `安装程序无法启动：${error instanceof Error ? error.message : String(error)}`)
       exitCleanly(1)
     }
