@@ -11,6 +11,7 @@ import {
   parseSeed,
   profileFor,
   qualityFor,
+  qualityLabel,
   randomSeed,
   seedForRun,
   sizePresetFor,
@@ -46,6 +47,11 @@ describe('studio/defaults quality presets', () => {
     expect(qualityFor(20)).toBe('standard')
     expect(qualityFor(50)).toBe('fine')
     expect(qualityFor(30)).toBe('custom')
+  })
+
+  it('names the quality the same way in the panel and the viewer', () => {
+    expect(qualityLabel(20)).toBe('标准 · 20 步')
+    expect(qualityLabel(28)).toBe('自定义 · 28 步')
   })
 
   it('takes the profile from the preset, and keeps the old rule for older step counts', () => {

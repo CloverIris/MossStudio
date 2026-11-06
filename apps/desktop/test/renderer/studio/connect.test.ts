@@ -90,6 +90,11 @@ describe('studio/connect linkMenu', () => {
     expect(items(linkMenu(canvas(), 's', undefined, []))).toEqual(['[正在读取引擎支持的功能…]'])
   })
 
+  it("gives the 生成 footer's engine reason while the engine is not ready", () => {
+    const installing = { id: 'engine', message: '引擎正在安装 · 40%' } as const
+    expect(items(linkMenu(canvas(), 's', null, [], [installing]))).toEqual(['[引擎正在安装 · 40%，就绪后才能把图片接进来]'])
+  })
+
   it('marks what is already linked and stops at four references', () => {
     const target = canvas({
       id: 't',

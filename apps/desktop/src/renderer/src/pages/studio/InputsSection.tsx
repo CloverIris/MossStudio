@@ -1,10 +1,12 @@
-import { Brush, ImageOff, Plus, X } from 'lucide-react'
+import { Brush, Check, ImageOff, Plus, Trash2 } from 'lucide-react'
 import type { CanvasImageLink, ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
 import { cliEngineNote } from '@shared/cliEngine'
+import { Notice } from '../../components/common/Notice'
 import { MenuItem, Popover } from '../../components/common/Popover'
-import { Advanced, Button, IconButton, Segmented, Select } from '../../components/ui'
+import { Button, LoadingRow, Segmented, Select } from '../../components/ui'
 import { cloverUrl } from '../../lib/clover'
-import { FieldLabel, OptionalNumberInput, SliderField } from './InputControls'
+import { strength } from '../../lib/format'
+import { FieldLabel, OptionalNumberInput, SliderField, SlotHeader, SlotRow } from './InputControls'
 import {
   MAX_REFERENCES,
   canvasPicture,
@@ -15,7 +17,6 @@ import {
   patchControlImage,
   patchInit,
   patchReferences,
-  percent,
   removeLink,
   roleLabel,
   setControlAdapter,
@@ -42,8 +43,8 @@ export interface InputsWiring {
 
 type Change = (update: (canvas: ProjectCanvas) => ProjectCanvas) => void
 
-const pct = (value: number): string => percent(value)
-const times = (value: number): string => value.toFixed(2).replace(/\.?0+$/, '') || '0'
+const share = (value: number): string => strength(value, 'share')
+const weight = (value: number): string => strength(value, 'weight')
 
 /** The picture a link brings in: thumbnail, name, and a remove action. */
 function SourceRow({
@@ -62,25 +63,24 @@ function SourceRow({
   const source = linkSourceCanvas(link, canvases)
   const picture = source ? canvasPicture(source, link.output) : null
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-well p-2" data-input-row={label}>
-      <div className="flex items-center gap-2.5">
-        <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-well-strong">
+    <SlotRow
+      data-input-row={label}
+      leading={
+        <span className="flex size-10 items-center justify-center overflow-hidden rounded-md bg-well-strong">
           {picture ? (
             <img src={cloverUrl(picture)} alt="" draggable={false} className="size-full object-cover" />
           ) : (
             <ImageOff className="size-4 text-ink-2" strokeWidth={1.6} aria-hidden="true" />
           )}
         </span>
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-ui text-ink">{source?.title ?? '找不到了'}</span>
-          <span className="truncate text-caption text-ink-2">{picture ? label : source ? `${label} · 还没生成` : label}</span>
-        </span>
-        <IconButton label={`移除${label}`} className="size-7" onClick={onRemove}>
-          <X className="size-3.5" />
-        </IconButton>
-      </div>
+      }
+      title={source?.title ?? '图片找不到了'}
+      caption={picture ? label : source ? `${label} · 还没生成` : label}
+      removeLabel={`移除${label}`}
+      onRemove={onRemove}
+    >
       {children}
-    </div>
+    </SlotRow>
   )
 }
 
@@ -153,18 +153,6 @@ function AddButton({
   )
 }
 
-function SlotHeader({ title, hint, children }: { title: string; hint?: string; children?: React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="flex min-h-[26px] items-center justify-between gap-2">
-      <span className="flex min-w-0 items-baseline gap-2">
-        <span className="shrink-0 text-ui text-ink">{title}</span>
-        {hint ? <span className="truncate text-caption text-ink-2">{hint}</span> : null}
-      </span>
-      {children}
-    </div>
-  )
-}
-
 /**
  * 输入: the pictures a layout canvas generates from. Each is a link to another
  * card on the board (drawn as a wire). Rows the engine cannot do are hidden;
@@ -191,11 +179,7 @@ export function InputsSection({
   const showControl = !known || features!.control || Boolean(inputs?.control)
   const showReferences = !known || features!.references || Boolean(inputs?.references?.links.length)
   // A CLI engine (兼容模式 / AMD 原生) only does text to image: say so quietly where the inputs would be.
-  const cliNote = features?.cli ? (
-    <p className="text-caption text-ink-2" data-cli-engine-note>
-      {cliEngineNote(features.cli)}
-    </p>
-  ) : null
+  const cliNote = features?.cli ? <Notice data-cli-engine-note>{cliEngineNote(features.cli)}</Notice> : null
   if (!showInit && !showControl && !showReferences) return cliNote
 
   const picking = wiring.pickTarget?.canvasId === canvas.id ? wiring.pickTarget : null
@@ -206,21 +190,21 @@ export function InputsSection({
         ...(inputs?.control?.images ?? []).map((image) => image.kind).filter((kind) => !adapter.controlKinds.includes(kind)),
       ]
     : (inputs?.control?.images ?? []).map((image) => image.kind)
-  const resizeValues = enumValues(features, 'resize')
   const referenceLinks = inputs?.references?.links ?? []
-  const hasAdvanced = Boolean(inputs?.init || inputs?.control?.images.length || referenceLinks.length || inputs?.control?.adapterId)
   const disabled = unavailable !== null
+  const noAdapters = wiring.controlAdapters.length === 0 && !inputs?.control
 
   return (
     <section aria-label="输入" className="flex flex-col gap-2.5" data-inputs-section>
       <FieldLabel>输入</FieldLabel>
-      {unavailable ? <p className="text-caption text-ink-2">{unavailable}</p> : null}
+      {features === undefined ? <LoadingRow label={unavailable ?? undefined} className="py-0 text-caption" /> : null}
+      {features === null && unavailable ? <Notice>{unavailable}</Notice> : null}
       {cliNote}
       {picking ? (
-        <p role="status" className="rounded-lg bg-accent-soft px-3 py-2 text-caption text-ink">
+        <Notice>
           在画板上点一张有图片的卡片作为
           {picking.role === 'control' ? `控制图 · ${controlKindLabel(picking.kind ?? '')}` : roleLabel(picking.role)}，按 Esc 取消
-        </p>
+        </Notice>
       ) : null}
 
       {showInit ? (
@@ -238,8 +222,8 @@ export function InputsSection({
                 min={0}
                 max={1}
                 step={0.05}
-                format={pct}
-                onChange={(strength) => onChange((current) => patchInit(current, { strength }))}
+                format={share}
+                onChange={(value) => onChange((current) => patchInit(current, { strength: value }))}
               />
             </SourceRow>
           ) : (
@@ -259,17 +243,16 @@ export function InputsSection({
               <span className="flex shrink-0 items-center gap-1">
                 {inputs.mask ? (
                   <Button tone="ghost" size="xs" onClick={() => onChange(clearMask)}>
+                    <Trash2 className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
                     清除
                   </Button>
                 ) : null}
-                <Button
-                  tone={wiring.maskTool ? 'primary' : 'secondary'}
-                  size="xs"
-                  aria-pressed={wiring.maskTool}
-                  disabled={disabled}
-                  onClick={wiring.onToggleMask}
-                >
-                  <Brush className="size-3.5" aria-hidden="true" />
+                <Button tone="secondary" size="xs" aria-pressed={wiring.maskTool} disabled={disabled} onClick={wiring.onToggleMask}>
+                  {wiring.maskTool ? (
+                    <Check className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                  ) : (
+                    <Brush className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                  )}
                   {wiring.maskTool ? '完成' : '画遮罩'}
                 </Button>
               </span>
@@ -280,15 +263,15 @@ export function InputsSection({
 
       {showControl ? (
         <div className="flex flex-col gap-1.5" data-control-row>
-          <SlotHeader title="控制" hint={wiring.controlAdapters.length ? '按深度、边缘或姿态引导构图' : undefined} />
-          {wiring.controlAdapters.length === 0 && !inputs?.control ? (
-            <div className="flex items-center justify-between gap-2 rounded-lg bg-well px-3 py-2">
-              <span className="text-caption text-ink-2">需要控制适配器</span>
-              <Button tone="secondary" size="xs" disabled={disabled} onClick={() => wiring.onNavigate('/models')}>
+          <SlotHeader title="控制" hint={noAdapters ? '需要控制适配器' : '按深度、边缘或姿态引导构图'}>
+            {noAdapters ? (
+              <Button tone="ghost" size="xs" className="-mr-2" disabled={disabled} onClick={() => wiring.onNavigate('/models')}>
+                <Plus className="size-3.5" aria-hidden="true" />
                 去添加
               </Button>
-            </div>
-          ) : (
+            ) : null}
+          </SlotHeader>
+          {noAdapters ? null : (
             <>
               <Select
                 aria-label="控制适配器"
@@ -308,33 +291,37 @@ export function InputsSection({
                   </option>
                 ) : null}
               </Select>
-              {controlKinds.map((kind) => {
-                const image = inputs?.control?.images.find((item) => item.kind === kind)
-                const label = `控制图 · ${controlKindLabel(kind)}`
-                return image ? (
-                  <SourceRow
-                    key={kind}
-                    link={image.link}
-                    canvases={canvases}
-                    label={label}
-                    onRemove={() => onChange((current) => removeLink(current, 'control', kind))}
-                  >
-                    <SliderField
-                      label="强度"
-                      value={image.strength}
-                      min={0}
-                      max={2}
-                      step={0.05}
-                      format={times}
-                      onChange={(strength) => onChange((current) => patchControlImage(current, kind, { strength }))}
-                    />
-                  </SourceRow>
-                ) : (
-                  <SlotHeader key={kind} title={controlKindLabel(kind)}>
-                    <AddButton canvas={canvas} role="control" kind={kind} label={label} wiring={wiring} disabled={disabled} />
-                  </SlotHeader>
-                )
-              })}
+              {controlKinds.length ? (
+                <div className="flex flex-col gap-1.5 pl-3">
+                  {controlKinds.map((kind) => {
+                    const image = inputs?.control?.images.find((item) => item.kind === kind)
+                    const label = `控制图 · ${controlKindLabel(kind)}`
+                    return image ? (
+                      <SourceRow
+                        key={kind}
+                        link={image.link}
+                        canvases={canvases}
+                        label={label}
+                        onRemove={() => onChange((current) => removeLink(current, 'control', kind))}
+                      >
+                        <SliderField
+                          label="强度"
+                          value={image.strength}
+                          min={0}
+                          max={2}
+                          step={0.05}
+                          format={weight}
+                          onChange={(value) => onChange((current) => patchControlImage(current, kind, { strength: value }))}
+                        />
+                      </SourceRow>
+                    ) : (
+                      <SlotHeader key={kind} title={controlKindLabel(kind)} sub>
+                        <AddButton canvas={canvas} role="control" kind={kind} label={label} wiring={wiring} disabled={disabled} />
+                      </SlotHeader>
+                    )
+                  })}
+                </div>
+              ) : null}
             </>
           )}
         </div>
@@ -358,87 +345,116 @@ export function InputsSection({
           ))}
         </div>
       ) : null}
-
-      {hasAdvanced ? (
-        <Advanced summary="缩放方式、控制范围" className="-mx-3.5">
-          <div className="flex flex-col gap-4 px-3.5 pb-2 pt-2">
-            {inputs?.init && resizeValues.length ? (
-              <section className="flex flex-col gap-2">
-                <FieldLabel>起始图尺寸不同时</FieldLabel>
-                <Segmented
-                  block
-                  label="起始图缩放方式"
-                  value={inputs.init.resize ?? resizeValues[0]!}
-                  onChange={(resize) => onChange((current) => patchInit(current, { resize: resize as 'crop' | 'fit' | 'stretch' }))}
-                  options={resizeValues.map((value) => ({ value, label: enumLabel('resize', value) }))}
-                />
-              </section>
-            ) : null}
-            {inputs?.control?.adapterId ? (
-              <section className="flex flex-col gap-2">
-                <FieldLabel value={inputs.control.loraStrength === undefined ? '默认' : times(inputs.control.loraStrength)}>
-                  适配器强度
-                </FieldLabel>
-                <SliderField
-                  label="适配器强度"
-                  value={inputs.control.loraStrength ?? 1}
-                  min={0}
-                  max={2}
-                  step={0.05}
-                  format={times}
-                  onChange={(loraStrength) => onChange((current) => patchControl(current, { loraStrength }))}
-                />
-                {inputs.control.loraStrength !== undefined ? (
-                  <Button
-                    tone="ghost"
-                    size="sm"
-                    className="self-start"
-                    onClick={() => onChange((current) => patchControl(current, { loraStrength: undefined }))}
-                  >
-                    恢复默认
-                  </Button>
-                ) : null}
-              </section>
-            ) : null}
-            {(inputs?.control?.images ?? []).map((image) => (
-              <section key={image.kind} className="flex flex-col gap-1.5">
-                <FieldLabel value={`${pct(image.start)} – ${pct(image.end)}`}>{controlKindLabel(image.kind)}起止</FieldLabel>
-                <SliderField
-                  label="开始"
-                  value={image.start}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  format={pct}
-                  onChange={(start) => onChange((current) => patchControlImage(current, image.kind, { start }))}
-                />
-                <SliderField
-                  label="结束"
-                  value={image.end}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  format={pct}
-                  onChange={(end) => onChange((current) => patchControlImage(current, image.kind, { end }))}
-                />
-              </section>
-            ))}
-            {referenceLinks.length ? (
-              <section className="flex flex-col gap-2">
-                <FieldLabel htmlFor="studio-reference-edge">参考图最长边</FieldLabel>
-                <OptionalNumberInput
-                  id="studio-reference-edge"
-                  label="参考图最长边"
-                  value={inputs?.references?.maxEdge}
-                  parse={(value) => (Number.isFinite(value) ? Math.min(2048, Math.max(16, Math.round(value))) : null)}
-                  onCommit={(maxEdge) => onChange((current) => patchReferences(current, { maxEdge }))}
-                />
-                <p className="text-caption text-ink-2">16 到 2048 像素；留空由引擎决定。</p>
-              </section>
-            ) : null}
-          </div>
-        </Advanced>
-      ) : null}
     </section>
+  )
+}
+
+/** Whether the canvas has input settings for 高级 (缩放方式, 控制范围, 参考图最长边). */
+export function hasInputSettings(canvas: ProjectCanvas): boolean {
+  const inputs = canvas.inputs
+  return Boolean(inputs?.init || inputs?.control?.images.length || inputs?.references?.links.length || inputs?.control?.adapterId)
+}
+
+/**
+ * The fine-tuning of 输入, shown inside the panel's one 高级: how a start
+ * picture of another size is fitted, the control adapter's strength and range,
+ * and the reference pictures' longest edge.
+ */
+export function InputSettings({
+  canvas,
+  features,
+  onChange,
+}: {
+  canvas: ProjectCanvas
+  features: EngineFeatures | null | undefined
+  onChange: Change
+}): React.JSX.Element | null {
+  const inputs = canvas.inputs
+  const resizeValues = enumValues(features, 'resize')
+  const referenceLinks = inputs?.references?.links ?? []
+  if (!hasInputSettings(canvas)) return null
+  return (
+    <>
+      {inputs?.init && resizeValues.length ? (
+        <section className="flex flex-col gap-2">
+          <FieldLabel>起始图尺寸不同时</FieldLabel>
+          <Segmented
+            block
+            label="起始图缩放方式"
+            value={inputs.init.resize ?? resizeValues[0]!}
+            onChange={(resize) => onChange((current) => patchInit(current, { resize: resize as 'crop' | 'fit' | 'stretch' }))}
+            options={resizeValues.map((value) => ({ value, label: enumLabel('resize', value) }))}
+          />
+        </section>
+      ) : null}
+      {inputs?.control?.adapterId ? (
+        <section className="flex flex-col gap-2">
+          <FieldLabel
+            value={
+              inputs.control.loraStrength !== undefined ? (
+                <Button
+                  tone="ghost"
+                  size="xs"
+                  className="-my-1 -mr-2"
+                  onClick={() => onChange((current) => patchControl(current, { loraStrength: undefined }))}
+                >
+                  恢复默认
+                </Button>
+              ) : (
+                '默认'
+              )
+            }
+          >
+            适配器强度
+          </FieldLabel>
+          <SliderField
+            label="强度"
+            ariaLabel="适配器强度"
+            value={inputs.control.loraStrength ?? 1}
+            min={0}
+            max={2}
+            step={0.05}
+            format={weight}
+            onChange={(loraStrength) => onChange((current) => patchControl(current, { loraStrength }))}
+          />
+        </section>
+      ) : null}
+      {(inputs?.control?.images ?? []).map((image) => (
+        <section key={image.kind} className="flex flex-col gap-1.5">
+          <FieldLabel value={`${share(image.start)} – ${share(image.end)}`}>{controlKindLabel(image.kind)}起止</FieldLabel>
+          <SliderField
+            label="开始"
+            value={image.start}
+            min={0}
+            max={1}
+            step={0.05}
+            format={share}
+            onChange={(start) => onChange((current) => patchControlImage(current, image.kind, { start }))}
+          />
+          <SliderField
+            label="结束"
+            value={image.end}
+            min={0}
+            max={1}
+            step={0.05}
+            format={share}
+            onChange={(end) => onChange((current) => patchControlImage(current, image.kind, { end }))}
+          />
+        </section>
+      ))}
+      {referenceLinks.length ? (
+        <section className="flex flex-col gap-2">
+          <FieldLabel htmlFor="studio-reference-edge">参考图最长边</FieldLabel>
+          <OptionalNumberInput
+            id="studio-reference-edge"
+            label="参考图最长边"
+            value={inputs?.references?.maxEdge}
+            parse={(value) => (Number.isFinite(value) ? Math.min(2048, Math.max(16, Math.round(value))) : null)}
+            onCommit={(maxEdge) => onChange((current) => patchReferences(current, { maxEdge }))}
+          />
+          <p className="text-caption text-ink-2">16 到 2048 像素；留空由引擎决定。</p>
+        </section>
+      ) : null}
+    </>
   )
 }

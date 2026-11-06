@@ -155,19 +155,25 @@ export function Row({
   )
 }
 
-/** Collapsed-by-default area for everything the app can decide on its own. */
+/**
+ * Collapsed-by-default area for everything the app can decide on its own.
+ * `dense` matches the caption-sized field labels of a dense side panel, so the
+ * disclosure is never louder than the labels around it.
+ */
 export function Advanced({
   title = '高级',
   summary,
   children,
   defaultOpen = false,
   className,
+  dense = false,
 }: {
   title?: string
   summary?: ReactNode
   children: ReactNode
   defaultOpen?: boolean
   className?: string
+  dense?: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(defaultOpen)
   const panelId = useId()
@@ -178,10 +184,13 @@ export function Advanced({
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((value) => !value)}
-        className="flex min-h-11 items-center gap-3 rounded-lg px-3.5 text-left transition-colors hover:bg-well"
+        className={cn(
+          'flex items-center rounded-lg px-3.5 text-left transition-colors hover:bg-well',
+          dense ? 'min-h-9 gap-2' : 'min-h-11 gap-3',
+        )}
       >
         <ChevronRight className={cn('size-4 shrink-0 text-ink-2 transition-transform', open && 'rotate-90')} aria-hidden="true" />
-        <span className="text-control font-medium text-ink">{title}</span>
+        <span className={cn('font-medium', dense ? 'text-caption text-ink-2' : 'text-control text-ink')}>{title}</span>
         {summary && !open ? <span className="min-w-0 flex-1 truncate text-caption text-ink-2">{summary}</span> : null}
       </button>
       <Collapse open={open} id={panelId}>

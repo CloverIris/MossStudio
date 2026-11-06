@@ -6,14 +6,18 @@
 
 import type { EngineFeatures, ImageResizeMode, ProjectCanvas } from '@shared/types'
 import { linkSourceCanvas } from './links'
+import { engineUnavailableReason, type Blocker } from './readiness'
 
-/** Whether the 遮罩 tool shows for the selected canvas, and why it is off. */
+/**
+ * Whether the 遮罩 tool shows for the selected canvas, and why it is off.
+ * `blockers` (the readiness of the 生成 footer) words the reason when no engine is usable.
+ */
 export function maskAvailability(
   canvas: Pick<ProjectCanvas, 'kind' | 'inputs'> | null,
   features: EngineFeatures | null | undefined,
+  blockers: readonly Blocker[] = [],
 ): { hidden: boolean; enabled: boolean; reason?: string } {
-  if (features === undefined) return { hidden: false, enabled: false, reason: '正在读取引擎支持的功能…' }
-  if (features === null) return { hidden: false, enabled: false, reason: '没有可用的引擎，暂时不能画遮罩' }
+  if (!features) return { hidden: false, enabled: false, reason: engineUnavailableReason(features, blockers, '画遮罩') ?? undefined }
   if (!features.imageInput) return { hidden: true, enabled: false }
   if (!canvas || canvas.kind !== 'layout') return { hidden: false, enabled: false, reason: '先选中一个可编辑的画面' }
   if (!canvas.inputs?.init) return { hidden: false, enabled: false, reason: '先给画面连一张起始图，再画遮罩' }

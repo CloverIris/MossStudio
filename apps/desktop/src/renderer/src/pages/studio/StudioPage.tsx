@@ -531,6 +531,7 @@ export function StudioPage(): React.JSX.Element {
           busyIds={busyIds}
           submitting={submitting}
           update={update}
+          blockers={readiness.blockers}
           tool={tool}
           onTool={setTool}
           regionKind={regionKind}
