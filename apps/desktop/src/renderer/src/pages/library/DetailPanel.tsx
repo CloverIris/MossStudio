@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Copy, FolderOpen, ImageIcon, Sparkles, Trash2, Wand2, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, FolderOpen, ImageIcon, Sparkles, Trash2, Wand2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Ipc } from '@shared/channels'
@@ -7,7 +7,8 @@ import { call } from '../../lib/api'
 import { cloverUrl } from '../../lib/clover'
 import { buildReuseRequest, buildStartPictureRequest, canReuse } from '../../lib/studioReuse'
 import { useApp } from '../../store'
-import { Button, ConfirmDialog, IconButton, Spinner, useCopyText, useToast } from '../../components/ui'
+import { PromptBlock } from '../../components/common/PromptBlock'
+import { Button, ConfirmDialog, IconButton, Spinner, useToast } from '../../components/ui'
 import { detailFacts } from './logic'
 
 const message = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
@@ -38,7 +39,6 @@ export function DetailPanel({
 }): React.JSX.Element {
   const navigate = useNavigate()
   const toast = useToast()
-  const copy = useCopyText()
   const setStudioBackground = useApp((state) => state.setStudioBackground)
   const requestStudioReuse = useApp((state) => state.requestStudioReuse)
   const [detail, setDetail] = useState<GalleryDetail | null>(null)
@@ -106,7 +106,6 @@ export function DetailPanel({
 
   const projectId = shown?.generation?.projectId ?? shown?.projectId ?? item.projectId
   const facts = shown ? detailFacts(shown, { projectName: projectId ? projectNames.get(projectId) : undefined }) : []
-  const prompt = shown?.prompt?.trim()
 
   return (
     <aside aria-label="作品详情" className="flex h-full w-[380px] shrink-0 flex-col bg-panel">
@@ -151,27 +150,15 @@ export function DetailPanel({
           </div>
         ) : (
           <>
-            <section aria-label="提示词" className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <h3 className="text-caption font-medium text-ink-2">提示词</h3>
-                {prompt ? (
-                  <IconButton label="复制提示词" className="size-7" onClick={() => void copy(prompt, '已复制提示词')}>
-                    <Copy className="size-3.5" strokeWidth={1.6} />
-                  </IconButton>
-                ) : null}
-              </div>
-              <p className="selectable max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg bg-well px-3 py-2.5 text-ui leading-relaxed text-ink [overflow-wrap:anywhere]">
-                {prompt || <span className="text-ink-2">这张图片没有记录提示词。</span>}
-              </p>
+            <div className="flex flex-col gap-3">
+              <PromptBlock title="描述" text={shown.prompt} empty="这张图片没有记录描述" />
               {shown.generation?.regions ? (
-                <p className="text-caption text-ink-2">
+                <p className="-mt-1 text-caption text-ink-2">
                   这张图片按 {shown.generation.regions} 个区域的布局生成；复用时带上整体描述，区域需要重新画。
                 </p>
               ) : null}
-              {shown.negativePrompt?.trim() ? (
-                <p className="text-caption text-ink-2 [overflow-wrap:anywhere]">不想出现：{shown.negativePrompt}</p>
-              ) : null}
-            </section>
+              {shown.negativePrompt?.trim() ? <PromptBlock title="不想出现的内容" text={shown.negativePrompt} /> : null}
+            </div>
 
             {facts.length ? (
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-ui">
@@ -209,7 +196,7 @@ export function DetailPanel({
             <FolderOpen className="size-4" strokeWidth={1.6} /> 在文件夹中显示
           </Button>
         </div>
-        <Button tone="ghost" className="text-danger" disabled={deleting} onClick={() => setConfirming(true)}>
+        <Button tone="ghost-danger" disabled={deleting} onClick={() => setConfirming(true)}>
           {deleting ? <Spinner /> : <Trash2 className="size-4" strokeWidth={1.6} />} 删除
         </Button>
       </div>

@@ -14,13 +14,15 @@ describe('library', () => {
     const page = await app.open({ scenario: 'ready', route: '/library', theme: 'light', defer: true })
     await page.evaluate(() => {
       const { galleryItemFixture } = window.__mock.fixtures
-      window.__mock.state.gallery = [0, 1, 2, 3].map((index) =>
-        galleryItemFixture(index, {
+      window.__mock.state.gallery = [0, 1, 2, 3].map((index) => ({
+        ...galleryItemFixture(index, {
           prompt: ['海边的灯塔', '雨夜街道', '森林小径', '雪山湖泊'][index],
           seed: 1000 + index,
           projectId: index < 2 ? 'project-1' : undefined,
         }),
-      )
+        // The detail panel shows the negative prompt as a second block, like the prompt.
+        ...(index === 0 ? { negativePrompt: '模糊，水印' } : {}),
+      }))
       window.__mock.state.projects = [window.__mock.fixtures.projectFixture({ id: 'project-1', name: '风景' })]
     })
     await app.start()
@@ -62,6 +64,10 @@ describe('library', () => {
     const detail = page.getByRole('complementary', { name: '作品详情' })
     await expect.poll(() => detail.getByText('1 / 4').isVisible()).toBe(true)
     await expect.poll(() => detail.getByText('海边的灯塔').count()).toBeGreaterThan(0)
+    // Prompt and negative prompt are the same kind of block, each with a copy button.
+    await expect.poll(() => detail.locator('[data-prompt-block="不想出现的内容"]').getByText('模糊，水印').isVisible()).toBe(true)
+    expect(await detail.getByRole('button', { name: '复制描述' }).isVisible()).toBe(true)
+    expect(await detail.getByRole('button', { name: '复制不想出现的内容' }).isVisible()).toBe(true)
     await app.screenshot('library-detail-light')
 
     await page.keyboard.press('ArrowRight')
