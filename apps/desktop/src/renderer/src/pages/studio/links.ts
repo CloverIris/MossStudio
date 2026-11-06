@@ -276,11 +276,3 @@ export function patchReferences(canvas: ProjectCanvas, patch: { maxEdge?: number
   if (next.maxEdge === undefined) delete next.maxEdge
   return { ...canvas, inputs: { ...canvas.inputs, references: next } }
 }
-
-/** Clear the painted mask (the start picture stays). */
-export function clearMask(canvas: ProjectCanvas): ProjectCanvas {
-  if (!canvas.inputs?.mask) return canvas
-  const inputs: CanvasInputs = { ...canvas.inputs }
-  delete inputs.mask
-  return withInputs(canvas, inputs)
-}

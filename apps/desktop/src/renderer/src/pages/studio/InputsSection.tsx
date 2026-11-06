@@ -1,4 +1,4 @@
-import { Brush, Check, ImageOff, Plus, Trash2 } from 'lucide-react'
+import { Brush, ImageOff, Plus } from 'lucide-react'
 import type { CanvasImageLink, ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
 import { cliEngineNote } from '@shared/cliEngine'
 import { Notice } from '../../components/common/Notice'
@@ -10,7 +10,6 @@ import { FieldLabel, OptionalNumberInput, SliderField, SlotHeader, SlotRow } fro
 import {
   MAX_REFERENCES,
   canvasPicture,
-  clearMask,
   controlKindLabel,
   linkSourceCanvas,
   patchControl,
@@ -240,22 +239,11 @@ export function InputsSection({
                 <span className="shrink-0 text-ui text-ink">遮罩</span>
                 <span className="truncate text-caption text-ink-2">{inputs.mask ? '已画' : '未画'}</span>
               </span>
-              <span className="flex shrink-0 items-center gap-1">
-                {inputs.mask ? (
-                  <Button tone="ghost" size="xs" onClick={() => onChange(clearMask)}>
-                    <Trash2 className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-                    清除
-                  </Button>
-                ) : null}
-                <Button tone="secondary" size="xs" aria-pressed={wiring.maskTool} disabled={disabled} onClick={wiring.onToggleMask}>
-                  {wiring.maskTool ? (
-                    <Check className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-                  ) : (
-                    <Brush className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-                  )}
-                  {wiring.maskTool ? '完成' : '画遮罩'}
-                </Button>
-              </span>
+              {/* 完成 and 清除 live in the mask toolbar while painting; here, the state and one toggle. */}
+              <Button tone="secondary" size="xs" aria-pressed={wiring.maskTool} disabled={disabled} onClick={wiring.onToggleMask}>
+                <Brush className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                画遮罩
+              </Button>
             </div>
           ) : null}
         </div>

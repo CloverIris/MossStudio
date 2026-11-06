@@ -14,7 +14,7 @@ import {
 import { useEffect, useState } from 'react'
 import type { GalleryItem, ProjectLayerKind } from '@shared/types'
 import { Ipc } from '@shared/channels'
-import { IconButton, Spinner, cn } from '../../components/ui'
+import { FieldLabel, IconButton, LoadingRow, cn } from '../../components/ui'
 import { MenuGap, MenuItem, Popover } from '../../components/common/Popover'
 import { call } from '../../lib/api'
 import { cloverUrl } from '../../lib/clover'
@@ -30,9 +30,9 @@ export interface MaskToolState {
 }
 
 const TOOLS: Array<{ id: BoardTool; label: string; key: string; icon: React.ReactNode }> = [
-  { id: 'select', label: '选择', key: 'V', icon: <MousePointer2 className="size-[18px]" strokeWidth={1.6} /> },
-  { id: 'draw', label: '画框', key: 'B', icon: <SquareDashed className="size-[18px]" strokeWidth={1.6} /> },
-  { id: 'pan', label: '平移', key: 'H', icon: <Hand className="size-[18px]" strokeWidth={1.6} /> },
+  { id: 'select', label: '选择', key: 'V', icon: <MousePointer2 className="size-4" strokeWidth={1.6} /> },
+  { id: 'draw', label: '画框', key: 'B', icon: <SquareDashed className="size-4" strokeWidth={1.6} /> },
+  { id: 'pan', label: '平移', key: 'H', icon: <Hand className="size-4" strokeWidth={1.6} /> },
 ]
 
 function ToolButton({ on, className, ...props }: React.ComponentProps<'button'> & { on?: boolean }): React.JSX.Element {
@@ -77,11 +77,9 @@ function UnderlayMenu({
   }, [])
   return (
     <div className="flex w-[280px] flex-col gap-2 p-1">
-      <div className="px-1 text-caption font-medium text-ink-2">选一张作品垫在画面下面，作为构图参考</div>
+      <FieldLabel className="px-1">选一张作品垫在画面下面，作为构图参考</FieldLabel>
       {items === null && !error ? (
-        <div className="flex justify-center py-6">
-          <Spinner />
-        </div>
+        <LoadingRow className="justify-center py-6" />
       ) : error ? (
         <p className="px-1 py-3 text-caption text-ink-2">读不到作品：{error}</p>
       ) : items && items.length === 0 ? (
@@ -223,7 +221,7 @@ export function Toolbar({
           title={mask.enabled ? '涂出要重画的部分（M）' : mask.reason}
           onClick={() => onTool(tool === 'mask' ? 'select' : 'mask')}
         >
-          <Brush className="size-[18px]" strokeWidth={1.6} />
+          <Brush className="size-4" strokeWidth={1.6} />
           遮罩
         </ToolButton>
       )}
@@ -296,9 +294,9 @@ export function MaskBar({
           step={4}
           value={brush.size}
           onChange={(event) => onBrush({ ...brush, size: Number(event.target.value) })}
-          className="w-24 accent-accent"
+          className="w-24 accent-ink"
         />
-        <span className="tabular w-7 text-right text-ink">{brush.size}</span>
+        <span className="tabular w-7 text-right text-ink-2">{brush.size}</span>
       </label>
       <ToolButton aria-label="反转" title="反转：涂过的保留，其余重画" onClick={onInvert}>
         <FlipHorizontal2 className="size-4" strokeWidth={1.6} />

@@ -42,8 +42,10 @@ export function WireLayer({
         const selected = wire.id === selectedWireId
         const atSelection = wire.sourceId === selectedCanvasId || wire.targetId === selectedCanvasId
         const flow = flowing.has(wire.targetId)
-        const accent = selected || atSelection || flow
         const lineage = wire.kind === 'lineage'
+        // Lineage (where a picture came from) stays faint even at the selection: only real
+        // input wires take the accent, so a selected card never shows two equally strong kinds.
+        const accent = !lineage && (selected || atSelection || flow)
         return (
           <g
             key={wire.id}
@@ -75,7 +77,7 @@ export function WireLayer({
               strokeWidth={selected ? 2.5 : 1.5}
               strokeLinecap="round"
               vectorEffect="non-scaling-stroke"
-              className={cn(accent ? 'stroke-accent' : 'stroke-ink-3', lineage && !accent && 'opacity-50', flow && 'studio-wire-flow')}
+              className={cn(accent ? 'stroke-accent' : 'stroke-ink-3', lineage && 'opacity-50', flow && !lineage && 'studio-wire-flow')}
             />
             {lineage ? null : (
               <circle cx={wire.to.x} cy={wire.to.y} r={3.5 * chipScale} className={accent ? 'fill-accent' : 'fill-ink-3'} />
