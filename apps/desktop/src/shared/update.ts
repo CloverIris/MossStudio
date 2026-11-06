@@ -100,6 +100,17 @@ export interface UpdaterState {
    * offered again until update:unskip (Settings › 更新: 安装 <v>).
    */
   skippedVersion: string | null
+  /**
+   * The newest version newer than this one that failed its first start and was rolled back
+   * automatically (install.json `failed`: the launcher or the macOS swap helper). Checks never
+   * offer it by themselves; 再试一次 (update:retry-failed) clears it and downloads it again.
+   */
+  failedVersion: string | null
+  /**
+   * The first start after that rollback: tell the user once (title bar and a notification).
+   * Cleared by update:dismiss-failed and gone on the next start.
+   */
+  failedNotice: boolean
 }
 
 export type UpdateRestartResult =
@@ -113,6 +124,18 @@ export type UpdateRestartResult =
 /** Chinese text for the blocked-generation error and the UI. */
 export function requiredUpdateMessage(minimumVersion: string): string {
   return `必须更新：当前版本已停止支持生成，请先更新到 ${minimumVersion} 或更高版本（设置 › 更新）。`
+}
+
+/**
+ * Chinese text about a version that failed its first start and was rolled back to `current`:
+ * the one-time notice (notification and title bar popover) and the 设置 › 通知与更新 row.
+ */
+export function failedUpdateText(version: string, current: string): { title: string; notice: string; detail: string } {
+  return {
+    title: `${version} 没能正常启动`,
+    notice: `MossStudio ${version} 没能正常启动，已经自动回到 ${current}。你的作品、模型和设置都没有受影响。`,
+    detail: `更新到 ${version} 后它没能正常打开，所以 MossStudio 回到了 ${current}，之后也不会再自动提示这个版本。如果当时是你自己关掉了它，可以放心再试一次。`,
+  }
 }
 
 const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/

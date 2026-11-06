@@ -88,6 +88,24 @@ export function legacyInstallFixture(patch: Partial<SetupLegacyInstall> = {}): S
   }
 }
 
+/** Data a keep-data uninstall left in `root`\data, with the notes main's legacyView writes for it. */
+export function keptDataFixture(patch: Partial<SetupLegacyInstall> = {}): SetupLegacyInstall {
+  const root = patch.root ?? SETUP_FIXTURE_ROOT
+  const dataDir = patch.dataDir ?? `${root}\\data`
+  return {
+    root,
+    dataDir,
+    dataBytes: 12 * 1024 ** 3,
+    version: '1.9.0',
+    source: 'kept',
+    warnings: {
+      reuse: `新版本会继续使用 ${dataDir} 里的作品、模型和设置：请不要删除这个文件夹。`,
+      fresh: `这些数据仍留在 ${dataDir}，不会被删除；不再需要时可以手动删除这个文件夹。`,
+    },
+    ...patch,
+  }
+}
+
 export function setupStateFixture(patch: Partial<SetupState> = {}): SetupState {
   return {
     platform: 'win32',
@@ -125,7 +143,7 @@ export function uninstallInfoFixture(patch: Partial<UninstallInfo> = {}): Uninst
 }
 
 /** Named starting points for the setup window. */
-export type SetupScenarioName = 'first' | 'legacy' | 'legacyInPlace' | 'update' | 'repair' | 'downgrade' | 'macDmg' | 'noSpace'
+export type SetupScenarioName = 'first' | 'legacy' | 'legacyInPlace' | 'keptData' | 'keptDataInPlace' | 'update' | 'repair' | 'downgrade' | 'macDmg' | 'noSpace'
 
 export function setupScenario(name: SetupScenarioName): SetupState {
   const installed = { root: SETUP_FIXTURE_ROOT, dataRoot: `${SETUP_FIXTURE_ROOT}\\data`, version: '1.9.0' }
@@ -139,6 +157,11 @@ export function setupScenario(name: SetupScenarioName): SetupState {
       })
     case 'legacyInPlace':
       return setupStateFixture({ location: locationCheckFixture({ kind: 'legacy' }), legacy: legacyInstallFixture() })
+    case 'keptData':
+      // Uninstalled from the default folder with the data kept; this time installing to D:.
+      return setupStateFixture({ location: locationCheckFixture({ path: 'D:\\MossStudio' }), legacy: keptDataFixture() })
+    case 'keptDataInPlace':
+      return setupStateFixture({ location: locationCheckFixture({ kind: 'data' }), legacy: keptDataFixture() })
     case 'update':
       return setupStateFixture({ kind: 'update', installed, location: locationCheckFixture({ kind: 'install' }) })
     case 'repair':

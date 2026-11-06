@@ -71,6 +71,32 @@ func TestRunRejectsTamperedSetup(t *testing.T) {
 	}
 }
 
+func TestRunRefusesRootOnLinux(t *testing.T) {
+	setup := makeSetup(t, "#!/bin/sh\nexit 0\n")
+	tmp := t.TempDir()
+	started := false
+	root := func() int { return 0 }
+	code, err := Run(Options{Self: setup, Runner: runnerFunc(func() { started = true }), TempDir: tmp, GOOS: "linux", Euid: root})
+	var le *launch.Error
+	if code != ExitRoot || !errors.As(err, &le) || started {
+		t.Fatalf("code %d err %v started %v", code, err, started)
+	}
+	if !strings.Contains(le.Message, "sudo") || !strings.Contains(le.Detail, "不需要管理员权限") {
+		t.Errorf("message %q detail %q", le.Message, le.Detail)
+	}
+	if ents, _ := os.ReadDir(tmp); len(ents) != 0 {
+		t.Errorf("extracted although refused: %v", ents)
+	}
+	// A normal user goes on to start the app.
+	if code, _ := Run(Options{Self: setup, Runner: runnerFunc(func() { started = true }), TempDir: tmp, GOOS: "linux", Euid: func() int { return 1000 }}); code != ExitStart || !started {
+		t.Errorf("normal user: code %d started %v", code, started)
+	}
+	// Windows has no such rule (this Linux payload then fails later, at extraction).
+	if code, _ := Run(Options{Self: setup, Runner: runnerFunc(func() {}), TempDir: tmp, GOOS: "windows", Euid: root}); code == ExitRoot {
+		t.Errorf("windows refused as root")
+	}
+}
+
 func TestRunWithoutPayload(t *testing.T) {
 	plain := filepath.Join(t.TempDir(), "plain")
 	os.WriteFile(plain, []byte("\x7fELF plain launcher"), 0o755)

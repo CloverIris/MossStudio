@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoDownloadUpdates: true,
   skippedUpdateVersion: null,
   dismissedAnnouncements: [],
+  noticedFailedUpdates: [],
   sidebarCollapsed: false,
   onboardingState: 'pending',
   onboardingHostId: 'local',
@@ -82,6 +83,7 @@ export function getSettings(): Settings {
       cache.gpuSelection = 'auto'
     }
     if (!Array.isArray(cache.dismissedAnnouncements)) cache.dismissedAnnouncements = []
+    if (!Array.isArray(cache.noticedFailedUpdates)) cache.noticedFailedUpdates = []
     // Optional features arrived after users had already configured them: keep
     // them visible for anyone who was using them before the switch existed.
     if (parsed.remoteHostsEnabled === undefined) cache.remoteHostsEnabled = hasConfiguredRemoteHosts()

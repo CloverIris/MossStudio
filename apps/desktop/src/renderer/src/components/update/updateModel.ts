@@ -2,7 +2,7 @@
  * What the update UI shows for an UpdaterState: the title bar chip, the
  * popover under it and the status lines in 设置 › 通知与更新. No React here.
  */
-import type { UpdateBusyReason, UpdateRestartResult, UpdaterState } from '@shared/update'
+import { failedUpdateText, type UpdateBusyReason, type UpdateRestartResult, type UpdaterState } from '@shared/update'
 import { bytes, dateTime, relative } from '../../lib/format'
 
 export type ChipTone = 'quiet' | 'ready' | 'warn'
@@ -35,7 +35,8 @@ export function targetVersion(state: UpdaterState): string | null {
 /**
  * The chip in the title bar. Nothing while there is nothing to do; a thin bar
  * while downloading; 重启以更新 once ready; 必须更新 (warning) when this
- * version may no longer generate.
+ * version may no longer generate; 新版本没能启动 (warning) on the first start
+ * after a failed version was rolled back.
  */
 export function chipView(state: UpdaterState | null): ChipView | null {
   if (!state || !state.supported) return null
@@ -77,7 +78,9 @@ export function chipView(state: UpdaterState | null): ChipView | null {
     case 'error':
       return version ? { label: '更新没有完成', tone: 'quiet', description: `更新没有完成：${state.error ?? '请稍后重试'}` } : null
     default:
-      return null
+      return state.failedNotice && state.failedVersion
+        ? { label: '新版本没能启动', tone: 'warn', description: failedUpdateText(state.failedVersion, state.current).notice }
+        : null
   }
 }
 
@@ -127,6 +130,8 @@ export type PopoverAction =
   | 'cancel-when-idle'
   | 'retry'
   | 'later'
+  | 'retry-failed'
+  | 'dismiss-failed'
 
 export interface PopoverView {
   title: string
@@ -135,6 +140,7 @@ export interface PopoverView {
   status: string | null
   statusTone: 'neutral' | 'warn' | 'danger'
   progress?: number | null
+  /** Release notes; empty when there are none to show (the rollback notice). */
   notes: string
   notesUrl?: string
   required: boolean
@@ -150,6 +156,8 @@ export const ACTION_LABEL: Record<PopoverAction, string> = {
   'cancel-when-idle': '取消自动重启',
   retry: '重试',
   later: '稍后',
+  'retry-failed': '再试一次',
+  'dismiss-failed': '知道了',
 }
 
 function dateOnly(iso: string | undefined): string | null {
@@ -222,6 +230,10 @@ export function popoverView(state: UpdaterState, busy: UpdateBusyReason[] = []):
     case 'error':
       return { ...base, status: state.error ?? '更新没有完成，请稍后重试。', statusTone: 'danger', primary: 'retry' }
     default:
+      if (state.failedNotice && state.failedVersion && !state.required) {
+        const text = failedUpdateText(state.failedVersion, state.current)
+        return { ...base, title: text.title, meta: `当前 ${state.current}`, status: text.detail, statusTone: 'warn', notes: '', notesUrl: undefined, primary: 'retry-failed', secondary: 'dismiss-failed' }
+      }
       return { ...base, status: state.required ? '正在查找可以安装的版本…' : null, secondary: null }
   }
 }

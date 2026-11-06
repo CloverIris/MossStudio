@@ -173,6 +173,8 @@ export interface Settings {
   /** Set by 回到上一个版本: this version (and older) is not offered again until the user asks. */
   skippedUpdateVersion: string | null
   dismissedAnnouncements: string[]
+  /** Versions whose automatic rollback the user has already been told about (once each). */
+  noticedFailedUpdates: string[]
   sidebarCollapsed: boolean
   onboardingState: 'pending' | 'active' | 'dismissed' | 'completed'
   onboardingHostId: string

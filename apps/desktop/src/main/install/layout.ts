@@ -20,6 +20,7 @@ export const BUNDLE_NAME = 'MossStudio.app'
 export const RECORD_FILE = 'install.json'
 export const PORTABLE_FILE = 'portable.json'
 export const LOCATOR_FILE = 'locator.json'
+export const KEPT_DATA_FILE = 'kept-data.json'
 export const READY_FILE = '.ready'
 
 /** The environment the layout depends on. `env` holds LOCALAPPDATA, APPDATA, XDG_*. */
@@ -90,6 +91,12 @@ export function locatorPath(host: HostInfo): string {
   if (host.platform === 'win32') return p.join(localAppData(host), PRODUCT_NAME, LOCATOR_FILE)
   if (host.platform === 'darwin') return p.join(macSupportDir(host), LOCATOR_FILE)
   return p.join(xdg(host, 'XDG_CONFIG_HOME', ['.config']), PRODUCT_NAME, LOCATOR_FILE)
+}
+
+/** Beside the locator: the data a keep-data uninstall left behind (see keptDataSchema). */
+export function keptDataPath(host: HostInfo): string {
+  const p = pathFor(host.platform)
+  return p.join(p.dirname(locatorPath(host)), KEPT_DATA_FILE)
 }
 
 /**

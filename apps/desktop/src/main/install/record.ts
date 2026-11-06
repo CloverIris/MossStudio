@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto'
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs'
 import { dirname, join, basename } from 'node:path'
 import type { ZodObject, ZodRawShape } from 'zod'
-import { installLocatorSchema, installRecordSchema, type InstallLocator, type InstallRecord } from '@shared/install'
+import { installLocatorSchema, installRecordSchema, keptDataSchema, type InstallLocator, type InstallRecord, type KeptData } from '@shared/install'
 
 /** The JSON object in `file`, or null when it is missing or not a JSON object. */
 export function readJsonObject(file: string): Record<string, unknown> | null {
@@ -108,4 +108,12 @@ export function readLocator(file: string): InstallLocator | null {
 
 export function writeLocator(file: string, locator: InstallLocator): void {
   writeMerged(file, installLocatorSchema, locator as unknown as Record<string, unknown>)
+}
+
+export function readKeptData(file: string): KeptData | null {
+  return readValidated<KeptData>(file, keptDataSchema)
+}
+
+export function writeKeptData(file: string, kept: KeptData): void {
+  writeJsonAtomic(file, keptDataSchema.parse(kept))
 }

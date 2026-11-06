@@ -416,6 +416,8 @@ export function registerIpc(): void {
   handle(Ipc.updateSetChannel, schemas.updateSetChannel, ({ channel }) => updaterApi.setChannel(channel))
   handle(Ipc.updateSetAutoDownload, schemas.updateToggle, ({ enabled }) => updaterApi.setAutoDownload(enabled))
   handle(Ipc.updateUnskip, null, () => updaterApi.unskip())
+  handle(Ipc.updateRetryFailed, null, () => updaterApi.retryFailed())
+  handle(Ipc.updateDismissFailed, null, () => updaterApi.dismissFailed())
 
   handle(Ipc.mossInferDownload, schemas.mossInferDownload, async ({ channel, packages, cudaWheels, releaseTag, all }) => {
     // Without packages: whatever the plan says this computer is missing (one package per kind of GPU).

@@ -27,7 +27,11 @@ export interface SetupLocationCheck {
   /** Normalized absolute path that was checked. */
   path: string
   ok: boolean
-  /** missing/empty: fresh; install: an existing MossStudio root (repair); legacy: an old 1.0.x folder (converted in place); data: existing MossStudio data. */
+  /**
+   * missing/empty: fresh; install: an existing MossStudio root (repair); legacy: an old 1.0.x folder
+   * (converted in place); data: existing MossStudio data (a data folder; or, for the install
+   * location, a folder whose data/ an uninstall kept: installing there keeps using it).
+   */
   kind: 'missing' | 'empty' | 'install' | 'legacy' | 'data' | 'occupied'
   problem: { code: SetupLocationCode; message: string } | null
   /** Offer this instead (e.g. <chosen>\MossStudio for a non-empty folder). */
@@ -42,7 +46,8 @@ export interface SetupLegacyInstall {
   /** Size of the old data folder; null until measured (an Events.installState follows). */
   dataBytes: number | null
   version: string | null
-  source: 'registry' | 'default' | 'picked'
+  /** kept: data a keep-data uninstall left behind (root = the folder it was installed in, dataDir = its data root). */
+  source: 'registry' | 'default' | 'picked' | 'kept'
   /**
    * What happens to the old folder, per choice. Show `warnings[mode]` for the chosen mode
    * (use `legacyWarning`); nothing when installing into the old folder itself (in place).
@@ -143,7 +148,11 @@ export const setupSchemas = {
     root: z.string().min(1),
     /** macOS only (高级); omitted = default. */
     dataRoot: z.string().min(1).nullish(),
-    /** reuse: dataRoot = <old>/data (继续使用这些数据); fresh: new data (重新开始). Installing into the old folder always reuses. */
+    /**
+     * reuse: dataRoot = <old>/data (继续使用这些数据); fresh: new data (重新开始). Installing into the old
+     * folder always reuses. For data a keep-data uninstall left (legacy.source kept), root is the
+     * folder it was installed in and reuse records its data root.
+     */
     legacy: z.object({ root: z.string().min(1), mode: z.enum(['reuse', 'fresh']) }).nullish(),
     /** Required true when kind is downgrade (the user confirmed once). */
     allowDowngrade: z.boolean().optional(),

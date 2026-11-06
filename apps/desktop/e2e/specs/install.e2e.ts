@@ -174,6 +174,60 @@ describe('setup window: old 1.0.x install', () => {
   })
 })
 
+describe('setup window: data kept by an uninstall', () => {
+  const app = useApp()
+
+  it('offers to keep using it, by default, when installing somewhere else', async () => {
+    const page = await openSetup(app, scenario('keptData'))
+    const card = page.locator('[data-legacy-card]')
+    expect(await card.getAttribute('aria-label')).toBe('保留的数据')
+    expect(await card.getByText('发现上次保留的数据').isVisible()).toBe(true)
+    expect(await card.getByText(`卸载 MossStudio 1.9.0 时留下的作品、模型和设置，位于 ${ROOT}\\data，共 12 GB。`).isVisible()).toBe(true)
+    const reuse = card.getByRole('radio', { name: /继续使用这些数据（不复制）/ })
+    expect(await reuse.getAttribute('aria-checked')).toBe('true')
+    const note = await card.locator('[data-legacy-warning="reuse"]').textContent()
+    expect(note).toContain('请不要删除这个文件夹')
+    expect(note).not.toContain('设置 › 应用')
+    await installButton(page).click()
+    await expect.poll(() => install(page).then((state) => state.starts)).toEqual([{ root: 'D:\\MossStudio', legacy: { root: ROOT, mode: 'reuse' } }])
+  })
+
+  it('重新开始 leaves the kept data where it is', async () => {
+    const page = await openSetup(app, scenario('keptData'))
+    await page.getByRole('radio', { name: /重新开始/ }).click()
+    expect(await page.locator('[data-legacy-warning="fresh"]').textContent()).toBe(`这些数据仍留在 ${ROOT}\\data，不会被删除；不再需要时可以手动删除这个文件夹。`)
+    await installButton(page).click()
+    await expect.poll(() => install(page).then((state) => state.starts[0]?.legacy)).toEqual({ root: ROOT, mode: 'fresh' })
+  })
+
+  it('installing into the folder it was left in just keeps using it, with no choice to make', async () => {
+    const page = await openSetup(app, scenario('keptDataInPlace'))
+    const card = page.locator('[data-legacy-card]')
+    expect(await card.getByText('装在原来的文件夹里：会继续使用这些作品、模型和设置。').isVisible()).toBe(true)
+    expect(await card.getByRole('radio').count()).toBe(0)
+    expect(await page.locator('[data-folder-note]').count()).toBe(0)
+    expect(await installButton(page).isEnabled()).toBe(true)
+  })
+
+  it('a chosen folder that holds kept data is accepted, and says it will be used', async () => {
+    const page = await openSetup(app, scenario('first'))
+    await pickProblem(page, 'E:\\MossStudio', { kind: 'data' })
+    await expect.poll(() => page.locator('[data-folder-note]').textContent()).toBe('这个文件夹里有上次卸载时保留的作品、模型和设置，装好后会继续使用它们。')
+    expect(await page.getByRole('alert').count()).toBe(0)
+    await installButton(page).click()
+    await expect.poll(() => install(page).then((state) => state.starts)).toEqual([{ root: 'E:\\MossStudio' }])
+  })
+
+  for (const theme of ['light', 'dark'] as const) {
+    it(`screenshot: kept data found (${theme})`, async () => {
+      const page = await openSetup(app, scenario('keptData'), { theme })
+      await expect.poll(() => page.locator('[data-legacy-card]').isVisible()).toBe(true)
+      await app.screenshot(`setup-kept-data-${theme}`)
+      await expectVisualRules(page, `setup kept data (${theme})`)
+    })
+  }
+})
+
 describe('setup window: folder problems', () => {
   const app = useApp()
 

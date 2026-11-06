@@ -6,7 +6,7 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { spawn } from 'node:child_process'
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ZodError, type ZodType } from 'zod'
@@ -19,19 +19,20 @@ import { getSettings } from '../services/settings'
 import { SetupController } from './controller'
 import { confirmHealthFor } from './health'
 import { trashBundleAfterExit } from './macTrash'
+import { resolveMissingData } from './missingData'
 import { chromiumHelpers, rememberSpawned, spawnedPids } from './processTree'
 import { focusOnSecondInstance, otherInstanceRunning, releaseAppLock } from './singleInstance'
 import { recordedDataRoot } from './dataRoot'
 import { installModeSwitches } from './switches'
 import { readInstallRecord } from './record'
 import { ensureMacPortableRecord } from './portable'
-import { spawnLinesNoShell, type InstallResult } from './install'
+import { reintegrateMovedInstall, spawnLinesNoShell, type InstallResult } from './install'
 import { applyAppDetails } from './identity'
 import { PRODUCT_NAME, READY_FILE, type HostInfo } from './layout'
 import { directorySize } from './legacy'
 import { execFileNoShell, type Registry } from './registry'
 import { getRunContext, type RunContext } from './runContext'
-import { buildUninstallPlan, listRoot, startFinishUninstall, uninstallMac, type UninstallTarget } from './uninstall'
+import { buildUninstallPlan, listRoot, noteKeptData, startFinishUninstall, uninstallMac, type UninstallTarget } from './uninstall'
 
 /** Setup and uninstall write here (append): %TEMP%\MossStudio-setup.log, $TMPDIR/MossStudio-setup.log. */
 export function setupLogPath(): string {
@@ -370,6 +371,15 @@ async function startUninstall(context: RunContext, removeData: boolean): Promise
   // Silent (QuietUninstallString, CI): the launcher copy must not stop on a dialog either.
   const started = startFinishUninstall(plan, context.launcher, { silent: context.mode === 'uninstall' && context.silent })
   log(`started ${started.launcher} with ${started.plan} (${plan.remove.length} paths)`)
+  if (!removeData) {
+    try {
+      const note = noteKeptData(target, context.record?.current ?? app.getVersion())
+      if (note) log(`noted the kept data ${target.dataRoot} in ${note}`)
+    } catch (error) {
+      // Only an offer for the next Setup: the uninstall goes on without it.
+      log(`could not note the kept data: ${(error as Error).message}`)
+    }
+  }
 }
 
 /** uninstall:info / uninstall:start, for the uninstall window and Settings › 关于 › 卸载. */
@@ -414,10 +424,30 @@ async function runUninstall(context: RunContext): Promise<void> {
  */
 export async function runInstallMode(context: RunContext = getRunContext()): Promise<boolean> {
   if (context.mode === 'setup') {
+    const missing = context.setup?.missingDataRoot
+    if (missing) {
+      // macOS: the installed bundle whose data drive is not connected. Never set it up again
+      // (rewriting the locator) unless the user chooses to.
+      log(`data root ${missing} of this install is missing`)
+      const choice = context.silent
+        ? 'quit'
+        : await resolveMissingData(missing, {
+            exists: existsSync,
+            ask: async (options) => (await dialog.showMessageBox(options)).response,
+          })
+      log(`missing data root: ${choice}`)
+      if (choice === 'relaunch') app.relaunch()
+      if (choice !== 'setup') {
+        app.exit(context.silent ? 1 : 0)
+        return true
+      }
+    }
     try {
       await runSetup(context)
     } catch (error) {
       log(`setup could not start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
+      // This dialog says it: the stub's splash can go, and it must not report the exit again.
+      writeReady(context)
       if (!context.silent) dialog.showErrorBox(`${PRODUCT_NAME} 安装`, `安装程序无法启动：${error instanceof Error ? error.message : String(error)}`)
       exitCleanly(1)
     }
@@ -433,6 +463,22 @@ export async function runInstallMode(context: RunContext = getRunContext()): Pro
     } catch (error) {
       console.error('[install] portable install.json', error)
     }
+  }
+  if (context.mode === 'installed' && context.platform !== 'darwin') {
+    const deps = {
+      exec: execFileNoShell,
+      writeShortcut: process.platform === 'win32' ? shell.writeShortcutLink.bind(shell) : null,
+      desktopDir: app.getPath('desktop'),
+      iconBytes,
+    }
+    void reintegrateMovedInstall(context, host(context), deps).then(
+      (warnings) => {
+        if (!warnings) return
+        console.log(`[install] install folder moved from ${context.locator?.root} to ${context.root}: shortcuts and the locator follow it`)
+        for (const warning of warnings) console.error(`[install] ${warning}`)
+      },
+      (error: unknown) => console.error('[install] re-integrating the moved install', error),
+    )
   }
   return false
 }

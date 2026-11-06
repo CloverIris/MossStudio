@@ -3,7 +3,9 @@ import { Advanced, Button, Spinner } from '../../components/ui'
 import { Checkbox } from '../../components/common/Checkbox'
 import {
   downgradeText,
+  folderNote,
   folderProblemMessage,
+  legacyInPlace,
   oldInstallText,
   progressLabel,
   progressPercent,
@@ -27,20 +29,23 @@ function LegacyCard({ setup }: { setup: SetupController }): React.JSX.Element | 
   const legacy = setup.legacy
   if (!legacy) return null
   const old = oldInstallText(legacy)
-  // Installing into the old folder converts it in place, so its data always stays in use.
-  const inPlace = setup.location?.kind === 'legacy'
+  const kept = legacy.source === 'kept'
+  // Installing into the old folder converts it in place (or, for kept data, finds it as data/), so its data always stays in use.
+  const inPlace = legacyInPlace(setup.state!.platform, legacy, setup.location)
   const warning = legacyWarning(legacy, setup.legacyMode, inPlace)
   return (
-    <section aria-label="旧版数据" className="flex flex-col gap-1 rounded-xl bg-surface p-1.5" data-legacy-card>
+    <section aria-label={kept ? '保留的数据' : '旧版数据'} className="flex flex-col gap-1 rounded-xl bg-surface p-1.5" data-legacy-card>
       <div className="flex flex-col gap-0.5 px-3.5 pb-1.5 pt-2">
         <h2 className="text-control font-semibold text-ink">{old.title}</h2>
         <p className="text-caption text-ink-2 [overflow-wrap:anywhere]">{old.description}</p>
       </div>
       {inPlace ? (
-        <p className="px-3.5 pb-2.5 text-ui text-ink">装在旧版所在的文件夹里：旧的程序文件会被替换，作品、模型和设置原地保留。</p>
+        <p className="px-3.5 pb-2.5 text-ui text-ink">
+          {kept ? '装在原来的文件夹里：会继续使用这些作品、模型和设置。' : '装在旧版所在的文件夹里：旧的程序文件会被替换，作品、模型和设置原地保留。'}
+        </p>
       ) : (
         <ChoiceList
-          label="旧版数据"
+          label={kept ? '保留的数据' : '旧版数据'}
           value={setup.legacyMode}
           onChange={setup.setLegacyMode}
           disabled={setup.starting}
@@ -67,6 +72,8 @@ function ChooseScreen({ setup }: { setup: SetupController }): React.JSX.Element 
   const mac = state.platform === 'darwin'
   const blocked = setup.checking || !location?.ok || (mac && setup.dataLocation !== null && !setup.dataLocation.ok)
   const dataPath = setup.dataLocation?.path ?? state.defaults.dataRoot
+  // The card already says the data stays in use when it is installed in place.
+  const note = setup.legacy && legacyInPlace(state.platform, setup.legacy, location) ? null : folderNote(location)
   return (
     <Screen
       actions={(
@@ -86,6 +93,12 @@ function ChooseScreen({ setup }: { setup: SetupController }): React.JSX.Element 
         disabled={setup.starting}
       >
         <FolderCheckLine check={location} onUse={setup.selectLocation} />
+        {note && !setup.checking ? (
+          <p className="flex items-start gap-2 px-3.5 pb-2 text-caption text-ink-2" data-folder-note>
+            <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            <span className="[overflow-wrap:anywhere]">{note}</span>
+          </p>
+        ) : null}
       </FolderField>
 
       <LegacyCard setup={setup} />

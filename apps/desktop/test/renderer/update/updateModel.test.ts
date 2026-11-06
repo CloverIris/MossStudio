@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ACTION_LABEL,
   RELEASES_URL,
   busyList,
   busySentence,
@@ -18,6 +19,7 @@ import {
   FIXTURE_NOW,
   updateAvailableFixture,
   updateDownloadingFixture,
+  updateFailedFixture,
   updateReadyFixture,
   updaterStateFixture,
 } from '../../mocks/backend'
@@ -69,6 +71,28 @@ describe('chipView', () => {
 
   it('stays hidden for an available phase that names no version', () => {
     expect(chipView(updaterStateFixture({ phase: 'available' }))).toBeNull()
+  })
+})
+
+describe('a version rolled back after a failed start', () => {
+  it('shows a warning chip only on the start that tells about it, and only when nothing else is going on', () => {
+    expect(chipView(updateFailedFixture('1.1.0'))).toEqual({
+      label: '新版本没能启动', tone: 'warn',
+      description: 'MossStudio 1.1.0 没能正常启动，已经自动回到 1.0.3。你的作品、模型和设置都没有受影响。',
+    })
+    expect(chipView(updateFailedFixture('1.1.0', { failedNotice: false }))).toBeNull()
+    expect(chipView(updateFailedFixture('1.1.0', { phase: 'available', available: updateAvailableFixture('1.2.0').available }))?.label).toBe('新版本 1.2.0')
+  })
+
+  it('explains in the popover and offers 再试一次 / 知道了, without release notes', () => {
+    const view = popoverView(updateFailedFixture('1.1.0'))
+    expect(view).toMatchObject({
+      title: '1.1.0 没能正常启动', meta: '当前 1.0.3', statusTone: 'warn', notes: '', primary: 'retry-failed', secondary: 'dismiss-failed',
+    })
+    expect(view.status).toBe('更新到 1.1.0 后它没能正常打开，所以 MossStudio 回到了 1.0.3，之后也不会再自动提示这个版本。如果当时是你自己关掉了它，可以放心再试一次。')
+    expect(ACTION_LABEL['retry-failed']).toBe('再试一次')
+    expect(ACTION_LABEL['dismiss-failed']).toBe('知道了')
+    expect(popoverView(updateFailedFixture('1.1.0', { failedNotice: false })).primary).toBeNull()
   })
 })
 

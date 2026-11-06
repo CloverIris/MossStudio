@@ -16,6 +16,7 @@ import {
   scenario,
   localAdapterFixture,
   updateAvailableFixture,
+  updateFailedFixture,
   updateReadyFixture,
   updaterStateFixture,
 } from '../mocks/backend'
@@ -258,6 +259,16 @@ describe('updates', () => {
     await store().unskipUpdate()
     expect(backend.callsTo(Ipc.updateUnskip)).toEqual([undefined])
     expect(store().update!.skippedVersion).toBeNull()
+  })
+
+  it('retryFailedUpdate takes the rolled-back version back and starts its download; dismissFailedUpdate hides the notice', async () => {
+    const { backend, store } = await ready(scenario('ready', { update: updateFailedFixture('1.1.0') }))
+    await store().dismissFailedUpdate()
+    expect(backend.callsTo(Ipc.updateDismissFailed)).toEqual([undefined])
+    expect(store().update).toMatchObject({ failedVersion: '1.1.0', failedNotice: false })
+    await store().retryFailedUpdate()
+    expect(backend.callsTo(Ipc.updateRetryFailed)).toEqual([undefined])
+    expect(store().update).toMatchObject({ failedVersion: null, phase: 'downloading', available: { version: '1.1.0' } })
   })
 
   it('dismissAnnouncement records the dismissal and refreshes the update state', async () => {

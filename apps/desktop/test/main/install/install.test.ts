@@ -3,18 +3,19 @@
  * drives it (--moss-silent --moss-install-to), and fake OS executors for reg.exe, shortcuts
  * and ditto. Runs the Windows integration on Windows and the Linux one elsewhere.
  */
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installRecordSchema } from '@shared/install'
-import { SetupController, legacyView, type SetupEnvironment } from '@main/install/controller'
-import { performInstall, type InstallDeps } from '@main/install/install'
-import { linuxDesktopFile, locatorPath, type HostInfo, type OsPlatform } from '@main/install/layout'
-import { readInstallRecord, readJsonObject, readLocator } from '@main/install/record'
+import { SetupController, keptDataInstall, legacyView, type SetupEnvironment } from '@main/install/controller'
+import { performInstall, reintegrateMovedInstall, type InstallDeps } from '@main/install/install'
+import { keptDataPath, linuxDesktopFile, locatorPath, type HostInfo, type OsPlatform } from '@main/install/layout'
+import { readInstallRecord, readJsonObject, readKeptData, readLocator } from '@main/install/record'
 import type { ExecFile } from '@main/install/registry'
 import { detectRunContext } from '@main/install/runContext'
 import type { ShortcutOptions } from '@main/install/integration'
+import { buildUninstallPlan, listRoot, noteKeptData } from '@main/install/uninstall'
 import { useWorkDir } from './helpers'
 
 const work = useWorkDir()
@@ -362,6 +363,156 @@ describe('old 1.0.x install', () => {
     const root = join(work(), 'R')
     const controller = await SetupController.create(harness('2.0.0', root).env)
     expect(() => controller.start({ root, legacy: { root: join(work(), 'nothing'), mode: 'reuse' } })).toThrow(expect.objectContaining({ code: 'E_NOT_LEGACY' }))
+  })
+})
+
+describe('reinstall after an uninstall that kept the data', () => {
+  /** Install into `root`, put work into the data, then uninstall the way the launcher runs the plan. */
+  async function installThenUninstallKeepingData(root: string): Promise<{ host: HostInfo; dataRoot: string }> {
+    const h = harness('2.0.0', root)
+    const { result } = await silentInstall(h)
+    mkdirSync(join(result.dataRoot, 'outputs'), { recursive: true })
+    // What a used install has: the launcher logs every start into <data>/logs.
+    mkdirSync(join(result.dataRoot, 'logs'), { recursive: true })
+    writeFileSync(join(result.dataRoot, 'logs', 'launcher.log'), 'started')
+    writeFileSync(join(result.dataRoot, 'settings.json'), '{"theme":"dark"}')
+    writeFileSync(join(result.dataRoot, 'outputs', '作品 1.png'), 'png')
+    const target = { host: h.env.host, platformKey: h.env.context.platformKey!, root, dataRoot: result.dataRoot, portable: false, desktopDir: join(work(), 'Desktop'), profileDir: null }
+    const plan = buildUninstallPlan(target, false, listRoot(root))
+    for (const path of plan.remove) rmSync(path, { recursive: true, force: true })
+    noteKeptData(target, '2.0.0', new Date('2026-11-05T09:00:00.000Z'))
+    return { host: h.env.host, dataRoot: result.dataRoot }
+  }
+
+  it('the same folder is accepted again and its data/ is used as it is', async () => {
+    const root = join(work(), 'R')
+    const { host, dataRoot } = await installThenUninstallKeepingData(root)
+    expect(readdirSync(root)).toEqual(['data'])
+    expect(existsSync(locatorPath(host))).toBe(false)
+    expect(readKeptData(keptDataPath(host))).toEqual({ schema: 1, root, dataRoot, version: '2.0.0', keptAt: '2026-11-05T09:00:00.000Z' })
+
+    const { controller, result } = await silentInstall(harness('2.1.0', root))
+    expect(controller.state).toMatchObject({ kind: 'first', location: { ok: true, kind: 'data' } })
+    expect(result.dataRoot).toBe(dataRoot)
+    expect(readFileSync(join(dataRoot, 'settings.json'), 'utf8')).toBe('{"theme":"dark"}')
+    expect(readFileSync(join(dataRoot, 'outputs', '作品 1.png'), 'utf8')).toBe('png')
+    expect(readLocator(locatorPath(host))?.dataRoot).toBe(dataRoot)
+    expect(existsSync(keptDataPath(host))).toBe(false)
+  })
+
+  it('another folder: Setup offers the kept data (reuse records it, fresh starts anew), never touching it', async () => {
+    const old = join(work(), 'R')
+    const { host, dataRoot } = await installThenUninstallKeepingData(old)
+    const elsewhere = join(work(), '新 位置')
+    const controller = await SetupController.create(harness('2.1.0', elsewhere).env)
+    expect(controller.state.legacy).toMatchObject({ source: 'kept', root: old, dataDir: dataRoot, version: '2.0.0' })
+    expect(controller.state.legacy!.warnings.reuse).toBe(`新版本会继续使用 ${dataRoot} 里的作品、模型和设置：请不要删除这个文件夹。`)
+    expect(controller.state.legacy!.warnings.fresh).toBe(`这些数据仍留在 ${dataRoot}，不会被删除；不再需要时可以手动删除这个文件夹。`)
+    controller.start({ root: elsewhere, legacy: { root: old, mode: 'reuse' } })
+    const result = await controller.completion()
+    expect(result.dataRoot).toBe(dataRoot)
+    expect(readInstallRecord(join(elsewhere, 'install.json'))?.dataRoot).toBe(dataRoot)
+    expect(existsSync(join(elsewhere, 'data'))).toBe(false)
+    expect(readFileSync(join(dataRoot, 'outputs', '作品 1.png'), 'utf8')).toBe('png')
+    expect(existsSync(keptDataPath(host))).toBe(false)
+
+    // The same, but 重新开始: a new data folder, the kept one left exactly as it was.
+    const again = join(work(), 'again')
+    const second = await installThenUninstallKeepingData(again)
+    const freshRoot = join(work(), 'fresh')
+    const fresh = await SetupController.create(harness('2.1.0', freshRoot).env)
+    expect(fresh.state.legacy).toMatchObject({ source: 'kept', dataDir: second.dataRoot })
+    fresh.start({ root: freshRoot, legacy: { root: again, mode: 'fresh' } })
+    expect((await fresh.completion()).dataRoot).toBe(join(freshRoot, 'data'))
+    expect(readFileSync(join(second.dataRoot, 'settings.json'), 'utf8')).toBe('{"theme":"dark"}')
+  })
+
+  it('offers nothing once the kept data is gone or is not MossStudio data', () => {
+    const h = host()
+    expect(keptDataInstall(h)).toBeNull()
+    const data = join(work(), 'gone', 'data')
+    noteKeptData({ host: h, platformKey: 'linux-x64', root: join(work(), 'gone'), dataRoot: data, portable: false, desktopDir: '', profileDir: null }, '2.0.0')
+    expect(keptDataInstall(h)).toBeNull()
+    mkdirSync(data, { recursive: true })
+    writeFileSync(join(data, 'photo.jpg'), '')
+    expect(keptDataInstall(h)).toBeNull()
+    writeFileSync(join(data, 'settings.json'), '{}')
+    expect(keptDataInstall(h)).toMatchObject({ source: 'kept', dataDir: data })
+    expect(keptDataInstall({ ...h, platform: 'darwin' })).toBeNull()
+  })
+})
+
+describe('install folder moved by hand', () => {
+  /** The installed app as the launcher starts it from `root` (after it rebased install.json there). */
+  function startedFrom(root: string, h: HostInfo) {
+    const recordFile = join(root, 'install.json')
+    const record = readInstallRecord(recordFile)!
+    if (record.root !== root) {
+      // What launch.go Load does for a moved folder: root follows, and dataRoot when it was inside.
+      const dataRoot = record.dataRoot.startsWith(record.root) ? join(root, record.dataRoot.slice(record.root.length)) : record.dataRoot
+      writeFileSync(recordFile, JSON.stringify({ ...readJsonObject(recordFile), root, dataRoot }))
+    }
+    return detectRunContext({
+      argv: ['MossStudio', '--moss-launched'],
+      env: { ...h.env, MOSSSTUDIO_ROOT: root, MOSSSTUDIO_LAUNCHER: join(root, launcherFile) },
+      execPath: join(root, 'app-2.0.0', exe),
+      packaged: true,
+      platform,
+      arch: 'x64',
+      home: h.home,
+      exists: existsSync,
+      readText: (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null),
+    })
+  }
+
+  it('moved: the locator, shortcuts or .desktop entry and the Apps & Features entry follow the new folder', async () => {
+    const before = join(work(), 'before')
+    const h = harness('2.0.0', before)
+    await silentInstall(h)
+    const after = join(work(), '新 文件夹', 'MossStudio')
+    mkdirSync(join(after, '..'), { recursive: true })
+    renameSync(before, after)
+    h.regCalls.length = 0
+    h.shortcuts.length = 0
+
+    const context = startedFrom(after, h.env.host)
+    expect(context).toMatchObject({ mode: 'installed', root: after, locator: { root: before } })
+    expect(await reintegrateMovedInstall(context, h.env.host, h.env.install)).toEqual([])
+    expect(readLocator(locatorPath(h.env.host))).toEqual({ schema: 1, root: after, dataRoot: join(after, 'data'), version: '2.0.0' })
+    const launcher = join(after, launcherFile)
+    if (platform === 'win32') {
+      const adds = h.regCalls.filter((args) => args[0] === 'add')
+      expect(adds.find((args) => args[3] === 'InstallLocation')?.[7]).toBe(after)
+      expect(adds.find((args) => args[3] === 'UninstallString')?.[7]).toBe(`"${launcher}" --uninstall`)
+      expect(h.shortcuts.map((item) => item.options.target)).toEqual([launcher, launcher])
+    } else {
+      expect(readFileSync(linuxDesktopFile(h.env.host), 'utf8')).toContain(`Exec="${launcher}" %U`)
+    }
+    // Done once: the next start has nothing to do.
+    expect(await reintegrateMovedInstall(startedFrom(after, h.env.host), h.env.host, h.env.install)).toBeNull()
+
+    // A later Setup finds it where it is now.
+    const next = await SetupController.create(harness('2.1.0', after).env)
+    expect(next.state).toMatchObject({ kind: 'update', installed: { root: after } })
+  })
+
+  it('copied: the original still holds an install, so nothing changes', async () => {
+    const original = join(work(), 'original')
+    const h = harness('2.0.0', original)
+    await silentInstall(h)
+    const desktopBefore = platform === 'win32' ? null : readFileSync(linuxDesktopFile(h.env.host), 'utf8')
+    const copy = join(work(), 'copy')
+    cpSync(original, copy, { recursive: true, verbatimSymlinks: true })
+    h.regCalls.length = 0
+    h.shortcuts.length = 0
+
+    expect(await reintegrateMovedInstall(startedFrom(copy, h.env.host), h.env.host, h.env.install)).toBeNull()
+    expect(readLocator(locatorPath(h.env.host))?.root).toBe(original)
+    expect(h.regCalls).toEqual([])
+    expect(h.shortcuts).toEqual([])
+    if (desktopBefore !== null) expect(readFileSync(linuxDesktopFile(h.env.host), 'utf8')).toBe(desktopBefore)
+    // Started from where it was installed: nothing to do either.
+    expect(await reintegrateMovedInstall(startedFrom(original, h.env.host), h.env.host, h.env.install)).toBeNull()
   })
 })
 

@@ -45,6 +45,8 @@ export function UpdateChip(): React.JSX.Element | null {
   const restart = useApp((s) => s.restartToUpdate)
   const setRestartWhenIdle = useApp((s) => s.setRestartWhenIdle)
   const check = useApp((s) => s.checkForUpdates)
+  const retryFailed = useApp((s) => s.retryFailedUpdate)
+  const dismissFailed = useApp((s) => s.dismissFailedUpdate)
   const [working, setWorking] = useState<PopoverAction | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const view = chipView(state)
@@ -84,6 +86,11 @@ export function UpdateChip(): React.JSX.Element | null {
       else if (action === 'cancel-download') await cancelDownload()
       else if (action === 'restart-when-idle') await setRestartWhenIdle(true)
       else if (action === 'cancel-when-idle') await setRestartWhenIdle(false)
+      else if (action === 'retry-failed') await retryFailed()
+      else if (action === 'dismiss-failed') {
+        await dismissFailed()
+        setOpen(false)
+      }
       else if (action === 'retry') {
         if (state?.available) await download()
         else await check()
@@ -148,21 +155,23 @@ export function UpdateChip(): React.JSX.Element | null {
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-1.5">
-            <h3 className="text-caption font-medium text-ink-2">更新内容</h3>
-            <div className="max-h-[240px] overflow-y-auto rounded-lg bg-well px-3 py-2.5">
-              <MarkdownBody>{panel.notes}</MarkdownBody>
+          {panel.notes ? (
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-caption font-medium text-ink-2">更新内容</h3>
+              <div className="max-h-[240px] overflow-y-auto rounded-lg bg-well px-3 py-2.5">
+                <MarkdownBody>{panel.notes}</MarkdownBody>
+              </div>
+              {panel.notesUrl ? (
+                <button
+                  type="button"
+                  className="flex items-center gap-1 self-start rounded-md px-1 text-caption text-ink-2 transition-colors hover:text-ink"
+                  onClick={() => void call(Ipc.openExternal, { url: panel.notesUrl })}
+                >
+                  完整更新说明<ExternalLink className="size-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
-            {panel.notesUrl ? (
-              <button
-                type="button"
-                className="flex items-center gap-1 self-start rounded-md px-1 text-caption text-ink-2 transition-colors hover:text-ink"
-                onClick={() => void call(Ipc.openExternal, { url: panel.notesUrl })}
-              >
-                完整更新说明<ExternalLink className="size-3.5" aria-hidden="true" />
-              </button>
-            ) : null}
-          </div>
+          ) : null}
 
           {panel.primary || panel.secondary ? (
             <div className="flex items-center justify-end gap-2">

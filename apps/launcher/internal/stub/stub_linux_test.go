@@ -1,14 +1,51 @@
 package stub
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/CloverIris/MossStudio/apps/launcher/internal/launch"
 	"github.com/CloverIris/MossStudio/apps/launcher/internal/proc"
 )
+
+// An app that dies before its window is up showed nothing: the stub says so and names the log.
+// After the window was up (or on a clean exit) the app has spoken for itself.
+func TestRunReportsAnAppThatEndsBeforeShowingAnything(t *testing.T) {
+	cases := []struct {
+		name, script string
+		code         int
+		reported     bool
+	}{
+		{"crash before ready", "#!/bin/sh\nexit 3\n", 3, true},
+		{"clean exit before ready", "#!/bin/sh\nexit 0\n", 0, false},
+		{"failure after ready", "#!/bin/sh\ncase \"$1\" in --moss-setup=*) touch \"${1#--moss-setup=}/.ready\";; esac\nexit 4\n", 4, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			setup := makeSetup(t, c.script)
+			code, err := Run(Options{Self: setup, Runner: proc.ExecRunner{}, TempDir: t.TempDir(), Poll: 10 * time.Millisecond,
+				LogPath: "/tmp/日志/MossStudio-setup.log"})
+			if code != c.code {
+				t.Fatalf("code %d, want %d", code, c.code)
+			}
+			var le *launch.Error
+			if !c.reported {
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				return
+			}
+			if !errors.As(err, &le) || !strings.Contains(le.Message, "没能打开") ||
+				!strings.Contains(le.Detail, "/tmp/日志/MossStudio-setup.log") || !strings.Contains(le.Detail, "退出码 3") {
+				t.Fatalf("err %#v", err)
+			}
+		})
+	}
+}
 
 // The app here is a shell script, run for real.
 func TestRunStartsAppWaitsAndCleansUp(t *testing.T) {

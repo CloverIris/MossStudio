@@ -69,6 +69,21 @@ export const installLocatorSchema = z.object({
 })
 export type InstallLocator = z.infer<typeof installLocatorSchema>
 
+/**
+ * Left by an uninstall that kept the data (Windows/Linux), next to where the locator was:
+ * <locator folder>/kept-data.json. A later first install offers to keep using `dataRoot`.
+ * Setup removes it once an install has been made; the data itself is never touched.
+ */
+export const keptDataSchema = z.object({
+  schema: z.literal(1),
+  /** The install root the data belonged to. */
+  root: absPath,
+  dataRoot: absPath,
+  version: semver,
+  keptAt: z.string(),
+})
+export type KeptData = z.infer<typeof keptDataSchema>
+
 const asset = z.object({
   /** Absolute https URL on GitHub; mirrors are applied by the client as transport only. */
   url: z.string().url(),
