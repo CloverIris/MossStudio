@@ -104,7 +104,9 @@ describe('first run', () => {
   it('explains a missing GPU and re-checks on request', async () => {
     const page = await app.open({ scenario: 'noGpu', route: '/setup', theme: 'dark' })
     await expect.poll(() => page.getByText('在这台电脑上没有找到能运行引擎的显卡', { exact: false }).isVisible()).toBe(true)
-    expect(await page.getByRole('button', { name: '开始准备' }).isDisabled()).toBe(true)
+    // Nothing can start while blocked: 开始准备 is gone and 重新检测 is the main action.
+    expect(await page.getByRole('button', { name: '开始准备' }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: '重新检测' }).isEnabled()).toBe(true)
     // Remote hosts are off: point at where to turn them on, nothing more.
     await expect.poll(() => page.getByRole('button', { name: '去开启远程主机' }).isVisible()).toBe(true)
 
