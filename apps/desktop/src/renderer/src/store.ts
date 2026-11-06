@@ -107,7 +107,7 @@ interface AppStore {
   retryFailedUpdate: () => Promise<void>
   /** 知道了: hide the rollback notice. */
   dismissFailedUpdate: () => Promise<void>
-  saveSettings: (patch: Partial<Settings> & { hfToken?: string | null }) => Promise<void>
+  saveSettings: (patch: Partial<Settings> & { hfToken?: string | null; githubToken?: string | null }) => Promise<void>
   toggleSidebar: () => Promise<void>
   toggleNotifications: () => void
   setNotificationsOpen: (open: boolean) => void

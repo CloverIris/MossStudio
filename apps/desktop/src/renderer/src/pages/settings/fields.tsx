@@ -13,7 +13,10 @@ export function errorText(error: unknown): string {
 }
 
 /** Save a settings patch; failures become a toast. Resolves to whether it was saved. */
-export function useSaveSettings(): (patch: Partial<Settings> & { hfToken?: string | null }, success?: string) => Promise<boolean> {
+export function useSaveSettings(): (
+  patch: Partial<Settings> & { hfToken?: string | null; githubToken?: string | null },
+  success?: string,
+) => Promise<boolean> {
   const saveSettings = useApp((state) => state.saveSettings)
   const toast = useToast()
   return useCallback(

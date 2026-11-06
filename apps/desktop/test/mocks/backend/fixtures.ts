@@ -89,7 +89,7 @@ export function settingsFixture(patch: Partial<Settings> = {}): Settings {
     gpuSelection: 'auto',
     gpuProfileMode: 'auto',
     gpuProfileOverrides: {},
-    githubToken: null,
+    hasGithubToken: false,
     disabledDevices: [],
     deviceLabels: {},
     remoteHostsEnabled: false,

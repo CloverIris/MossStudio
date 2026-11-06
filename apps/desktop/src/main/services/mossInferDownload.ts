@@ -1,3 +1,4 @@
+import { getGithubToken } from './githubCredentials'
 import { app } from 'electron'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -38,7 +39,7 @@ import {
 } from '../lib/engineStore'
 import { invalidateEngineReadiness } from './engineReadiness'
 import { installCudaWheels } from './cudaWheels'
-import { getSettings, updateSettings } from './settings'
+import { getSettings, legacyGithubToken, updateSettings } from './settings'
 import { getLastNetwork, githubMirrorChain } from './network'
 import { assertFreeSpace } from '../lib/disk'
 import { MOSSINFER_REPO } from '../lib/engineAssets'
@@ -119,7 +120,17 @@ export function cancelMossInferDownload(): MossInferDownloadState | null {
 }
 
 export function resolveGithubToken(settings: Settings): string | null {
-  if (settings.githubToken) return settings.githubToken
+  if (settings.hasGithubToken) {
+    // Encrypted store first; a plain token from before encryption until it can be moved.
+    let stored: string | undefined
+    try {
+      stored = getGithubToken()
+    } catch {
+      stored = undefined
+    }
+    const token = stored ?? legacyGithubToken()
+    if (token) return token
+  }
   for (const key of ['GH_TOKEN', 'GITHUB_TOKEN']) {
     const value = process.env[key]?.trim()
     if (value) return value

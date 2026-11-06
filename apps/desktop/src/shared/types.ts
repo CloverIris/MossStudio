@@ -187,7 +187,8 @@ export interface Settings {
   gpuSelection: GpuSelection
   gpuProfileMode: 'auto' | 'custom'
   gpuProfileOverrides: Record<string, GpuProfileOverride>
-  githubToken: string | null
+  /** A GitHub token is saved (encrypted, githubCredentials.ts); the value never leaves the main process. */
+  hasGithubToken: boolean
   disabledDevices: string[]
   deviceLabels: Record<string, string>
   /** Optional feature: run generation/training on SSH machines. Off by default. */

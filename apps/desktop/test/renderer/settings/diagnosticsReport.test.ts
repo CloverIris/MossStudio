@@ -25,7 +25,7 @@ describe('diagnosticsReport', () => {
         env: envReportFixture({ checks: [{ id: 'git', group: 'tools', label: 'Git', value: '缺失', status: 'error', detail: '未安装' }] }),
         gpu: gpuInventoryFixture(),
         engine: engineReadyFixture(),
-        settings: settingsFixture({ githubToken: 'ghp_secret', remoteHostsEnabled: true }),
+        settings: settingsFixture({ hasGithubToken: true, remoteHostsEnabled: true }),
         diagnostics: [diagnosticFixture({ title: '显存不足', count: 3 })],
       },
       new Date('2026-11-04T00:00:00Z'),
@@ -44,7 +44,8 @@ describe('diagnosticsReport', () => {
       env: null,
       gpu: null,
       engine: null,
-      settings: settingsFixture({ githubToken: 'ghp_secret' }),
+      // Settings no longer carry the token, but the report must never print one even if they did.
+      settings: { ...settingsFixture({ hasGithubToken: true }), githubToken: 'ghp_secret' } as ReturnType<typeof settingsFixture>,
       diagnostics: [],
     })
     expect(text).not.toContain('ghp_secret')
