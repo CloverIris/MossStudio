@@ -381,12 +381,16 @@ export function registerUninstallIpc(context: RunContext = getRunContext()): voi
 async function runUninstall(context: RunContext): Promise<void> {
   log(`uninstall mode ${app.getVersion()} root=${context.root ?? '-'} silent=${context.silent}`)
   if (context.silent) {
+    // macOS: the uninstall moves this very bundle to the Trash. Killing a helper then makes
+    // Chromium restart it (the network service at least), it cannot find the helper app any
+    // more and traps (SIGTRAP). Nothing is left to free under R, and the helpers end with us.
+    const exit = context.platform === 'darwin' ? (code: number) => app.exit(code) : exitCleanly
     try {
       await startUninstall(context, false)
-      exitCleanly(0)
+      exit(0)
     } catch (error) {
       log(`silent uninstall failed: ${error instanceof Error ? error.message : String(error)}`)
-      exitCleanly(1)
+      exit(1)
     }
     return
   }
