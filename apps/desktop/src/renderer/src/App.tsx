@@ -62,8 +62,8 @@ function useWindowIntents(): void {
     const listener = (event: Event): void => {
       const intent = (event as CustomEvent<WindowIntent>).detail
       if (intent.target === 'terminal') openActivity('jobs')
-      else if (intent.target === 'management') navigate(LEGACY_REDIRECTS[intent.route ?? ''] ?? intent.route ?? '/settings')
-      else navigate('/studio')
+      else if (intent.target === 'management') void navigate(LEGACY_REDIRECTS[intent.route ?? ''] ?? intent.route ?? '/settings')
+      else void navigate('/studio')
     }
     window.addEventListener('mossstudio:window-intent', listener)
     return () => window.removeEventListener('mossstudio:window-intent', listener)
@@ -97,12 +97,12 @@ function StudioShell(): React.JSX.Element {
     const target = LEGACY_REDIRECTS[root]
     if (!target) return
     if (root === '/diagnostics') openActivity('problems')
-    navigate(target, { replace: true })
+    void navigate(target, { replace: true })
   }, [root, navigate, openActivity])
 
   // First run: nothing works until the computer is prepared, so start there.
   useEffect(() => {
-    if (settings?.onboardingState === 'pending' && root !== '/setup') navigate('/setup', { replace: true })
+    if (settings?.onboardingState === 'pending' && root !== '/setup') void navigate('/setup', { replace: true })
   }, [settings?.onboardingState, root, navigate])
 
   if (root === '/setup') {

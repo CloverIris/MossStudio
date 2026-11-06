@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { z } from 'zod'
 import { jobInputsSchema, type Schemas, schemas } from '@shared/schemas'
 
-const SHA = 'b'.repeat(64)
 const long = (length: number, char = 'a') => char.repeat(length)
 
 interface SchemaCase {

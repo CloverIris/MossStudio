@@ -67,10 +67,14 @@ jobs:
           sudo apt-get install -y xvfb libnss3 libgbm1 libasound2t64 libgtk-3-0
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - name: Lint (ESLint; bug-finding rules, see eslint.config.mjs)
+        run: pnpm lint
       - run: pnpm test:unit
       - name: Launcher tests (go test)
         working-directory: apps/launcher
         run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "::error::not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
           go vet ./...
           go test ./...
           GOOS=windows GOARCH=amd64 go vet ./...

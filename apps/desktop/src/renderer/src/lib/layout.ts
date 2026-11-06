@@ -153,7 +153,7 @@ export function draftJson(draft: LayoutDraft): string {
       bbox_coord_space: 'abs',
       bbox_format: 'xyxy',
       summary: draft.summary,
-      items: draft.items.map(({ id, ...item }) => item),
+      items: draft.items.map(({ id: _id, ...item }) => item),
     },
     null,
     2,

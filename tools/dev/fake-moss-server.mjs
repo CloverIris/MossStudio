@@ -285,6 +285,7 @@ function handle(message) {
       }
       result(id, {})
       process.exit(0)
+      break
     }
     default:
       error(id, 'method_not_found', `unknown method: ${String(method)}`)

@@ -43,6 +43,7 @@ function networkFor(host: TrainingHost): Network {
 
 function curlConfig(network: Network): string {
   const quote = (value: string): string => {
+    // eslint-disable-next-line no-control-regex -- rejects control characters that would break the curl config
     if (/[\x00-\x1f\x7f]/.test(value)) throw new Error('下载代理或 token 包含无效字符')
     return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
   }
@@ -152,6 +153,7 @@ function parseSnapshot(host: TrainingHost, stdout: string): RecordEntry[] {
 
 function validate(meta: Metadata): void {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(meta.repo)) throw new Error('HF 仓库名称无效')
+  // eslint-disable-next-line no-control-regex -- rejects control characters in remote paths
   if (/[\x00-\x1f\x7f]/.test(meta.modelsRoot + meta.revision)) throw new Error('远端模型路径或 revision 无效')
   const manifest = meta.manifest
   if (!manifest) return
@@ -160,6 +162,7 @@ function validate(meta: Metadata): void {
   const seen = new Set<string>()
   for (const file of manifest.files) {
     safePath('/model-cache', file.path)
+    // eslint-disable-next-line no-control-regex -- rejects control characters in manifest file paths
     if (file.path.split('/').some((part) => !part || part === '.' || part === '..') || /[\x00-\x1f\x7f]/.test(file.path)
       || seen.has(file.path) || !Number.isSafeInteger(file.size) || file.size < 0
       || (file.oid && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(file.oid))) throw new Error('远端模型文件清单无效')

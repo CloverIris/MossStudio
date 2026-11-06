@@ -59,7 +59,6 @@ import { getGpuInventory, listDevices, refreshGpuInventory } from './services/de
 import { getOnboardingStatus } from './services/onboarding'
 import {
   createTrainerVersion,
-  ensureTrainerRuntime,
   installTrainerRuntime,
   listAllTrainerVersions,
   listTrainerVersions,
@@ -255,8 +254,8 @@ export function registerIpc(): void {
     return true
   })
 
-  handle(Ipc.copyText, schemas.copyText, ({ text }) => {
-    clipboard.writeText(text)
+  handle(Ipc.copyText, schemas.copyText, async ({ text }) => {
+    await clipboard.writeText(text)
     return true
   })
 

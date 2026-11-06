@@ -1,10 +1,9 @@
 import { app } from 'electron'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { closeSync, createReadStream, createWriteStream, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, chmodSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, chmodSync, statSync, writeFileSync } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { open, rename } from 'node:fs/promises'
-import { once } from 'node:events'
 import { dirname, join, resolve, sep } from 'node:path'
 import * as yauzl from 'yauzl'
 import type { GpuInventoryDevice, MossInferDownloadState, MossInferRelease, Settings } from '@shared/types'
@@ -176,18 +175,6 @@ function osToken(): 'linux' | 'windows' {
 function archiveExt(): 'tar.gz' | 'zip' {
   return process.platform === 'win32' ? 'zip' : 'tar.gz'
 }
-
-const DOWNLOAD_ATTEMPTS = 6
-
-/** Transient proxy/undici failures are worth resuming; HTTP 4xx and checksum errors are not. */
-function isRetryable(error: Error): boolean {
-  const message = error.message.toLowerCase()
-  if (message.includes('http 4')) return false
-  if (message.includes('sha256')) return false
-  if (message.includes('已取消')) return false
-  return true
-}
-
 
 const MIRROR_CHUNK = 16 * 1024 * 1024
 const CHUNK_CONCURRENCY = 3

@@ -307,7 +307,7 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
           await writeSidecar(current.queue, report)
           sink.event({ type: 'stage', name: 'save' })
           const size = outputSizeOf(params)
-          const timings = ((report?.['timings_s'] ?? {}) ?? {}) as Record<string, unknown>
+          const timings = (report?.['timings_s'] ?? {}) as Record<string, unknown>
           const ms = (key: string, fallback?: string): number => {
             const value = timings[key] ?? (fallback ? timings[fallback] : undefined)
             return typeof value === 'number' ? Math.round(value * 1000) : 0

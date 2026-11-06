@@ -4,7 +4,7 @@
  * its file IO through original-fs. Here node:fs/promises behaves like the patched one for any
  * path with an .asar part; original-fs (test/mocks/original-fs.ts) stays plain.
  */
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { useTempDir } from '@test/helpers/tempDir'
@@ -30,7 +30,6 @@ describe('app folders with app.asar', () => {
     const source = join(temp(), 'src')
     const write = (path: string, data: string | Buffer) => {
       const full = join(source, ...path.split('/'))
-      const { mkdirSync } = require('node:fs') as typeof import('node:fs')
       mkdirSync(join(full, '..'), { recursive: true })
       writeFileSync(full, data)
     }

@@ -41,7 +41,7 @@ export function SettingsPage(): React.JSX.Element {
 
   // Bare `/settings` and old section names settle on one canonical address.
   useEffect(() => {
-    if (onSettings && (bare || !isCanonicalSectionPath(location.pathname))) navigate(sectionPath(section), { replace: true })
+    if (onSettings && (bare || !isCanonicalSectionPath(location.pathname))) void navigate(sectionPath(section), { replace: true })
   }, [onSettings, bare, location.pathname, section, navigate])
 
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [section])

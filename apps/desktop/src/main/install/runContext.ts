@@ -111,7 +111,7 @@ function readJson<T>(input: DetectInput, file: string, parse: (value: unknown) =
   const text = input.readText(file)
   if (text === null) return null
   try {
-    return parse(JSON.parse(text.replace(/^﻿/, '')))
+    return parse(JSON.parse(text.replace(/^\uFEFF/, '')))
   } catch {
     return null
   }

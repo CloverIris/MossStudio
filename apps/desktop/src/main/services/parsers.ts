@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { Diagnostic, DiagnosticSolution, JobProgress, JobStage } from '@shared/types'
 import { contentDir } from '../lib/content'
 
+// eslint-disable-next-line no-control-regex -- matches ESC/BEL on purpose to strip ANSI escape sequences
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g
 
 export function stripAnsi(text: string): string {

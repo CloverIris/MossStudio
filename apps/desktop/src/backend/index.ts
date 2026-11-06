@@ -124,7 +124,7 @@ function sendBinary(res: ServerResponse, mime: string, base64: string): void {
   res.end(data)
 }
 
-const server = createServer(async (req, res) => {
+async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     if (req.method === 'OPTIONS') {
       send(res, 204, {})
@@ -225,7 +225,10 @@ const server = createServer(async (req, res) => {
     const status = code && /^E_(INPUT|IMAGE|NOT_SUPPORTED)/.test(code) ? 400 : 500
     send(res, status, { error: error instanceof Error ? error.message : String(error), ...(code ? { code } : {}) })
   }
-})
+}
+
+// handleRequest answers every failure itself (its catch sends the error response).
+const server = createServer((req, res) => void handleRequest(req, res))
 
 const wss = new WebSocketServer({ noServer: true })
 const clients = new Set<WebSocket>()

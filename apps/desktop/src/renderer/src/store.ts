@@ -145,10 +145,6 @@ interface AppStore {
 
 let subscribed = false
 
-function upsertLaunch(list: LaunchRow[], row: LaunchRow): LaunchRow[] {
-  return [row, ...list.filter((item) => item.id !== row.id)]
-}
-
 function persistLaunchRow(row: LaunchRow): void {
   void call(Ipc.launchQueueUpsert, row).catch(() => undefined)
 }

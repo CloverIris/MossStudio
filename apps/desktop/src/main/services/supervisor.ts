@@ -2,25 +2,22 @@ import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'n
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { appendFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { Events } from '@shared/channels'
 import type {
   JobLogLine,
   JobParams,
   JobRecord,
   JobStage,
-  JobState,
   ModelBinding,
   GpuInventoryDevice,
-  WorkspaceKind,
 } from '@shared/types'
 import { cliUnsupported } from '../lib/cliProtocol'
 import { codedError } from '../lib/codedError'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
 import { prepareModelSource } from './modelBundles'
-import { legacyModelReady, resolveLegacyModelPath } from './modelReadiness'
+import { resolveLegacyModelPath } from './modelReadiness'
 import { cancelMossInferJob, releaseStaleMossInferRuntimes, restartMossInfer, runMossInferJob } from './mossInfer'
 import { cancelCliJob, cliBundleDtypeProblem, hipDeviceIndex, runCliJob, type HipIndexResult } from './cliEngine'
 import { currentEngineMachine, localServerPath, resolveDeviceEngine, type DeviceEngine } from './engineInstalls'
@@ -39,7 +36,6 @@ import { getTrainingHost } from './trainingHosts'
 import { cancelRemoteEngineJob, runRemoteEngineJob } from './remoteEngine'
 import {
   remoteAbsolute,
-  sshExec,
 } from './ssh'
 import { pushDiagnostic } from './diagnostics'
 import { pushLocalNotification } from './desktopNotifications'
@@ -48,9 +44,6 @@ import {
   exitRule,
   loadRules,
   matchRule,
-  parseDownloadProgress,
-  parseTqdm,
-  progressFor,
   stripAnsi,
   toDiagnostic,
 } from './parsers'
@@ -63,7 +56,6 @@ const PREFIX = '@@CLOVER@@ '
 function channelSafe(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, '-')
 }
-const DEFAULT_MODEL = 'OpenMOSS-Team/MOSS-Image-SFT'
 const MAX_LOG_LINES = 2000
 
 interface RunningJob {
@@ -104,7 +96,7 @@ async function loadJobs(): Promise<void> {
       JobRecord & { backend?: unknown }
     >
     for (const stored of raw) {
-      const { backend: legacyBackend, ...rest } = stored
+      const { backend: _legacyBackend, ...rest } = stored
       const job: JobRecord = {
         ...rest,
         workspace: 'clover',
@@ -434,57 +426,6 @@ function handleRunnerEvent(job: JobRecord, runningJob: RunningJob, payload: stri
   if (type === 'bye') {
     const code = Number(event['exit_code'] ?? 0)
     update(job, { exitCode: code })
-  }
-}
-
-function handleLine(job: JobRecord, runningJob: RunningJob, stream: 'stdout' | 'stderr', raw: string): void {
-  const line = stripAnsi(raw).trimEnd()
-  if (!line.trim()) return
-
-  if (line.startsWith(PREFIX)) {
-    handleRunnerEvent(job, runningJob, line.slice(PREFIX.length))
-    return
-  }
-
-  appendLog(job, stream, line, runningJob)
-
-
-  const download = parseDownloadProgress(line)
-  if (download) {
-    update(job, {
-      progress: {
-        stage: 'load',
-        current: 0,
-        total: 0,
-        percent: download.percent,
-        message: `${download.label ?? '下载'} ${download.rate ?? ''}`.trim(),
-      },
-    })
-    return
-  }
-
-  const progress = progressFor(line, job.stage, job.progress)
-  if (progress) {
-    update(job, { progress })
-    return
-  }
-
-  const tqdm = parseTqdm(line)
-  if (tqdm && job.stage === 'idle') {
-    update(job, {
-      progress: {
-        stage: 'denoise',
-        current: tqdm.current,
-        total: tqdm.total,
-        percent: tqdm.percent,
-        etaMs: tqdm.etaMs,
-        message: tqdm.rate,
-      },
-    })
-  }
-
-  if (stream === 'stderr' || /error|traceback|exception/i.test(line)) {
-    recordError(job, line)
   }
 }
 

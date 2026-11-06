@@ -9,7 +9,6 @@ import { paths } from '../lib/paths'
 import { requestEngineOnce } from '../lib/probeEngine'
 import { requestRunningEngine } from './mossInfer'
 import { localServerPath } from './engineInstalls'
-import { getSettings } from './settings'
 
 /**
  * Control adapter files the person registered (模型 › 控制). Each file is
