@@ -24,6 +24,7 @@ import type { UpdateChannel } from '@shared/install'
 import { failedUpdateText, requiredUpdateMessage, type UpdateBusyReason, type UpdateRestartResult, type UpdaterState } from '@shared/update'
 import { isStudioReuseRequest, type StudioReuseRequest } from './lib/studioReuse'
 import { call, onEvent } from './lib/api'
+import { dimensions } from './lib/format'
 
 export type { StudioReuseRequest } from './lib/studioReuse'
 
@@ -327,7 +328,7 @@ export const useApp = create<AppStore>((set, get) => {
         get().pushNotification({
           tone: 'success',
           title: '生成完成',
-          message: `${job.instanceName} · ${job.params.width}×${job.params.height}`,
+          message: `${job.instanceName} · ${dimensions(job.params.width, job.params.height)}`,
         })
       } else if (job.state === 'failed' && previous?.state !== 'failed') {
         get().pushNotification({

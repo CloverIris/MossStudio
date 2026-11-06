@@ -170,7 +170,7 @@ describe('Events.job', () => {
     backend.emit(Events.job, backend.state.jobs[0])
     expect(store().jobs[0]!.state).toBe('succeeded')
     expect(store().notifications).toHaveLength(1)
-    expect(store().notifications[0]).toMatchObject({ tone: 'success', title: '生成完成', message: 'MossInfer · 768×1344' })
+    expect(store().notifications[0]).toMatchObject({ tone: 'success', title: '生成完成', message: 'MossInfer · 768 × 1344' })
   })
 
   it('notifies a failure with the error message or a fallback', async () => {

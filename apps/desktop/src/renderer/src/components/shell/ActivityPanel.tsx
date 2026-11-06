@@ -2,53 +2,13 @@ import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AppNotification, Diagnostic, DiagnosticSolution, JobRecord } from '@shared/types'
-import { relative } from '../../lib/format'
+import { ACTIVE_JOB_STATES, jobSummary, jobTitle, relative } from '../../lib/format'
 import { useShell, type ActivityTab } from '../../lib/shell'
 import { useApp } from '../../store'
 import { cn } from '../cn'
 import { Button, EmptyState, IconButton, ProgressBar, Tabs, useToast } from '../ui'
 
-const ACTIVE: JobRecord['state'][] = ['queued', 'starting', 'running']
-
-const STATE_LABEL: Record<JobRecord['state'], string> = {
-  queued: '排队中',
-  starting: '准备中',
-  running: '进行中',
-  succeeded: '完成',
-  failed: '失败',
-  canceled: '已取消',
-}
-
-const STAGE_LABEL: Record<JobRecord['stage'], string> = {
-  load: '加载模型',
-  text: '理解描述',
-  denoise: '采样',
-  decode: '解码',
-  save: '保存',
-  ready: '就绪',
-  idle: '',
-}
-
-export function jobTitle(job: JobRecord): string {
-  if (job.kind === 'training') return `训练 · ${job.trainerRunName ?? job.instanceName}`
-  const prompt = job.params.prompt.trim()
-  if (prompt) return prompt.length > 36 ? `${prompt.slice(0, 36)}…` : prompt
-  return job.caseName ?? '生成'
-}
-
-export function jobSummary(job: JobRecord): string {
-  const parts: string[] = [STATE_LABEL[job.state]]
-  if (job.state === 'running') {
-    const stage = STAGE_LABEL[job.progress.stage]
-    if (stage) parts.push(job.progress.total > 0 ? `${stage} ${job.progress.current} / ${job.progress.total}` : stage)
-    if (job.progress.etaMs && job.progress.etaMs > 0) parts.push(`约 ${Math.max(1, Math.round(job.progress.etaMs / 1000))} 秒`)
-  } else if (job.state === 'failed' && job.error?.message) {
-    parts.push(job.error.message)
-  } else if (job.kind !== 'training') {
-    parts.push(`${job.params.width}×${job.params.height}`)
-  }
-  return parts.join(' · ')
-}
+const isActive = (job: JobRecord): boolean => ACTIVE_JOB_STATES.has(job.state)
 
 function JobLog({ job }: { job: JobRecord }): React.JSX.Element {
   const lines = useApp((state) => state.jobLogs[job.id])
@@ -78,12 +38,12 @@ function JobsTab(): React.JSX.Element {
   const focused = useShell((state) => state.focusedJobId)
   const focusJob = useShell((state) => state.focusJob)
   const toast = useToast()
-  const active = jobs.filter((job) => ACTIVE.includes(job.state))
-  const finished = jobs.filter((job) => !ACTIVE.includes(job.state)).slice(0, 30)
+  const active = jobs.filter(isActive)
+  const finished = jobs.filter((job) => !isActive(job)).slice(0, 30)
 
   const row = (job: JobRecord): React.JSX.Element => {
     const open = focused === job.id
-    const running = ACTIVE.includes(job.state)
+    const running = isActive(job)
     return (
       <div key={job.id} data-job-row={job.id} className={cn('flex flex-col gap-2 rounded-lg px-3 py-2.5', open && 'bg-surface')}>
         <div className="flex items-start gap-3">
@@ -278,7 +238,7 @@ export function ActivityPanel(): React.JSX.Element | null {
   const jobs = useApp((state) => state.jobs)
   const unread = useApp((state) => state.notifications.filter((item) => !item.read).length)
   const problems = useApp((state) => state.diagnostics.length)
-  const activeJobs = useMemo(() => jobs.filter((job) => ACTIVE.includes(job.state)).length, [jobs])
+  const activeJobs = useMemo(() => jobs.filter(isActive).length, [jobs])
   const panel = useRef<HTMLElement>(null)
 
   useEffect(() => {

@@ -4,9 +4,9 @@ import type { Catalog, JobRecord, ProjectCanvas } from '@shared/types'
 import { Ipc } from '@shared/channels'
 import { Button, IconButton, Modal, useToast } from '../../components/ui'
 import { call } from '../../lib/api'
+import { dimensions, duration } from '../../lib/format'
 import { OutputImage } from './CanvasCard'
 import { qualityFor, qualityPreset } from './defaults'
-import { formatDuration } from './jobStatus'
 import { canvasDescription } from './prompt'
 
 /** Every output of a run, one at a time, with the parameters that made it. */
@@ -48,7 +48,7 @@ export function OutputViewer({
   const model = canvas?.modelBundleId
     ? (catalog?.bundles.find((bundle) => bundle.id === canvas.modelBundleId)?.name ?? canvas.modelBundleId)
     : '—'
-  const duration = formatDuration(job?.startedAt, job?.endedAt)
+  const took = duration(job?.startedAt, job?.endedAt)
 
   return (
     <Modal
@@ -127,9 +127,7 @@ export function OutputViewer({
           <dl className="tabular grid grid-cols-2 gap-x-6 gap-y-2 text-caption sm:grid-cols-4">
             <div>
               <dt className="text-ink-2">尺寸</dt>
-              <dd className="text-ink">
-                {current.width || canvas.width} × {current.height || canvas.height}
-              </dd>
+              <dd className="text-ink">{dimensions(current.width || canvas.width, current.height || canvas.height)}</dd>
             </div>
             <div>
               <dt className="text-ink-2">质量</dt>
@@ -145,10 +143,10 @@ export function OutputViewer({
               <dt className="text-ink-2">模型</dt>
               <dd className="truncate text-ink">{model}</dd>
             </div>
-            {duration ? (
+            {took ? (
               <div>
                 <dt className="text-ink-2">用时</dt>
-                <dd className="text-ink">{duration}</dd>
+                <dd className="text-ink">{took}</dd>
               </div>
             ) : null}
           </dl>

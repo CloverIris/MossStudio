@@ -5,7 +5,7 @@ import { compareEngineTags } from '@shared/engineUpdate'
 import { gpuRequiresBf16Tier } from '@shared/gpuProfile'
 import type { GpuInventorySnapshot, LocalEngineVersion, Settings } from '@shared/types'
 import { call } from '../../lib/api'
-import { dateTime } from '../../lib/format'
+import { date } from '../../lib/format'
 import { engineDownloadActive, packageLabel } from '../../lib/engineInstall'
 import { enginePackageOptionLabel } from '@shared/enginePackages'
 import { useApp } from '../../store'
@@ -244,7 +244,7 @@ function InstallOptions({ engine }: { engine: EngineState }): React.JSX.Element 
               { value: '', label: '最新版本' },
               ...(releases ?? []).map((release) => ({
                 value: release.tag,
-                label: `${release.tag}${release.publishedAt ? ` · ${dateTime(release.publishedAt).slice(0, 10)}` : ''}`,
+                label: `${release.tag}${release.publishedAt ? ` · ${date(release.publishedAt)}` : ''}`,
               })),
             ]}
           />
