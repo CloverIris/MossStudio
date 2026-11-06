@@ -45,7 +45,7 @@ describe('update chip', () => {
     await expect.poll(() => chip(page).textContent()).toBe('新版本 1.1.0')
     await chip(page).click()
     const panel = popover(page)
-    await expect.poll(() => panel.getByText('当前 1.0.3 · 2026年10月30日发布 · 46 MB').isVisible()).toBe(true)
+    await expect.poll(() => panel.getByText('当前 1.0.3 · 2026 年 10 月 30 日发布 · 46 MB').isVisible()).toBe(true)
     expect(await panel.locator('h2').first().textContent()).toBe('MossStudio 1.1.0')
     // Release notes render as Markdown (a list item, not the raw "- ").
     expect(await panel.getByRole('listitem').filter({ hasText: '生成更快，显存占用更少' }).isVisible()).toBe(true)
@@ -58,7 +58,8 @@ describe('update chip', () => {
     await expect.poll(() => chip(page).getAttribute('aria-label')).toBe('正在下载 MossStudio 1.1.0 更新，60%')
     expect(
       await chip(page)
-        .locator('[aria-hidden="true"] > span')
+        // The chip's thin bar is a ProgressBar; its fill carries the width.
+        .locator('[aria-hidden="true"] [style*="width"]')
         .evaluate((bar) => (bar as HTMLElement).style.width),
     ).toBe('60%')
     await expect.poll(() => panel.getByRole('progressbar', { name: '更新进度' }).getAttribute('aria-valuenow')).toBe('60')

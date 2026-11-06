@@ -103,7 +103,9 @@ function GpuGroup({ gpu, engine }: { gpu: ReturnType<typeof useGpuInventory>; en
             title={row.name}
             description={
               <span className="flex flex-col gap-0.5">
-                <span>{[row.statusLabel, row.detail, row.engine, row.reason].filter(Boolean).join(' · ')}</span>
+                <span>
+                  {[row.statusLabel, row.detail, row.engine ? `引擎：${row.engine}` : null, row.reason].filter(Boolean).join(' · ')}
+                </span>
                 {row.tip ? <span className="text-caption text-ink-2">{row.tip}</span> : null}
               </span>
             }

@@ -25,7 +25,7 @@ function JobLog({ job }: { job: JobRecord }): React.JSX.Element {
     <pre
       ref={box}
       data-job-log
-      className="selectable max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-well px-3 py-2.5 font-mono text-[12px] leading-5 text-ink-2"
+      className="selectable max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface px-3 py-2.5 font-mono text-[12px] leading-5 text-ink-2"
     >
       {lines?.length ? lines.map((line) => line.text).join('\n') : '还没有输出'}
     </pre>

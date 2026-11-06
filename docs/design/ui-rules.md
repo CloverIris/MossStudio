@@ -15,7 +15,9 @@ The visual system is fixed: flat and quiet, areas told apart by lighter and dark
 | Labelled input | `Field` + `Input` / `Select` / `Textarea` / `Switch` | `components/form.tsx` |
 | Something to know / watch / that will be lost | `Notice` (`info` / `warn` / `danger`) | `components/common/Notice.tsx` |
 | A prompt (描述, 不想出现的内容) | `PromptBlock`, one per prompt | `components/common/PromptBlock.tsx` |
-| A read-only folder, file or URL | `PathValue` (`copy` when people need to paste it) | `components/common/PathValue.tsx` |
+| A read-only folder, file or URL | `PathValue` (`copy` when people need to paste it; `copyLabel` when several sit together) | `components/common/PathValue.tsx` |
+| A field or block label with an optional value on the right | `FieldLabel` (`as="h3"`/`"h2"` when it heads a block) | `components/ui.tsx` |
+| A slider with its label and value (strength, opacity, CFG) | `SliderField` | `pages/studio/InputControls.tsx` |
 | Progress | `ProgressBar`; `value={null}` when the amount is unknown | `components/ui.tsx` |
 | Loading | `LoadingRow` (spinner + "正在读取…" or a label) | `components/ui.tsx` |
 | Nothing here yet | `EmptyState` (`size="page"` or `"section"`) | `components/ui.tsx` |
@@ -35,8 +37,8 @@ Use only these levels. Do not hand-build a heading with `text-* font-*`.
 | Screen title | `text-title` semibold ink (`text-display` only on first-run setup) | `PageHeader` |
 | Dialog / sheet / popover title | `text-section` semibold ink | `Modal`, `Sheet` |
 | Section | `text-ui` semibold ink-2 | `Section` |
-| Label of a field or block | `text-caption` medium ink-2 | `Field`, `PromptBlock`, Studio `FieldLabel` |
-| Row title | `text-control` ink | `Row` |
+| Label of a field or block | `text-caption` medium ink-2 | `FieldLabel`, `Field`, `PromptBlock` |
+| Row title | `text-control` ink, normal weight; also the title of any list item (Activity, popovers, setup steps) | `Row` |
 
 `Advanced` is a disclosure, not a heading: it must not be louder than the section titles around it.
 
