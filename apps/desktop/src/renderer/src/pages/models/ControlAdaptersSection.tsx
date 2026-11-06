@@ -1,13 +1,14 @@
-import { FileUp, Trash2 } from 'lucide-react'
+import { FileUp, SlidersHorizontal } from 'lucide-react'
 import { useState } from 'react'
 import { Ipc } from '@shared/channels'
 import type { ControlAdapterEntry } from '@shared/types'
-import { Button, ConfirmDialog, Group, IconButton, Pill, Row, Section, Spinner, useToast } from '../../components/ui'
+import { Button, ConfirmDialog, EmptyState, Group, Row, Section, Spinner, useToast } from '../../components/ui'
 import { call } from '../../lib/api'
 import { useControlAdapters } from '../../lib/useControlAdapters'
 import { controlKindLabel } from '../studio/links'
 import { useEngineFeatures } from '../studio/useEngineFeatures'
 import { sizeText } from './logic'
+import { RemoveButton } from './ModelEntries'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 
@@ -59,7 +60,8 @@ export function ControlAdaptersSection(): React.JSX.Element | null {
       description={noEngine ? '引擎准备好后才能添加控制适配器。' : '让生成按深度、边缘或姿态图来构图。在创作的「输入 › 控制」里选用。'}
       actions={
         <Button tone="secondary" disabled={adding || noEngine || reading} onClick={() => void add()} data-control-adapter-add>
-          {adding ? <Spinner /> : <FileUp className="size-4" strokeWidth={1.6} />}添加文件
+          {adding ? <Spinner /> : <FileUp className="size-4" strokeWidth={1.6} />}
+          添加文件
         </Button>
       }
     >
@@ -70,21 +72,19 @@ export function ControlAdaptersSection(): React.JSX.Element | null {
               key={entry.id}
               title={entry.name}
               description={
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <span className="tabular">{sizeText(entry.sizeBytes)}</span>
-                  {entry.controlKinds.map((kind) => (
-                    <Pill key={kind}>{controlKindLabel(kind)}</Pill>
-                  ))}
-                </span>
+                <span className="tabular">{[...entry.controlKinds.map(controlKindLabel), sizeText(entry.sizeBytes)].join(' · ')}</span>
               }
             >
-              <IconButton label={`移除 ${entry.name}`} onClick={() => setRemoving(entry)}>
-                <Trash2 className="size-4" strokeWidth={1.6} />
-              </IconButton>
+              <RemoveButton remove name={entry.name} onClick={() => setRemoving(entry)} />
             </Row>
           ))
         ) : (
-          <Row title="还没有控制适配器" description="添加电脑上的 .safetensors 控制适配器文件。" />
+          <EmptyState
+            size="section"
+            icon={<SlidersHorizontal className="size-6" strokeWidth={1.6} />}
+            title="还没有控制适配器"
+            description="添加电脑上的 .safetensors 控制适配器文件。"
+          />
         )}
       </Group>
 

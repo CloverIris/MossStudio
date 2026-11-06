@@ -41,6 +41,24 @@ export function bundleComponentIds(bundle: ModelBundle): string[] {
 export type BundleStatus = 'ready' | 'downloading' | 'verifying' | 'paused' | 'failed' | 'partial' | 'missing' | 'unavailable'
 export type BundleAction = 'download' | 'resume' | 'pause' | null
 
+/** Pill tone of a state: ready is ok, in progress is accent, partly done is warn, failed is danger. */
+export type StateTone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger'
+
+const BUNDLE_TONE: Record<BundleStatus, StateTone> = {
+  ready: 'ok',
+  downloading: 'accent',
+  verifying: 'accent',
+  paused: 'neutral',
+  failed: 'danger',
+  partial: 'warn',
+  missing: 'neutral',
+  unavailable: 'warn',
+}
+
+export function bundleTone(status: BundleStatus): StateTone {
+  return BUNDLE_TONE[status]
+}
+
 export interface BundleView {
   bundle: ModelBundle
   components: ModelEntry[]
@@ -52,7 +70,7 @@ export interface BundleView {
   /** Progress over the missing parts, 0–100, whole numbers. */
   percent: number
   status: BundleStatus
-  /** One line in plain words: "可以使用", "还差 1 个文件 · 320 MB", "下载中 42%". */
+  /** One line in plain words: "可以使用", "还差 1 个文件 · 320 MB", "下载中 42%". The total size is not part of it. */
   stateText: string
   action: BundleAction
   actionLabel: string
@@ -123,7 +141,7 @@ export function bundleView(
       actionLabel: '下载',
     }
   }
-  return { ...base, status: 'missing', stateText: `未下载 · ${sizeText(totalBytes)}`, action: 'download', actionLabel: '下载' }
+  return { ...base, status: 'missing', stateText: '未下载', action: 'download', actionLabel: '下载' }
 }
 
 /** The model the app suggests first: the catalog's recommended bundle, else the first one. */
@@ -205,8 +223,9 @@ export function isOfferedComponent(model: ModelEntry): boolean {
 }
 
 export interface ItemState {
+  /** The state in a word or two; empty when the entry is simply not downloaded (its 下载 button says so). */
   text: string
-  tone: 'ok' | 'warn' | 'danger' | 'neutral'
+  tone: StateTone
   action: 'download' | 'resume' | 'pause' | 'delete' | null
   actionLabel: string
   percent: number | null
@@ -220,12 +239,14 @@ export function itemState(
 ): ItemState {
   const percent = task && task.totalBytes > 0 ? Math.floor((Math.min(task.bytes, task.totalBytes) / task.totalBytes) * 100) : null
   if (installed)
-    return { text: entry.provider === 'local' ? '已添加' : '已下载', tone: 'ok', action: 'delete', actionLabel: '删除', percent: null }
-  if (task && task.state === 'verifying') return { text: '正在校验', tone: 'neutral', action: null, actionLabel: '', percent }
+    return entry.provider === 'local'
+      ? { text: '已添加', tone: 'ok', action: 'delete', actionLabel: '移除', percent: null }
+      : { text: '已下载', tone: 'ok', action: 'delete', actionLabel: '删除', percent: null }
+  if (task && task.state === 'verifying') return { text: '正在校验', tone: 'accent', action: null, actionLabel: '', percent }
   if (task && ACTIVE_STATES.has(task.state)) {
     return {
       text: task.state === 'queued' ? '等待下载' : `下载中 ${percent ?? 0}%`,
-      tone: 'neutral',
+      tone: 'accent',
       action: 'pause',
       actionLabel: '暂停',
       percent: percent ?? 0,
@@ -238,7 +259,7 @@ export function itemState(
   if (entry.installState === 'partial' || entry.installState === 'error') {
     return { text: '文件不完整', tone: 'warn', action: 'download', actionLabel: '修复', percent: null }
   }
-  return { text: sizeText(entry.sizeBytes), tone: 'neutral', action: 'download', actionLabel: '下载', percent: null }
+  return { text: '', tone: 'neutral', action: 'download', actionLabel: '下载', percent: null }
 }
 
 /** One line for a download task in the queue. */
