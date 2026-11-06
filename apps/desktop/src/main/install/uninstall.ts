@@ -230,16 +230,19 @@ export function startFinishUninstall(plan: UninstallPlan, launcher: string, opti
 
 export interface MacUninstallDeps {
   trash(path: string): Promise<void>
+  /** Trash the running bundle once the app has quit (see macTrash.ts). */
+  trashBundleAfterExit(bundle: string): Promise<void>
 }
 
 /**
- * macOS: Trash the bundle and the hidden previous/partial bundles beside it (and the data
- * folder when chosen); otherwise remove install.json. The locator always goes.
+ * macOS: Trash the hidden previous/partial bundles (and the data folder when chosen); otherwise
+ * remove install.json. The locator always goes. The bundle itself is left to a helper that moves
+ * it after the app has quit: this process and its Chromium helpers still run from it.
  */
 export async function uninstallMac(target: UninstallTarget, bundle: string, removeData: boolean, deps: MacUninstallDeps, names: string[] = listRoot(target.root)): Promise<string[]> {
   if (removeData) assertDataRemovable(target)
   const trashed: string[] = []
-  for (const item of [bundle, ...ownedRootEntries('darwin', names).map((name) => join(target.root, name))]) {
+  for (const item of ownedRootEntries('darwin', names).map((name) => join(target.root, name))) {
     await deps.trash(item)
     trashed.push(item)
   }
@@ -254,5 +257,6 @@ export async function uninstallMac(target: UninstallTarget, bundle: string, remo
     for (const file of [record, ...UPDATE_MARKERS.map((name) => join(target.dataRoot, name))]) rmSync(file, { force: true })
   }
   rmSync(locatorPath(target.host), { force: true })
+  await deps.trashBundleAfterExit(bundle)
   return trashed
 }

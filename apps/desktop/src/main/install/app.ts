@@ -18,6 +18,7 @@ import { paths } from '../lib/paths'
 import { getSettings } from '../services/settings'
 import { SetupController } from './controller'
 import { confirmHealthFor } from './health'
+import { trashBundleAfterExit } from './macTrash'
 import { chromiumHelpers, rememberSpawned, spawnedPids } from './processTree'
 import { focusOnSecondInstance, otherInstanceRunning, releaseAppLock } from './singleInstance'
 import { recordedDataRoot } from './dataRoot'
@@ -357,8 +358,11 @@ async function startUninstall(context: RunContext, removeData: boolean): Promise
   }
   log(`uninstall ${target.root} (data ${removeData ? 'removed' : 'kept'}: ${target.dataRoot})`)
   if (context.platform === 'darwin') {
-    const trashed = await uninstallMac(target, context.appPath, removeData, { trash: (path) => shell.trashItem(path) })
-    log(`moved to Trash: ${trashed.join(', ')}`)
+    const trashed = await uninstallMac(target, context.appPath, removeData, {
+      trash: (path) => shell.trashItem(path),
+      trashBundleAfterExit: async (bundle) => rememberSpawned(await trashBundleAfterExit(bundle)),
+    })
+    log(`moved to Trash: ${[...trashed, `${context.appPath} (after quitting)`].join(', ')}`)
     return
   }
   if (!context.launcher) throw codedError('E_NO_LAUNCHER', '找不到 MossStudio 启动器，无法完成卸载。')
@@ -381,9 +385,8 @@ export function registerUninstallIpc(context: RunContext = getRunContext()): voi
 async function runUninstall(context: RunContext): Promise<void> {
   log(`uninstall mode ${app.getVersion()} root=${context.root ?? '-'} silent=${context.silent}`)
   if (context.silent) {
-    // macOS: the uninstall moves this very bundle to the Trash. Killing a helper then makes
-    // Chromium restart it (the network service at least), it cannot find the helper app any
-    // more and traps (SIGTRAP). Nothing is left to free under R, and the helpers end with us.
+    // macOS: Chromium's helpers end with us, and killing one only makes Chromium restart it
+    // while the bundle is about to go. The trash helper waits for all of them anyway.
     const exit = context.platform === 'darwin' ? (code: number) => app.exit(code) : exitCleanly
     try {
       await startUninstall(context, false)

@@ -236,7 +236,7 @@ describe('startFinishUninstall', () => {
 
 describe('uninstallMac', () => {
   const temp = useTempDir()
-  it('trashes the bundle, and the data only when asked; removes record and locator otherwise', async () => {
+  it('trashes the bundle last, after quitting, and the data only when asked; removes record and locator otherwise', async () => {
     const home = temp()
     const support = join(home, 'Library', 'Application Support', 'MossStudio')
     mkdirSync(support, { recursive: true })
@@ -245,20 +245,29 @@ describe('uninstallMac', () => {
     writeFileSync(join(support, 'settings.json'), '{}')
     writeFileSync(join(support, '.update-clean-exit'), '')
     const target: UninstallTarget = { host: { platform: 'darwin', home, env: {} }, platformKey: 'darwin-arm64', root: join(home, 'Applications'), dataRoot: support, portable: false, desktopDir: '', profileDir: support }
-    const trashed: string[] = []
+    const bundle = join(home, 'Applications', 'MossStudio.app')
+    const steps: string[] = []
+    const deps = {
+      trash: async (item: string) => { steps.push(item) },
+      trashBundleAfterExit: async (item: string) => {
+        // Everything else is done by the time the deferred move is arranged.
+        expect(existsSync(join(support, 'locator.json'))).toBe(false)
+        steps.push(`after exit: ${item}`)
+      },
+    }
     const names = ['MossStudio.app', 'Notes.txt', '.MossStudio-1.9.0.app.previous']
-    await uninstallMac(target, join(home, 'Applications', 'MossStudio.app'), false, { trash: async (item) => { trashed.push(item) } }, names)
-    expect(trashed).toEqual([join(home, 'Applications', 'MossStudio.app'), join(home, 'Applications', '.MossStudio-1.9.0.app.previous')])
+    expect(await uninstallMac(target, bundle, false, deps, names)).toEqual([join(home, 'Applications', '.MossStudio-1.9.0.app.previous')])
+    expect(steps).toEqual([join(home, 'Applications', '.MossStudio-1.9.0.app.previous'), `after exit: ${bundle}`])
     expect(existsSync(join(support, 'install.json'))).toBe(false)
     expect(existsSync(join(support, 'locator.json'))).toBe(false)
     expect(existsSync(join(support, '.update-clean-exit'))).toBe(false)
     expect(existsSync(join(support, 'settings.json'))).toBe(true)
-    trashed.length = 0
-    await uninstallMac(target, join(home, 'Applications', 'MossStudio.app'), true, { trash: async (item) => { trashed.push(item) } }, ['MossStudio.app'])
-    expect(trashed).toEqual([join(home, 'Applications', 'MossStudio.app'), support])
-    trashed.length = 0
+    steps.length = 0
+    await uninstallMac(target, bundle, true, deps, ['MossStudio.app'])
+    expect(steps).toEqual([support, `after exit: ${bundle}`])
+    steps.length = 0
     const dataElsewhere = join(home, 'Moss 数据')
-    await uninstallMac({ ...target, dataRoot: dataElsewhere }, join(home, 'Applications', 'MossStudio.app'), true, { trash: async (item) => { trashed.push(item) } }, ['MossStudio.app'])
-    expect(trashed).toEqual([join(home, 'Applications', 'MossStudio.app'), dataElsewhere, support])
+    await uninstallMac({ ...target, dataRoot: dataElsewhere }, bundle, true, deps, ['MossStudio.app'])
+    expect(steps).toEqual([dataElsewhere, support, `after exit: ${bundle}`])
   })
 })
