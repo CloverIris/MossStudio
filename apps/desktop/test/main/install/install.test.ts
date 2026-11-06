@@ -3,13 +3,13 @@
  * drives it (--moss-silent --moss-install-to), and fake OS executors for reg.exe, shortcuts
  * and ditto. Runs the Windows integration on Windows and the Linux one elsewhere.
  */
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installRecordSchema } from '@shared/install'
 import { SetupController, keptDataInstall, legacyView, type SetupEnvironment } from '@main/install/controller'
-import { performInstall, type InstallDeps } from '@main/install/install'
+import { performInstall, reintegrateMovedInstall, type InstallDeps } from '@main/install/install'
 import { keptDataPath, linuxDesktopFile, locatorPath, type HostInfo, type OsPlatform } from '@main/install/layout'
 import { readInstallRecord, readJsonObject, readKeptData, readLocator } from '@main/install/record'
 import type { ExecFile } from '@main/install/registry'
@@ -436,6 +436,80 @@ describe('reinstall after an uninstall that kept the data', () => {
     writeFileSync(join(data, 'settings.json'), '{}')
     expect(keptDataInstall(h)).toMatchObject({ source: 'kept', dataDir: data })
     expect(keptDataInstall({ ...h, platform: 'darwin' })).toBeNull()
+  })
+})
+
+describe('install folder moved by hand', () => {
+  /** The installed app as the launcher starts it from `root` (after it rebased install.json there). */
+  function startedFrom(root: string, h: HostInfo) {
+    const recordFile = join(root, 'install.json')
+    const record = readInstallRecord(recordFile)!
+    if (record.root !== root) {
+      // What launch.go Load does for a moved folder: root follows, and dataRoot when it was inside.
+      const dataRoot = record.dataRoot.startsWith(record.root) ? join(root, record.dataRoot.slice(record.root.length)) : record.dataRoot
+      writeFileSync(recordFile, JSON.stringify({ ...readJsonObject(recordFile), root, dataRoot }))
+    }
+    return detectRunContext({
+      argv: ['MossStudio', '--moss-launched'],
+      env: { ...h.env, MOSSSTUDIO_ROOT: root, MOSSSTUDIO_LAUNCHER: join(root, launcherFile) },
+      execPath: join(root, 'app-2.0.0', exe),
+      packaged: true,
+      platform,
+      arch: 'x64',
+      home: h.home,
+      exists: existsSync,
+      readText: (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null),
+    })
+  }
+
+  it('moved: the locator, shortcuts or .desktop entry and the Apps & Features entry follow the new folder', async () => {
+    const before = join(work(), 'before')
+    const h = harness('2.0.0', before)
+    await silentInstall(h)
+    const after = join(work(), '新 文件夹', 'MossStudio')
+    mkdirSync(join(after, '..'), { recursive: true })
+    renameSync(before, after)
+    h.regCalls.length = 0
+    h.shortcuts.length = 0
+
+    const context = startedFrom(after, h.env.host)
+    expect(context).toMatchObject({ mode: 'installed', root: after, locator: { root: before } })
+    expect(await reintegrateMovedInstall(context, h.env.host, h.env.install)).toEqual([])
+    expect(readLocator(locatorPath(h.env.host))).toEqual({ schema: 1, root: after, dataRoot: join(after, 'data'), version: '2.0.0' })
+    const launcher = join(after, launcherFile)
+    if (platform === 'win32') {
+      const adds = h.regCalls.filter((args) => args[0] === 'add')
+      expect(adds.find((args) => args[3] === 'InstallLocation')?.[7]).toBe(after)
+      expect(adds.find((args) => args[3] === 'UninstallString')?.[7]).toBe(`"${launcher}" --uninstall`)
+      expect(h.shortcuts.map((item) => item.options.target)).toEqual([launcher, launcher])
+    } else {
+      expect(readFileSync(linuxDesktopFile(h.env.host), 'utf8')).toContain(`Exec="${launcher}" %U`)
+    }
+    // Done once: the next start has nothing to do.
+    expect(await reintegrateMovedInstall(startedFrom(after, h.env.host), h.env.host, h.env.install)).toBeNull()
+
+    // A later Setup finds it where it is now.
+    const next = await SetupController.create(harness('2.1.0', after).env)
+    expect(next.state).toMatchObject({ kind: 'update', installed: { root: after } })
+  })
+
+  it('copied: the original still holds an install, so nothing changes', async () => {
+    const original = join(work(), 'original')
+    const h = harness('2.0.0', original)
+    await silentInstall(h)
+    const desktopBefore = platform === 'win32' ? null : readFileSync(linuxDesktopFile(h.env.host), 'utf8')
+    const copy = join(work(), 'copy')
+    cpSync(original, copy, { recursive: true, verbatimSymlinks: true })
+    h.regCalls.length = 0
+    h.shortcuts.length = 0
+
+    expect(await reintegrateMovedInstall(startedFrom(copy, h.env.host), h.env.host, h.env.install)).toBeNull()
+    expect(readLocator(locatorPath(h.env.host))?.root).toBe(original)
+    expect(h.regCalls).toEqual([])
+    expect(h.shortcuts).toEqual([])
+    if (desktopBefore !== null) expect(readFileSync(linuxDesktopFile(h.env.host), 'utf8')).toBe(desktopBefore)
+    // Started from where it was installed: nothing to do either.
+    expect(await reintegrateMovedInstall(startedFrom(original, h.env.host), h.env.host, h.env.install)).toBeNull()
   })
 })
 

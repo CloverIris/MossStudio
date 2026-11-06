@@ -25,7 +25,7 @@ import { recordedDataRoot } from './dataRoot'
 import { installModeSwitches } from './switches'
 import { readInstallRecord } from './record'
 import { ensureMacPortableRecord } from './portable'
-import { spawnLinesNoShell, type InstallResult } from './install'
+import { reintegrateMovedInstall, spawnLinesNoShell, type InstallResult } from './install'
 import { applyAppDetails } from './identity'
 import { PRODUCT_NAME, READY_FILE, type HostInfo } from './layout'
 import { directorySize } from './legacy'
@@ -444,6 +444,22 @@ export async function runInstallMode(context: RunContext = getRunContext()): Pro
     } catch (error) {
       console.error('[install] portable install.json', error)
     }
+  }
+  if (context.mode === 'installed' && context.platform !== 'darwin') {
+    const deps = {
+      exec: execFileNoShell,
+      writeShortcut: process.platform === 'win32' ? shell.writeShortcutLink.bind(shell) : null,
+      desktopDir: app.getPath('desktop'),
+      iconBytes,
+    }
+    void reintegrateMovedInstall(context, host(context), deps).then(
+      (warnings) => {
+        if (!warnings) return
+        console.log(`[install] install folder moved from ${context.locator?.root} to ${context.root}: shortcuts and the locator follow it`)
+        for (const warning of warnings) console.error(`[install] ${warning}`)
+      },
+      (error: unknown) => console.error('[install] re-integrating the moved install', error),
+    )
   }
   return false
 }

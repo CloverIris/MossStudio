@@ -31,7 +31,8 @@ import {
 import { stageLegacyProgramFiles, type StagedConversion } from './legacy'
 import { isPortableRoot } from './location'
 import { readInstallRecord, readLocator, writeInstallRecord, writeLocator } from './record'
-import { writeUninstallKey, type ExecFile } from './registry'
+import { writeUninstallKey, type ExecFile, type UninstallEntry } from './registry'
+import type { RunContext } from './runContext'
 
 export type InstallPhase = 'prepare' | 'convert' | 'copy' | 'launcher' | 'record' | 'integrate' | 'done'
 
@@ -93,6 +94,36 @@ export interface InstallResult {
   locatorPath: string
   /** Integration steps that failed without failing the install (shortcut, registry). */
   warnings: string[]
+}
+
+/** What the desktop integration (integrate) needs from InstallDeps. */
+export type IntegrationDeps = Pick<InstallDeps, 'exec' | 'writeShortcut' | 'desktopDir' | 'iconBytes'>
+
+/**
+ * Windows: the Apps & Features entry and the Start menu and desktop shortcuts; Linux: the
+ * .desktop entry and its icon, all pointing at `entry.launcher`. Returns the steps that failed
+ * (as warnings: the install itself stands).
+ */
+export async function integrate(host: HostInfo, entry: UninstallEntry, deps: IntegrationDeps): Promise<string[]> {
+  const warnings: string[] = []
+  if (host.platform === 'win32') {
+    try {
+      await writeUninstallKey({ exec: deps.exec, env: host.env }, entry)
+    } catch (error) {
+      warnings.push((error as Error).message)
+    }
+    if (deps.writeShortcut) {
+      const failed = writeWindowsShortcuts(deps.writeShortcut, windowsShortcutPaths(host, deps.desktopDir), entry.launcher, entry.root)
+      for (const path of failed) warnings.push(`无法创建快捷方式：${path}`)
+    }
+  } else {
+    try {
+      writeLinuxIntegration(host, entry.launcher, deps.iconBytes())
+    } catch (error) {
+      warnings.push(`无法创建应用菜单项：${(error as Error).message}`)
+    }
+  }
+  return warnings
 }
 
 export const spawnLinesNoShell: SpawnLines = (file, args, onLine) =>
@@ -238,24 +269,7 @@ async function installWindowsLinux(request: InstallRequest, deps: InstallDeps): 
     staged = null
 
     deps.progress({ phase: 'integrate', percent: 96, copiedBytes: totalBytes, totalBytes })
-    const warnings: string[] = []
-    if (platform === 'win32') {
-      try {
-        await writeUninstallKey({ exec: deps.exec, env: host.env }, { root, launcher, version, sizeBytes: totalBytes })
-      } catch (error) {
-        warnings.push((error as Error).message)
-      }
-      if (deps.writeShortcut) {
-        const failed = writeWindowsShortcuts(deps.writeShortcut, windowsShortcutPaths(host, deps.desktopDir), launcher, root)
-        for (const path of failed) warnings.push(`无法创建快捷方式：${path}`)
-      }
-    } else {
-      try {
-        writeLinuxIntegration(host, launcher, deps.iconBytes())
-      } catch (error) {
-        warnings.push(`无法创建应用菜单项：${(error as Error).message}`)
-      }
-    }
+    const warnings = await integrate(host, { root, launcher, version, sizeBytes: totalBytes }, deps)
     for (const name of readdirSync(root)) {
       if (!name.startsWith(`${launcherFile}.old-`)) continue
       try {
@@ -331,6 +345,26 @@ async function installMac(request: InstallRequest, deps: InstallDeps): Promise<I
   deps.log(`wrote ${recordPath} (current=${record.current}) and ${locator}`)
   deps.progress({ phase: 'done', percent: 100, copiedBytes: 0, totalBytes: 0 })
   return { root: folder, dataRoot, version, previous: record.previous ?? null, launcher: null, appPath: target, recordPath, locatorPath: locator, warnings: [] }
+}
+
+/**
+ * Windows/Linux, at the start of the installed app: the install folder was moved by hand (the
+ * launcher has already rebased install.json's root). When the locator still names the old
+ * folder and no install is left there (moved, not copied), point the locator, the shortcuts,
+ * the .desktop entry and the Apps & Features entry at the new folder, so they work again and a
+ * later Setup finds this install. A copy (the old folder still holds an install) changes nothing.
+ * Returns the warnings of a re-integration, or null when there was nothing to do.
+ */
+export async function reintegrateMovedInstall(context: RunContext, host: HostInfo, deps: IntegrationDeps): Promise<string[] | null> {
+  const { platform, root, launcher, locator, recordPath } = context
+  if (context.mode !== 'installed' || context.portable || platform === 'darwin') return null
+  if (!root || !launcher || !locator || !recordPath || samePath(platform, locator.root, root)) return null
+  const record = readInstallRecord(recordPath)
+  if (!record || !samePath(platform, record.root, root)) return null
+  if (readInstallRecord(recordPathFor(platform, locator.root, locator.dataRoot))) return null
+  writeLocator(locatorPath(host), locatorOf(record))
+  const sizeBytes = treeBytes(await listTree(join(root, appDirName(record.current))).catch(() => []))
+  return integrate(host, { root, launcher, version: record.current, sizeBytes }, deps)
 }
 
 export async function performInstall(request: InstallRequest, deps: InstallDeps): Promise<InstallResult> {
