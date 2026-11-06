@@ -279,7 +279,7 @@ export function StudioPage(): React.JSX.Element {
     onAddFromFile: (role, kind) => { if (selected) void inputImport.addFromFile(selected.id, role, kind) },
     maskTool: tool === 'mask',
     onToggleMask: () => setTool((current) => current === 'mask' ? 'select' : 'mask'),
-    onNavigate: (to) => navigate(to),
+    onNavigate: (to) => { void navigate(to) },
   }
 
   const run = async (canvasId: string, seed?: 'new' | 'same'): Promise<void> => {

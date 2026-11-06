@@ -2,8 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { JobRecord, Settings, TrainerRunInput, TrainerRuntimeInfo, TrainerRuntimeState, TrainerVersion } from '@shared/types'
-import { paths } from '../lib/paths'
+import type { JobRecord, Settings, TrainerRunInput, TrainerRuntimeInfo, TrainerVersion } from '@shared/types'
 import { run } from '../lib/run'
 import { startTrainingJob } from './supervisor'
 import { allRemoteVersions, remoteSetup } from './remoteTrainer'
@@ -20,7 +19,6 @@ import {
   trainerCommitExists,
   trainerMirror,
   trainerRuntimeDir,
-  trainerRuntimesDir,
   trainerTagSha,
   trainerVersionDir,
   trainerVersionsDir,
@@ -28,10 +26,6 @@ import {
 
 function versionFile(settings: Settings, id: string): string {
   return join(trainerVersionDir(settings, id), 'trainer.json')
-}
-
-function runtimeRoot(settings: Settings): string {
-  return trainerRuntimesDir(settings)
 }
 
 function runtimeDir(settings: Settings, id: string): string {

@@ -72,7 +72,6 @@ describe('gpuRows', () => {
 })
 
 describe('engine per GPU', () => {
-  const managed = (name: string): LocalEngineVersion => ({ id: name, name, path: `/e/${name}`, current: true, source: 'managed' })
   const multi = machineFixture('multiGpu')
   const plan = (overrides: Record<string, string> = {}, versions: LocalEngineVersion[] = []) =>
     enginePlanFor(multi, RELEASE_220, { engineDeviceOverrides: overrides, mossInferChannel: 'stable' }, versions)

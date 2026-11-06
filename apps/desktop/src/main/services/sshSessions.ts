@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { Events } from '@shared/channels'
-import type { TrainingHost } from '@shared/types'
 import { emit } from '../lib/events'
 import { getTrainingHost } from './trainingHosts'
 import { sshCommand, sshEnv, sshTerminalArgs } from './ssh'

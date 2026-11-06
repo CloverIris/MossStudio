@@ -66,13 +66,13 @@ export function DetailPanel({
   const reuse = useCallback(() => {
     if (!shown) return
     requestStudioReuse(buildReuseRequest(shown))
-    navigate('/studio')
+    void navigate('/studio')
   }, [navigate, requestStudioReuse, shown])
 
   // A new canvas in 创作 that starts from this picture (image-to-image).
   const useAsStart = useCallback(() => {
     requestStudioReuse(buildStartPictureRequest(shown ?? item))
-    navigate('/studio')
+    void navigate('/studio')
   }, [item, navigate, requestStudioReuse, shown])
 
   const useAsBackground = useCallback(() => {
@@ -83,7 +83,7 @@ export function DetailPanel({
     } catch {
       // storage may be unavailable; the store still carries it
     }
-    navigate('/studio')
+    void navigate('/studio')
   }, [item, navigate, setStudioBackground, shown])
 
   const reveal = useCallback(() => {

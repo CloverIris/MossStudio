@@ -206,7 +206,7 @@ function ProblemsTab(): React.JSX.Element {
     if (target.job && diagnostic.jobId) openActivity('jobs', diagnostic.jobId)
     if (target.route) {
       closeActivity()
-      navigate(target.route)
+      void navigate(target.route)
     }
     if (target.copy) {
       try {

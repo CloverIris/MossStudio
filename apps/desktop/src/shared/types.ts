@@ -1,4 +1,3 @@
-import type { EngineComputeCapability, EngineDevice } from './engineProtocol'
 import type { EngineMachine, EnginePlan } from './engineChoice'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'unknown'

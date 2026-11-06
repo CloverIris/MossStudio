@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Catalog, GalleryItem, GalleryPage, InstanceInfo, JobRecord, ProjectDocument, ProjectSummary } from '@shared/types'
-import { clampBox, createDraft, exampleDraft, type LayoutDraft } from '../lib/layout'
+import { clampBox, exampleDraft, type LayoutDraft } from '../lib/layout'
 import { Button, Card, EmptyState, Field, Input, Pill, ProgressBar, Select, Spinner, Textarea } from '../components/ui'
 import { LayoutEditor } from './LayoutEditor'
 import '../styles.css'

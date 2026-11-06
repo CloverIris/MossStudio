@@ -173,6 +173,7 @@ export async function installRemoteEngine(host: TrainingHost, progress?: (phase:
   const identityFile = `${archive}.source`
   const identity = `${source.kind}:${source.version}:${source.name}`
   const proxy = host.downloadProxy?.trim()
+  // eslint-disable-next-line no-control-regex -- rejects control characters that would break the curl config
   if (proxy && /[\x00-\x1f\x7f]/.test(proxy)) throw new Error('代理地址包含无效控制字符')
   const curlConfig = proxy ? `proxy = "${proxy.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"\nnoproxy = ""\n` : ''
   const variant = pkg.runtime

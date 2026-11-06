@@ -27,7 +27,7 @@ export interface UpdateTestHook {
 export function parseTestHook(text: string): UpdateTestHook | null {
   let raw: unknown
   try {
-    raw = JSON.parse(text.replace(/^﻿/, ''))
+    raw = JSON.parse(text.replace(/^\uFEFF/, ''))
   } catch {
     return null
   }

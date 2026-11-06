@@ -1,7 +1,6 @@
 import { app } from 'electron'
 import { gitBinary } from '../lib/gitBinary'
 import { promises as fs } from 'node:fs'
-import net from 'node:net'
 import os from 'node:os'
 import { isAbsolute } from 'node:path'
 import type {

@@ -36,7 +36,7 @@ export function useEngineFeatures(target: EngineTarget | null): EngineFeatures |
   useEffect(() => {
     if (key === null || !target) return
     let alive = true
-    call<EngineFeatures | null>(Ipc.engineFeatures, { deviceUuid: target.deviceUuid, hostId: target.hostId })
+    void call<EngineFeatures | null>(Ipc.engineFeatures, { deviceUuid: target.deviceUuid, hostId: target.hostId })
       .then((features) => features ?? null)
       .catch(() => null)
       .then((features) => {

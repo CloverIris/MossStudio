@@ -128,7 +128,7 @@ export function PerfMonitor(): React.JSX.Element {
             className="mt-1 flex h-9 w-full items-center rounded-lg px-2.5 text-ui text-ink transition-colors hover:bg-well"
             onClick={() => {
               setOpen(false)
-              navigate('/settings/devices')
+              void navigate('/settings/devices')
             }}
           >
             设备与引擎设置

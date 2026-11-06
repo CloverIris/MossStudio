@@ -102,7 +102,7 @@ export function SetupPage(): React.JSX.Element {
     setLeaving(true)
     try {
       await saveSettings({ onboardingState: state })
-      navigate(to, { replace: true })
+      void navigate(to, { replace: true })
     } catch (error) {
       toast.push(error instanceof Error ? error.message : String(error), 'error')
     } finally {

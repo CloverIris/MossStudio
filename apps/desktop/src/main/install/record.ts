@@ -19,7 +19,7 @@ export function readJsonObject(file: string): Record<string, unknown> | null {
     return null
   }
   try {
-    const value = JSON.parse(text.replace(/^﻿/, '')) as unknown
+    const value = JSON.parse(text.replace(/^\uFEFF/, '')) as unknown
     return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
   } catch {
     return null

@@ -7,7 +7,6 @@ import type {
   TrainerVersion,
   TrainingHost,
 } from '@shared/types'
-import { run } from '../lib/run'
 import { posixQuote, sshExec } from './ssh'
 import { getTrainingHost, listTrainingHosts, updateTrainingHostVersions } from './trainingHosts'
 import { TRAINER_SOURCE } from './trainerGit'
@@ -148,7 +147,6 @@ function runtimeIdFor(host: TrainingHost, material: string): string {
 export async function remoteInstallRuntime(
   settings: Settings,
   version: TrainerVersion,
-  runtime?: TrainerRuntimeInfo,
 ): Promise<TrainerRuntimeInfo> {
   if (!version.hostId || version.hostId === 'local') throw new Error('该版本不是 SSH 远端版本，拒绝在本机安装远端依赖')
   const host = hostOf(settings, version.hostId)
