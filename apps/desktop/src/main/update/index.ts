@@ -20,7 +20,7 @@ import { readBusySnapshot } from './busySources'
 import { updateContext } from './context'
 import { armAppHealth, type HealthWindow } from './health'
 import { isUpdateTestBuild, trustedUpdateKeys, updateFeedUrl } from './keys'
-import { cleanExitMarkerPath, UpdateRuntime } from './runtime'
+import { cleanExitMarkerPath, failedMarkerPath, UpdateRuntime } from './runtime'
 import { UpdateScheduler } from './schedule'
 import { loadTestHook, readyToRestart, shouldCrash, TEST_CRASH_EXIT_CODE, writeTestStatus, type UpdateTestHook } from './testHook'
 
@@ -133,8 +133,11 @@ export function armUpdateHealth(): void {
   const record = readInstallRecord(run.recordPath)
   const version = app.getVersion()
   // macOS: right after a swap the record still names the old, confirmed version until
-  // the runtime reconciles it, so a different current also means "prove yourself".
-  if (!record || (record.confirmed && record.current === version)) return
+  // the runtime reconciles it, so a different current also means "prove yourself". After a
+  // rollback (the swapped-in version died before recording itself) the record still says this
+  // version is confirmed, but reconciling the helper's failed marker clears that: arm then too.
+  const rolledBack = run.platform === 'darwin' && existsSync(failedMarkerPath(run.recordPath))
+  if (!record || (record.confirmed && record.current === version && !rolledBack)) return
   if (run.platform !== 'darwin' && !run.launched) return
   const recordPath = run.recordPath
   let confirmed = false
