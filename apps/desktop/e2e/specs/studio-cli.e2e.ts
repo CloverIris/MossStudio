@@ -17,13 +17,28 @@ async function openStudio(app: E2eApp, options: { lora?: boolean; theme?: 'light
   await page.evaluate((lora) => {
     const { canvasFixture, projectFixture } = window.__mock.fixtures
     const picture = canvasFixture({
-      id: 'img-1', kind: 'image', title: '小猫照片', imagePath: '/fixture/projects/project-1/assets/cat.png', x: 0, y: 0, width: 1024, height: 768, steps: 1,
+      id: 'img-1',
+      kind: 'image',
+      title: '小猫照片',
+      imagePath: '/fixture/projects/project-1/assets/cat.png',
+      x: 0,
+      y: 0,
+      width: 1024,
+      height: 768,
+      steps: 1,
     })
     const layout = canvasFixture({
-      id: 'canvas-1', title: '画面 1', prompt: '一只橘猫坐在窗台上', x: 420, y: 0, seedLocked: false,
+      id: 'canvas-1',
+      title: '画面 1',
+      prompt: '一只橘猫坐在窗台上',
+      x: 420,
+      y: 0,
+      seedLocked: false,
       ...(lora ? { adapters: [{ id: window.__mock.state.catalog.adapters[0]!.id, strength: 0.8 }] } : {}),
     })
-    window.__mock.state.projects = [projectFixture({ id: 'project-1', name: '小猫', canvases: [picture, layout], selectedCanvasId: 'canvas-1' })]
+    window.__mock.state.projects = [
+      projectFixture({ id: 'project-1', name: '小猫', canvases: [picture, layout], selectedCanvasId: 'canvas-1' }),
+    ]
   }, Boolean(options.lora))
   await app.start()
   await page.locator('article[data-canvas-card="canvas-1"]').waitFor()
@@ -61,7 +76,10 @@ describe('studio on a 兼容模式 (Vulkan) engine', () => {
     await expect.poll(() => generate(page).isEnabled()).toBe(true)
     await generate(page).click()
     await page.waitForFunction((channel) => window.__mock.callsTo(channel).length >= 1, ENGINE_JOBS)
-    const [body] = await page.evaluate((channel) => window.__mock.callsTo(channel) as Array<JobParams & { adapters?: unknown[] }>, ENGINE_JOBS)
+    const [body] = await page.evaluate(
+      (channel) => window.__mock.callsTo(channel) as Array<JobParams & { adapters?: unknown[] }>,
+      ENGINE_JOBS,
+    )
     expect(body!.prompt).toContain('一只橘猫坐在窗台上')
     expect(body!.adapters ?? []).toEqual([])
     for (const key of ['initImage', 'mask', 'control', 'references'] as const) expect(body![key]).toBeUndefined()

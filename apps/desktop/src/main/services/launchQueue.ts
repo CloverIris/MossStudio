@@ -27,9 +27,7 @@ function migrate(stored: StoredRow): LaunchRow | null {
     deviceId: typeof stored.deviceId === 'string' ? stored.deviceId : 'mps',
     profile: stored.profile === 'dmd8' ? 'dmd8' : 'base',
     jobId: typeof stored.jobId === 'string' ? stored.jobId : undefined,
-    state: STATES.has(stored.state as LaunchRow['state'])
-      ? (stored.state as LaunchRow['state'])
-      : 'failed',
+    state: STATES.has(stored.state as LaunchRow['state']) ? (stored.state as LaunchRow['state']) : 'failed',
     queuedAt: typeof stored.queuedAt === 'string' ? stored.queuedAt : now,
     startedAt: typeof stored.startedAt === 'string' ? stored.startedAt : undefined,
     error: typeof stored.error === 'string' ? stored.error : undefined,
@@ -44,9 +42,7 @@ function ensure(): LaunchRow[] {
       return rows
     }
     const parsed = JSON.parse(readFileSync(FILE(), 'utf8')) as StoredRow[]
-    rows = Array.isArray(parsed)
-      ? parsed.map(migrate).filter((item): item is LaunchRow => item !== null)
-      : []
+    rows = Array.isArray(parsed) ? parsed.map(migrate).filter((item): item is LaunchRow => item !== null) : []
     if (
       Array.isArray(parsed) &&
       parsed.some(
@@ -86,7 +82,9 @@ function persist(): void {
 }
 
 export function listLaunchRows(): LaunchRow[] {
-  return ensure().slice().sort((a, b) => (b.startedAt ?? b.queuedAt).localeCompare(a.startedAt ?? a.queuedAt))
+  return ensure()
+    .slice()
+    .sort((a, b) => (b.startedAt ?? b.queuedAt).localeCompare(a.startedAt ?? a.queuedAt))
 }
 
 export function upsertLaunchRow(row: LaunchRow): LaunchRow {

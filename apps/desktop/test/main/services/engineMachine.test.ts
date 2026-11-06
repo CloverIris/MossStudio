@@ -1,13 +1,29 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { GpuInventoryDevice } from '@shared/types'
 import type { RunResult } from '@main/lib/run'
-import { clearMachineProbeCache, nvidiaSetChanged, probeEngineMachine, readStoredMachineProbe, storeMachineProbe, withLiveNvidia, type MachineProbeDeps } from '@main/services/engineMachine'
+import {
+  clearMachineProbeCache,
+  nvidiaSetChanged,
+  probeEngineMachine,
+  readStoredMachineProbe,
+  storeMachineProbe,
+  withLiveNvidia,
+  type MachineProbeDeps,
+} from '@main/services/engineMachine'
 import { useTempDir } from '@test/helpers/tempDir'
 
 const ok = (stdout: string): RunResult => ({ code: 0, stdout, stderr: '', timedOut: false })
 const fail = (code = 1, stderr = 'boom', timedOut = false): RunResult => ({ code, stdout: '', stderr, timedOut })
 
-const RTX: GpuInventoryDevice = { index: 0, uuid: 'GPU-rtx', name: 'NVIDIA GeForce RTX 4090', pciId: '10de:2684', computeCapability: { major: 8, minor: 9 }, driverVersion: '590.48.01', memoryTotalBytes: 24 }
+const RTX: GpuInventoryDevice = {
+  index: 0,
+  uuid: 'GPU-rtx',
+  name: 'NVIDIA GeForce RTX 4090',
+  pciId: '10de:2684',
+  computeCapability: { major: 8, minor: 9 },
+  driverVersion: '590.48.01',
+  memoryTotalBytes: 24,
+}
 
 /** A fake machine: files under /sys and /opt, program outputs, nvidia-smi rows. */
 function deps(machine: {
@@ -32,7 +48,8 @@ function deps(machine: {
     platform: machine.platform ?? 'linux',
     run: vi.fn(async (file: string, args: string[], timeoutMs: number, env?: Record<string, string>) => {
       calls.push({ file, args, timeoutMs, ...(env ? { env } : {}) })
-      if (file.endsWith('ldconfig')) return file === (machine.ldconfigAt ?? 'ldconfig') ? ok(machine.ldconfig ?? '') : fail(127, 'not found')
+      if (file.endsWith('ldconfig'))
+        return file === (machine.ldconfigAt ?? 'ldconfig') ? ok(machine.ldconfig ?? '') : fail(127, 'not found')
       if (file.endsWith('moss-infer-hip')) {
         const hip = machine.hipList ?? 'no HIP devices\n'
         return typeof hip === 'string' ? ok(hip) : hip
@@ -44,7 +61,13 @@ function deps(machine: {
     readFile: (path) => files[path] ?? null,
     readdir: (path) => {
       const prefix = path.endsWith('/') ? path : `${path}/`
-      return [...new Set(Object.keys(files).filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length).split('/')[0]!))]
+      return [
+        ...new Set(
+          Object.keys(files)
+            .filter((key) => key.startsWith(prefix))
+            .map((key) => key.slice(prefix.length).split('/')[0]!),
+        ),
+      ]
     },
     exists: (path) => path in files,
     readWrite: (path) => (machine.rw ?? []).includes(path),
@@ -75,34 +98,60 @@ describe('probeEngineMachine', () => {
     const probe = await probeEngineMachine(d)
     expect(probe.machine).toEqual({
       os: 'linux',
-      gpus: [{
-        id: 'GPU-rtx', name: 'NVIDIA GeForce RTX 4090 Laptop GPU', vendor: 'nvidia', pciId: '10de:2757', memoryBytes: 24,
-        computeCapability: { major: 8, minor: 9 }, driverVersion: '590.48.01', vulkan: { index: 0, usable: true, discrete: true, name: 'NVIDIA GeForce RTX 4090 Laptop GPU', kernels: 'coop' },
-      }],
-      systemCuda: ['cu13'], rocm7: false, hipAccess: false, vulkanProbed: true,
+      gpus: [
+        {
+          id: 'GPU-rtx',
+          name: 'NVIDIA GeForce RTX 4090 Laptop GPU',
+          vendor: 'nvidia',
+          pciId: '10de:2757',
+          memoryBytes: 24,
+          computeCapability: { major: 8, minor: 9 },
+          driverVersion: '590.48.01',
+          vulkan: { index: 0, usable: true, discrete: true, name: 'NVIDIA GeForce RTX 4090 Laptop GPU', kernels: 'coop' },
+        },
+      ],
+      systemCuda: ['cu13'],
+      rocm7: false,
+      hipAccess: false,
+      vulkanProbed: true,
     })
     // Every probe runs a program with an argument array and a timeout.
-    expect(d.calls).toEqual(expect.arrayContaining([
-      { file: '/probe/bin/moss-infer-vulkan', args: ['--list-devices'], timeoutMs: 15_000 },
-      { file: 'ldconfig', args: ['-p'], timeoutMs: 6000 },
-    ]))
+    expect(d.calls).toEqual(
+      expect.arrayContaining([
+        { file: '/probe/bin/moss-infer-vulkan', args: ['--list-devices'], timeoutMs: 15_000 },
+        { file: 'ldconfig', args: ['-p'], timeoutMs: 6000 },
+      ]),
+    )
   })
 
   it('a mixed Linux box: NVIDIA, AMD with its gfx target and ROCm 7, Intel, and no llvmpipe', async () => {
-    const probe = await probeEngineMachine(deps({
-      nvidia: [RTX],
-      vulkan: [
-        'device 0: AMD Radeon RX 7900 XTX (RADV NAVI31) [1002:744c] discrete', '  kernels: coop-f16',
-        'device 1: NVIDIA GeForce RTX 4090 [10de:2684] discrete', '  kernels: coop',
-        'device 2: AMD Radeon RX 7900 XTX (RADV NAVI31) [1002:744c] discrete', '  kernels: coop-f16',
-        'device 3: Intel(R) Arc(TM) A770 Graphics (DG2) [8086:56a0] discrete', '  kernels: plain',
-        'device 4: llvmpipe (LLVM 19.1.7, 256 bits) [10005:0000]', '  kernels: plain',
-      ].join('\n'),
-      files: { ...kfd(1, 110000, 0x744c), ...kfd(2, 110000, 0x744c), '/opt/rocm/lib/libamdhip64.so.7': '', '/dev/dri/renderD128': '', '/dev/dri/card0': '' },
-      ldconfig: '\tlibamdhip64.so.7 (libc6,x86-64) => /opt/rocm-7.0.2/lib/libamdhip64.so.7\n',
-      ldconfigAt: '/sbin/ldconfig',
-      rw: ['/dev/kfd', '/dev/dri/renderD128'],
-    }))
+    const probe = await probeEngineMachine(
+      deps({
+        nvidia: [RTX],
+        vulkan: [
+          'device 0: AMD Radeon RX 7900 XTX (RADV NAVI31) [1002:744c] discrete',
+          '  kernels: coop-f16',
+          'device 1: NVIDIA GeForce RTX 4090 [10de:2684] discrete',
+          '  kernels: coop',
+          'device 2: AMD Radeon RX 7900 XTX (RADV NAVI31) [1002:744c] discrete',
+          '  kernels: coop-f16',
+          'device 3: Intel(R) Arc(TM) A770 Graphics (DG2) [8086:56a0] discrete',
+          '  kernels: plain',
+          'device 4: llvmpipe (LLVM 19.1.7, 256 bits) [10005:0000]',
+          '  kernels: plain',
+        ].join('\n'),
+        files: {
+          ...kfd(1, 110000, 0x744c),
+          ...kfd(2, 110000, 0x744c),
+          '/opt/rocm/lib/libamdhip64.so.7': '',
+          '/dev/dri/renderD128': '',
+          '/dev/dri/card0': '',
+        },
+        ldconfig: '\tlibamdhip64.so.7 (libc6,x86-64) => /opt/rocm-7.0.2/lib/libamdhip64.so.7\n',
+        ldconfigAt: '/sbin/ldconfig',
+        rw: ['/dev/kfd', '/dev/dri/renderD128'],
+      }),
+    )
     expect(probe.machine.gpus.map((gpu) => [gpu.id, gpu.vendor, gpu.vulkan?.index, gpu.gfxTarget])).toEqual([
       ['GPU-rtx', 'nvidia', 1, undefined],
       ['vk-1002-744c-0', 'amd', 0, 'gfx1100'],
@@ -122,17 +171,22 @@ describe('probeEngineMachine', () => {
   })
 
   it('without the Vulkan probe: AMD from KFD, Intel from DRM, usability unknown', async () => {
-    const probe = await probeEngineMachine(deps({
-      nvidia: [RTX],
-      vulkan: fail(2, 'vkCreateInstance failed', false),
-      files: {
-        ...kfd(1, 120001, 0x7550),
-        '/sys/class/drm/card0/device/vendor': '0x8086\n', '/sys/class/drm/card0/device/device': '0x46a6\n',
-        '/sys/class/drm/card1/device/vendor': '0x10de\n', '/sys/class/drm/card1/device/device': '0x2684\n',
-        '/sys/class/drm/card2/device/vendor': '0x1002\n', '/sys/class/drm/card2/device/device': '0x7550\n',
-        '/sys/class/drm/card0-DP-1/device/vendor': '0x8086\n',
-      },
-    }))
+    const probe = await probeEngineMachine(
+      deps({
+        nvidia: [RTX],
+        vulkan: fail(2, 'vkCreateInstance failed', false),
+        files: {
+          ...kfd(1, 120001, 0x7550),
+          '/sys/class/drm/card0/device/vendor': '0x8086\n',
+          '/sys/class/drm/card0/device/device': '0x46a6\n',
+          '/sys/class/drm/card1/device/vendor': '0x10de\n',
+          '/sys/class/drm/card1/device/device': '0x2684\n',
+          '/sys/class/drm/card2/device/vendor': '0x1002\n',
+          '/sys/class/drm/card2/device/device': '0x7550\n',
+          '/sys/class/drm/card0-DP-1/device/vendor': '0x8086\n',
+        },
+      }),
+    )
     expect(probe.machine.vulkanProbed).toBe(false)
     expect(probe.machine.gpus.map((gpu) => [gpu.id, gpu.vendor, gpu.gfxTarget, gpu.vulkan])).toEqual([
       ['GPU-rtx', 'nvidia', undefined, undefined],
@@ -160,14 +214,22 @@ describe('probeEngineMachine', () => {
 
   it('macOS: nothing to probe', async () => {
     const d = deps({ platform: 'darwin' })
-    expect((await probeEngineMachine(d)).machine).toEqual({ os: 'macos', gpus: [], systemCuda: [], rocm7: false, hipAccess: false, vulkanProbed: false })
+    expect((await probeEngineMachine(d)).machine).toEqual({
+      os: 'macos',
+      gpus: [],
+      systemCuda: [],
+      rocm7: false,
+      hipAccess: false,
+      vulkanProbed: false,
+    })
     expect(d.calls).toEqual([])
   })
 })
 
 describe('probeEngineMachine — HIP access', () => {
   const amdBox = {
-    vulkan: 'device 0: AMD Radeon RX 7900 XTX [1002:744c] discrete\n  kernels: coop-f16\ndevice 1: AMD Radeon RX 7900 XTX [1002:744c] discrete\n  kernels: coop-f16\n',
+    vulkan:
+      'device 0: AMD Radeon RX 7900 XTX [1002:744c] discrete\n  kernels: coop-f16\ndevice 1: AMD Radeon RX 7900 XTX [1002:744c] discrete\n  kernels: coop-f16\n',
     files: { ...kfd(1, 110000, 0x744c), ...kfd(2, 110000, 0x744c), '/opt/rocm/lib/libamdhip64.so.7': '', '/dev/dri/renderD128': '' },
   }
 
@@ -181,10 +243,14 @@ describe('probeEngineMachine — HIP access', () => {
     const d = deps({
       ...amdBox,
       hipBinary: '/e/stable-v2.2.0-hip/bin/moss-infer-hip',
-      hipList: 'device 0: AMD Radeon RX 7900 XTX (gfx1100), 24.0 GiB\n  kernels: gfx1100, wmma\ndevice 1: AMD Radeon RX 7900 XTX (gfx1100), 24.0 GiB\n  unusable: out of memory\n',
+      hipList:
+        'device 0: AMD Radeon RX 7900 XTX (gfx1100), 24.0 GiB\n  kernels: gfx1100, wmma\ndevice 1: AMD Radeon RX 7900 XTX (gfx1100), 24.0 GiB\n  unusable: out of memory\n',
     })
     const probe = await probeEngineMachine(d)
-    expect(probe.machine.gpus.map((gpu) => gpu.hip)).toEqual([{ index: 0, usable: true }, { index: 1, usable: false }])
+    expect(probe.machine.gpus.map((gpu) => gpu.hip)).toEqual([
+      { index: 0, usable: true },
+      { index: 1, usable: false },
+    ])
     expect(d.calls.find((call) => call.file.endsWith('moss-infer-hip'))).toMatchObject({ args: ['--list-devices'], timeoutMs: 15_000 })
   })
 
@@ -203,9 +269,17 @@ describe('probeEngineMachine — HIP access', () => {
   })
 
   it('tries /sbin and /usr/sbin when ldconfig is not on PATH', async () => {
-    const d = deps({ vulkan: 'no Vulkan devices\n', ldconfigAt: '/usr/sbin/ldconfig', ldconfig: '\tlibamdhip64.so.7 (libc6,x86-64) => /opt/rocm/lib/libamdhip64.so.7\n' })
+    const d = deps({
+      vulkan: 'no Vulkan devices\n',
+      ldconfigAt: '/usr/sbin/ldconfig',
+      ldconfig: '\tlibamdhip64.so.7 (libc6,x86-64) => /opt/rocm/lib/libamdhip64.so.7\n',
+    })
     expect((await probeEngineMachine(d)).rocmLibDir).toBe('/opt/rocm/lib')
-    expect(d.calls.filter((call) => call.file.endsWith('ldconfig')).map((call) => call.file)).toEqual(['ldconfig', '/sbin/ldconfig', '/usr/sbin/ldconfig'])
+    expect(d.calls.filter((call) => call.file.endsWith('ldconfig')).map((call) => call.file)).toEqual([
+      'ldconfig',
+      '/sbin/ldconfig',
+      '/usr/sbin/ldconfig',
+    ])
   })
 })
 
@@ -225,7 +299,10 @@ describe('machine probe cache', () => {
 
 describe('stored probe vs. what nvidia-smi says now', () => {
   const stored = {
-    os: 'linux' as const, systemCuda: [], rocm7: false, vulkanProbed: true,
+    os: 'linux' as const,
+    systemCuda: [],
+    rocm7: false,
+    vulkanProbed: true,
     gpus: [
       { id: 'GPU-rtx', name: 'RTX 4090', vendor: 'nvidia' as const, computeCapability: { major: 8, minor: 9 }, driverVersion: '560.35.03' },
       { id: 'vk-1002-744c-0', name: 'RX 7900 XTX', vendor: 'amd' as const },
@@ -233,7 +310,9 @@ describe('stored probe vs. what nvidia-smi says now', () => {
   }
 
   it('the live driver and compute capability win (a driver update moves CUDA 12 to 13 without a re-probe)', () => {
-    const live = withLiveNvidia(stored, [{ uuid: 'GPU-rtx', index: 0, name: 'RTX 4090', driverVersion: '590.48.01', computeCapability: { major: 8, minor: 9 } }])
+    const live = withLiveNvidia(stored, [
+      { uuid: 'GPU-rtx', index: 0, name: 'RTX 4090', driverVersion: '590.48.01', computeCapability: { major: 8, minor: 9 } },
+    ])
     expect(live.gpus[0]).toMatchObject({ driverVersion: '590.48.01' })
     expect(live.gpus[1]).toBe(stored.gpus[1])
     expect(withLiveNvidia(stored, [])).toBe(stored)
@@ -246,4 +325,3 @@ describe('stored probe vs. what nvidia-smi says now', () => {
     expect(nvidiaSetChanged(stored, [])).toBe(true)
   })
 })
-

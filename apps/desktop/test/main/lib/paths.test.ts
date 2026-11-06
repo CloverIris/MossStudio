@@ -109,9 +109,22 @@ describe('ensureDirs', () => {
   it('creates the core and default model layout inside the data root', async () => {
     const { ensureDirs, paths } = await load()
     ensureDirs()
-    for (const dir of [paths.git(), paths.instances(), paths.managedPython(), paths.cache(), paths.logs(), paths.mossinfer(),
-      paths.trainerGit(), paths.trainerVersions(), paths.trainerRuntimes(), paths.hub(), paths.roleHub('dit'), paths.roleHub('vae'),
-      paths.adapters(), paths.modelImports()]) {
+    for (const dir of [
+      paths.git(),
+      paths.instances(),
+      paths.managedPython(),
+      paths.cache(),
+      paths.logs(),
+      paths.mossinfer(),
+      paths.trainerGit(),
+      paths.trainerVersions(),
+      paths.trainerRuntimes(),
+      paths.hub(),
+      paths.roleHub('dit'),
+      paths.roleHub('vae'),
+      paths.adapters(),
+      paths.modelImports(),
+    ]) {
       expect(existsSync(dir), dir).toBe(true)
     }
   })

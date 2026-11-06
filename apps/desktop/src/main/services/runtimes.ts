@@ -10,14 +10,7 @@ import { firstLine, run, runStream, tail } from '../lib/run'
 import { pythonVersion } from '../lib/python'
 import { getLastNetwork } from './network'
 
-export const MOSS_DEPS = [
-  'torch>=2.9',
-  'diffusers>=0.38',
-  'transformers>=5.3',
-  'accelerate>=1.10',
-  'safetensors>=0.6',
-  'Pillow>=10',
-]
+export const MOSS_DEPS = ['torch>=2.9', 'diffusers>=0.38', 'transformers>=5.3', 'accelerate>=1.10', 'safetensors>=0.6', 'Pillow>=10']
 
 type Logger = (line: string, stream?: 'stdout' | 'stderr') => void
 
@@ -123,7 +116,6 @@ export async function pickPython(settings: Settings): Promise<{ path: string; ve
   throw new Error('未找到 Python 3.10+。可在设置中指定解释器，或稍后安装受管 Python。')
 }
 
-
 export function parseDepsFromPyproject(instanceDir: string): string[] {
   let deps = [...MOSS_DEPS]
   try {
@@ -146,7 +138,9 @@ export function parseDepsFromPyproject(instanceDir: string): string[] {
 
 function lockHash(pythonVersionText: string, deps: string[], torchIndex: string | null): string {
   return createHash('sha256')
-    .update(JSON.stringify({ python: pythonVersionText, platform: process.platform, arch: process.arch, deps: [...deps].sort(), torchIndex }))
+    .update(
+      JSON.stringify({ python: pythonVersionText, platform: process.platform, arch: process.arch, deps: [...deps].sort(), torchIndex }),
+    )
     .digest('hex')
 }
 
@@ -247,20 +241,13 @@ export async function ensureRuntime(input: EnsureRuntimeInput): Promise<RuntimeI
   return runtime
 }
 
-export async function installDeps(
-  runtimeId: string,
-  settings: Settings,
-  logger?: Logger,
-  instanceDir?: string,
-): Promise<RuntimeInfo> {
+export async function installDeps(runtimeId: string, settings: Settings, logger?: Logger, instanceDir?: string): Promise<RuntimeInfo> {
   const runtime = await readRuntime(runtimeId)
   if (!runtime) throw new Error('运行时不存在')
   const loggerForRun = logFor(runtimeId, runtime.instanceId, logger)
 
   const source = instanceDir ?? paths.instance(runtime.instanceId)
-  runtime.deps = existsSync(join(source, 'pyproject.toml'))
-    ? parseDepsFromPyproject(source)
-    : runtime.deps
+  runtime.deps = existsSync(join(source, 'pyproject.toml')) ? parseDepsFromPyproject(source) : runtime.deps
   const torchIndex = await resolveTorchIndex(settings)
   runtime.torchIndex = torchIndex
   runtime.lockHash = lockHash(runtime.pythonVersion, runtime.deps, torchIndex)
@@ -287,7 +274,12 @@ export async function installDeps(
       ? runStream(
           'uv',
           [
-            'pip', 'install', '--python', python, '--index-url', targetIndex,
+            'pip',
+            'install',
+            '--python',
+            python,
+            '--index-url',
+            targetIndex,
             ...(extraIndex ? ['--extra-index-url', extraIndex, '--index-strategy', 'unsafe-best-match'] : []),
             ...deps,
           ],
@@ -296,22 +288,15 @@ export async function installDeps(
         )
       : runStream(
           python,
-          [
-            '-m', 'pip', 'install', '--index-url', targetIndex,
-            ...(extraIndex ? ['--extra-index-url', extraIndex] : []),
-            ...deps,
-          ],
+          ['-m', 'pip', 'install', '--index-url', targetIndex, ...(extraIndex ? ['--extra-index-url', extraIndex] : []), ...deps],
           { timeoutMs: 3_600_000, env },
           (line, stream) => loggerForRun(line, stream),
         )
 
   let result
   if (!uv) {
-    const upgrade = await runStream(
-      python,
-      ['-m', 'pip', 'install', '--upgrade', 'pip'],
-      { timeoutMs: 300_000, env },
-      (line, stream) => loggerForRun(line, stream),
+    const upgrade = await runStream(python, ['-m', 'pip', 'install', '--upgrade', 'pip'], { timeoutMs: 300_000, env }, (line, stream) =>
+      loggerForRun(line, stream),
     )
     if (upgrade.code !== 0) loggerForRun('升级 pip 失败，继续尝试安装', 'stderr')
   }

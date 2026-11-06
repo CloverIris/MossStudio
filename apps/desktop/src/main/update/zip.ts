@@ -79,6 +79,9 @@ export async function extractZip(zipPath: string, dest: string, options: Extract
     await symlink(link.target, link.full)
     extracted.push({ path: link.path, type: 'symlink' })
   }
-  await assertLinksResolveInside(dest, links.map((link) => link.full))
+  await assertLinksResolveInside(
+    dest,
+    links.map((link) => link.full),
+  )
   return extracted
 }

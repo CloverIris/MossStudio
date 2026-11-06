@@ -19,9 +19,13 @@ export function NetworkSection(): React.JSX.Element {
     if (!remoteHosts) return
     let canceled = false
     void call<ManagedHost[]>(Ipc.hostsList)
-      .then((list) => { if (!canceled) setHosts(list.filter((host) => host.kind === 'ssh')) })
+      .then((list) => {
+        if (!canceled) setHosts(list.filter((host) => host.kind === 'ssh'))
+      })
       .catch(() => undefined)
-    return () => { canceled = true }
+    return () => {
+      canceled = true
+    }
   }, [remoteHosts])
 
   const selected = env?.network.selected
@@ -32,18 +36,24 @@ export function NetworkSection(): React.JSX.Element {
         <Group>
           <TextSetting<string | null>
             title="访问令牌（Token）"
-            description={settings.hasHfToken
-              ? '已保存。部分模型需要登录 Hugging Face 并同意许可后才能下载。留空不会改动已保存的令牌。'
-              : '部分模型需要登录 Hugging Face 并同意许可后才能下载。令牌只保存在本机，并加密存放。'}
+            description={
+              settings.hasHfToken
+                ? '已保存。部分模型需要登录 Hugging Face 并同意许可后才能下载。留空不会改动已保存的令牌。'
+                : '部分模型需要登录 Hugging Face 并同意许可后才能下载。令牌只保存在本机，并加密存放。'
+            }
             type="password"
             value={null}
             placeholder={settings.hasHfToken ? '已保存' : 'hf_…'}
             validate={singleLineToken}
             clearOnSave
-            onSave={(hfToken) => hfToken ? save({ hfToken }, '令牌已保存') : Promise.resolve(true)}
-            trailing={settings.hasHfToken ? (
-              <Button tone="ghost" onClick={() => void save({ hfToken: null }, '令牌已清除')}>清除</Button>
-            ) : null}
+            onSave={(hfToken) => (hfToken ? save({ hfToken }, '令牌已保存') : Promise.resolve(true))}
+            trailing={
+              settings.hasHfToken ? (
+                <Button tone="ghost" onClick={() => void save({ hfToken: null }, '令牌已清除')}>
+                  清除
+                </Button>
+              ) : null
+            }
           />
         </Group>
       </Section>

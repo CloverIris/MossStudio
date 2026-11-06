@@ -386,11 +386,13 @@ export async function shutdownCliEngines(filter: CliShutdownFilter = {}): Promis
     slot.queue.push(...keep)
     const active = slot.active
     if (!active || !matches(active.opts)) continue
-    exits.push(new Promise<void>((resolve) => {
-      if (active.child.exitCode !== null || active.child.signalCode !== null) return resolve()
-      active.child.once('close', () => resolve())
-      terminate(active)
-    }))
+    exits.push(
+      new Promise<void>((resolve) => {
+        if (active.child.exitCode !== null || active.child.signalCode !== null) return resolve()
+        active.child.once('close', () => resolve())
+        terminate(active)
+      }),
+    )
   }
   await Promise.all(exits)
 }
@@ -407,18 +409,26 @@ function hipDevices(binary: string, env?: Record<string, string>): Promise<HipDe
   const cached = hipLists.get(key)
   if (cached) return cached
   const devices = new Promise<HipDevice[]>((resolvePromise, rejectPromise) => {
-    execFile(binary, ['--list-devices'], {
-      timeout: 15_000,
-      windowsHide: true,
-      ...(env ? { env: { ...process.env, ...env } } : {}),
-    }, (error, stdout, stderr) => {
-      if (error) {
-        const said = String(stderr ?? '').split(/\r?\n/).find((line) => line.trim())?.trim()
-        rejectPromise(new Error(said || error.message))
-      } else {
-        resolvePromise(parseHipDeviceList(String(stdout)))
-      }
-    })
+    execFile(
+      binary,
+      ['--list-devices'],
+      {
+        timeout: 15_000,
+        windowsHide: true,
+        ...(env ? { env: { ...process.env, ...env } } : {}),
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const said = String(stderr ?? '')
+            .split(/\r?\n/)
+            .find((line) => line.trim())
+            ?.trim()
+          rejectPromise(new Error(said || error.message))
+        } else {
+          resolvePromise(parseHipDeviceList(String(stdout)))
+        }
+      },
+    )
   })
   hipLists.set(key, devices)
   devices.catch(() => hipLists.delete(key))
@@ -433,7 +443,12 @@ export type HipIndexResult = { ok: true; index?: number } | { ok: false; message
  * target nothing can be told and the program takes its first usable device.
  * A card the list does not have is an error: it must not land on another one.
  */
-export async function hipDeviceIndex(binary: string, gpu: { name?: string; gfxTarget?: string }, ordinal: number, env?: Record<string, string>): Promise<HipIndexResult> {
+export async function hipDeviceIndex(
+  binary: string,
+  gpu: { name?: string; gfxTarget?: string },
+  ordinal: number,
+  env?: Record<string, string>,
+): Promise<HipIndexResult> {
   if (!gpu.gfxTarget) return { ok: true }
   let devices: HipDevice[]
   try {
@@ -453,7 +468,10 @@ export async function hipDeviceIndex(binary: string, gpu: { name?: string; gfxTa
  * A file that cannot be read is a problem too: the CLI could not read it either.
  */
 export async function cliBundleDtypeProblem(kind: CliEngineKind, model: string): Promise<string | null> {
-  for (const [part, label] of [['transformer', 'DiT'], ['text_encoder', '文本编码器']] as const) {
+  for (const [part, label] of [
+    ['transformer', 'DiT'],
+    ['text_encoder', '文本编码器'],
+  ] as const) {
     const dir = join(model, part)
     let file: string | undefined
     try {
@@ -487,9 +505,11 @@ async function safetensorsDtypes(path: string): Promise<Set<string>> {
     const json = Buffer.alloc(length)
     if ((await handle.read(json, 0, length, 8)).bytesRead !== length) throw new Error('文件不完整')
     const header = JSON.parse(json.toString('utf8')) as Record<string, { dtype?: unknown }>
-    return new Set(Object.entries(header)
-      .filter(([name]) => name !== '__metadata__')
-      .map(([, tensor]) => String(tensor?.dtype ?? '')))
+    return new Set(
+      Object.entries(header)
+        .filter(([name]) => name !== '__metadata__')
+        .map(([, tensor]) => String(tensor?.dtype ?? '')),
+    )
   } finally {
     await handle.close()
   }

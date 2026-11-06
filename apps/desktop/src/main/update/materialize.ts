@@ -58,7 +58,8 @@ export async function verifyTree(dir: string, list: FileList, options: VerifyOpt
   }
   await walk(dir)
   const missing = [...expected.keys()].filter((path) => !seen.has(path))
-  if (missing.length) throw new Error(`更新包缺少文件：${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ` 等 ${missing.length} 个` : ''}`)
+  if (missing.length)
+    throw new Error(`更新包缺少文件：${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ` 等 ${missing.length} 个` : ''}`)
 }
 
 export interface MaterializeOptions {

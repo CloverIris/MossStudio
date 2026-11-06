@@ -56,10 +56,18 @@ export function enumValues(features: EngineFeatures | null | undefined, param: E
 }
 
 /** Select options: 默认 first, then every accepted value; a saved value the engine no longer lists stays visible. */
-export function enumOptions(features: EngineFeatures | null | undefined, param: EnumParam, current?: string): Array<{ value: string; label: string; disabled?: boolean }> {
+export function enumOptions(
+  features: EngineFeatures | null | undefined,
+  param: EnumParam,
+  current?: string,
+): Array<{ value: string; label: string; disabled?: boolean }> {
   const values = enumValues(features, param)
-  const options: Array<{ value: string; label: string; disabled?: boolean }> = [{ value: '', label: '默认' }, ...values.map((value) => ({ value, label: enumLabel(param, value) }))]
-  if (current && !values.includes(current)) options.push({ value: current, label: `${enumLabel(param, current)}（不支持）`, disabled: true })
+  const options: Array<{ value: string; label: string; disabled?: boolean }> = [
+    { value: '', label: '默认' },
+    ...values.map((value) => ({ value, label: enumLabel(param, value) })),
+  ]
+  if (current && !values.includes(current))
+    options.push({ value: current, label: `${enumLabel(param, current)}（不支持）`, disabled: true })
   return options
 }
 
@@ -111,12 +119,17 @@ export function clampHiresDimension(value: number, fallback: number): number {
 }
 
 /** The size the first pass runs at: a result of a hires run records it in `baseSize`. */
-export function generationSize(canvas: Pick<ProjectCanvas, 'width' | 'height'> & { baseSize?: { width: number; height: number } }): { width: number; height: number } {
+export function generationSize(canvas: Pick<ProjectCanvas, 'width' | 'height'> & { baseSize?: { width: number; height: number } }): {
+  width: number
+  height: number
+} {
   return canvas.baseSize ? { ...canvas.baseSize } : { width: canvas.width, height: canvas.height }
 }
 
 /** The size of the finished picture. */
-export function outputSize(canvas: Pick<ProjectCanvas, 'width' | 'height' | 'sampling'> & { baseSize?: { width: number; height: number } }): { width: number; height: number } {
+export function outputSize(
+  canvas: Pick<ProjectCanvas, 'width' | 'height' | 'sampling'> & { baseSize?: { width: number; height: number } },
+): { width: number; height: number } {
   const hires = canvas.sampling?.hires
   return hires ? { width: hires.width, height: hires.height } : generationSize(canvas)
 }
@@ -148,7 +161,11 @@ export function withHiresPatch<T extends Pick<ProjectCanvas, 'width' | 'height' 
 }
 
 /** A canvas resized from `from` keeps its hires target in proportion. */
-export function scaleHires(sampling: JobSampling | undefined, from: { width: number; height: number }, to: { width: number; height: number }): JobSampling | undefined {
+export function scaleHires(
+  sampling: JobSampling | undefined,
+  from: { width: number; height: number },
+  to: { width: number; height: number },
+): JobSampling | undefined {
   const hires = sampling?.hires
   if (!sampling || !hires || (from.width === to.width && from.height === to.height)) return sampling
   return {

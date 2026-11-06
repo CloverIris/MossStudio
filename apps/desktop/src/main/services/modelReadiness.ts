@@ -22,8 +22,7 @@ export async function legacyModelReady(path: string): Promise<boolean> {
       for (const entry of await readdir(dir, { withFileTypes: true })) {
         const rel = prefix + entry.name
         if (entry.isDirectory()) await walk(join(dir, entry.name), `${rel}/`)
-        else if (!rel.endsWith('.part'))
-          files.push({ path: rel, size: await fileSize(join(dir, entry.name)), oid: null })
+        else if (!rel.endsWith('.part')) files.push({ path: rel, size: await fileSize(join(dir, entry.name)), oid: null })
       }
     }
     await walk(root)

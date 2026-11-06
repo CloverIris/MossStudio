@@ -161,7 +161,12 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     /** Nothing installed: onboarding pending, no engine, no model, a usable GPU. */
     firstRun,
     /** First run on a machine without an NVIDIA GPU. */
-    noGpu: () => ({ ...firstRun(), devices: [launchDeviceFixture({ id: 'cpu', name: 'CPU', kind: 'cpu', detail: 'Fixture CPU', memoryBytes: undefined })], gpuInventory: gpuInventoryFixture([]), engineMachine: { ...machineFixture('nvidia'), gpus: [] } }),
+    noGpu: () => ({
+      ...firstRun(),
+      devices: [launchDeviceFixture({ id: 'cpu', name: 'CPU', kind: 'cpu', detail: 'Fixture CPU', memoryBytes: undefined })],
+      gpuInventory: gpuInventoryFixture([]),
+      engineMachine: { ...machineFixture('nvidia'), gpus: [] },
+    }),
     /** First run with the engine download in flight. */
     engineInstalling: () => ({
       ...firstRun(),
@@ -181,7 +186,15 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     ready: () => ({}),
     /** Ready, with one failed job in history and its diagnostic. */
     jobFailure: () => ({
-      jobs: [jobFixture({ id: 'job-failed', state: 'failed', stage: 'denoise', error: { code: 'E_CUDA_OOM', message: 'CUDA out of memory' }, endedAt: FIXTURE_NOW })],
+      jobs: [
+        jobFixture({
+          id: 'job-failed',
+          state: 'failed',
+          stage: 'denoise',
+          error: { code: 'E_CUDA_OOM', message: 'CUDA out of memory' },
+          endedAt: FIXTURE_NOW,
+        }),
+      ],
       diagnostics: [diagnosticFixture({ jobId: 'job-failed' })],
     }),
     /** Ready, and a newer release is published. */
@@ -190,11 +203,20 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     remoteHost: () => ({ hosts: [sshHostFixture()] }),
     /** Ready on an Intel Arc that only moss-infer-vulkan runs (兼容模式): text to image only, no LoRA. */
     vulkanOnly: () => ({
-      gpuInventory: gpuInventoryFixture([gpuDeviceFixture({
-        uuid: 'vk-8086-56a0-0', name: 'Intel(R) Arc(TM) A770 Graphics', vendor: 'intel', pciId: '8086:56a0', vulkanIndex: 0,
-        computeCapability: undefined, driverVersion: undefined, utilizationPercent: undefined, memoryFreeBytes: undefined,
-        memoryTotalBytes: 16 * 1024 ** 3,
-      })]),
+      gpuInventory: gpuInventoryFixture([
+        gpuDeviceFixture({
+          uuid: 'vk-8086-56a0-0',
+          name: 'Intel(R) Arc(TM) A770 Graphics',
+          vendor: 'intel',
+          pciId: '8086:56a0',
+          vulkanIndex: 0,
+          computeCapability: undefined,
+          driverVersion: undefined,
+          utilizationPercent: undefined,
+          memoryFreeBytes: undefined,
+          memoryTotalBytes: 16 * 1024 ** 3,
+        }),
+      ]),
       engineFeatures: cliEngineFeatures('vulkan'),
     }),
   }

@@ -110,9 +110,12 @@ function engineStep(input: SetupInput, gpuReady: boolean): SetupStep {
   let detail = '推理引擎 MossInfer，会按你的显卡自动选择版本'
   if (plan && missing.length > 0) {
     const size = bytes(planMissingBytes(plan))
-    detail = input.engine.state === 'ready'
-      ? `还需为其他显卡下载 ${missing.length} 个引擎包 · ${size}`
-      : missing.length === 1 ? `MossInfer · ${size}` : `MossInfer · ${missing.length} 个引擎包，共 ${size}`
+    detail =
+      input.engine.state === 'ready'
+        ? `还需为其他显卡下载 ${missing.length} 个引擎包 · ${size}`
+        : missing.length === 1
+          ? `MossInfer · ${size}`
+          : `MossInfer · ${missing.length} 个引擎包，共 ${size}`
   }
   return { ...base, state: gpuReady ? 'waiting' : 'blocked', detail }
 }
@@ -138,7 +141,9 @@ function modelStep(input: SetupInput, gpuReady: boolean): SetupStep {
     const percent = total > 0 ? Math.max(0, Math.min(100, (done / total) * 100)) : undefined
     const label = active.every((task) => task.state === 'queued')
       ? '排队中'
-      : total > 0 ? `正在下载 ${bytes(done)} / ${bytes(total)}` : '正在下载'
+      : total > 0
+        ? `正在下载 ${bytes(done)} / ${bytes(total)}`
+        : '正在下载'
     return { ...base, state: 'running', detail: `${name} · ${label}`, ...(percent === undefined ? {} : { percent }) }
   }
   const error = input.modelError ?? failed?.error ?? (failed ? '下载失败' : null)
@@ -177,7 +182,5 @@ export function setupSpaceLabel(view: SetupView): string | null {
 
 /** Which steps 开始准备 / 重试 should (re)start. */
 export function stepsToStart(view: SetupView): SetupStepId[] {
-  return view.steps
-    .filter((step) => step.id !== 'gpu' && (step.state === 'waiting' || step.state === 'error'))
-    .map((step) => step.id)
+  return view.steps.filter((step) => step.id !== 'gpu' && (step.state === 'waiting' || step.state === 'error')).map((step) => step.id)
 }

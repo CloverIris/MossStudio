@@ -98,13 +98,7 @@ export async function downloadAsset(options: AssetDownloadOptions): Promise<stri
   throw new Error(`下载更新失败：${errors.slice(-4).join('；') || '没有可用的下载地址'}`)
 }
 
-async function fetchInto(
-  url: string,
-  part: string,
-  have: number,
-  options: AssetDownloadOptions,
-  fetcher: typeof fetch,
-): Promise<number> {
+async function fetchInto(url: string, part: string, have: number, options: AssetDownloadOptions, fetcher: typeof fetch): Promise<number> {
   const attempt = new AbortController()
   const signal = options.signal ? AbortSignal.any([options.signal, attempt.signal]) : attempt.signal
   const stallMs = options.stallMs ?? 30_000
@@ -156,7 +150,8 @@ async function fetchInto(
     )
     return written
   } catch (error) {
-    if (attempt.signal.aborted && !aborted(options.signal)) throw attempt.signal.reason instanceof Error ? attempt.signal.reason : new Error('下载超时')
+    if (attempt.signal.aborted && !aborted(options.signal))
+      throw attempt.signal.reason instanceof Error ? attempt.signal.reason : new Error('下载超时')
     throw error
   } finally {
     clearTimeout(stall)

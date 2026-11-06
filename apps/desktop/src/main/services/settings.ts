@@ -41,8 +41,8 @@ export const DEFAULT_SETTINGS: Settings = {
   onboardingHostId: 'local',
   galleryRoots: [],
   homeBackground: null,
-    trainerRoot: null,
-    engineRoot: null,
+  trainerRoot: null,
+  engineRoot: null,
   gbcRoot: null,
   inferenceBackend: 'mossinfer',
   mossInferServerPath: null,
@@ -151,7 +151,11 @@ export function migrateLegacyEngineSettings(settings: Settings, parsed: Record<s
   const hadLegacy = 'mossInferVariant' in parsed || 'mossInferArchitecture' in parsed
   delete legacy.mossInferVariant
   delete legacy.mossInferArchitecture
-  if (!settings.engineDeviceOverrides || typeof settings.engineDeviceOverrides !== 'object' || Array.isArray(settings.engineDeviceOverrides)) {
+  if (
+    !settings.engineDeviceOverrides ||
+    typeof settings.engineDeviceOverrides !== 'object' ||
+    Array.isArray(settings.engineDeviceOverrides)
+  ) {
     settings.engineDeviceOverrides = {}
   }
   legacyPinPending = hadLegacy
@@ -173,7 +177,11 @@ export function isNewestManagedInstall(root: string, serverPath: string): boolea
   if (!stamp) return true
   if (stamp.channel !== 'stable') return true
   let siblings: string[] = []
-  try { siblings = readdirSync(root) } catch { return true }
+  try {
+    siblings = readdirSync(root)
+  } catch {
+    return true
+  }
   return !siblings.some((other) => {
     const candidate = parseEngineStamp(other)
     return candidate?.channel === 'stable' && candidate.packageId === stamp.packageId && compareEngineTags(candidate.tag, stamp.tag) > 0
@@ -191,7 +199,11 @@ export function hasTrainerInstall(trainerRoot: string | null): boolean {
     const versions = join(paths.trainerRoot(trainerRoot), 'versions')
     const created = readdirSync(versions, { withFileTypes: true }).some((entry) => {
       if (!entry.isDirectory()) return false
-      try { return readdirSync(join(versions, entry.name)).length > 0 } catch { return false }
+      try {
+        return readdirSync(join(versions, entry.name)).length > 0
+      } catch {
+        return false
+      }
     })
     if (created) return true
   } catch {
@@ -199,7 +211,9 @@ export function hasTrainerInstall(trainerRoot: string | null): boolean {
   }
   try {
     const jobs = JSON.parse(readFileSync(join(paths.root(), 'jobs', 'jobs.json'), 'utf8')) as unknown
-    return Array.isArray(jobs) && jobs.some((job) => typeof job === 'object' && job !== null && (job as { kind?: unknown }).kind === 'training')
+    return (
+      Array.isArray(jobs) && jobs.some((job) => typeof job === 'object' && job !== null && (job as { kind?: unknown }).kind === 'training')
+    )
   } catch {
     return false
   }
@@ -247,6 +261,4 @@ export function readJson<T>(file: string, fallback: T): T {
   } catch {
     return fallback
   }
-
-
 }

@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GpuInventoryDevice } from '@shared/types'
-import {
-  parseNvidiaComputeCapabilities,
-  parseNvidiaGpuRows,
-  recommendedGpu,
-  resolveGpuSelection,
-} from '@main/lib/gpuInventory'
+import { parseNvidiaComputeCapabilities, parseNvidiaGpuRows, recommendedGpu, resolveGpuSelection } from '@main/lib/gpuInventory'
 
 describe('parseNvidiaGpuRows', () => {
   it('parses NVIDIA inventory rows with stable UUIDs and optional telemetry', () => {
@@ -30,8 +25,24 @@ describe('parseNvidiaGpuRows', () => {
   it('handles CRLF, blank lines, missing trailing columns and N/A drivers', () => {
     const devices = parseNvidiaGpuRows('0, GPU-a, A\r\n\r\n1, GPU-b, B, 100, 50, 0, N/A\r\n')
     expect(devices).toEqual([
-      { index: 0, uuid: 'GPU-a', name: 'A', memoryTotalBytes: undefined, memoryFreeBytes: undefined, utilizationPercent: undefined, driverVersion: undefined },
-      { index: 1, uuid: 'GPU-b', name: 'B', memoryTotalBytes: 100 * 1024 * 1024, memoryFreeBytes: 50 * 1024 * 1024, utilizationPercent: 0, driverVersion: undefined },
+      {
+        index: 0,
+        uuid: 'GPU-a',
+        name: 'A',
+        memoryTotalBytes: undefined,
+        memoryFreeBytes: undefined,
+        utilizationPercent: undefined,
+        driverVersion: undefined,
+      },
+      {
+        index: 1,
+        uuid: 'GPU-b',
+        name: 'B',
+        memoryTotalBytes: 100 * 1024 * 1024,
+        memoryFreeBytes: 50 * 1024 * 1024,
+        utilizationPercent: 0,
+        driverVersion: undefined,
+      },
     ])
   })
 
@@ -67,7 +78,11 @@ describe('compute capabilities and recommendation', () => {
 
   it('breaks capability ties by memory, then by lowest index', () => {
     const device = (index: number, memory: number): GpuInventoryDevice => ({
-      index, uuid: `GPU-${index}`, name: `G${index}`, memoryTotalBytes: memory, computeCapability: { major: 8, minor: 6 },
+      index,
+      uuid: `GPU-${index}`,
+      name: `G${index}`,
+      memoryTotalBytes: memory,
+      computeCapability: { major: 8, minor: 6 },
     })
     expect(recommendedGpu([device(0, 8), device(1, 24), device(2, 24)])?.uuid).toBe('GPU-1')
     expect(recommendedGpu([device(3, 8), device(2, 8)])?.uuid).toBe('GPU-2')

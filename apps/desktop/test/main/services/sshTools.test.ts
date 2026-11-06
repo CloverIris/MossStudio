@@ -34,7 +34,15 @@ vi.mock('node:child_process', async (importOriginal) => ({
 const originalEnv = process.env
 const originalPlatform = process.platform
 
-async function tools(options: { env?: Record<string, string>; files?: string[]; registry?: Record<string, string>; platform?: NodeJS.Platform; realpath?: (path: string) => string } = {}) {
+async function tools(
+  options: {
+    env?: Record<string, string>
+    files?: string[]
+    registry?: Record<string, string>
+    platform?: NodeJS.Platform
+    realpath?: (path: string) => string
+  } = {},
+) {
   vi.resetModules()
   fake.files = new Set((options.files ?? []).map(normal))
   fake.registry = options.registry ?? {}
@@ -45,9 +53,12 @@ async function tools(options: { env?: Record<string, string>; files?: string[]; 
   return import('@main/services/sshTools')
 }
 
-const suiteFiles = (root: string) => ['ssh.exe', 'scp.exe', 'ssh-keyscan.exe', 'sh.exe', 'msys-2.0.dll'].map((name) => win32.join(root, 'usr/bin', name))
+const suiteFiles = (root: string) =>
+  ['ssh.exe', 'scp.exe', 'ssh-keyscan.exe', 'sh.exe', 'msys-2.0.dll'].map((name) => win32.join(root, 'usr/bin', name))
 
-beforeEach(() => { fake.probes = [] })
+beforeEach(() => {
+  fake.probes = []
+})
 afterEach(() => {
   process.env = originalEnv
   Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
@@ -56,7 +67,10 @@ afterEach(() => {
 describe('getSshTools on Windows', () => {
   it('finds Git on PATH in custom locations with spaces and keeps the SSH suite together', async () => {
     const root = 'D:\\Developer Tools\\Git'
-    const api = await tools({ env: { Path: 'C:\\Windows\\System32;"D:\\Developer Tools\\Git\\cmd"' }, files: [win32.join(root, 'cmd/git.exe'), ...suiteFiles(root)] })
+    const api = await tools({
+      env: { Path: 'C:\\Windows\\System32;"D:\\Developer Tools\\Git\\cmd"' },
+      files: [win32.join(root, 'cmd/git.exe'), ...suiteFiles(root)],
+    })
     const selected = api.getSshTools()
     expect(selected.ssh).toBe(win32.join(root, 'usr/bin/ssh.exe'))
     expect(selected.scp).toBe(win32.join(root, 'usr/bin/scp.exe'))
@@ -87,7 +101,11 @@ describe('getSshTools on Windows', () => {
     const root = 'E:\\Portable Git'
     const common = await tools({ env: { ProgramFiles: root }, files: suiteFiles(win32.join(root, 'Git')) })
     expect(common.getSshTools().ssh).toBe(win32.join(root, 'Git/usr/bin/ssh.exe'))
-    const linked = await tools({ env: { PATH: 'C:\\links' }, files: ['C:\\links\\git.exe', ...suiteFiles(root)], realpath: () => win32.join(root, 'bin/git.exe') })
+    const linked = await tools({
+      env: { PATH: 'C:\\links' },
+      files: ['C:\\links\\git.exe', ...suiteFiles(root)],
+      realpath: () => win32.join(root, 'bin/git.exe'),
+    })
     expect(linked.getSshTools().ssh).toBe(win32.join(root, 'usr/bin/ssh.exe'))
   })
 
@@ -96,7 +114,11 @@ describe('getSshTools on Windows', () => {
     const system = 'C:\\Windows\\System32\\OpenSSH'
     const api = await tools({
       env: { PATH: `${root}\\cmd` },
-      files: [win32.join(root, 'cmd/git.exe'), win32.join(root, 'usr/bin/ssh.exe'), ...['ssh.exe', 'scp.exe', 'ssh-keyscan.exe'].map((name) => win32.join(system, name))],
+      files: [
+        win32.join(root, 'cmd/git.exe'),
+        win32.join(root, 'usr/bin/ssh.exe'),
+        ...['ssh.exe', 'scp.exe', 'ssh-keyscan.exe'].map((name) => win32.join(system, name)),
+      ],
     })
     expect(api.getSshTools().ssh).toBe(win32.join(system, 'ssh.exe'))
     expect(api.getSshTools().shell).toBeUndefined()
@@ -114,7 +136,12 @@ describe('getSshTools on Windows', () => {
       env: { CLOVER_SSH_BIN: win32.join(system, 'ssh.exe'), CLOVER_SCP_BIN: 'custom-scp', CLOVER_SSH_KEYSCAN_BIN: 'custom-keyscan' },
       files: suiteFiles('D:\\Git'),
     })
-    expect(api.getSshTools()).toEqual({ ssh: win32.join(system, 'ssh.exe'), scp: 'custom-scp', keyscan: 'custom-keyscan', shell: undefined })
+    expect(api.getSshTools()).toEqual({
+      ssh: win32.join(system, 'ssh.exe'),
+      scp: 'custom-scp',
+      keyscan: 'custom-keyscan',
+      shell: undefined,
+    })
   })
 })
 

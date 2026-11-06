@@ -32,17 +32,26 @@ afterEach(() => {
 
 async function render(page: 'library' | 'models', route: string, scenarioPatch: Parameters<typeof loadStore>[0] = 'ready') {
   const { backend, store } = await loadStore(scenarioPatch)
-  vi.stubGlobal('IntersectionObserver', class { observe(): void {} disconnect(): void {} })
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      observe(): void {}
+      disconnect(): void {}
+    },
+  )
   await store().init()
   const { ToastProvider } = await import('@renderer/components/ui')
-  const Page = page === 'library' ? (await import('@renderer/pages/Library')).LibraryPage : (await import('@renderer/pages/Models')).ModelsPage
+  const Page =
+    page === 'library' ? (await import('@renderer/pages/Library')).LibraryPage : (await import('@renderer/pages/Models')).ModelsPage
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
   await act(async () => {
     root!.render(createElement(ToastProvider, null, createElement(MemoryRouter, { initialEntries: [route] }, createElement(Page))))
   })
-  await act(async () => { await flush(5) })
+  await act(async () => {
+    await flush(5)
+  })
   return { backend, store, container: container! }
 }
 
@@ -53,8 +62,12 @@ describe('Library page', () => {
     expect(container.textContent).toContain(`${backend.state.gallery.length} 张`)
     const thumbs = container.querySelectorAll('[data-library-item]')
     expect(thumbs.length).toBe(backend.state.gallery.length)
-    await act(async () => { (thumbs[0] as HTMLButtonElement).click() })
-    await act(async () => { await flush(5) })
+    await act(async () => {
+      ;(thumbs[0] as HTMLButtonElement).click()
+    })
+    await act(async () => {
+      await flush(5)
+    })
     expect(container.querySelector('aside[aria-label="作品详情"]')).not.toBeNull()
     expect(container.textContent).toContain('在创作中复用')
     expect(container.textContent).toContain('prompt 0')
@@ -64,11 +77,19 @@ describe('Library page', () => {
     const { Events } = await import('@shared/channels')
     const { backend, container } = await render('library', '/library')
     const before = container.querySelectorAll('[data-library-item]').length
-    await act(async () => { (container.querySelectorAll('[data-library-item]')[1] as HTMLButtonElement).click() })
-    await act(async () => { await flush(5) })
+    await act(async () => {
+      ;(container.querySelectorAll('[data-library-item]')[1] as HTMLButtonElement).click()
+    })
+    await act(async () => {
+      await flush(5)
+    })
     backend.state.gallery = [galleryItemFixture(99, { mtime: Date.now() }), ...backend.state.gallery]
-    await act(async () => { backend.emit(Events.galleryChanged, { jobId: 'j' }) })
-    await act(async () => { await flush(5) })
+    await act(async () => {
+      backend.emit(Events.galleryChanged, { jobId: 'j' })
+    })
+    await act(async () => {
+      await flush(5)
+    })
     expect(container.querySelectorAll('[data-library-item]').length).toBe(before + 1)
     expect(container.querySelector('[aria-pressed="true"]')?.getAttribute('data-library-item')).toBe(backend.state.gallery[2]!.path)
     expect(container.querySelector('aside[aria-label="作品详情"]')).not.toBeNull()
@@ -88,14 +109,22 @@ describe('Library page', () => {
     void store
     const { ToastProvider } = await import('@renderer/components/ui')
     const { LibraryPage } = await import('@renderer/pages/Library')
-    vi.stubGlobal('IntersectionObserver', class { observe(): void {} disconnect(): void {} })
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
     await act(async () => {
       root!.render(createElement(ToastProvider, null, createElement(MemoryRouter, null, createElement(LibraryPage))))
     })
-    await act(async () => { await flush(5) })
+    await act(async () => {
+      await flush(5)
+    })
     expect(container.textContent).toContain('作品读取失败')
     expect(container.textContent).toContain('目录不可读')
   })
@@ -114,10 +143,16 @@ describe('Models page', () => {
 
   it('queues the whole model from the primary action', async () => {
     const { backend, container } = await render('models', '/models', 'engineInstalledModelMissing')
-    const primary = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === '下载' && button.closest('[data-oobe="model"]'))
+    const primary = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '下载' && button.closest('[data-oobe="model"]'),
+    )
     expect(primary).toBeDefined()
-    await act(async () => { primary!.click() })
-    await act(async () => { await flush(5) })
+    await act(async () => {
+      primary!.click()
+    })
+    await act(async () => {
+      await flush(5)
+    })
     expect(backend.callsTo(Ipc.modelBundleInstall)).toEqual([{ id: 'moss-sft' }])
   })
 
@@ -129,7 +164,11 @@ describe('Models page', () => {
     act(() => root?.unmount())
     container?.remove()
 
-    const on = await render('models', '/models', scenario('remoteHost', { settings: settingsFixture({ onboardingState: 'completed', remoteHostsEnabled: true }) }))
+    const on = await render(
+      'models',
+      '/models',
+      scenario('remoteHost', { settings: settingsFixture({ onboardingState: 'completed', remoteHostsEnabled: true }) }),
+    )
     expect(on.container.querySelector('[aria-label="模型所在的电脑"]')).not.toBeNull()
   })
 
@@ -138,11 +177,23 @@ describe('Models page', () => {
     const host = sshHostFixture()
     const state = scenario('remoteHost', { settings: settingsFixture({ onboardingState: 'completed', remoteHostsEnabled: true }) })
     const { backend, store } = await loadStore(state)
-    vi.stubGlobal('IntersectionObserver', class { observe(): void {} disconnect(): void {} })
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
     const sft = ['moss-sft-dit', 'qwen35-encoder', 'flux2-vae-small', 'moss-pipeline']
     backend.handle(Ipc.modelsRemoteInventory, () => ({
-      root: '/r', files: 4, adapters: [],
-      models: backend.state.catalog.models.map((model) => ({ id: model.id, installed: sft.includes(model.id), path: sft.includes(model.id) ? '/r/snap' : undefined })),
+      root: '/r',
+      files: 4,
+      adapters: [],
+      models: backend.state.catalog.models.map((model) => ({
+        id: model.id,
+        installed: sft.includes(model.id),
+        path: sft.includes(model.id) ? '/r/snap' : undefined,
+      })),
     }))
     await store().init()
     const { ToastProvider } = await import('@renderer/components/ui')
@@ -151,18 +202,34 @@ describe('Models page', () => {
     document.body.append(container)
     root = createRoot(container)
     await act(async () => {
-      root!.render(createElement(ToastProvider, null, createElement(MemoryRouter, { initialEntries: [`/models?hostId=${host.id}`] }, createElement(ModelsPage))))
+      root!.render(
+        createElement(
+          ToastProvider,
+          null,
+          createElement(MemoryRouter, { initialEntries: [`/models?hostId=${host.id}`] }, createElement(ModelsPage)),
+        ),
+      )
     })
-    await act(async () => { await flush(8) })
+    await act(async () => {
+      await flush(8)
+    })
     const featured = container.querySelector('[data-oobe="model"]')!
     expect(featured.textContent).toContain('可以使用')
     const remove = [...featured.querySelectorAll('button')].find((button) => button.textContent?.includes('删除'))!
-    await act(async () => { remove.click() })
-    await act(async () => { await flush(3) })
+    await act(async () => {
+      remove.click()
+    })
+    await act(async () => {
+      await flush(3)
+    })
     const confirm = [...document.querySelectorAll('dialog button')].find((button) => button.textContent === '删除') as HTMLButtonElement
     expect(confirm).toBeDefined()
-    await act(async () => { confirm.click() })
-    await act(async () => { await flush(5) })
+    await act(async () => {
+      confirm.click()
+    })
+    await act(async () => {
+      await flush(5)
+    })
     expect(backend.callsTo(Ipc.modelsRemoteDelete)).toEqual([{ hostId: host.id, ids: sft }])
     expect(backend.callsTo(Ipc.remoteResourceRemove)).toEqual([])
   })

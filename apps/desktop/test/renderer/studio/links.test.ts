@@ -20,10 +20,13 @@ describe('studio/links reading', () => {
       id: 't',
       inputs: {
         init: { link: { canvasId: 'a' }, strength: 0.6 },
-        control: { adapterId: 'ad', images: [
-          { kind: 'depth', link: { canvasId: 'b' }, strength: 1, start: 0, end: 1 },
-          { kind: 'lineart', link: { canvasId: 'c' }, strength: 1, start: 0, end: 1 },
-        ] },
+        control: {
+          adapterId: 'ad',
+          images: [
+            { kind: 'depth', link: { canvasId: 'b' }, strength: 1, start: 0, end: 1 },
+            { kind: 'lineart', link: { canvasId: 'c' }, strength: 1, start: 0, end: 1 },
+          ],
+        },
         references: { links: [{ canvasId: 'd' }, { canvasId: 'e' }] },
       },
     })
@@ -57,7 +60,10 @@ describe('studio/links editing', () => {
   it('sets a start picture with the default strength and keeps strength when the source changes', () => {
     const first = setLink(canvas({ id: 't' }), 'init', { canvasId: 'a' })
     expect(first.inputs?.init).toEqual({ link: { canvasId: 'a' }, strength: 0.6 })
-    const tuned = { ...first, inputs: { ...first.inputs, init: { ...first.inputs!.init!, strength: 0.3, resize: 'fit' as const }, mask: { path: '/m.png' } } }
+    const tuned = {
+      ...first,
+      inputs: { ...first.inputs, init: { ...first.inputs!.init!, strength: 0.3, resize: 'fit' as const }, mask: { path: '/m.png' } },
+    }
     const same = setLink(tuned, 'init', { canvasId: 'a' })
     expect(same.inputs?.mask).toEqual({ path: '/m.png' })
     const moved = setLink(tuned, 'init', { canvasId: 'b' })
@@ -76,10 +82,13 @@ describe('studio/links editing', () => {
     let target = setLink(canvas({ id: 't' }), 'control', { canvasId: 'a' }, 'depth')
     target = setLink(target, 'control', { canvasId: 'b' }, 'canny')
     target = setLink(target, 'control', { canvasId: 'c' }, 'depth')
-    expect(target.inputs?.control).toEqual({ adapterId: '', images: [
-      { kind: 'depth', link: { canvasId: 'c' }, strength: 1, start: 0, end: 1 },
-      { kind: 'canny', link: { canvasId: 'b' }, strength: 1, start: 0, end: 1 },
-    ] })
+    expect(target.inputs?.control).toEqual({
+      adapterId: '',
+      images: [
+        { kind: 'depth', link: { canvasId: 'c' }, strength: 1, start: 0, end: 1 },
+        { kind: 'canny', link: { canvasId: 'b' }, strength: 1, start: 0, end: 1 },
+      ],
+    })
     expect(setLink(target, 'control', { canvasId: 'd' })).toBe(target)
   })
 
@@ -116,12 +125,18 @@ describe('studio/links editing', () => {
   })
 
   it('drops every link to a deleted canvas and counts them', () => {
-    const a = canvas({ id: 'a', inputs: {
-      init: { link: { canvasId: 'gone' }, strength: 0.5 },
-      mask: { path: '/m.png' },
-      references: { links: [{ canvasId: 'gone' }, { canvasId: 'keep' }, { canvasId: 'gone', output: 1 }] },
-    } })
-    const b = canvas({ id: 'b', inputs: { control: { adapterId: 'ad', images: [{ kind: 'depth', link: { canvasId: 'gone' }, strength: 1, start: 0, end: 1 }] } } })
+    const a = canvas({
+      id: 'a',
+      inputs: {
+        init: { link: { canvasId: 'gone' }, strength: 0.5 },
+        mask: { path: '/m.png' },
+        references: { links: [{ canvasId: 'gone' }, { canvasId: 'keep' }, { canvasId: 'gone', output: 1 }] },
+      },
+    })
+    const b = canvas({
+      id: 'b',
+      inputs: { control: { adapterId: 'ad', images: [{ kind: 'depth', link: { canvasId: 'gone' }, strength: 1, start: 0, end: 1 }] } },
+    })
     const c = canvas({ id: 'c' })
     const { canvases, removed } = dropLinksTo([a, b, c], 'gone')
     expect(removed).toBe(4)
@@ -143,7 +158,8 @@ describe('studio/links editing', () => {
 
 describe('studio/links input settings', () => {
   it('edits the start picture, control and references settings', async () => {
-    const { patchInit, patchControl, patchControlImage, patchReferences, setControlAdapter, clearMask } = await import('@renderer/pages/studio/links')
+    const { patchInit, patchControl, patchControlImage, patchReferences, setControlAdapter, clearMask } =
+      await import('@renderer/pages/studio/links')
     let target = setLink(canvas({ id: 't' }), 'init', { canvasId: 'a' })
     target = patchInit(target, { strength: 0.25, resize: 'stretch' })
     expect(target.inputs?.init).toEqual({ link: { canvasId: 'a' }, strength: 0.25, resize: 'stretch' })

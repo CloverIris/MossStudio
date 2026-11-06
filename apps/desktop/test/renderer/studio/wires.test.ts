@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { CARD_HEADER, cardBodyHeight, cardWidth } from '@renderer/pages/studio/boardLayout'
-import { boardWires, cardAt, CHIP_GAP, CHIP_HEIGHT, chipWidth, inputPort, MIN_HANDLE, outputPort, PORT_SPACING, stackChips, wirePath, wirePoint, type ChipRect } from '@renderer/pages/studio/wires'
+import {
+  boardWires,
+  cardAt,
+  CHIP_GAP,
+  CHIP_HEIGHT,
+  chipWidth,
+  inputPort,
+  MIN_HANDLE,
+  outputPort,
+  PORT_SPACING,
+  stackChips,
+  wirePath,
+  wirePoint,
+  type ChipRect,
+} from '@renderer/pages/studio/wires'
 import { canvas } from './fixtures'
 
 const picture = (id: string, x: number, y: number) =>
@@ -81,7 +95,10 @@ describe('studio/wires boardWires', () => {
   })
 
   it('skips links whose source is gone or is the canvas itself', () => {
-    const layout = canvas({ id: 'l', inputs: { init: { link: { canvasId: 'gone' }, strength: 0.6 }, references: { links: [{ canvasId: 'l' }] } } })
+    const layout = canvas({
+      id: 'l',
+      inputs: { init: { link: { canvasId: 'gone' }, strength: 0.6 }, references: { links: [{ canvasId: 'l' }] } },
+    })
     expect(boardWires([layout])).toEqual([])
   })
 
@@ -113,11 +130,19 @@ describe('studio/wires chips', () => {
   function fannedIn(height: number) {
     const source = picture('a', 0, 0)
     const layout = canvas({
-      id: 'l', x: 600, y: 0, height,
+      id: 'l',
+      x: 600,
+      y: 0,
+      height,
       inputs: {
         init: { link: { canvasId: 'a' }, strength: 0.6 },
-        control: { adapterId: 'ctl', images: ['depth', 'canny'].map((kind) => ({ kind, link: { canvasId: 'a' }, strength: 1, start: 0, end: 1 })) },
-        references: { links: [{ canvasId: 'a' }, { canvasId: 'a', output: 1 }, { canvasId: 'a', output: 2 }, { canvasId: 'a', output: 3 }] },
+        control: {
+          adapterId: 'ctl',
+          images: ['depth', 'canny'].map((kind) => ({ kind, link: { canvasId: 'a' }, strength: 1, start: 0, end: 1 })),
+        },
+        references: {
+          links: [{ canvasId: 'a' }, { canvasId: 'a', output: 1 }, { canvasId: 'a', output: 2 }, { canvasId: 'a', output: 3 }],
+        },
       },
     })
     return [source, layout]
@@ -150,7 +175,11 @@ describe('studio/wires chips', () => {
   })
 
   it('pushes chips apart when their ports are closer than a chip, keeping the stack centred', () => {
-    const ports = [{ x: 0, y: 100 }, { x: 0, y: 101 }, { x: 0, y: 102 }]
+    const ports = [
+      { x: 0, y: 100 },
+      { x: 0, y: 101 },
+      { x: 0, y: 102 },
+    ]
     const chips = stackChips(ports, ['起始图 60%', '控制 · 深度', '参考 1'], 1)
     expect(chips[1]!.y).toBeCloseTo(chips[0]!.y + CHIP_HEIGHT + CHIP_GAP)
     expect(chips[2]!.y).toBeCloseTo(chips[1]!.y + CHIP_HEIGHT + CHIP_GAP)

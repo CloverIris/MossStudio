@@ -22,11 +22,37 @@ function install(name: string, program = 'moss-server'): string {
   return path
 }
 
-const rtx: EngineMachineGpu = { id: 'GPU-rtx', name: 'RTX 4090', vendor: 'nvidia', computeCapability: { major: 8, minor: 9 }, driverVersion: '590.48.01', vulkan: { index: 1, usable: true, discrete: true, name: 'NVIDIA GeForce RTX 4090' } }
-const v100: EngineMachineGpu = { id: 'GPU-v100', name: 'V100', vendor: 'nvidia', computeCapability: { major: 7, minor: 0 }, driverVersion: '590.48.01' }
-const amd: EngineMachineGpu = { id: 'vk-1002-744c-0', name: 'RX 7900 XTX', vendor: 'amd', gfxTarget: 'gfx1100', vulkan: { index: 0, usable: true, discrete: true } }
-const machine = (gpus: EngineMachineGpu[], patch: Partial<EngineMachine> = {}): EngineMachine =>
-  ({ os: 'linux', gpus, systemCuda: [], rocm7: true, hipAccess: true, vulkanProbed: true, ...patch })
+const rtx: EngineMachineGpu = {
+  id: 'GPU-rtx',
+  name: 'RTX 4090',
+  vendor: 'nvidia',
+  computeCapability: { major: 8, minor: 9 },
+  driverVersion: '590.48.01',
+  vulkan: { index: 1, usable: true, discrete: true, name: 'NVIDIA GeForce RTX 4090' },
+}
+const v100: EngineMachineGpu = {
+  id: 'GPU-v100',
+  name: 'V100',
+  vendor: 'nvidia',
+  computeCapability: { major: 7, minor: 0 },
+  driverVersion: '590.48.01',
+}
+const amd: EngineMachineGpu = {
+  id: 'vk-1002-744c-0',
+  name: 'RX 7900 XTX',
+  vendor: 'amd',
+  gfxTarget: 'gfx1100',
+  vulkan: { index: 0, usable: true, discrete: true },
+}
+const machine = (gpus: EngineMachineGpu[], patch: Partial<EngineMachine> = {}): EngineMachine => ({
+  os: 'linux',
+  gpus,
+  systemCuda: [],
+  rocm7: true,
+  hipAccess: true,
+  vulkanProbed: true,
+  ...patch,
+})
 
 function input(patch: Partial<ResolveInput> = {}): ResolveInput {
   return {
@@ -55,14 +81,26 @@ describe('listInstalledEnginePackages', () => {
       ['stable-v2.2.0-cu13', 'cu13', 'stable', 'v2.2.0'],
       ['stable-v2.2.0-vulkan', 'vulkan', 'stable', 'v2.2.0'],
     ])
-    expect([...newestPerPackage(installed).values()].map((item) => item.id).sort()).toEqual(['dev-run9-abcdef12-hip', 'stable-v2.2.0-cu13', 'stable-v2.2.0-vulkan'])
+    expect([...newestPerPackage(installed).values()].map((item) => item.id).sort()).toEqual([
+      'dev-run9-abcdef12-hip',
+      'stable-v2.2.0-cu13',
+      'stable-v2.2.0-vulkan',
+    ])
     expect(listInstalledEnginePackages(join(root(), 'missing'))).toEqual([])
   })
 })
 
 describe('newestPerPackage', () => {
-  const item = (id: string, channel: 'stable' | 'dev', tag: string, installedAt: number) =>
-    ({ id, packageId: 'cu13', package: { kind: 'cuda' as const, flavour: 'cu13' as const, arch: 'standard' as const, runtime: 'bundled' as const }, channel, tag, installDir: id, binaryPath: id, installedAt })
+  const item = (id: string, channel: 'stable' | 'dev', tag: string, installedAt: number) => ({
+    id,
+    packageId: 'cu13',
+    package: { kind: 'cuda' as const, flavour: 'cu13' as const, arch: 'standard' as const, runtime: 'bundled' as const },
+    channel,
+    tag,
+    installDir: id,
+    binaryPath: id,
+    installedAt,
+  })
   it('a release by its tag, a CI build against it by install time', () => {
     const v211 = item('stable-v2.1.1-cu13', 'stable', 'v2.1.1', 300)
     const v220 = item('stable-v2.2.0-cu13', 'stable', 'v2.2.0', 100)
@@ -80,20 +118,37 @@ describe('resolveDeviceEngineFrom', () => {
     const sm70 = install('stable-v2.2.0-cu12-sm70')
     const hip = install('stable-v2.2.0-hip', 'moss-infer-hip')
     install('stable-v2.2.0-vulkan', 'moss-infer-vulkan')
-    expect(resolveDeviceEngineFrom('GPU-rtx', input())).toMatchObject({ packageId: 'cu13', binaryPath: cu13, version: 'v2.2.0', vulkanIndex: 1 })
+    expect(resolveDeviceEngineFrom('GPU-rtx', input())).toMatchObject({
+      packageId: 'cu13',
+      binaryPath: cu13,
+      version: 'v2.2.0',
+      vulkanIndex: 1,
+    })
     expect(resolveDeviceEngineFrom('GPU-v100', input())).toMatchObject({ packageId: 'cu12-sm70', binaryPath: sm70 })
-    expect(resolveDeviceEngineFrom('vk-1002-744c-0', input())).toMatchObject({ packageId: 'hip', binaryPath: hip, gfxTarget: 'gfx1100', vulkanIndex: 0 })
+    expect(resolveDeviceEngineFrom('vk-1002-744c-0', input())).toMatchObject({
+      packageId: 'hip',
+      binaryPath: hip,
+      gfxTarget: 'gfx1100',
+      vulkanIndex: 0,
+    })
     expect(resolveDeviceEngineFrom('vk-1002-744c-0', input())?.env).toBeUndefined()
   })
 
   it('passes a ROCm library directory outside /opt/rocm/lib to HIP', () => {
     install('stable-v2.2.0-hip', 'moss-infer-hip')
-    expect(resolveDeviceEngineFrom('vk-1002-744c-0', input({ rocmLibDir: '/opt/rocm-7.0.2/lib' }))?.env?.['LD_LIBRARY_PATH']).toMatch(/^\/opt\/rocm-7\.0\.2\/lib/)
+    expect(resolveDeviceEngineFrom('vk-1002-744c-0', input({ rocmLibDir: '/opt/rocm-7.0.2/lib' }))?.env?.['LD_LIBRARY_PATH']).toMatch(
+      /^\/opt\/rocm-7\.0\.2\/lib/,
+    )
   })
 
   it('uses what is installed when the best package is not (e.g. right after an upgrade)', () => {
     const vulkan = install('stable-v2.2.0-vulkan', 'moss-infer-vulkan')
-    expect(resolveDeviceEngineFrom('GPU-rtx', input())).toMatchObject({ packageId: 'vulkan', binaryPath: vulkan, vulkanIndex: 1, expectedVulkanName: 'NVIDIA GeForce RTX 4090' })
+    expect(resolveDeviceEngineFrom('GPU-rtx', input())).toMatchObject({
+      packageId: 'vulkan',
+      binaryPath: vulkan,
+      vulkanIndex: 1,
+      expectedVulkanName: 'NVIDIA GeForce RTX 4090',
+    })
     // A Volta GPU cannot run a standard CUDA build: nothing for it.
     install('stable-v2.2.0-cu13')
     expect(resolveDeviceEngineFrom('GPU-v100', input({ machine: machine([v100], { vulkanProbed: true }) }))).toBeNull()
@@ -105,7 +160,9 @@ describe('resolveDeviceEngineFrom', () => {
     const settings = { engineDeviceOverrides: { 'GPU-rtx': 'vulkan', 'GPU-v100': 'cu13' }, mossInferServerPath: null }
     expect(resolveDeviceEngineFrom('GPU-rtx', input({ settings }))).toMatchObject({ packageId: 'vulkan', binaryPath: vulkan })
     // An override that does not run there is ignored.
-    expect(resolveDeviceEngineFrom('GPU-v100', input({ settings, machine: machine([v100], { vulkanProbed: false }) }))).toMatchObject({ packageId: 'vulkan' })
+    expect(resolveDeviceEngineFrom('GPU-v100', input({ settings, machine: machine([v100], { vulkanProbed: false }) }))).toMatchObject({
+      packageId: 'vulkan',
+    })
   })
 
   it('a pinned moss-server serves the NVIDIA GPUs it runs on', () => {
@@ -116,8 +173,12 @@ describe('resolveDeviceEngineFrom', () => {
     expect(resolveDeviceEngineFrom('GPU-rtx', input({ settings }))).toMatchObject({ packageId: 'cu13', binaryPath: old, version: 'v2.1.1' })
     expect(resolveDeviceEngineFrom('GPU-v100', input({ settings }))).toMatchObject({ binaryPath: sm70 })
     const custom = join(root(), '..', `custom-${Date.now()}`, 'bin', 'moss-server')
-    expect(resolveDeviceEngineFrom('GPU-rtx', input({ settings: { engineDeviceOverrides: {}, mossInferServerPath: custom }, exists: () => true })))
-      .toMatchObject({ packageId: 'custom', binaryPath: custom, version: '自定义' })
+    expect(
+      resolveDeviceEngineFrom(
+        'GPU-rtx',
+        input({ settings: { engineDeviceOverrides: {}, mossInferServerPath: custom }, exists: () => true }),
+      ),
+    ).toMatchObject({ packageId: 'custom', binaryPath: custom, version: '自定义' })
   })
 
   it('falls back to a moss-server found the old way for NVIDIA GPUs only', () => {
@@ -136,11 +197,16 @@ describe('resolveDeviceEngineFrom', () => {
 
 describe('machineFromInventory', () => {
   it('turns the GPU inventory into a machine with Vulkan usability unknown', () => {
-    expect(machineFromInventory('win32', [
-      { uuid: 'GPU-a', index: 0, name: 'RTX 2080', computeCapability: { major: 7, minor: 5 }, driverVersion: '581.42' },
-      { uuid: 'vk-8086-56a0-0', index: 1, name: 'Arc', vendor: 'intel', pciId: '8086:56a0' },
-    ])).toEqual({
-      os: 'windows', systemCuda: [], rocm7: false, vulkanProbed: false,
+    expect(
+      machineFromInventory('win32', [
+        { uuid: 'GPU-a', index: 0, name: 'RTX 2080', computeCapability: { major: 7, minor: 5 }, driverVersion: '581.42' },
+        { uuid: 'vk-8086-56a0-0', index: 1, name: 'Arc', vendor: 'intel', pciId: '8086:56a0' },
+      ]),
+    ).toEqual({
+      os: 'windows',
+      systemCuda: [],
+      rocm7: false,
+      vulkanProbed: false,
       gpus: [
         { id: 'GPU-a', name: 'RTX 2080', vendor: 'nvidia', computeCapability: { major: 7, minor: 5 }, driverVersion: '581.42' },
         { id: 'vk-8086-56a0-0', name: 'Arc', vendor: 'intel', pciId: '8086:56a0' },
@@ -162,4 +228,3 @@ describe('engineChoiceChanged (settings → release stale moss-servers)', () => 
     expect(engineChoiceChanged(base, { ...base })).toBe(false)
   })
 })
-

@@ -63,10 +63,18 @@ export function LinkMenu({
       <div className="truncate px-2.5 pb-1 pt-0.5 text-caption text-ink-2">{title}</div>
       {entries.map((entry, index) => {
         if (entry.type === 'note') {
-          return <p key={index} className="px-2.5 py-1.5 text-caption text-ink-2">{entry.label}</p>
+          return (
+            <p key={index} className="px-2.5 py-1.5 text-caption text-ink-2">
+              {entry.label}
+            </p>
+          )
         }
         if (entry.type === 'heading') {
-          return <div key={index} className="px-2.5 pt-1.5 text-micro font-medium text-ink-2">{entry.label}</div>
+          return (
+            <div key={index} className="px-2.5 pt-1.5 text-micro font-medium text-ink-2">
+              {entry.label}
+            </div>
+          )
         }
         return (
           <MenuItem

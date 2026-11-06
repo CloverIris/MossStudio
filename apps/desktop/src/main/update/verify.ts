@@ -1,5 +1,13 @@
 import { createPublicKey, verify, type KeyObject } from 'node:crypto'
-import { feedSignatureSchema, fileListSchema, PLATFORM_KEYS, updateFeedSchema, type FileList, type UpdateChannel, type UpdateFeed } from '@shared/install'
+import {
+  feedSignatureSchema,
+  fileListSchema,
+  PLATFORM_KEYS,
+  updateFeedSchema,
+  type FileList,
+  type UpdateChannel,
+  type UpdateFeed,
+} from '@shared/install'
 import type { UpdatePublicKey } from '@shared/updateKeys'
 
 /** DER prefix of an Ed25519 SubjectPublicKeyInfo; the raw 32-byte key follows it. */
@@ -23,7 +31,11 @@ export class FeedSignatureError extends Error {
  * missing or malformed signature, an unknown key id, or a signature that does not verify.
  * Returns the key id that signed it.
  */
-export function verifyFeedSignature(feedBytes: Uint8Array, sigBytes: Uint8Array | null | undefined, keys: readonly UpdatePublicKey[]): string {
+export function verifyFeedSignature(
+  feedBytes: Uint8Array,
+  sigBytes: Uint8Array | null | undefined,
+  keys: readonly UpdatePublicKey[],
+): string {
   if (!sigBytes || sigBytes.length === 0) throw new FeedSignatureError('更新源缺少签名')
   let parsed: unknown
   try {

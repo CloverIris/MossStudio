@@ -10,7 +10,9 @@ describe('engine download display', () => {
   })
 
   it('labels progress in plain words', () => {
-    expect(engineDownloadLabel(engineDownloadFixture({ bytes: 100 * 1024 ** 2, totalBytes: 300 * 1024 ** 2 }))).toBe('正在下载 100 MB / 300 MB')
+    expect(engineDownloadLabel(engineDownloadFixture({ bytes: 100 * 1024 ** 2, totalBytes: 300 * 1024 ** 2 }))).toBe(
+      '正在下载 100 MB / 300 MB',
+    )
     expect(engineDownloadLabel(engineDownloadFixture({ phase: 'querying' }))).toBe('正在查找最新版本')
   })
 

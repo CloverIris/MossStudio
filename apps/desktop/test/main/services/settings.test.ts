@@ -178,7 +178,13 @@ describe('getSettings', () => {
 
   it('turns training on for users with past training jobs', async () => {
     mkdirSync(join(root(), 'jobs'), { recursive: true })
-    writeFileSync(join(root(), 'jobs', 'jobs.json'), JSON.stringify([{ id: 'j1', kind: 'inference' }, { id: 'j2', kind: 'training' }]))
+    writeFileSync(
+      join(root(), 'jobs', 'jobs.json'),
+      JSON.stringify([
+        { id: 'j1', kind: 'inference' },
+        { id: 'j2', kind: 'training' },
+      ]),
+    )
     writeSettings({ theme: 'dark' })
     expect((await load()).getSettings().trainingEnabled).toBe(true)
     vi.resetModules()

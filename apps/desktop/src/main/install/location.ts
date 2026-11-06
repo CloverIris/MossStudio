@@ -132,11 +132,38 @@ function systemFolders(host: HostInfo): { within: string[]; exact: string[] } {
     }
   }
   return {
-    within: ['/bin', '/boot', '/dev', '/etc', '/lib', '/lib32', '/lib64', '/libx32', '/proc', '/run', '/sbin', '/sys', '/usr', '/var', '/snap', '/lost+found'],
+    within: [
+      '/bin',
+      '/boot',
+      '/dev',
+      '/etc',
+      '/lib',
+      '/lib32',
+      '/lib64',
+      '/libx32',
+      '/proc',
+      '/run',
+      '/sbin',
+      '/sys',
+      '/usr',
+      '/var',
+      '/snap',
+      '/lost+found',
+    ],
     exact: [
-      '/home', '/opt', '/mnt', '/media', '/srv', '/root', host.home,
-      p.join(host.home, '.local'), p.join(host.home, '.local', 'share'), p.join(host.home, '.config'),
-      p.join(host.home, 'Desktop'), p.join(host.home, 'Documents'), p.join(host.home, 'Downloads'),
+      '/home',
+      '/opt',
+      '/mnt',
+      '/media',
+      '/srv',
+      '/root',
+      host.home,
+      p.join(host.home, '.local'),
+      p.join(host.home, '.local', 'share'),
+      p.join(host.home, '.config'),
+      p.join(host.home, 'Desktop'),
+      p.join(host.home, 'Documents'),
+      p.join(host.home, 'Downloads'),
     ],
   }
 }
@@ -313,7 +340,16 @@ export function inspectInstallFolder(platform: OsPlatform, path: string, require
   if (found === 'portable') return finish({ ...base, problem: problem('E_PORTABLE_ROOT') }, 'occupied', null, requiredBytes)
   const kind = found
   if (kind === 'occupied') {
-    return finish({ path, problem: problem('E_NOT_EMPTY', `${MESSAGES.E_NOT_EMPTY}可以装在其中的 ${PRODUCT_NAME} 文件夹里。`), suggestion: p.join(path, PRODUCT_NAME) }, kind, null, requiredBytes)
+    return finish(
+      {
+        path,
+        problem: problem('E_NOT_EMPTY', `${MESSAGES.E_NOT_EMPTY}可以装在其中的 ${PRODUCT_NAME} 文件夹里。`),
+        suggestion: p.join(path, PRODUCT_NAME),
+      },
+      kind,
+      null,
+      requiredBytes,
+    )
   }
   if (!canWrite(path)) return finish({ ...base, problem: problem('E_NOT_WRITABLE') }, kind, null, requiredBytes)
   const freeBytes = freeBytesAt(path)
@@ -348,7 +384,16 @@ export function inspectDataFolder(platform: OsPlatform, path: string): LocationC
   const names = entries(path)
   const kind: LocationKind = names.length === 0 ? 'empty' : isDataRoot(platform, path) ? 'data' : 'occupied'
   if (kind === 'occupied') {
-    return finish({ path, problem: problem('E_NOT_EMPTY', `${MESSAGES.E_NOT_EMPTY}可以放在其中的 ${PRODUCT_NAME} 文件夹里。`), suggestion: p.join(path, PRODUCT_NAME) }, kind, null, 0)
+    return finish(
+      {
+        path,
+        problem: problem('E_NOT_EMPTY', `${MESSAGES.E_NOT_EMPTY}可以放在其中的 ${PRODUCT_NAME} 文件夹里。`),
+        suggestion: p.join(path, PRODUCT_NAME),
+      },
+      kind,
+      null,
+      0,
+    )
   }
   if (!canWrite(path)) return finish({ ...base, problem: problem('E_NOT_WRITABLE') }, kind, null, 0)
   return finish(base, kind, freeBytesAt(path), 0)

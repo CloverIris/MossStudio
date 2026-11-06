@@ -39,7 +39,10 @@ describe('fetchHf', () => {
   })
 
   it('rethrows the local error when no SSH host can help or the user pinned local', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 503 })))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 503 })),
+    )
     await expect(fetchHf(url, endpoint, settingsFixture())).rejects.toThrow('HF HTTP 503')
     state.hosts = [sshHostFixture({ id: 'ssh-a' })]
     await expect(fetchHf(url, endpoint, settingsFixture({ hfQueryHostId: 'local' }))).rejects.toThrow('HF HTTP 503')
@@ -47,7 +50,12 @@ describe('fetchHf', () => {
   })
 
   it('falls back to SSH hosts, healthy ones first', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline')
+      }),
+    )
     state.hosts = [sshHostFixture({ id: 'bad', status: 'error' }), sshHostFixture({ id: 'good', status: 'ok' })]
     state.remote.mockImplementation(async (hostId) => {
       if (hostId === 'good') throw new Error('remote down')
@@ -61,16 +69,29 @@ describe('fetchHf', () => {
   })
 
   it('only asks the pinned SSH host and reports both failures', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline')
+      }),
+    )
     state.hosts = [sshHostFixture({ id: 'a' }), sshHostFixture({ id: 'b' })]
     state.remote.mockRejectedValue(new Error('remote down'))
-    await expect(fetchHf(url, endpoint, settingsFixture({ hfQueryHostId: 'b' }))).rejects.toThrow('本机 HF 查询失败（offline）；远端查询失败（remote down）')
+    await expect(fetchHf(url, endpoint, settingsFixture({ hfQueryHostId: 'b' }))).rejects.toThrow(
+      '本机 HF 查询失败（offline）；远端查询失败（remote down）',
+    )
     expect(state.remote.mock.calls.map(([hostId]) => hostId)).toEqual(['b'])
   })
 
   it('stops immediately when the caller aborts', async () => {
     const controller = new AbortController()
-    vi.stubGlobal('fetch', vi.fn(async () => { controller.abort(); throw new Error('aborted') }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        controller.abort()
+        throw new Error('aborted')
+      }),
+    )
     state.hosts = [sshHostFixture({ id: 'a' })]
     await expect(fetchHf(url, endpoint, settingsFixture(), controller.signal)).rejects.toThrow()
     expect(state.remote).not.toHaveBeenCalled()

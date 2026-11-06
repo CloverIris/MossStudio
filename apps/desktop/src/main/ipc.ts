@@ -11,18 +11,28 @@ import { ensureDirs, paths } from './lib/paths'
 import { openDirectoryInFileManager, revealInFileManager } from './lib/fileManager'
 import { scanEnvironment } from './services/env'
 import { getPythonInstallState, installManagedPython } from './services/managedPython'
-import { cancelDownload, cleanupEmptyModelDirs, getCatalog, deleteModel, importAdapterFile, importModelFolder, invalidateCatalog, listDownloads, pauseDownload, registerScannedModels, scanModels, startDownload, installBundle } from './services/models'
+import {
+  cancelDownload,
+  cleanupEmptyModelDirs,
+  getCatalog,
+  deleteModel,
+  importAdapterFile,
+  importModelFolder,
+  invalidateCatalog,
+  listDownloads,
+  pauseDownload,
+  registerScannedModels,
+  scanModels,
+  startDownload,
+  installBundle,
+} from './services/models'
 import { galleryDetail, listGallery, recordJobOutputs, revealInFolder, trashGalleryItem } from './services/gallery'
 import { activeJobInputPaths, cancelJob, getJob, getJobLogs, inputJob, listJobs, onJobCompleted } from './services/supervisor'
 import { clearDiagnostics, dismissDiagnostic, listDiagnostics } from './services/diagnostics'
 import { getSettings, updateSettings } from './services/settings'
 import { updaterApi } from './update'
 import { clearEngineAutoUpdateHold, recordManualEngineInstall, startEngineAutoUpdate } from './services/engineAutoUpdate'
-import {
-  cancelMossInferDownload,
-  getMossInferDownloadState,
-  listMossInferReleases,
-} from './services/mossInferDownload'
+import { cancelMossInferDownload, getMossInferDownloadState, listMossInferReleases } from './services/mossInferDownload'
 import { getWebAccessInfo, startBackend, stopBackend } from './services/backend'
 import { chat, listConversations, listProviders, removeConversation, removeProvider, renameConversation, saveProvider } from './services/ai'
 import { gbcStatus, installGbcEnv, listGbcImages, runGbc } from './services/gbc'
@@ -98,13 +108,9 @@ function toResult<T>(fn: () => Promise<T> | T): Promise<IpcResult<T>> {
     .catch((error: unknown) => ({
       ok: false as const,
       error: {
-        code: error instanceof ZodError ? 'BAD_REQUEST' : errorCode(error) ?? 'INTERNAL',
+        code: error instanceof ZodError ? 'BAD_REQUEST' : (errorCode(error) ?? 'INTERNAL'),
         message:
-          error instanceof ZodError
-            ? error.issues[0]?.message ?? '参数不合法'
-            : error instanceof Error
-              ? error.message
-              : String(error),
+          error instanceof ZodError ? (error.issues[0]?.message ?? '参数不合法') : error instanceof Error ? error.message : String(error),
       },
     }))
 }
@@ -151,25 +157,25 @@ export function registerIpc(): void {
   handle(Ipc.appInfo, null, () => {
     const settings = getSettings()
     return {
-    name: 'MossStudio',
-    version: app.getVersion(),
-    electron: process.versions.electron ?? '',
-    chrome: process.versions.chrome ?? '',
-    node: process.versions.node ?? '',
-    platform: process.platform,
-    arch: process.arch,
-    dataPath: paths.root(),
-    enginePath: paths.engineRoot(),
-    modelsPath: paths.models(settings.modelsRoot),
-    modelDirectories: {
-      dit: paths.roleRoot('dit', settings.modelsRoot, settings.modelDirectories),
-      textEncoder: paths.roleRoot('text_encoder', settings.modelsRoot, settings.modelDirectories),
-      vae: paths.roleRoot('vae', settings.modelsRoot, settings.modelDirectories),
-      support: paths.roleRoot('support', settings.modelsRoot, settings.modelDirectories),
-      adapters: paths.adapters(settings.modelsRoot, settings.modelDirectories),
-    },
-    acrylic: false,
-    backend: getBackendInfo(),
+      name: 'MossStudio',
+      version: app.getVersion(),
+      electron: process.versions.electron ?? '',
+      chrome: process.versions.chrome ?? '',
+      node: process.versions.node ?? '',
+      platform: process.platform,
+      arch: process.arch,
+      dataPath: paths.root(),
+      enginePath: paths.engineRoot(),
+      modelsPath: paths.models(settings.modelsRoot),
+      modelDirectories: {
+        dit: paths.roleRoot('dit', settings.modelsRoot, settings.modelDirectories),
+        textEncoder: paths.roleRoot('text_encoder', settings.modelsRoot, settings.modelDirectories),
+        vae: paths.roleRoot('vae', settings.modelsRoot, settings.modelDirectories),
+        support: paths.roleRoot('support', settings.modelsRoot, settings.modelDirectories),
+        adapters: paths.adapters(settings.modelsRoot, settings.modelDirectories),
+      },
+      acrylic: false,
+      backend: getBackendInfo(),
     }
   })
 
@@ -198,13 +204,15 @@ export function registerIpc(): void {
     return true
   })
 
-  handle(Ipc.aiChat, schemas.aiChat, (input, event) => chat(input, {
-    emit: (payload) => {
-      if (!event.sender.isDestroyed()) event.sender.send(Events.aiStream, payload)
-    },
-    runTool: (call) => runToolInRenderer(event, call),
-    tools: STUDIO_TOOLS,
-  }))
+  handle(Ipc.aiChat, schemas.aiChat, (input, event) =>
+    chat(input, {
+      emit: (payload) => {
+        if (!event.sender.isDestroyed()) event.sender.send(Events.aiStream, payload)
+      },
+      runTool: (call) => runToolInRenderer(event, call),
+      tools: STUDIO_TOOLS,
+    }),
+  )
 
   handle(Ipc.gbcStatus, schemas.gbcStatusQuery, ({ versionId }) => gbcStatus(versionId))
 
@@ -237,9 +245,14 @@ export function registerIpc(): void {
 
   handle(Ipc.gbcVersions, null, () => listGbcVersions(getSettings()))
 
-  handle(Ipc.gbcVersionCreate, schemas.gbcVersionCreate, ({ branch, commit, name }) => createGbcVersion(getSettings(), branch, commit, name))
+  handle(Ipc.gbcVersionCreate, schemas.gbcVersionCreate, ({ branch, commit, name }) =>
+    createGbcVersion(getSettings(), branch, commit, name),
+  )
 
-  handle(Ipc.gbcVersionRemove, schemas.gbcVersionRemove, async ({ id }) => { await removeGbcVersion(getSettings(), id); return true })
+  handle(Ipc.gbcVersionRemove, schemas.gbcVersionRemove, async ({ id }) => {
+    await removeGbcVersion(getSettings(), id)
+    return true
+  })
 
   handle(Ipc.webAccessInfo, null, () => getWebAccessInfo())
 
@@ -338,9 +351,7 @@ export function registerIpc(): void {
 
   handle(Ipc.trainerRemoteVersions, schemas.trainerRemoteHost, ({ hostId }) => remoteVersions(getSettings(), hostId))
 
-  handle(Ipc.trainerRemoteCreate, schemas.trainerRemoteCreate, ({ hostId, ...input }) =>
-    remoteCreateVersion(getSettings(), hostId, input),
-  )
+  handle(Ipc.trainerRemoteCreate, schemas.trainerRemoteCreate, ({ hostId, ...input }) => remoteCreateVersion(getSettings(), hostId, input))
 
   handle(Ipc.trainerRemoteInstall, schemas.trainerRemoteVersion, ({ hostId, versionId }) =>
     remoteInstallRuntime(getSettings(), remoteVersion(getSettings(), hostId, versionId)),
@@ -357,9 +368,7 @@ export function registerIpc(): void {
 
   handle(Ipc.trainerBranches, null, () => listTrainerBranches(getSettings()))
 
-  handle(Ipc.trainerCommits, schemas.trainerCommits, ({ branch, limit }) =>
-    listTrainerCommits(getSettings(), branch, limit),
-  )
+  handle(Ipc.trainerCommits, schemas.trainerCommits, ({ branch, limit }) => listTrainerCommits(getSettings(), branch, limit))
 
   handle(Ipc.trainerVersions, null, () => listTrainerVersions(getSettings()))
 
@@ -396,8 +405,7 @@ export function registerIpc(): void {
       await startBackend()
     }
     const modelDirsChanged =
-      before.modelsRoot !== settings.modelsRoot ||
-      JSON.stringify(before.modelDirectories) !== JSON.stringify(settings.modelDirectories)
+      before.modelsRoot !== settings.modelsRoot || JSON.stringify(before.modelDirectories) !== JSON.stringify(settings.modelDirectories)
     emit(Events.settingsChanged, settings)
     if (modelDirsChanged) emit(Events.modelsChanged, { reason: 'settings' })
     return settings
@@ -447,10 +455,12 @@ export function registerIpc(): void {
   handle(Ipc.engineFeatures, schemas.engineFeatures, (target) => getEngineFeatures(target))
 
   handle(Ipc.studioImportImage, schemas.studioImportImage, ({ projectId, path, bytes }) =>
-    bytes ? importImageBytes(projectId, bytes) : importImageFile(projectId, path!))
+    bytes ? importImageBytes(projectId, bytes) : importImageFile(projectId, path!),
+  )
 
   handle(Ipc.studioSaveMask, schemas.studioSaveMask, ({ projectId, canvasId, png, replaces }) =>
-    saveMask(projectId, canvasId, png, { replaces, inUse: activeJobInputPaths() }))
+    saveMask(projectId, canvasId, png, { replaces, inUse: activeJobInputPaths() }),
+  )
 
   handle(Ipc.controlAdaptersList, null, () => listControlAdapters())
 
@@ -466,16 +476,26 @@ export function registerIpc(): void {
 
   handle(Ipc.sshTerminalList, null, () => listSshTerminals())
 
-  handle(Ipc.sshTerminalInput, schemas.sshTerminalInput, ({ id, data }) => { inputSshTerminal(id, data); return true })
+  handle(Ipc.sshTerminalInput, schemas.sshTerminalInput, ({ id, data }) => {
+    inputSshTerminal(id, data)
+    return true
+  })
 
-  handle(Ipc.sshTerminalClose, schemas.sshTerminalClose, ({ id }) => { closeSshTerminal(id); return true })
+  handle(Ipc.sshTerminalClose, schemas.sshTerminalClose, ({ id }) => {
+    closeSshTerminal(id)
+    return true
+  })
 
   handle(Ipc.mossInferCudaLibs, schemas.mossInferCudaLibs, () => installMossInferCudaLibs())
 
   handle(Ipc.engineInstallRemote, schemas.engineInstallRemote, async ({ hostId, ...options }) => {
     const host = getTrainingHost(getSettings(), hostId)
     if (!host) throw new Error('主机不存在')
-    return installRemoteEngine(host, (phase, message, percent, transfer) => emit(Events.engineRemoteProgress, { hostId, phase, message, percent, ...transfer }), options)
+    return installRemoteEngine(
+      host,
+      (phase, message, percent, transfer) => emit(Events.engineRemoteProgress, { hostId, phase, message, percent, ...transfer }),
+      options,
+    )
   })
 
   handle(Ipc.enginePrepareRemoteModel, schemas.enginePrepareRemoteModel, async ({ hostId, repo }) => {
@@ -605,9 +625,7 @@ export function registerIpc(): void {
 
   handle(Ipc.modelBundleInstall, schemas.modelBundle, ({ id }) => installBundle(id, getSettings()))
 
-  handle(Ipc.modelDownload, schemas.download, ({ kind, id }) =>
-    startDownload(kind, id, getSettings()),
-  )
+  handle(Ipc.modelDownload, schemas.download, ({ kind, id }) => startDownload(kind, id, getSettings()))
 
   handle(Ipc.modelPause, schemas.modelPause, ({ taskId }) => {
     pauseDownload(taskId)
@@ -627,7 +645,9 @@ export function registerIpc(): void {
   handle(Ipc.downloadsList, null, () => [...listDownloads(), ...listRemoteDownloads()])
 
   handle(Ipc.remoteDownloadsRefresh, schemas.remoteDownloadsRefresh, ({ hostId }) => refreshRemoteDownloads(hostId))
-  handle(Ipc.remoteDownloadControl, schemas.remoteDownloadControl, ({ hostId, taskId, operation }) => controlRemoteDownload(hostId, taskId, operation))
+  handle(Ipc.remoteDownloadControl, schemas.remoteDownloadControl, ({ hostId, taskId, operation }) =>
+    controlRemoteDownload(hostId, taskId, operation),
+  )
 
   handle(Ipc.jobCancel, schemas.jobId, ({ id }) => cancelJob(id))
 
@@ -679,10 +699,7 @@ export function registerIpc(): void {
     const result = await dialog.showOpenDialog({
       title,
       properties: kind === 'folder' ? ['openDirectory', 'createDirectory'] : ['openFile'],
-      filters:
-        kind === 'image'
-          ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
-          : undefined,
+      filters: kind === 'image' ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] : undefined,
     })
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })

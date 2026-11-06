@@ -25,7 +25,10 @@ export const PREVIEW_UPDATES_PER_SECOND = 4
  * is never lost.
  */
 export class PreviewThrottle {
-  private readonly jobs = new Map<string, { seq: number; lastAt: number; held: JobPreview | null; timer: ReturnType<typeof setTimeout> | null }>()
+  private readonly jobs = new Map<
+    string,
+    { seq: number; lastAt: number; held: JobPreview | null; timer: ReturnType<typeof setTimeout> | null }
+  >()
 
   constructor(
     private readonly apply: (jobId: string, preview: JobPreview) => void,
@@ -52,18 +55,21 @@ export class PreviewThrottle {
     }
     state.held = preview
     if (state.timer) return
-    state.timer = setTimeout(() => {
-      state.timer = null
-      const held = state.held
-      state.held = null
-      if (!held || this.jobs.get(jobId) !== state) return
-      if (!this.active(jobId)) {
-        this.jobs.delete(jobId)
-        return
-      }
-      state.lastAt = this.now()
-      this.apply(jobId, held)
-    }, Math.max(0, wait))
+    state.timer = setTimeout(
+      () => {
+        state.timer = null
+        const held = state.held
+        state.held = null
+        if (!held || this.jobs.get(jobId) !== state) return
+        if (!this.active(jobId)) {
+          this.jobs.delete(jobId)
+          return
+        }
+        state.lastAt = this.now()
+        this.apply(jobId, held)
+      },
+      Math.max(0, wait),
+    )
   }
 
   /** Forget a job (it ended): a held frame is dropped. */

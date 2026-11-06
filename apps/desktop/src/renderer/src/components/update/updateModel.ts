@@ -50,9 +50,7 @@ export function chipView(state: UpdaterState | null): ChipView | null {
       label: '必须更新',
       tone: 'warn',
       progress,
-      description: version
-        ? `必须更新：这个版本已停止支持生成，请更新到 ${version}`
-        : '必须更新：这个版本已停止支持生成，请更新',
+      description: version ? `必须更新：这个版本已停止支持生成，请更新到 ${version}` : '必须更新：这个版本已停止支持生成，请更新',
     }
   }
   switch (state.phase) {
@@ -65,9 +63,10 @@ export function chipView(state: UpdaterState | null): ChipView | null {
         label: state.phase === 'downloading' ? '正在下载更新' : '正在准备更新',
         tone: 'quiet',
         progress,
-        description: state.phase === 'downloading' && progress !== null
-          ? `正在下载 ${name} 更新，${Math.round(progress ?? 0)}%`
-          : `正在准备 ${name} 更新`,
+        description:
+          state.phase === 'downloading' && progress !== null
+            ? `正在下载 ${name} 更新，${Math.round(progress ?? 0)}%`
+            : `正在准备 ${name} 更新`,
       }
     case 'ready':
       return { label: '重启以更新', tone: 'ready', description: `${name} 已准备好，重启即可更新` }
@@ -104,7 +103,10 @@ export function busySentence(busy: UpdateBusyReason[]): string {
  * What to tell the user after 重启以更新 or 回到上一个版本 when it did not restart.
  * null: nothing to say (restarting, or a busy restart, which the popover asks about).
  */
-export function restartFeedback(result: UpdateRestartResult, action: 'restart' | 'rollback'): { text: string; tone: 'info' | 'error' } | null {
+export function restartFeedback(
+  result: UpdateRestartResult,
+  action: 'restart' | 'rollback',
+): { text: string; tone: 'info' | 'error' } | null {
   switch (result.status) {
     case 'restarting':
       return null
@@ -178,7 +180,9 @@ export function popoverView(state: UpdaterState, busy: UpdateBusyReason[] = []):
     `当前 ${state.current}`,
     dateOnly(available?.publishedAt) ? `${dateOnly(available?.publishedAt)}发布` : null,
     available && state.phase === 'available' ? bytes(available.downloadSize) : null,
-  ].filter(Boolean).join(' · ')
+  ]
+    .filter(Boolean)
+    .join(' · ')
   const base: PopoverView = {
     title: version ? `MossStudio ${version}` : 'MossStudio 更新',
     meta,
@@ -232,7 +236,17 @@ export function popoverView(state: UpdaterState, busy: UpdateBusyReason[] = []):
     default:
       if (state.failedNotice && state.failedVersion && !state.required) {
         const text = failedUpdateText(state.failedVersion, state.current)
-        return { ...base, title: text.title, meta: `当前 ${state.current}`, status: text.detail, statusTone: 'warn', notes: '', notesUrl: undefined, primary: 'retry-failed', secondary: 'dismiss-failed' }
+        return {
+          ...base,
+          title: text.title,
+          meta: `当前 ${state.current}`,
+          status: text.detail,
+          statusTone: 'warn',
+          notes: '',
+          notesUrl: undefined,
+          primary: 'retry-failed',
+          secondary: 'dismiss-failed',
+        }
       }
       return { ...base, status: state.required ? '正在查找可以安装的版本…' : null, secondary: null }
   }

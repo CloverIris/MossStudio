@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { settingsFixture } from '@test/mocks/backend/fixtures'
 
-type FakeNotification = typeof import('@test/mocks/electron')['Notification']
+type FakeNotification = (typeof import('@test/mocks/electron'))['Notification']
 
 const state = { enabled: true }
 const openWindow = vi.fn(() => ({ show: vi.fn(), focus: vi.fn() }))
@@ -36,7 +36,9 @@ describe('desktop notifications', () => {
 
   it('defaults to the studio window', () => {
     const created: InstanceType<FakeNotification>[] = []
-    vi.spyOn(Notification.prototype, 'show').mockImplementation(function (this: InstanceType<FakeNotification>) { created.push(this) })
+    vi.spyOn(Notification.prototype, 'show').mockImplementation(function (this: InstanceType<FakeNotification>) {
+      created.push(this)
+    })
     pushLocalNotification({ title: 'T', body: 'B' })
     created[0]!.emit('click')
     expect(openWindow).toHaveBeenCalledWith('studio', undefined)
@@ -53,7 +55,9 @@ describe('desktop notifications', () => {
   })
 
   it('returns false when showing throws', () => {
-    vi.spyOn(Notification.prototype, 'show').mockImplementation(() => { throw new Error('dbus') })
+    vi.spyOn(Notification.prototype, 'show').mockImplementation(() => {
+      throw new Error('dbus')
+    })
     expect(pushLocalNotification({ title: 'T', body: 'B' })).toBe(false)
   })
 

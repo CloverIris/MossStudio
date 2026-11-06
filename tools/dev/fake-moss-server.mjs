@@ -266,7 +266,14 @@ function handle(message) {
         state: generating ? 'generating' : loaded ? 'idle' : 'unloaded',
         ...(loaded ? { model: loaded.model, mode: loaded.mode } : {}),
         ...(generating
-          ? { generating_id: generating.id, phase: 'denoise', step: generating.step, total_steps: generating.totalSteps, elapsed_seconds: 1, cancelling: generating.cancelled }
+          ? {
+              generating_id: generating.id,
+              phase: 'denoise',
+              step: generating.step,
+              total_steps: generating.totalSteps,
+              elapsed_seconds: 1,
+              cancelling: generating.cancelled,
+            }
           : {}),
       })
       return

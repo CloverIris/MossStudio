@@ -18,7 +18,12 @@ function recorder(code = 0, onCall?: (args: string[]) => void): { exec: ExecFile
   }
 }
 
-const entry = { root: 'C:\\Users\\张 三\\AppData\\Local\\Programs\\MossStudio', launcher: 'C:\\Users\\张 三\\AppData\\Local\\Programs\\MossStudio\\MossStudio.exe', version: '2.0.0', sizeBytes: 300 * 1024 * 1024 }
+const entry = {
+  root: 'C:\\Users\\张 三\\AppData\\Local\\Programs\\MossStudio',
+  launcher: 'C:\\Users\\张 三\\AppData\\Local\\Programs\\MossStudio\\MossStudio.exe',
+  version: '2.0.0',
+  sizeBytes: 300 * 1024 * 1024,
+}
 
 describe('uninstall key', () => {
   it('has every value Apps & Features needs', () => {
@@ -41,8 +46,28 @@ describe('uninstall key', () => {
     expect(calls).toHaveLength(10)
     expect(calls.every((call) => call.file === REG)).toBe(true)
     expect(calls[0]!.args).toEqual(['add', KEY, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', 'MossStudio', '/f'])
-    expect(calls.find((call) => call.args[3] === 'UninstallString')!.args).toEqual(['add', KEY, '/v', 'UninstallString', '/t', 'REG_SZ', '/d', `"${entry.launcher}" --uninstall`, '/f'])
-    expect(calls.find((call) => call.args[3] === 'EstimatedSize')!.args).toEqual(['add', KEY, '/v', 'EstimatedSize', '/t', 'REG_DWORD', '/d', '307200', '/f'])
+    expect(calls.find((call) => call.args[3] === 'UninstallString')!.args).toEqual([
+      'add',
+      KEY,
+      '/v',
+      'UninstallString',
+      '/t',
+      'REG_SZ',
+      '/d',
+      `"${entry.launcher}" --uninstall`,
+      '/f',
+    ])
+    expect(calls.find((call) => call.args[3] === 'EstimatedSize')!.args).toEqual([
+      'add',
+      KEY,
+      '/v',
+      'EstimatedSize',
+      '/t',
+      'REG_DWORD',
+      '/d',
+      '307200',
+      '/f',
+    ])
   })
 
   it('throws with reg.exe’s message when a write fails', async () => {

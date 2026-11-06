@@ -40,7 +40,12 @@ function terminalTheme(): ITheme {
  * An interactive shell on a remote host, in a sheet over Settings. Closing the
  * sheet keeps the session running; 结束会话 ends it.
  */
-export function SshTerminalSheet({ hostId, hostName, open, onClose }: {
+export function SshTerminalSheet({
+  hostId,
+  hostName,
+  open,
+  onClose,
+}: {
   hostId: string | null
   hostName: string
   open: boolean
@@ -57,9 +62,18 @@ export function SshTerminalSheet({ hostId, hostName, open, onClose }: {
     setError(null)
     setEnded(false)
     void call<SshSession>(Ipc.sshTerminalOpen, { hostId })
-      .then((next) => { if (!canceled) { setSession(next); setEnded(next.exitCode != null) } })
-      .catch((reason: unknown) => { if (!canceled) setError(reason instanceof Error ? reason.message : String(reason)) })
-    return () => { canceled = true }
+      .then((next) => {
+        if (!canceled) {
+          setSession(next)
+          setEnded(next.exitCode != null)
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!canceled) setError(reason instanceof Error ? reason.message : String(reason))
+      })
+    return () => {
+      canceled = true
+    }
   }, [open, hostId])
 
   async function endSession(): Promise<void> {
@@ -74,19 +88,28 @@ export function SshTerminalSheet({ hostId, hostName, open, onClose }: {
       title={`终端 · ${hostName}`}
       description="直接在远程主机上输入命令。关闭面板不会结束会话。"
       width="max-w-[880px]"
-      footer={(
+      footer={
         <>
-          <Button tone="ghost" size="md" onClick={onClose}>关闭</Button>
-          <Button tone="danger" size="md" disabled={!session || ended} onClick={() => void endSession()}>结束会话</Button>
+          <Button tone="ghost" size="md" onClick={onClose}>
+            关闭
+          </Button>
+          <Button tone="danger" size="md" disabled={!session || ended} onClick={() => void endSession()}>
+            结束会话
+          </Button>
         </>
-      )}
+      }
     >
       {error ? (
-        <p role="alert" className="text-ui text-danger">没能打开终端：{error}。请先在设置里测试这台主机的连接。</p>
+        <p role="alert" className="text-ui text-danger">
+          没能打开终端：{error}。请先在设置里测试这台主机的连接。
+        </p>
       ) : session ? (
         <TerminalView session={session} onExit={() => setEnded(true)} />
       ) : (
-        <div className="flex items-center gap-2 text-ui text-ink-2"><Spinner />正在连接…</div>
+        <div className="flex items-center gap-2 text-ui text-ink-2">
+          <Spinner />
+          正在连接…
+        </div>
       )}
     </Sheet>
   )
@@ -114,10 +137,18 @@ function TerminalView({ session, onExit }: { session: SshSession; onExit: () => 
     term.open(host.current)
     if (session.buffer) term.write(session.buffer)
     if (session.exitCode != null) term.write(`\r\n[会话已结束 ${session.exitCode}]\r\n`)
-    const fitSafely = (): void => { try { fit.fit() } catch { /* hidden during the sheet animation */ } }
+    const fitSafely = (): void => {
+      try {
+        fit.fit()
+      } catch {
+        /* hidden during the sheet animation */
+      }
+    }
     fitSafely()
     term.focus()
-    const input = term.onData((data) => { void call(Ipc.sshTerminalInput, { id: session.id, data }).catch(() => undefined) })
+    const input = term.onData((data) => {
+      void call(Ipc.sshTerminalInput, { id: session.id, data }).catch(() => undefined)
+    })
     const offData = onEvent<{ sessionId: string; data: string }>(Events.terminalData, (payload) => {
       if (payload.sessionId === session.id) term.write(payload.data)
     })

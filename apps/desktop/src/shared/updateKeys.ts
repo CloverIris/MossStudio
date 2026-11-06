@@ -52,7 +52,9 @@ export function parseUpdateKeys(value: unknown): UpdatePublicKey[] {
  *                          update-<channel>.json is appended to it as a directory
  * Anything else (every release build) gets `[]` and `""`. The app never reads keys at runtime.
  */
-export function updateBuildDefines(env: Record<string, string | undefined>): Record<'__MOSS_UPDATE_TEST_KEYS__' | '__MOSS_UPDATE_FEED_URL__', string> {
+export function updateBuildDefines(
+  env: Record<string, string | undefined>,
+): Record<'__MOSS_UPDATE_TEST_KEYS__' | '__MOSS_UPDATE_FEED_URL__', string> {
   const rawKeys = env['MOSS_UPDATE_TEST_KEYS']?.trim()
   const keys = rawKeys ? parseUpdateKeys(JSON.parse(rawKeys)) : []
   const feedUrl = env['MOSS_UPDATE_FEED_URL']?.trim() ?? ''

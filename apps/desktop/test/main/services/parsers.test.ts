@@ -43,7 +43,11 @@ describe('parseTqdm', () => {
   it('parses percent, counts, eta and rate', async () => {
     const { parseTqdm } = await load()
     expect(parseTqdm(' 40%|████      | 20/50 [00:10<00:15,  2.00it/s]')).toEqual({
-      percent: 40, current: 20, total: 50, etaMs: 15_000, rate: '2.00it/s',
+      percent: 40,
+      current: 20,
+      total: 50,
+      etaMs: 15_000,
+      rate: '2.00it/s',
     })
   })
 
@@ -74,7 +78,11 @@ describe('parseDownloadProgress', () => {
   it('parses huggingface-style byte progress', async () => {
     const { parseDownloadProgress } = await load()
     expect(parseDownloadProgress('model.safetensors:  42%|████ | 1.2G/2.9G [00:10<00:12]')).toEqual({
-      percent: 42, current: 0, total: 0, label: 'model.safetensors', rate: '1.2G / 2.9G',
+      percent: 42,
+      current: 0,
+      total: 0,
+      label: 'model.safetensors',
+      rate: '1.2G / 2.9G',
     })
     expect(parseDownloadProgress('no progress here')).toBeNull()
   })
@@ -86,7 +94,12 @@ describe('progressFor', () => {
   it('maps idle/ready to denoise and copies the parsed values', async () => {
     const { progressFor } = await load()
     expect(progressFor('20%|| 10/50 [00:01<00:04, 9it/s]', 'idle', { ...base, stage: 'load' as never })).toEqual({
-      stage: 'denoise', current: 10, total: 50, percent: 20, etaMs: 4000, message: '9it/s',
+      stage: 'denoise',
+      current: 10,
+      total: 50,
+      percent: 20,
+      etaMs: 4000,
+      message: '9it/s',
     })
   })
 
@@ -114,10 +127,15 @@ describe('rules', () => {
 
   it('loads rules.json from the release directory and skips invalid regexes', async () => {
     release.dir = temp()
-    writeFileSync(join(temp(), 'rules.json'), JSON.stringify({ rules: [
-      { id: 'BAD', match: '([', severity: 'error', title: 't', explain: 'e' },
-      { id: 'CUSTOM', match: 'kaboom', severity: 'warning', title: 'Custom', explain: 'x' },
-    ] }))
+    writeFileSync(
+      join(temp(), 'rules.json'),
+      JSON.stringify({
+        rules: [
+          { id: 'BAD', match: '([', severity: 'error', title: 't', explain: 'e' },
+          { id: 'CUSTOM', match: 'kaboom', severity: 'warning', title: 'Custom', explain: 'x' },
+        ],
+      }),
+    )
     const { loadRules, matchRule, exitRule } = await load()
     const rules = loadRules()
     expect(rules.map((rule) => rule.id)).toEqual(['BAD', 'CUSTOM'])
@@ -141,7 +159,8 @@ describe('rules', () => {
     try {
       release.dir = temp()
       mkdirSync(temp(), { recursive: true })
-      const write = (id: string) => writeFileSync(join(temp(), 'rules.json'), JSON.stringify({ rules: [{ id, match: id, severity: 'info', title: id, explain: id }] }))
+      const write = (id: string) =>
+        writeFileSync(join(temp(), 'rules.json'), JSON.stringify({ rules: [{ id, match: id, severity: 'info', title: id, explain: id }] }))
       write('FIRST')
       const { loadRules } = await load()
       expect(loadRules()[0]!.id).toBe('FIRST')
@@ -175,11 +194,22 @@ describe('normalizeSignature', () => {
 describe('toDiagnostic', () => {
   it('renders numbered capture groups into title and explain', async () => {
     const { toDiagnostic } = await load()
-    const rule = { id: 'E_MODULE', match: "No module named '([^']+)'", regex: /No module named '([^']+)'/i, severity: 'error' as const,
-      title: '缺少 {1}', explain: '{1} / {2}', solutions: [{ label: 'fix', action: 'repair_runtime', params: { a: 1 } }] }
+    const rule = {
+      id: 'E_MODULE',
+      match: "No module named '([^']+)'",
+      regex: /No module named '([^']+)'/i,
+      severity: 'error' as const,
+      title: '缺少 {1}',
+      explain: '{1} / {2}',
+      solutions: [{ label: 'fix', action: 'repair_runtime', params: { a: 1 } }],
+    }
     const diagnostic = toDiagnostic(rule, "ModuleNotFoundError: No module named 'torch'", 'job-1')
     expect(diagnostic).toMatchObject({
-      jobId: 'job-1', ruleId: 'E_MODULE', severity: 'error', title: '缺少 torch', explain: 'torch / 未知',
+      jobId: 'job-1',
+      ruleId: 'E_MODULE',
+      severity: 'error',
+      title: '缺少 torch',
+      explain: 'torch / 未知',
       solutions: [{ label: 'fix', action: 'repair_runtime', params: { a: 1 } }],
     })
     expect(diagnostic.signature.startsWith('E_MODULE:')).toBe(true)

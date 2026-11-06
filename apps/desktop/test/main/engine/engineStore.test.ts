@@ -52,8 +52,13 @@ describe('promoteInstall', () => {
     await addOldInstall(installDir)
     let shutdownCalled = false
     const result = await promoteInstall({
-      root, stagingDir, stamp, currentServerPath: null,
-      beforeReplace: async () => { shutdownCalled = true },
+      root,
+      stagingDir,
+      stamp,
+      currentServerPath: null,
+      beforeReplace: async () => {
+        shutdownCalled = true
+      },
     })
     // Replacing a version that is not running needs no engine shutdown.
     expect(shutdownCalled).toBe(false)
@@ -71,11 +76,22 @@ describe('promoteInstall', () => {
     const order: string[] = []
     const result = await promoteInstall(
       {
-        root, stagingDir, stamp,
+        root,
+        stagingDir,
+        stamp,
         currentServerPath: join(installDir, 'bin', 'moss-server'),
-        beforeReplace: async () => { order.push('shutdown') },
+        beforeReplace: async () => {
+          order.push('shutdown')
+        },
       },
-      { ops: { rename: async (from, to) => { order.push(`rename:${from === installDir ? 'old' : 'new'}`); await rename(from, to) } } },
+      {
+        ops: {
+          rename: async (from, to) => {
+            order.push(`rename:${from === installDir ? 'old' : 'new'}`)
+            await rename(from, to)
+          },
+        },
+      },
     )
     expect(order.filter((step) => step !== 'rename:new').slice(0, 2)).toEqual(['shutdown', 'rename:old'])
     expect(result.backupDir).toContain(join(root, '.backup'))
@@ -92,9 +108,13 @@ describe('promoteInstall', () => {
     await expect(
       promoteInstall(
         {
-          root, stagingDir, stamp,
+          root,
+          stagingDir,
+          stamp,
           currentServerPath: join(installDir, 'bin', 'moss-server'),
-          beforeReplace: async () => { shutdownCalled = true },
+          beforeReplace: async () => {
+            shutdownCalled = true
+          },
         },
         {
           retryDelayMs: 0,
@@ -171,7 +191,10 @@ describe('promoteInstall', () => {
           retryDelayMs: 0,
           ops: {
             rename: async (from, to) => {
-              if (from === stagingDir) { attempts += 1; throw errno('ENOSPC', 'disk full') }
+              if (from === stagingDir) {
+                attempts += 1
+                throw errno('ENOSPC', 'disk full')
+              }
               await rename(from, to)
             },
           },
@@ -215,15 +238,19 @@ describe('promoteInstall', () => {
   it('rejects a staging directory outside .staging or equal to it', async () => {
     const { root } = await fixture()
     await mkdir(join(root, 'elsewhere'))
-    await expect(promoteInstall({ root, stagingDir: join(root, 'elsewhere'), stamp, currentServerPath: null })).rejects.toThrow(/\.staging 内/)
-    await expect(promoteInstall({ root, stagingDir: join(root, '.staging'), stamp, currentServerPath: null })).rejects.toThrow(/\.staging 内/)
+    await expect(promoteInstall({ root, stagingDir: join(root, 'elsewhere'), stamp, currentServerPath: null })).rejects.toThrow(
+      /\.staging 内/,
+    )
+    await expect(promoteInstall({ root, stagingDir: join(root, '.staging'), stamp, currentServerPath: null })).rejects.toThrow(
+      /\.staging 内/,
+    )
   })
 
   it('rejects a missing staging directory', async () => {
     const { root } = await fixture()
-    await expect(
-      promoteInstall({ root, stagingDir: join(root, '.staging', 'gone'), stamp, currentServerPath: null }),
-    ).rejects.toThrow('引擎暂存目录不存在')
+    await expect(promoteInstall({ root, stagingDir: join(root, '.staging', 'gone'), stamp, currentServerPath: null })).rejects.toThrow(
+      '引擎暂存目录不存在',
+    )
   })
 })
 
@@ -232,7 +259,10 @@ describe('recoverEngineInstall', () => {
     const { root, stagingDir, installDir } = await fixture()
     const backupDir = join(root, '.backup', `${stamp}-old`)
     await addOldInstall(backupDir)
-    await writeFile(join(root, '.pending.json'), JSON.stringify({ schemaVersion: 1, stamp, installDir, stagingDir, previousDir: backupDir }))
+    await writeFile(
+      join(root, '.pending.json'),
+      JSON.stringify({ schemaVersion: 1, stamp, installDir, stagingDir, previousDir: backupDir }),
+    )
     const result = await recoverEngineInstall(root, { retryDelayMs: 0 })
     expect(result.restored).toEqual([installDir])
     expect(await server(installDir)).toBe('old')
@@ -255,7 +285,10 @@ describe('recoverEngineInstall', () => {
 
   it('refuses a journal pointing outside the engine root', async () => {
     const { root, stagingDir } = await fixture()
-    await writeFile(join(root, '.pending.json'), JSON.stringify({ schemaVersion: 1, stamp, installDir: join(root, '..', 'victim'), stagingDir }))
+    await writeFile(
+      join(root, '.pending.json'),
+      JSON.stringify({ schemaVersion: 1, stamp, installDir: join(root, '..', 'victim'), stagingDir }),
+    )
     await expect(recoverEngineInstall(root)).rejects.toThrow(/越界路径/)
     expect(existsSync(join(root, '.pending.json'))).toBe(true)
   })

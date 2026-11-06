@@ -16,8 +16,19 @@ const temp = useTempDir('mossstudio-legacy-')
 const platform = asOsPlatform(process.platform)!
 
 const OLD_PROGRAM = [
-  'MossStudio.exe', 'ffmpeg.dll', 'libEGL.dll', 'resources.pak', 'chrome_100_percent.pak', 'icudtl.dat', 'snapshot_blob.bin',
-  'v8_context_snapshot.bin', 'vk_swiftshader_icd.json', 'LICENSE', 'LICENSES.chromium.html', 'version', 'MossStudio-Setup.exe',
+  'MossStudio.exe',
+  'ffmpeg.dll',
+  'libEGL.dll',
+  'resources.pak',
+  'chrome_100_percent.pak',
+  'icudtl.dat',
+  'snapshot_blob.bin',
+  'v8_context_snapshot.bin',
+  'vk_swiftshader_icd.json',
+  'LICENSE',
+  'LICENSES.chromium.html',
+  'version',
+  'MossStudio-Setup.exe',
 ]
 
 /** A 1.0.x folder: Electron files at the top, user data in data\ (with look-alike names inside). */
@@ -82,7 +93,6 @@ describe('stageLegacyProgramFiles', () => {
     expect(readdirSync(root).sort()).toEqual(['LICENSE', 'ffmpeg.dll', 'resources.pak'])
   })
 
-
   it('moves the old program aside and commit removes it; data is untouched', () => {
     const root = join(temp(), 'old')
     makeLegacy(root)
@@ -103,7 +113,8 @@ describe('stageLegacyProgramFiles', () => {
     const rename = vi.mocked(fs.renameSync)
     const real = rename.getMockImplementation()!
     rename.mockImplementation((from, to) => {
-      if (String(from).endsWith('MossStudio.exe') && String(to).includes('.moss-legacy-')) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+      if (String(from).endsWith('MossStudio.exe') && String(to).includes('.moss-legacy-'))
+        throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
       return real(from, to)
     })
     try {
@@ -125,7 +136,7 @@ describe('stageLegacyProgramFiles: running 1.0.x', () => {
     const real = open.getMockImplementation()!
     open.mockImplementation(((file: fs.PathLike, flags?: fs.OpenMode, mode?: fs.Mode) => {
       if (String(file).endsWith('MossStudio.exe') && flags === 'r+') throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
-      return real(file, flags ?? "r", mode)
+      return real(file, flags ?? 'r', mode)
     }) as typeof fs.openSync)
     try {
       expect(() => stageLegacyProgramFiles(root, 'running')).toThrow(expect.objectContaining({ code: 'E_LEGACY_IN_USE' }))

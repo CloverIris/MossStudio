@@ -2,7 +2,15 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { confirmHealthFor } from '@main/install/health'
-import { readInstallRecord, readJsonObject, readLocator, updateInstallRecord, writeInstallRecord, writeJsonAtomic, writeLocator } from '@main/install/record'
+import {
+  readInstallRecord,
+  readJsonObject,
+  readLocator,
+  updateInstallRecord,
+  writeInstallRecord,
+  writeJsonAtomic,
+  writeLocator,
+} from '@main/install/record'
 import type { RunContext } from '@main/install/runContext'
 import type { InstallRecord } from '@shared/install'
 import { useTempDir } from '@test/helpers/tempDir'
@@ -11,8 +19,18 @@ const temp = useTempDir()
 
 function record(patch: Partial<InstallRecord> = {}): InstallRecord {
   return {
-    schema: 1, platform: 'win32-x64', root: 'C:\\Users\\张 三\\MossStudio', dataRoot: 'C:\\Users\\张 三\\MossStudio\\data', portable: false,
-    channel: 'stable', current: '2.0.0', failed: [], confirmed: false, installedAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z', ...patch,
+    schema: 1,
+    platform: 'win32-x64',
+    root: 'C:\\Users\\张 三\\MossStudio',
+    dataRoot: 'C:\\Users\\张 三\\MossStudio\\data',
+    portable: false,
+    channel: 'stable',
+    current: '2.0.0',
+    failed: [],
+    confirmed: false,
+    installedAt: '2026-11-01T00:00:00.000Z',
+    updatedAt: '2026-11-01T00:00:00.000Z',
+    ...patch,
   }
 }
 
@@ -46,7 +64,10 @@ describe('install.json', () => {
 
   it('keeps keys it does not know and removes known optional keys that were cleared', () => {
     const file = join(temp(), 'install.json')
-    writeFileSync(file, JSON.stringify({ ...record({ pending: '2.1.0', previous: '1.9.0' }), launcherVersion: 3, future: { nested: true } }))
+    writeFileSync(
+      file,
+      JSON.stringify({ ...record({ pending: '2.1.0', previous: '1.9.0' }), launcherVersion: 3, future: { nested: true } }),
+    )
     const next = updateInstallRecord(file, (current) => {
       const { pending: _pending, ...rest } = current
       return { ...rest, current: '2.1.0', previous: '2.0.0' }
@@ -93,8 +114,21 @@ describe('locator.json', () => {
 
 describe('confirmHealthFor', () => {
   const contextFor = (recordPath: string | null): RunContext => ({
-    mode: 'installed', platform: 'win32', platformKey: 'win32-x64', packaged: true, launched: true, silent: false, root: temp(),
-    launcher: null, appPath: '', recordPath, record: null, locatorPath: '', locator: null, portable: false, setup: null,
+    mode: 'installed',
+    platform: 'win32',
+    platformKey: 'win32-x64',
+    packaged: true,
+    launched: true,
+    silent: false,
+    root: temp(),
+    launcher: null,
+    appPath: '',
+    recordPath,
+    record: null,
+    locatorPath: '',
+    locator: null,
+    portable: false,
+    setup: null,
   })
 
   it('sets confirmed for the running version only', () => {

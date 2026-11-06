@@ -38,7 +38,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
 function PageHost({ active }: { active: string }): React.JSX.Element {
   const [mounted, setMounted] = useState<Set<string>>(() => new Set([active]))
   useEffect(() => {
-    setMounted((previous) => previous.has(active) ? previous : new Set([...previous, active]))
+    setMounted((previous) => (previous.has(active) ? previous : new Set([...previous, active])))
   }, [active])
   return (
     <>
@@ -47,7 +47,9 @@ function PageHost({ active }: { active: string }): React.JSX.Element {
         if (!Page) return null
         return (
           <div key={key} data-page={key} className={cn('h-full min-h-0', key !== active && 'hidden')}>
-            <ErrorBoundary><Page /></ErrorBoundary>
+            <ErrorBoundary>
+              <Page />
+            </ErrorBoundary>
           </div>
         )
       })}
@@ -110,7 +112,9 @@ function StudioShell(): React.JSX.Element {
       <div className="flex h-full flex-col bg-frame text-ink">
         <Titlebar monitor={false} />
         <main className="min-h-0 flex-1 overflow-hidden">
-          <ErrorBoundary><SetupPage /></ErrorBoundary>
+          <ErrorBoundary>
+            <SetupPage />
+          </ErrorBoundary>
         </main>
       </div>
     )
@@ -162,12 +166,12 @@ function standaloneRoute(): (() => React.JSX.Element) | undefined {
 function MainApp(): React.JSX.Element {
   const init = useApp((state) => state.init)
   const kind = window.clover.windowKind
-  useEffect(() => { void init() }, [init])
+  useEffect(() => {
+    void init()
+  }, [init])
   return (
     <ToastProvider>
-      <HashRouter>
-        {kind === 'trainer' ? <TrainerShell /> : <StudioShell />}
-      </HashRouter>
+      <HashRouter>{kind === 'trainer' ? <TrainerShell /> : <StudioShell />}</HashRouter>
     </ToastProvider>
   )
 }
@@ -177,7 +181,9 @@ export function App(): React.JSX.Element {
   if (Standalone) {
     return (
       <ToastProvider>
-        <ErrorBoundary><Standalone /></ErrorBoundary>
+        <ErrorBoundary>
+          <Standalone />
+        </ErrorBoundary>
       </ToastProvider>
     )
   }

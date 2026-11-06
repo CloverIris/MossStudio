@@ -3,7 +3,14 @@ import { cn } from '../ui'
 import { StudioDivider } from './StudioDivider'
 
 /** A resizable Studio side panel on the panel tone. */
-export function StudioSidebar({ side, label, width, onWidthChange, children, className }: {
+export function StudioSidebar({
+  side,
+  label,
+  width,
+  onWidthChange,
+  children,
+  className,
+}: {
   side: 'left' | 'right'
   label: string
   width: number

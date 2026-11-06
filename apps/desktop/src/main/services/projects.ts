@@ -109,7 +109,8 @@ export function saveProject(input: SaveProjectInput): ProjectDocument {
     const assets = join(projectDir(id), 'assets')
     mkdirSync(assets, { recursive: true })
     const assetRelativePath = relative(resolve(assets), resolve(path))
-    if (assetRelativePath && assetRelativePath !== '..' && !assetRelativePath.startsWith(`..${sep}`) && !isAbsolute(assetRelativePath)) return path
+    if (assetRelativePath && assetRelativePath !== '..' && !assetRelativePath.startsWith(`..${sep}`) && !isAbsolute(assetRelativePath))
+      return path
     const safeAssetId = assetId.replace(/[^a-zA-Z0-9_-]/g, '_')
     const target = join(assets, `${safeAssetId}-${basename(path)}`)
     if (path !== target && !existsSync(target)) copyFileSync(path, target)
@@ -119,9 +120,8 @@ export function saveProject(input: SaveProjectInput): ProjectDocument {
     ...canvas,
     backgroundPath: persistAsset(canvas.backgroundPath, canvas.id),
   }))
-  const selected = canvases.find((canvas) => canvas.id === input.selectedCanvasId)
-    ?? canvases.find((canvas) => canvas.kind === 'layout')
-    ?? canvases[0]
+  const selected =
+    canvases.find((canvas) => canvas.id === input.selectedCanvasId) ?? canvases.find((canvas) => canvas.kind === 'layout') ?? canvases[0]
   const project: ProjectDocument = {
     schemaVersion: SCHEMA_VERSION,
     id,

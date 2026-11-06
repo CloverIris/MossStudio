@@ -17,11 +17,23 @@ import {
 
 function onboarding(model: 'ok' | 'missing' | 'partial', sizeBytes = 12 * GiB): OnboardingStatus {
   return {
-    hostId: 'local', bundleId: 'moss-sft', bundleName: 'MossDiT SFT', ready: false, checkedAt: FIXTURE_NOW,
+    hostId: 'local',
+    bundleId: 'moss-sft',
+    bundleName: 'MossDiT SFT',
+    ready: false,
+    checkedAt: FIXTURE_NOW,
     steps: [
       { id: 'device', status: 'ok', title: '推理设备', detail: '', action: 'devices' },
       { id: 'engine', status: 'missing', title: '引擎', detail: '', action: 'engines' },
-      { id: 'model', status: model, title: '模型', detail: '', action: 'models', modelIds: [...SFT_BUNDLE_IDS], sizeBytes: model === 'ok' ? 0 : sizeBytes },
+      {
+        id: 'model',
+        status: model,
+        title: '模型',
+        detail: '',
+        action: 'models',
+        modelIds: [...SFT_BUNDLE_IDS],
+        sizeBytes: model === 'ok' ? 0 : sizeBytes,
+      },
     ],
   }
 }
@@ -57,7 +69,9 @@ describe('deriveSetup', () => {
   })
 
   it('describes the chosen GPU and mentions the others', () => {
-    const view = deriveSetup(input({ gpu: gpuInventoryFixture([gpuDeviceFixture(), GPU_RTX_3060()]), gpuSelection: { uuid: GPU_RTX_3060().uuid } }))
+    const view = deriveSetup(
+      input({ gpu: gpuInventoryFixture([gpuDeviceFixture(), GPU_RTX_3060()]), gpuSelection: { uuid: GPU_RTX_3060().uuid } }),
+    )
     expect(view.steps[0]!.detail).toBe('NVIDIA GeForce RTX 3060 · 12 GB · 共 2 块')
   })
 
@@ -70,13 +84,15 @@ describe('deriveSetup', () => {
   })
 
   it('shows engine and model progress while running', () => {
-    const view = deriveSetup(input({
-      engineDownload: engineDownloadFixture({ bytes: 186 * 1024 ** 2, totalBytes: 290 * 1024 ** 2, percent: 64 }),
-      downloads: [
-        downloadFixture({ targetId: SFT_BUNDLE_IDS[0], state: 'running', bytes: 2 * GiB, totalBytes: 8 * GiB }),
-        downloadFixture({ targetId: SFT_BUNDLE_IDS[1], state: 'done', bytes: 2 * GiB, totalBytes: 2 * GiB }),
-      ],
-    }))
+    const view = deriveSetup(
+      input({
+        engineDownload: engineDownloadFixture({ bytes: 186 * 1024 ** 2, totalBytes: 290 * 1024 ** 2, percent: 64 }),
+        downloads: [
+          downloadFixture({ targetId: SFT_BUNDLE_IDS[0], state: 'running', bytes: 2 * GiB, totalBytes: 8 * GiB }),
+          downloadFixture({ targetId: SFT_BUNDLE_IDS[1], state: 'done', bytes: 2 * GiB, totalBytes: 2 * GiB }),
+        ],
+      }),
+    )
     expect(view.phase).toBe('running')
     expect(view.steps[1]).toMatchObject({ state: 'running', detail: 'MossInfer · 正在下载 186 MB / 290 MB', percent: 64 })
     expect(view.steps[2]).toMatchObject({ state: 'running', detail: 'MossDiT SFT · 正在下载 4.0 GB / 10 GB', percent: 40 })
@@ -97,10 +113,12 @@ describe('deriveSetup', () => {
   })
 
   it('shows failures with a way to retry', () => {
-    const view = deriveSetup(input({
-      engineDownload: engineDownloadFixture({ phase: 'error', error: '下载中断，请检查网络' }),
-      downloads: [downloadFixture({ targetId: SFT_BUNDLE_IDS[0], state: 'error', error: '磁盘空间不足' })],
-    }))
+    const view = deriveSetup(
+      input({
+        engineDownload: engineDownloadFixture({ phase: 'error', error: '下载中断，请检查网络' }),
+        downloads: [downloadFixture({ targetId: SFT_BUNDLE_IDS[0], state: 'error', error: '磁盘空间不足' })],
+      }),
+    )
     expect(view.phase).toBe('error')
     expect(view.steps[1]).toMatchObject({ state: 'error', detail: '下载中断，请检查网络' })
     expect(view.steps[2]).toMatchObject({ state: 'error', detail: '磁盘空间不足' })
@@ -134,7 +152,9 @@ describe('deriveSetup', () => {
 describe('setupSpaceLabel', () => {
   it('adds the engine to what the model still needs', () => {
     expect(setupSpaceLabel(deriveSetup(input()))).toBe('约 13 GB')
-    expect(setupSpaceLabel(deriveSetup(input({ engine: engineReadyFixture(), onboarding: onboarding('partial', 300 * 1024 ** 2) })))).toBe('约 300 MB')
+    expect(setupSpaceLabel(deriveSetup(input({ engine: engineReadyFixture(), onboarding: onboarding('partial', 300 * 1024 ** 2) })))).toBe(
+      '约 300 MB',
+    )
   })
 })
 
@@ -166,7 +186,11 @@ describe('deriveSetup with the engine plan', () => {
   it('an AMD GPU without ROCm still prepares, with the ROCm tip as a quiet note', () => {
     const view = deriveSetup(input({ plan: planFor('amd') }))
     expect(view.phase).toBe('idle')
-    expect(view.lines[0]).toMatchObject({ detail: '兼容模式 · 1.2 MB', tip: expect.stringContaining('ROCm 7'), note: expect.stringContaining('只能文生图') })
+    expect(view.lines[0]).toMatchObject({
+      detail: '兼容模式 · 1.2 MB',
+      tip: expect.stringContaining('ROCm 7'),
+      note: expect.stringContaining('只能文生图'),
+    })
   })
 
   it('is blocked on macOS and says why', () => {
@@ -182,11 +206,18 @@ describe('deriveSetup with the engine plan', () => {
     const view = deriveSetup(input({ engine: engineReadyFixture(), plan: planFor('multiGpu', [managed('stable-v2.2.0-cu13')]) }))
     expect(view.steps[1]).toMatchObject({ state: 'waiting', detail: expect.stringContaining('还需为其他显卡下载 2 个引擎包') })
     expect(stepsToStart(view)).toContain('engine')
-    const all = deriveSetup(input({ engine: engineReadyFixture(), plan: planFor('multiGpu', ['stable-v2.2.0-cu13', 'stable-v2.2.0-cu12-sm70', 'stable-v2.2.0-vulkan'].map(managed)) }))
+    const all = deriveSetup(
+      input({
+        engine: engineReadyFixture(),
+        plan: planFor('multiGpu', ['stable-v2.2.0-cu13', 'stable-v2.2.0-cu12-sm70', 'stable-v2.2.0-vulkan'].map(managed)),
+      }),
+    )
     expect(all.steps[1]!.state).toBe('done')
   })
 
-  it('uses the plan\'s size for the space sentence', () => {
-    expect(setupSpaceLabel(deriveSetup(input({ plan: planFor('intel'), onboarding: onboarding('partial', 300 * 1024 ** 2) })))).toBe('约 301 MB')
+  it("uses the plan's size for the space sentence", () => {
+    expect(setupSpaceLabel(deriveSetup(input({ plan: planFor('intel'), onboarding: onboarding('partial', 300 * 1024 ** 2) })))).toBe(
+      '约 301 MB',
+    )
   })
 })

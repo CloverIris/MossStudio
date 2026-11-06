@@ -187,8 +187,16 @@ export function detectRunContext(input: DetectInput): RunContext {
     if (input.packaged && input.exists(p.join(folder, PORTABLE_FILE))) {
       const recordPath = p.join(folder, 'data', RECORD_FILE)
       return {
-        ...base, mode: 'portable', root: folder, launcher: null, appPath, recordPath,
-        record: readRecord(input, recordPath), locator: null, portable: true, setup: null,
+        ...base,
+        mode: 'portable',
+        root: folder,
+        launcher: null,
+        appPath,
+        recordPath,
+        record: readRecord(input, recordPath),
+        locator: null,
+        portable: true,
+        setup: null,
       }
     }
     const locator = input.packaged || setupArg !== null ? readLocatorFile(input, locPath) : null
@@ -201,15 +209,24 @@ export function detectRunContext(input: DetectInput): RunContext {
     // --moss-silent alone means a silent setup; with --moss-uninstall it only means "no window".
     if (located && setupArg === null && (uninstall || !silent) && locator) {
       return {
-        ...base, mode: uninstall ? 'uninstall' : 'installed', root: locator.root, launcher: null, appPath,
-        recordPath, record, locator, portable: false, setup: null,
+        ...base,
+        mode: uninstall ? 'uninstall' : 'installed',
+        root: locator.root,
+        launcher: null,
+        appPath,
+        recordPath,
+        record,
+        locator,
+        portable: false,
+        setup: null,
       }
     }
     const { origin, volume } = macOrigin(bundle)
     // This is the installed bundle, but its data (and install.json) cannot be found right now.
-    const missingDataRoot = setupArg === null && locator?.appPath && samePath('darwin', locator.appPath, bundle) && !input.exists(locator.dataRoot)
-      ? locator.dataRoot
-      : null
+    const missingDataRoot =
+      setupArg === null && locator?.appPath && samePath('darwin', locator.appPath, bundle) && !input.exists(locator.dataRoot)
+        ? locator.dataRoot
+        : null
     return { ...base, ...none, mode: 'setup', appPath, locator, setup: { ...setupRequest(origin, volume), missingDataRoot } }
   }
 
@@ -226,11 +243,7 @@ export function detectRunContext(input: DetectInput): RunContext {
   const parent = p.dirname(appPath)
   const envValue = env['MOSSSTUDIO_ROOT']?.trim()
   const envRoot = envValue && samePath(platform, p.resolve(envValue), parent) ? parent : null
-  const root = envRoot
-    ? envRoot
-    : input.exists(p.join(parent, RECORD_FILE)) || input.exists(p.join(parent, PORTABLE_FILE))
-      ? parent
-      : null
+  const root = envRoot ? envRoot : input.exists(p.join(parent, RECORD_FILE)) || input.exists(p.join(parent, PORTABLE_FILE)) ? parent : null
   if (!root) {
     return { ...base, ...none, mode: uninstall ? 'uninstall' : 'loose', appPath, locator: null, setup: null }
   }
@@ -239,9 +252,12 @@ export function detectRunContext(input: DetectInput): RunContext {
   const envLauncher = env['MOSSSTUDIO_LAUNCHER']?.trim()
   const rootLauncher = launcherFile ? p.join(root, launcherFile) : null
   // Likewise MOSSSTUDIO_LAUNCHER only inside R.
-  const launcher = envLauncher && isWithin(platform, root, p.resolve(envLauncher))
-    ? p.resolve(envLauncher)
-    : rootLauncher && input.exists(rootLauncher) ? rootLauncher : null
+  const launcher =
+    envLauncher && isWithin(platform, root, p.resolve(envLauncher))
+      ? p.resolve(envLauncher)
+      : rootLauncher && input.exists(rootLauncher)
+        ? rootLauncher
+        : null
   return {
     ...base,
     mode: uninstall ? 'uninstall' : portable ? 'portable' : 'installed',

@@ -26,7 +26,12 @@ export interface MaskRaster {
   data: Uint8Array
 }
 
-export interface DirtyRect { x: number; y: number; w: number; h: number }
+export interface DirtyRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
 
 export const BRUSH_MIN = 4
 export const BRUSH_MAX = 400
@@ -102,7 +107,13 @@ export function maskFromRgba(rgba: ArrayLike<number>, width: number, height: num
 }
 
 /** Colour the painted part of `rect` into an RGBA buffer for display (a tint, transparent elsewhere). */
-export function tintRgba(mask: MaskRaster, rgba: Uint8ClampedArray, color: [number, number, number], alpha: number, rect?: DirtyRect): void {
+export function tintRgba(
+  mask: MaskRaster,
+  rgba: Uint8ClampedArray,
+  color: [number, number, number],
+  alpha: number,
+  rect?: DirtyRect,
+): void {
   const area = rect ?? { x: 0, y: 0, w: mask.width, h: mask.height }
   const a = Math.round(Math.min(1, Math.max(0, alpha)) * 255)
   for (let y = area.y; y < area.y + area.h; y += 1) {
@@ -193,7 +204,10 @@ export async function encodeMaskPng(mask: MaskRaster): Promise<Uint8Array> {
  * happens in canvas space, so these convert between the two.
  */
 
-export interface Size { width: number; height: number }
+export interface Size {
+  width: number
+  height: number
+}
 export type ResizeMode = ImageResizeMode
 
 /**
@@ -248,8 +262,13 @@ export function placement(picture: Size, canvas: Size, mode: ResizeMode = 'crop'
   const oy = half(H) - half(h)
   let bands: Placement['bands'] = null
   let fill = 0
-  if (!crop && ratio < srcRatio && oy > 0) { bands = 'rows'; fill = oy }
-  else if (!crop && ratio > srcRatio && ox > 0) { bands = 'columns'; fill = ox }
+  if (!crop && ratio < srcRatio && oy > 0) {
+    bands = 'rows'
+    fill = oy
+  } else if (!crop && ratio > srcRatio && ox > 0) {
+    bands = 'columns'
+    fill = ox
+  }
   return { w, h, ox, oy, sx: w / iw, sy: h / ih, bands, fill }
 }
 
@@ -257,7 +276,12 @@ export function placement(picture: Size, canvas: Size, mode: ResizeMode = 'crop'
 export function pictureArea(place: Placement, canvas: Size): DirtyRect {
   const x = Math.max(0, place.ox)
   const y = Math.max(0, place.oy)
-  return { x, y, w: Math.max(0, Math.min(canvas.width, place.ox + place.w) - x), h: Math.max(0, Math.min(canvas.height, place.oy + place.h) - y) }
+  return {
+    x,
+    y,
+    w: Math.max(0, Math.min(canvas.width, place.ox + place.w) - x),
+    h: Math.max(0, Math.min(canvas.height, place.oy + place.h) - y),
+  }
 }
 
 /**
@@ -282,7 +306,10 @@ export function settleBands(mask: MaskRaster, place: Placement): DirtyRect[] {
     const bottom = Math.min(height, last + 1 + place.fill)
     for (let y = 0; y < first; y += 1) data.copyWithin(y * width, first * width, (first + 1) * width)
     for (let y = last + 1; y < bottom; y += 1) data.copyWithin(y * width, last * width, (last + 1) * width)
-    return [{ x: 0, y: 0, w: width, h: first }, { x: 0, y: last + 1, w: width, h: height - last - 1 }]
+    return [
+      { x: 0, y: 0, w: width, h: first },
+      { x: 0, y: last + 1, w: width, h: height - last - 1 },
+    ]
   }
   const first = area.x
   const last = area.x + area.w - 1
@@ -294,7 +321,10 @@ export function settleBands(mask: MaskRaster, place: Placement): DirtyRect[] {
     for (let x = 0; x < first; x += 1) data[row + x] = lead
     for (let x = last + 1; x < right; x += 1) data[row + x] = tail
   }
-  return [{ x: 0, y: 0, w: first, h: height }, { x: last + 1, y: 0, w: width - last - 1, h: height }]
+  return [
+    { x: 0, y: 0, w: first, h: height },
+    { x: last + 1, y: 0, w: width - last - 1, h: height },
+  ]
 }
 
 /**

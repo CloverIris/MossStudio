@@ -6,7 +6,11 @@ import { createImageCanvas } from './canvases'
 import { dropPositions } from './imageNodes'
 import type { StudioProject } from './useStudioProject'
 
-interface ImportedPicture { path: string; width: number; height: number }
+interface ImportedPicture {
+  path: string
+  width: number
+  height: number
+}
 
 /** The path of a file the user dropped or pasted, when it lives on disk (empty for a pasted screenshot). */
 function pathOf(file: File): string {
@@ -51,71 +55,82 @@ export function useBoardAssets(options: {
     return saved?.id ?? null
   }, [])
 
-  const importImages = useCallback(async (files: File[], at: { x: number; y: number }): Promise<ProjectCanvas[]> => {
-    const id = await projectId()
-    if (!id) {
-      live.current.notify('项目还没保存好，图片暂时放不进来', 'error')
-      return []
-    }
-    const pictures: ImportedPicture[] = []
-    const failed: string[] = []
-    for (const file of files) {
-      try {
-        const path = pathOf(file)
-        const payload = path
-          ? { projectId: id, path }
-          : { projectId: id, bytes: new Uint8Array(await file.arrayBuffer()), name: file.name || 'pasted.png' }
-        pictures.push(await call<ImportedPicture>(Ipc.studioImportImage, payload))
-      } catch (error) {
-        failed.push(`${file.name || '粘贴的图片'}：${message(error)}`)
+  const importImages = useCallback(
+    async (files: File[], at: { x: number; y: number }): Promise<ProjectCanvas[]> => {
+      const id = await projectId()
+      if (!id) {
+        live.current.notify('项目还没保存好，图片暂时放不进来', 'error')
+        return []
       }
-    }
-    if (failed.length) live.current.notify(`有 ${failed.length} 张图片没有放进来。${failed[0]}`, 'error')
-    if (!pictures.length) return []
-    const { project } = live.current
-    const positions = dropPositions(pictures, at)
-    const created: ProjectCanvas[] = []
-    for (const [index, picture] of pictures.entries()) {
-      const canvas = createImageCanvas([...project.canvasesRef.current, ...created], picture)
-      created.push({ ...canvas, ...positions[index] })
-    }
-    project.setCanvases((previous) => [...previous, ...created])
-    project.select(created[created.length - 1]!.id)
-    return created
-  }, [projectId])
+      const pictures: ImportedPicture[] = []
+      const failed: string[] = []
+      for (const file of files) {
+        try {
+          const path = pathOf(file)
+          const payload = path
+            ? { projectId: id, path }
+            : { projectId: id, bytes: new Uint8Array(await file.arrayBuffer()), name: file.name || 'pasted.png' }
+          pictures.push(await call<ImportedPicture>(Ipc.studioImportImage, payload))
+        } catch (error) {
+          failed.push(`${file.name || '粘贴的图片'}：${message(error)}`)
+        }
+      }
+      if (failed.length) live.current.notify(`有 ${failed.length} 张图片没有放进来。${failed[0]}`, 'error')
+      if (!pictures.length) return []
+      const { project } = live.current
+      const positions = dropPositions(pictures, at)
+      const created: ProjectCanvas[] = []
+      for (const [index, picture] of pictures.entries()) {
+        const canvas = createImageCanvas([...project.canvasesRef.current, ...created], picture)
+        created.push({ ...canvas, ...positions[index] })
+      }
+      project.setCanvases((previous) => [...previous, ...created])
+      project.select(created[created.length - 1]!.id)
+      return created
+    },
+    [projectId],
+  )
 
-  const saveMask = useCallback(async (canvasId: string, png: Uint8Array | null): Promise<void> => {
-    const { project } = live.current
-    const clear = (): void => project.updateCanvas(canvasId, (canvas) => {
-      if (!canvas.inputs?.mask) return canvas
-      const { mask: _mask, ...inputs } = canvas.inputs
-      return { ...canvas, inputs }
-    })
-    if (!png) {
-      clear()
-      return
-    }
-    // A mask belongs to a start picture; without one it is never written.
-    if (!project.canvasesRef.current.find((canvas) => canvas.id === canvasId)?.inputs?.init) return
-    const id = await projectId()
-    if (!id) {
-      live.current.notify('项目还没保存好，遮罩暂时存不下来', 'error')
-      return
-    }
-    // The mask painted before is dropped once nothing else on the board still uses it.
-    const previous = project.canvasesRef.current.find((canvas) => canvas.id === canvasId)?.inputs?.mask?.path
-    const shared = previous !== undefined && project.canvasesRef.current.some((canvas) => canvas.id !== canvasId && mentions(canvas, previous))
-    try {
-      const saved = await call<{ path: string }>(Ipc.studioSaveMask, {
-        projectId: id, canvasId, png, ...(previous && !shared ? { replaces: previous } : {}),
-      })
-      project.updateCanvas(canvasId, (canvas) => canvas.inputs?.init
-        ? { ...canvas, inputs: { ...canvas.inputs, mask: { path: saved.path } } }
-        : canvas)
-    } catch (error) {
-      live.current.notify(`遮罩没有保存成功：${message(error)}`, 'error')
-    }
-  }, [projectId])
+  const saveMask = useCallback(
+    async (canvasId: string, png: Uint8Array | null): Promise<void> => {
+      const { project } = live.current
+      const clear = (): void =>
+        project.updateCanvas(canvasId, (canvas) => {
+          if (!canvas.inputs?.mask) return canvas
+          const { mask: _mask, ...inputs } = canvas.inputs
+          return { ...canvas, inputs }
+        })
+      if (!png) {
+        clear()
+        return
+      }
+      // A mask belongs to a start picture; without one it is never written.
+      if (!project.canvasesRef.current.find((canvas) => canvas.id === canvasId)?.inputs?.init) return
+      const id = await projectId()
+      if (!id) {
+        live.current.notify('项目还没保存好，遮罩暂时存不下来', 'error')
+        return
+      }
+      // The mask painted before is dropped once nothing else on the board still uses it.
+      const previous = project.canvasesRef.current.find((canvas) => canvas.id === canvasId)?.inputs?.mask?.path
+      const shared =
+        previous !== undefined && project.canvasesRef.current.some((canvas) => canvas.id !== canvasId && mentions(canvas, previous))
+      try {
+        const saved = await call<{ path: string }>(Ipc.studioSaveMask, {
+          projectId: id,
+          canvasId,
+          png,
+          ...(previous && !shared ? { replaces: previous } : {}),
+        })
+        project.updateCanvas(canvasId, (canvas) =>
+          canvas.inputs?.init ? { ...canvas, inputs: { ...canvas.inputs, mask: { path: saved.path } } } : canvas,
+        )
+      } catch (error) {
+        live.current.notify(`遮罩没有保存成功：${message(error)}`, 'error')
+      }
+    },
+    [projectId],
+  )
 
   return { importImages, saveMask }
 }

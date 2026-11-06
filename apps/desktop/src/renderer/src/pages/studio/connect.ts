@@ -46,7 +46,13 @@ export function linkMenu(
   const entries: LinkMenuEntry[] = []
   if (features.imageInput) {
     const current = target.inputs?.init?.link.canvasId === sourceId
-    entries.push({ type: 'item', role: 'init', label: '作为起始图', current, hint: current ? '已连接' : target.inputs?.init ? '替换现有' : undefined })
+    entries.push({
+      type: 'item',
+      role: 'init',
+      label: '作为起始图',
+      current,
+      hint: current ? '已连接' : target.inputs?.init ? '替换现有' : undefined,
+    })
   }
   if (features.control) {
     entries.push({ type: 'heading', label: '作为控制图' })
@@ -60,7 +66,14 @@ export function linkMenu(
       for (const kind of adapter.controlKinds) {
         const linked = links.find((entry) => entry.role === 'control' && entry.kind === kind)
         const current = linked?.link.canvasId === sourceId
-        entries.push({ type: 'item', role: 'control', kind, label: controlKindLabel(kind), current, hint: current ? '已连接' : linked ? '替换现有' : undefined })
+        entries.push({
+          type: 'item',
+          role: 'control',
+          kind,
+          label: controlKindLabel(kind),
+          current,
+          hint: current ? '已连接' : linked ? '替换现有' : undefined,
+        })
       }
     }
   }

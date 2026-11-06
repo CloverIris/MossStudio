@@ -39,15 +39,20 @@ if (behavior.argsFile) appendFileSync(behavior.argsFile, `${JSON.stringify(argv)
 if (behavior.pidFile) writeFileSync(behavior.pidFile, String(process.pid))
 if (behavior.ignoreTerm) process.on('SIGTERM', () => undefined)
 
-const devices = behavior.devices ?? (kind === 'vulkan'
-  ? [{ name: 'NVIDIA GeForce RTX 4090 Laptop GPU', vendor: 0x10de, device: 0x2757, discrete: true, kernels: 'coop' }]
-  : [{ name: 'AMD Radeon RX 7900 XTX', arch: 'gfx1100', gib: 24, kernels: 'gfx1100, wmma' }])
+const devices =
+  behavior.devices ??
+  (kind === 'vulkan'
+    ? [{ name: 'NVIDIA GeForce RTX 4090 Laptop GPU', vendor: 0x10de, device: 0x2757, discrete: true, kernels: 'coop' }]
+    : [{ name: 'AMD Radeon RX 7900 XTX', arch: 'gfx1100', gib: 24, kernels: 'gfx1100, wmma' }])
 
-const usage = `usage: ${program} --model <bundle_dir> --prompt <text> [-o <out.png>] [--latent-out <latents.npy>]\n`
-  + `       ${program} --list-devices | --version | --help\n`
+const usage =
+  `usage: ${program} --model <bundle_dir> --prompt <text> [-o <out.png>] [--latent-out <latents.npy>]\n` +
+  `       ${program} --list-devices | --version | --help\n`
 
 class UsageError extends Error {}
-const usageError = (message) => { throw new UsageError(message) }
+const usageError = (message) => {
+  throw new UsageError(message)
+}
 
 function int(flag, value) {
   if (!/^[+-]?\d+$/.test(value)) usageError(`${flag} takes an integer, got ${value}`)
@@ -60,12 +65,31 @@ function num(flag, value) {
 }
 
 function parse(args) {
-  const a = { width: 1024, height: 1024, steps: 50, cfg: 3, shift: 5, seed: 42, device: -1, maxSeq: 4096, prompt: null, negative: '', quiet: false, list: false }
+  const a = {
+    width: 1024,
+    height: 1024,
+    steps: 50,
+    cfg: 3,
+    shift: 5,
+    seed: 42,
+    device: -1,
+    maxSeq: 4096,
+    prompt: null,
+    negative: '',
+    quiet: false,
+    list: false,
+  }
   for (let i = 0; i < args.length; i += 1) {
     const flag = args[i]
     if (flag === '--no-metadata') continue
-    if (flag === '--quiet') { a.quiet = true; continue }
-    if (flag === '--list-devices') { a.list = true; continue }
+    if (flag === '--quiet') {
+      a.quiet = true
+      continue
+    }
+    if (flag === '--list-devices') {
+      a.list = true
+      continue
+    }
     if (flag === '-h' || flag === '--help') return { ...a, help: true }
     if (flag === '--version') return { ...a, version: true }
     if (i + 1 >= args.length) usageError(`${flag} needs a value`)
@@ -101,9 +125,11 @@ function parse(args) {
   if (!a.out && !a.latent) usageError('at least one of -o / --latent-out is required')
   if (a.device < -1) usageError('--device takes a device index, or -1 for the first usable device')
   if (!a.prompt.trim()) usageError('Enter a prompt.')
-  if (a.height <= 0 || a.width <= 0 || a.height % 16 !== 0 || a.width % 16 !== 0) usageError('Height and width must be positive multiples of 16.')
+  if (a.height <= 0 || a.width <= 0 || a.height % 16 !== 0 || a.width % 16 !== 0)
+    usageError('Height and width must be positive multiples of 16.')
   if (a.height > 4096 || a.width > 4096) usageError('Height and width must be at most 4096.')
-  if (a.height * a.width > 4_200_000) usageError('Image size must be at most 4.2 megapixels (e.g. 2048x2048); the model is meant for 0.25 to 4 megapixels.')
+  if (a.height * a.width > 4_200_000)
+    usageError('Image size must be at most 4.2 megapixels (e.g. 2048x2048); the model is meant for 0.25 to 4 megapixels.')
   if (a.steps < 1) usageError('Steps and image count must be positive.')
   if (a.steps > 10000) usageError('Steps must be at most 10000.')
   if (a.cfg < 0 || a.shift <= 0) usageError('CFG must be finite and nonnegative; shift must be finite and positive.')
@@ -120,7 +146,8 @@ function listDevices() {
   }
   if (!devices.length) process.stdout.write(`no ${kind === 'vulkan' ? 'Vulkan' : 'HIP'} devices\n`)
   devices.forEach((d, index) => {
-    if (kind === 'vulkan') process.stdout.write(`device ${index}: ${d.name} [${hex(d.vendor)}:${hex(d.device)}]${d.discrete ? ' discrete' : ''}\n`)
+    if (kind === 'vulkan')
+      process.stdout.write(`device ${index}: ${d.name} [${hex(d.vendor)}:${hex(d.device)}]${d.discrete ? ' discrete' : ''}\n`)
     else process.stdout.write(`device ${index}: ${d.name} (${d.arch}), ${(d.gib ?? 0).toFixed(1)} GiB\n`)
     process.stdout.write(d.unusable ? `  unusable: ${d.unusable}\n` : `  kernels: ${d.kernels}\n`)
   })
@@ -133,7 +160,8 @@ function pickDevice(index) {
   if (kind === 'vulkan') {
     if (index >= devices.length) throw new Failure(`no Vulkan device ${index}: there are ${devices.length}`)
     if (index >= 0) {
-      if (devices[index].unusable) throw new Failure(`Vulkan device ${index} (${devices[index].name}) cannot be used: ${devices[index].unusable}`)
+      if (devices[index].unusable)
+        throw new Failure(`Vulkan device ${index} (${devices[index].name}) cannot be used: ${devices[index].unusable}`)
       return index
     }
     const usable = devices.map((d, i) => ({ d, i })).filter(({ d }) => !d.unusable)
@@ -216,13 +244,18 @@ async function run(a) {
     failAt('vae')
     if (!behavior.noPng) {
       mkdirSync(dirname(a.out), { recursive: true })
-      writeFileSync(a.out, png(a.width, a.height, `${a.prompt}\nSteps: ${a.steps}, Seed: ${seed}, Size: ${a.width}x${a.height}, backend: ${kind}`))
+      writeFileSync(
+        a.out,
+        png(a.width, a.height, `${a.prompt}\nSteps: ${a.steps}, Seed: ${seed}, Size: ${a.width}x${a.height}, backend: ${kind}`),
+      )
     }
   }
   const denoise = (a.steps * stepMs) / 1000
   if (!a.quiet) {
     const free = kind === 'hip' ? ', 3.25 GiB free beside them' : ''
-    err(`done: seed ${seed}; text encoder 0.4 s, DiT load 1.2 s (42 of 42 blocks on the device${free}), denoise ${denoise.toFixed(1)} s (${(denoise / a.steps).toFixed(2)} s/step), VAE 0.3 s`)
+    err(
+      `done: seed ${seed}; text encoder 0.4 s, DiT load 1.2 s (42 of 42 blocks on the device${free}), denoise ${denoise.toFixed(1)} s (${(denoise / a.steps).toFixed(2)} s/step), VAE 0.3 s`,
+    )
   }
   return 0
 }
@@ -237,8 +270,14 @@ async function main() {
     process.stderr.write(usage)
     return 2
   }
-  if (a.help) { process.stdout.write(usage); return 0 }
-  if (a.version) { process.stdout.write(`${program} 2.2.0\n`); return 0 }
+  if (a.help) {
+    process.stdout.write(usage)
+    return 0
+  }
+  if (a.version) {
+    process.stdout.write(`${program} 2.2.0\n`)
+    return 0
+  }
   try {
     return a.list ? listDevices() : await run(a)
   } catch (error) {

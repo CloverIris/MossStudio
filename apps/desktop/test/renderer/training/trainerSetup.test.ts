@@ -14,9 +14,23 @@ import { resolveTrainingHost, announceTrainingHost, getSelectedTrainingHost, TRA
 
 function version(patch: Partial<TrainerVersion> = {}): TrainerVersion {
   return {
-    id: 'v-aaa', hostId: 'local', name: 'main-aaa', branch: 'main', commit: 'aaaaaaa1', shortCommit: 'aaaaaaa',
-    commitDate: '2026-10-01T00:00:00.000Z', subject: 'init', author: 'k', channel: 'stable', path: '/t/v', runtimeId: 'r',
-    runtimeState: 'ready', createdAt: '2026-10-01T00:00:00.000Z', dirty: false, status: 'ok', ...patch,
+    id: 'v-aaa',
+    hostId: 'local',
+    name: 'main-aaa',
+    branch: 'main',
+    commit: 'aaaaaaa1',
+    shortCommit: 'aaaaaaa',
+    commitDate: '2026-10-01T00:00:00.000Z',
+    subject: 'init',
+    author: 'k',
+    channel: 'stable',
+    path: '/t/v',
+    runtimeId: 'r',
+    runtimeState: 'ready',
+    createdAt: '2026-10-01T00:00:00.000Z',
+    dirty: false,
+    status: 'ok',
+    ...patch,
   }
 }
 
@@ -24,10 +38,24 @@ function fakeApi(created: TrainerVersion): TrainerApi & { calls: string[] } {
   const calls: string[] = []
   return {
     calls,
-    branches: async () => { calls.push('branches'); return [{ name: 'dev', sha: '', isDefault: false, isStable: false }, { name: 'main', sha: '', isDefault: true, isStable: true }] },
-    commits: async (branch) => { calls.push(`commits:${branch}`); return [{ sha: created.commit, short: created.shortCommit, date: '', subject: '', author: '' }] },
-    create: async (branch, commit) => { calls.push(`create:${branch}:${commit}`); return created },
-    install: async (target) => { calls.push(`install:${target.id}`) },
+    branches: async () => {
+      calls.push('branches')
+      return [
+        { name: 'dev', sha: '', isDefault: false, isStable: false },
+        { name: 'main', sha: '', isDefault: true, isStable: true },
+      ]
+    },
+    commits: async (branch) => {
+      calls.push(`commits:${branch}`)
+      return [{ sha: created.commit, short: created.shortCommit, date: '', subject: '', author: '' }]
+    },
+    create: async (branch, commit) => {
+      calls.push(`create:${branch}:${commit}`)
+      return created
+    },
+    install: async (target) => {
+      calls.push(`install:${target.id}`)
+    },
   }
 }
 
@@ -49,7 +77,12 @@ describe('trainer versions', () => {
   })
 
   it('picks the default branch', () => {
-    expect(defaultBranch([{ name: 'a', sha: '', isDefault: false, isStable: false }, { name: 'b', sha: '', isDefault: true, isStable: false }])).toBe('b')
+    expect(
+      defaultBranch([
+        { name: 'a', sha: '', isDefault: false, isStable: false },
+        { name: 'b', sha: '', isDefault: true, isStable: false },
+      ]),
+    ).toBe('b')
     expect(defaultBranch([])).toBe('main')
   })
 })
@@ -103,7 +136,10 @@ describe('optionalUrlError', () => {
 })
 
 describe('training location', () => {
-  const hosts = [{ id: 'local', kind: 'local' }, { id: 'box', kind: 'ssh' }]
+  const hosts = [
+    { id: 'local', kind: 'local' },
+    { id: 'box', kind: 'ssh' },
+  ]
 
   it('only uses a remote host while the feature is on and the host exists', () => {
     expect(resolveTrainingHost('box', hosts, true)).toBe('box')

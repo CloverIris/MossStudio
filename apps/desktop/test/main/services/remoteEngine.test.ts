@@ -26,7 +26,15 @@ vi.mock('@main/services/ssh', () => ({
 const dir = useTempDir('mossstudio-remote-')
 let remote: typeof import('@main/services/remoteEngine')
 
-const host: TrainingHost = { id: 'h1', name: 'Lab', kind: 'ssh', host: 'gpu.lab', user: 'me', trainerRoot: '/t', engineRoot: '/opt/engine' } as TrainingHost
+const host: TrainingHost = {
+  id: 'h1',
+  name: 'Lab',
+  kind: 'ssh',
+  host: 'gpu.lab',
+  user: 'me',
+  trainerRoot: '/t',
+  engineRoot: '/opt/engine',
+} as TrainingHost
 
 type Request = { id: string; method: string; params: Record<string, unknown> }
 
@@ -59,7 +67,12 @@ class FakeSsh extends EventEmitter {
   }
 }
 
-const helloResult = { protocol_version: 2, version: '2.2.0', capabilities: { image_input: true, control: true, preview: true, references: true }, values: { sampler: ['euler'] } }
+const helloResult = {
+  protocol_version: 2,
+  version: '2.2.0',
+  capabilities: { image_input: true, control: true, preview: true, references: true },
+  values: { sampler: ['euler'] },
+}
 
 let child: FakeSsh
 /** Replaces the default (instant ok) answer to generate, e.g. to keep a generation running. */
@@ -102,12 +115,16 @@ describe('uploadJobInputs', () => {
     const init = picture('init.png')
     const mask = picture('mask.png')
     const ref = picture('ref.jpg')
-    const out = await remote.uploadJobInputs(host, {
-      ...params,
-      initImage: { path: init, strength: 0.5 },
-      mask: { path: mask },
-      references: { paths: [ref, init] },
-    }, '/opt/engine/tmp/inputs-job-1')
+    const out = await remote.uploadJobInputs(
+      host,
+      {
+        ...params,
+        initImage: { path: init, strength: 0.5 },
+        mask: { path: mask },
+        references: { paths: [ref, init] },
+      },
+      '/opt/engine/tmp/inputs-job-1',
+    )
     expect(sshWriteFile.mock.calls.map((call) => [call[1], String(call[2])])).toEqual([
       ['/opt/engine/tmp/inputs-job-1/1-init.png', 'init.png'],
       ['/opt/engine/tmp/inputs-job-1/2-mask.png', 'mask.png'],
@@ -132,24 +149,40 @@ describe('uploadJobInputs', () => {
 describe('runRemoteEngineJob', () => {
   it('uploads the inputs, generates from the uploaded copies, reports the hires size and removes the folder', async () => {
     const init = picture('init.png')
-    sshExec.mockImplementation(async (_host: TrainingHost, command: string) => (
+    sshExec.mockImplementation(async (_host: TrainingHost, command: string) =>
       command.startsWith('base64 <')
         ? { code: 0, stdout: Buffer.from('PNGDATA').toString('base64'), stderr: '', timedOut: false }
-        : { code: 0, stdout: '', stderr: '', timedOut: false }
-    ))
+        : { code: 0, stdout: '', stderr: '', timedOut: false },
+    )
     const events: Array<Record<string, unknown>> = []
     const localOutput = join(dir(), 'out.png')
     const done = new Promise<number>((resolve) => {
-      void remote.runRemoteEngineJob(host, {
-        model: '/models/moss', output: '/home/me/out/x.png', localOutput, mode: 'balanced', tier: 'high', jobId: 'job-9',
-        params: { ...params, initImage: { path: init, strength: 0.4 }, sampling: { hires: { width: 1536, height: 1152 } } },
-      }, { event: (event) => events.push(event), stderr: () => undefined, done: resolve })
+      void remote.runRemoteEngineJob(
+        host,
+        {
+          model: '/models/moss',
+          output: '/home/me/out/x.png',
+          localOutput,
+          mode: 'balanced',
+          tier: 'high',
+          jobId: 'job-9',
+          params: { ...params, initImage: { path: init, strength: 0.4 }, sampling: { hires: { width: 1536, height: 1152 } } },
+        },
+        { event: (event) => events.push(event), stderr: () => undefined, done: resolve },
+      )
     })
     expect(await done).toBe(0)
     expect(sshWriteFile).toHaveBeenCalledWith(host, '/opt/engine/tmp/inputs-job-9/1-init.png', expect.anything())
     const generate = child.requests.find((request) => request.method === 'generate')!
-    expect(generate.params).toMatchObject({ output: '/home/me/out/x.png', init_image: '/opt/engine/tmp/inputs-job-9/1-init.png', denoise_strength: 0.4, hires: { width: 1536, height: 1152 } })
-    expect(events.find((event) => event['type'] === 'result')).toMatchObject({ images: [{ path: localOutput, width: 1536, height: 1152, seed: 3 }] })
+    expect(generate.params).toMatchObject({
+      output: '/home/me/out/x.png',
+      init_image: '/opt/engine/tmp/inputs-job-9/1-init.png',
+      denoise_strength: 0.4,
+      hires: { width: 1536, height: 1152 },
+    })
+    expect(events.find((event) => event['type'] === 'result')).toMatchObject({
+      images: [{ path: localOutput, width: 1536, height: 1152, seed: 3 }],
+    })
     expect(readFileSync(localOutput, 'utf8')).toBe('PNGDATA')
     expect(sshExec).toHaveBeenCalledWith(host, "rm -rf '/opt/engine/tmp/inputs-job-9'", 30_000)
     // The job's hello is remembered: asking for the host's features needs no extra SSH round.
@@ -163,10 +196,19 @@ describe('runRemoteEngineJob', () => {
     sshWriteFile.mockRejectedValue(new Error('disk full'))
     const events: Array<Record<string, unknown>> = []
     const code = await new Promise<number>((resolve) => {
-      void remote.runRemoteEngineJob(host, {
-        model: '/m', output: '/o.png', localOutput: join(dir(), 'o.png'), mode: 'balanced', tier: 'high', jobId: 'job-f',
-        params: { ...params, initImage: { path: init, strength: 0.4 } },
-      }, { event: (event) => events.push(event), stderr: () => undefined, done: resolve })
+      void remote.runRemoteEngineJob(
+        host,
+        {
+          model: '/m',
+          output: '/o.png',
+          localOutput: join(dir(), 'o.png'),
+          mode: 'balanced',
+          tier: 'high',
+          jobId: 'job-f',
+          params: { ...params, initImage: { path: init, strength: 0.4 } },
+        },
+        { event: (event) => events.push(event), stderr: () => undefined, done: resolve },
+      )
     })
     expect(code).toBe(1)
     expect(events.at(-1)).toMatchObject({ type: 'error', code: 'E_REMOTE', message: 'disk full' })
@@ -175,9 +217,19 @@ describe('runRemoteEngineJob', () => {
     sshExec.mockClear()
     sshWriteFile.mockReset()
     await new Promise<number>((resolve) => {
-      void remote.runRemoteEngineJob(host, {
-        model: '/m', output: '/o.png', localOutput: join(dir(), 'o2.png'), mode: 'balanced', tier: 'high', jobId: 'job-plain', params,
-      }, { event: () => undefined, stderr: () => undefined, done: resolve })
+      void remote.runRemoteEngineJob(
+        host,
+        {
+          model: '/m',
+          output: '/o.png',
+          localOutput: join(dir(), 'o2.png'),
+          mode: 'balanced',
+          tier: 'high',
+          jobId: 'job-plain',
+          params,
+        },
+        { event: () => undefined, stderr: () => undefined, done: resolve },
+      )
     })
     expect(sshExec.mock.calls.some((call) => String(call[1]).startsWith('rm -rf'))).toBe(false)
   })
@@ -188,12 +240,26 @@ describe('runRemoteEngineJob: ended during the upload', () => {
     const first = picture('init.png')
     const second = picture('ref.png')
     let releaseWrite: () => void = () => undefined
-    sshWriteFile.mockImplementationOnce(() => new Promise<void>((resolve) => { releaseWrite = resolve }))
+    sshWriteFile.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseWrite = resolve
+        }),
+    )
     const code = new Promise<number>((resolve) => {
-      void remote.runRemoteEngineJob(host, {
-        model: '/m', output: '/o.png', localOutput: join(dir(), 'o.png'), mode: 'balanced', tier: 'high', jobId: 'job-c',
-        params: { ...params, initImage: { path: first, strength: 0.4 }, references: { paths: [second] } },
-      }, { event: () => undefined, stderr: () => undefined, done: resolve })
+      void remote.runRemoteEngineJob(
+        host,
+        {
+          model: '/m',
+          output: '/o.png',
+          localOutput: join(dir(), 'o.png'),
+          mode: 'balanced',
+          tier: 'high',
+          jobId: 'job-c',
+          params: { ...params, initImage: { path: first, strength: 0.4 }, references: { paths: [second] } },
+        },
+        { event: () => undefined, stderr: () => undefined, done: resolve },
+      )
     })
     await vi.waitFor(() => expect(sshWriteFile).toHaveBeenCalledTimes(1))
     // The SSH session goes away (a cancel, a dropped link) while the first picture is on its way.
@@ -212,9 +278,19 @@ describe('cancelRemoteEngineJob', () => {
   function start(jobId: string): { events: Array<Record<string, unknown>>; done: Promise<number> } {
     const events: Array<Record<string, unknown>> = []
     const done = new Promise<number>((resolve) => {
-      void remote.runRemoteEngineJob(host, {
-        model: '/m', output: '/o.png', localOutput: join(dir(), `${jobId}.png`), mode: 'balanced', tier: 'high', jobId, params,
-      }, { event: (event) => events.push(event), stderr: () => undefined, done: resolve })
+      void remote.runRemoteEngineJob(
+        host,
+        {
+          model: '/m',
+          output: '/o.png',
+          localOutput: join(dir(), `${jobId}.png`),
+          mode: 'balanced',
+          tier: 'high',
+          jobId,
+          params,
+        },
+        { event: (event) => events.push(event), stderr: () => undefined, done: resolve },
+      )
     })
     return { events, done }
   }
@@ -269,7 +345,12 @@ describe('cancelRemoteEngineJob', () => {
 
   it('closes the session at once when nothing is generating yet, and cancels a job still connecting', async () => {
     let releaseMkdir: () => void = () => undefined
-    sshExec.mockImplementationOnce(() => new Promise((resolve) => { releaseMkdir = () => resolve({ code: 0, stdout: '', stderr: '', timedOut: false }) }))
+    sshExec.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseMkdir = () => resolve({ code: 0, stdout: '', stderr: '', timedOut: false })
+        }),
+    )
     const early = start('job-r3')
     await vi.waitFor(() => expect(sshExec).toHaveBeenCalled())
     expect(remote.cancelRemoteEngineJob('job-r3')).toBe(true)
@@ -280,7 +361,9 @@ describe('cancelRemoteEngineJob', () => {
 
     // Connected, the model still loading: no generate to cancel, so the session goes.
     spawn.mockImplementation(() => {
-      child = new FakeSsh((request, c) => { if (request.method === 'hello') c.send({ id: request.id, result: helloResult }) })
+      child = new FakeSsh((request, c) => {
+        if (request.method === 'hello') c.send({ id: request.id, result: helloResult })
+      })
       return child
     })
     const loading = start('job-r4')
@@ -321,7 +404,12 @@ describe('remoteEngineHello', () => {
   })
 
   it('asks the host once over SSH and caches the answer, failures included', async () => {
-    sshExec.mockResolvedValue({ code: 0, stdout: `banner\n${JSON.stringify({ id: 'probe', result: helloResult })}\n{"id":"bye","result":{}}\n`, stderr: '', timedOut: false })
+    sshExec.mockResolvedValue({
+      code: 0,
+      stdout: `banner\n${JSON.stringify({ id: 'probe', result: helloResult })}\n{"id":"bye","result":{}}\n`,
+      stderr: '',
+      timedOut: false,
+    })
     const [a, b] = await Promise.all([remote.remoteEngineHello(host), remote.remoteEngineHello(host)])
     expect(a?.version).toBe('2.2.0')
     expect(b).toBe(a)

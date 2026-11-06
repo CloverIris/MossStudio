@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useTempDir } from '@test/helpers/tempDir'
 
 const run = vi.fn()
-vi.mock('@main/lib/run', async (importOriginal) => ({ ...(await importOriginal<typeof import('@main/lib/run')>()), run: (...args: unknown[]) => run(...args) }))
+vi.mock('@main/lib/run', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@main/lib/run')>()),
+  run: (...args: unknown[]) => run(...args),
+}))
 vi.mock('@main/lib/gitBinary', () => ({ gitBinary: () => 'git' }))
 
 const { checkBareMirror } = await import('@main/services/gitHealth')
@@ -32,7 +35,8 @@ describe('checkBareMirror', () => {
   })
 
   it('is healthy once any branch resolves to a commit', async () => {
-    run.mockResolvedValueOnce(result(0, 'refs/heads/.invalid\nrefs/heads/main\n'))
+    run
+      .mockResolvedValueOnce(result(0, 'refs/heads/.invalid\nrefs/heads/main\n'))
       .mockResolvedValueOnce(result(128, '', 'bad'))
       .mockResolvedValueOnce(result(0, 'abc123\n'))
     expect(await checkBareMirror(mirror())).toEqual({ healthy: true, branches: 2 })

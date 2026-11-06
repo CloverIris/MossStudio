@@ -48,8 +48,7 @@ export function exampleDraft(): LayoutDraft {
     width: 1024,
     height: 1024,
     summary: {
-      caption:
-        'A minimalist travel poster with a cream background, a blue mountain illustration, and the title EXPLORE at the top.',
+      caption: 'A minimalist travel poster with a cream background, a blue mountain illustration, and the title EXPLORE at the top.',
       meta: ['poster'],
       canvas: 'single',
     },
@@ -71,11 +70,7 @@ export function exampleDraft(): LayoutDraft {
   }
 }
 
-export function clampBox(
-  box: [number, number, number, number],
-  width: number,
-  height: number,
-): [number, number, number, number] {
+export function clampBox(box: [number, number, number, number], width: number, height: number): [number, number, number, number] {
   const [x1, y1, x2, y2] = box
   const left = Math.max(0, Math.min(width - 1, Math.min(x1, x2)))
   const top = Math.max(0, Math.min(height - 1, Math.min(y1, y2)))
@@ -84,11 +79,7 @@ export function clampBox(
   return [Math.round(left), Math.round(top), Math.round(right), Math.round(bottom)]
 }
 
-function centeredBox(
-  box: [number, number, number, number],
-  width: number,
-  height: number,
-): [number, number, number, number] {
+function centeredBox(box: [number, number, number, number], width: number, height: number): [number, number, number, number] {
   const [x1, y1, x2, y2] = box
   return [
     Math.floor(Math.round(y1)) - Math.floor(height / 2),
@@ -125,15 +116,17 @@ export function compileLayout(draft: LayoutDraft): CompileResult {
   }
   summary.canvas = draft.summary.canvas
 
-  const items = draft.items.filter((item) => item.visible !== false).map((item) => {
-    const compiled: Record<string, unknown> = {
-      label: item.label,
-      caption: item.caption.trim(),
-      bbox: centeredBox(item.bbox, draft.width, draft.height),
-    }
-    if (item.label === 'text' && item.text) compiled.text = item.text
-    return compiled
-  })
+  const items = draft.items
+    .filter((item) => item.visible !== false)
+    .map((item) => {
+      const compiled: Record<string, unknown> = {
+        label: item.label,
+        caption: item.caption.trim(),
+        bbox: centeredBox(item.bbox, draft.width, draft.height),
+      }
+      if (item.label === 'text' && item.text) compiled.text = item.text
+      return compiled
+    })
 
   const payload = {
     summary,

@@ -49,7 +49,10 @@ async function writeOnce(target: string, data: Uint8Array): Promise<void> {
   } catch (error) {
     // The other import won (on Windows a rename onto an open file can fail): its copy is the same bytes.
     await rm(temporary, { force: true }).catch(() => undefined)
-    const exists = await stat(target).then((info) => info.isFile(), () => false)
+    const exists = await stat(target).then(
+      (info) => info.isFile(),
+      () => false,
+    )
     if (!exists) throw error
   }
 }
@@ -168,7 +171,10 @@ export async function releaseMask(projectId: string, canvasId: string, path: str
  * (masks painted over, cleared, or of deleted canvases), keeping those a job
  * still reads. Returns the files deleted.
  */
-export async function pruneProjectMasks(project: Pick<ProjectDocument, 'id' | 'canvases'>, inUse: Iterable<string> = []): Promise<string[]> {
+export async function pruneProjectMasks(
+  project: Pick<ProjectDocument, 'id' | 'canvases'>,
+  inUse: Iterable<string> = [],
+): Promise<string[]> {
   const dir = assetsDirFor(project.id)
   let names: string[]
   try {

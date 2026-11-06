@@ -15,19 +15,31 @@ export function useCardDrag(options: {
   isDragTail: () => boolean
   start: (canvas: ProjectCanvas, event: React.PointerEvent<HTMLElement>) => void
 } {
-  const drag = useRef<{ id: string; pointerId: number; x: number; y: number; origin: { x: number; y: number }; moved: boolean } | null>(null)
+  const drag = useRef<{ id: string; pointerId: number; x: number; y: number; origin: { x: number; y: number }; moved: boolean } | null>(
+    null,
+  )
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const suppressClick = useRef(0)
 
   const start = (canvas: ProjectCanvas, event: React.PointerEvent<HTMLElement>): void => {
     event.stopPropagation()
-    drag.current = { id: canvas.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, origin: { x: canvas.x, y: canvas.y }, moved: false }
+    drag.current = {
+      id: canvas.id,
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      origin: { x: canvas.x, y: canvas.y },
+      moved: false,
+    }
     event.currentTarget.setPointerCapture(event.pointerId)
     const element = event.currentTarget
     const move = (next: PointerEvent): void => {
       const current = drag.current
       if (!current || current.pointerId !== next.pointerId) return
-      if (next.buttons === 0) { stop(next); return }
+      if (next.buttons === 0) {
+        stop(next)
+        return
+      }
       const dx = (next.clientX - current.x) / options.zoom.current
       const dy = (next.clientY - current.y) / options.zoom.current
       if (!current.moved && Math.abs(dx) + Math.abs(dy) < 3) return

@@ -35,7 +35,10 @@ export interface E2eMock {
    * Run a submitted job to the end with `outputs` images (default 1); `previews`
    * live frames while denoising, `queuedAhead` queue places counting down first.
    */
-  finishJob(id: string, options?: { outputs?: number; fail?: { code: string; message: string }; previews?: number; queuedAhead?: number }): JobRecord[]
+  finishJob(
+    id: string,
+    options?: { outputs?: number; fail?: { code: string; message: string }; previews?: number; queuedAhead?: number },
+  ): JobRecord[]
   /** Drive a submitted job part-way (running, denoise at half). */
   progressJob(id: string): JobRecord
   fixtures: typeof fixtures
@@ -106,8 +109,12 @@ export function installHarness(mount: () => void): E2eMock {
 
   const mock: E2eMock = {
     backend,
-    get state() { return backend.state },
-    get calls() { return backend.calls },
+    get state() {
+      return backend.state
+    },
+    get calls() {
+      return backend.calls
+    },
     callsTo: (channel) => backend.callsTo(channel),
     emit: (event, data) => backend.emit(event, data),
     fail: (...args) => backend.fail(...args),
@@ -122,7 +129,10 @@ export function installHarness(mount: () => void): E2eMock {
       const last = sequence.at(-1)!
       if (!options.fail) {
         last.outputs = Array.from({ length: count }, (_, index) => ({
-          path: `/fixture/outputs/${id}-${index}.png`, width: job.params.width, height: job.params.height, seed: job.params.seed + index,
+          path: `/fixture/outputs/${id}-${index}.png`,
+          width: job.params.width,
+          height: job.params.height,
+          seed: job.params.seed + index,
         }))
       }
       for (const step of sequence) {
@@ -134,7 +144,12 @@ export function installHarness(mount: () => void): E2eMock {
     progressJob(id) {
       const job = jobById(id)
       const total = job.params.steps
-      const step: JobRecord = { ...job, state: 'running', stage: 'denoise', progress: { stage: 'denoise', current: Math.floor(total / 2), total, percent: 50 } }
+      const step: JobRecord = {
+        ...job,
+        state: 'running',
+        stage: 'denoise',
+        progress: { stage: 'denoise', current: Math.floor(total / 2), total, percent: 50 },
+      }
       backend.state.jobs = [step, ...backend.state.jobs.filter((item) => item.id !== id)]
       backend.emit(Events.job, step)
       return step

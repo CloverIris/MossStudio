@@ -10,8 +10,14 @@ export function useAppInfo(): AppInfo | null {
   const [info, setInfo] = useState<AppInfo | null>(null)
   useEffect(() => {
     let canceled = false
-    void call<AppInfo>(Ipc.appInfo).then((next) => { if (!canceled) setInfo(next) }).catch(() => undefined)
-    return () => { canceled = true }
+    void call<AppInfo>(Ipc.appInfo)
+      .then((next) => {
+        if (!canceled) setInfo(next)
+      })
+      .catch(() => undefined)
+    return () => {
+      canceled = true
+    }
   }, [settings])
   return info
 }

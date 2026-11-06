@@ -3,13 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import type { JobParams, JobRecord, JobStage, Settings } from '@shared/types'
-import {
-  decodeEngineHello,
-  judgeEngineSupport,
-  protocolCompatible,
-  type EngineDevice,
-  type EngineHello,
-} from '@shared/engineProtocol'
+import { decodeEngineHello, judgeEngineSupport, protocolCompatible, type EngineDevice, type EngineHello } from '@shared/engineProtocol'
 import { paths } from '../lib/paths'
 import { spawnEngineServer } from '../lib/probeEngine'
 import { resolveDeviceEngine } from './engineInstalls'
@@ -127,12 +121,7 @@ export function resolveServerPath(settings: Settings): string | null {
   const candidates: Array<string | null | undefined> = [
     settings.mossInferServerPath,
     process.env.MOSS_SERVER,
-    join(
-      process.resourcesPath,
-      'mossinfer',
-      'bin',
-      process.platform === 'win32' ? 'moss-server.exe' : 'moss-server',
-    ),
+    join(process.resourcesPath, 'mossinfer', 'bin', process.platform === 'win32' ? 'moss-server.exe' : 'moss-server'),
   ]
   for (const candidate of candidates) {
     if (candidate && existsSync(candidate)) return candidate
@@ -319,10 +308,7 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
                 path: current.queue.opts.output,
                 width: size.width,
                 height: size.height,
-                seed:
-                  typeof report?.['seed_used'] === 'number'
-                    ? (report['seed_used'] as number)
-                    : params.seed,
+                seed: typeof report?.['seed_used'] === 'number' ? (report['seed_used'] as number) : params.seed,
               },
             ],
             timings: {
@@ -361,15 +347,11 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
   }
 }
 
-async function writeSidecar(
-  queued: QueuedJob,
-  report: Record<string, unknown> | null,
-): Promise<void> {
+async function writeSidecar(queued: QueuedJob, report: Record<string, unknown> | null): Promise<void> {
   try {
     const { params, opts } = queued
     const quality = (report?.['quality'] ?? null) as { tier?: string } | null
-    const seed =
-      typeof report?.['seed_used'] === 'number' ? (report['seed_used'] as number) : params.seed
+    const seed = typeof report?.['seed_used'] === 'number' ? (report['seed_used'] as number) : params.seed
     const target = opts.output.replace(/\.png$/i, '.json')
     const size = outputSizeOf(params)
     await writeFile(
@@ -400,12 +382,7 @@ function ringPush(runtime: MossInferRuntime, line: string): void {
   if (runtime.stderrRing.length > 50) runtime.stderrRing.shift()
 }
 
-function handleExit(
-  runtime: MossInferRuntime,
-  proc: ChildProcessWithoutNullStreams,
-  code: number | null,
-  signal: string | null,
-): void {
+function handleExit(runtime: MossInferRuntime, proc: ChildProcessWithoutNullStreams, code: number | null, signal: string | null): void {
   if (runtime.child !== proc) return
   const reason = `moss-server 异常退出 (code ${code ?? 'null'}${signal ? `, signal ${signal}` : ''})${
     runtime.stderrRing.length ? `，最后输出：${runtime.stderrRing.slice(-5).join(' | ')}` : ''
@@ -488,11 +465,13 @@ async function ensureEngine(runtime: MossInferRuntime, config: EngineConfig, set
   }
   if (!runtime.child) {
     spawnServer(runtime, settings, config.deviceUuid)
-    const hello = decodeEngineHello(await request(runtime, 'hello', {
-      client: 'MossStudio',
-      protocol_version: 2,
-      devices: true,
-    }))
+    const hello = decodeEngineHello(
+      await request(runtime, 'hello', {
+        client: 'MossStudio',
+        protocol_version: 2,
+        devices: true,
+      }),
+    )
     if (!protocolCompatible(hello)) {
       throw new Error(`E_ENGINE: moss-server 协议不兼容 (protocol ${hello.protocol})，需要 protocol 2（MossInfer ≥ 2.0）`)
     }
@@ -507,11 +486,7 @@ async function ensureEngine(runtime: MossInferRuntime, config: EngineConfig, set
     }
   } else {
     // spawnServer 已设置 CUDA_VISIBLE_DEVICES，目标卡在 hello 中被重映射为序号 0，不能再按系统序号或名称匹配。
-    const verdict = judgeEngineSupport(
-      runtime.hello!,
-      { index: config.device },
-      { indexOnly: true },
-    )
+    const verdict = judgeEngineSupport(runtime.hello!, { index: config.device }, { indexOnly: true })
     if (!verdict.ok) throw new Error(`E_DEVICE: ${verdict.reason ?? 'MossInfer 未给出设备兼容性结论'}`)
     selected = verdict.device
   }
@@ -554,7 +529,8 @@ async function pump(runtime: MossInferRuntime): Promise<void> {
   const next = runtime.queue.shift()!
   const { job, params, opts, sink } = next
   try {
-    await ensureEngine(runtime,
+    await ensureEngine(
+      runtime,
       {
         model: opts.model,
         ditFile: opts.ditFile,

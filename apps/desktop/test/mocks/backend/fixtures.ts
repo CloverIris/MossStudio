@@ -196,15 +196,25 @@ export function gpuDeviceFixture(patch: Partial<GpuInventoryDevice> = {}): GpuIn
   }
 }
 
-export const GPU_RTX_3060 = (): GpuInventoryDevice => gpuDeviceFixture({
-  uuid: 'GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', index: 1, name: 'NVIDIA GeForce RTX 3060',
-  computeCapability: { major: 8, minor: 6 }, memoryTotalBytes: 12 * GiB, memoryFreeBytes: 11 * GiB,
-})
+export const GPU_RTX_3060 = (): GpuInventoryDevice =>
+  gpuDeviceFixture({
+    uuid: 'GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    index: 1,
+    name: 'NVIDIA GeForce RTX 3060',
+    computeCapability: { major: 8, minor: 6 },
+    memoryTotalBytes: 12 * GiB,
+    memoryFreeBytes: 11 * GiB,
+  })
 
-export const GPU_GTX_1660 = (): GpuInventoryDevice => gpuDeviceFixture({
-  uuid: 'GPU-99999999-8888-7777-6666-555555555555', index: 2, name: 'NVIDIA GeForce GTX 1660',
-  computeCapability: { major: 7, minor: 5 }, memoryTotalBytes: 6 * GiB, memoryFreeBytes: 5 * GiB,
-})
+export const GPU_GTX_1660 = (): GpuInventoryDevice =>
+  gpuDeviceFixture({
+    uuid: 'GPU-99999999-8888-7777-6666-555555555555',
+    index: 2,
+    name: 'NVIDIA GeForce GTX 1660',
+    computeCapability: { major: 7, minor: 5 },
+    memoryTotalBytes: 6 * GiB,
+    memoryFreeBytes: 5 * GiB,
+  })
 
 export function gpuInventoryFixture(devices: GpuInventoryDevice[] = [gpuDeviceFixture()]): GpuInventorySnapshot {
   if (devices.length === 0) {
@@ -229,8 +239,15 @@ export function gpuTelemetryFixture(devices: GpuInventoryDevice[] = [gpuDeviceFi
 
 export function launchDeviceFixture(patch: Partial<LaunchDevice> = {}): LaunchDevice {
   return {
-    id: 'cuda:0', name: 'NVIDIA GeForce RTX 4090', kind: 'cuda', detail: 'CUDA 13.0 · 24 GB',
-    memoryBytes: 24 * GiB, available: true, hostId: 'local', source: 'local', ...patch,
+    id: 'cuda:0',
+    name: 'NVIDIA GeForce RTX 4090',
+    kind: 'cuda',
+    detail: 'CUDA 13.0 · 24 GB',
+    memoryBytes: 24 * GiB,
+    available: true,
+    hostId: 'local',
+    source: 'local',
+    ...patch,
   }
 }
 
@@ -253,8 +270,16 @@ export function engineMissingFixture(patch: Partial<EngineReadiness> = {}): Engi
 
 export function engineDownloadFixture(patch: Partial<MossInferDownloadState> = {}): MossInferDownloadState {
   return {
-    channel: 'stable', phase: 'downloading', bytes: 0, totalBytes: 900_000_000, percent: 0, speedBps: 0,
-    version: 'v2.1.1', releaseTag: 'v2.1.1', updatedAt: FIXTURE_NOW, ...patch,
+    channel: 'stable',
+    phase: 'downloading',
+    bytes: 0,
+    totalBytes: 900_000_000,
+    percent: 0,
+    speedBps: 0,
+    version: 'v2.1.1',
+    releaseTag: 'v2.1.1',
+    updatedAt: FIXTURE_NOW,
+    ...patch,
   }
 }
 
@@ -264,8 +289,17 @@ export function engineDownloadFixture(patch: Partial<MossInferDownloadState> = {
 export function downloadFixture(patch: Partial<DownloadTask> = {}): DownloadTask {
   const targetId = patch.targetId ?? 'moss-sft-dit'
   return {
-    id: `model:${targetId}`, kind: 'model', targetId, label: 'MOSS-Image SFT', state: 'queued',
-    filesTotal: 4, filesDone: 0, bytes: 0, totalBytes: 10_164_704_750, speedBps: 0, updatedAt: FIXTURE_NOW,
+    id: `model:${targetId}`,
+    kind: 'model',
+    targetId,
+    label: 'MOSS-Image SFT',
+    state: 'queued',
+    filesTotal: 4,
+    filesDone: 0,
+    bytes: 0,
+    totalBytes: 10_164_704_750,
+    speedBps: 0,
+    updatedAt: FIXTURE_NOW,
     ...patch,
   }
 }
@@ -312,10 +346,14 @@ export function jobLifecycle(base: JobRecord, options: JobLifecycleOptions = {})
   const total = base.params.steps
   const { preview: _preview, queuePosition: _queuePosition, ...clean } = base
   const at = (stage: JobRecord['stage'], current: number, state: JobRecord['state']): JobRecord => ({
-    ...clean, state, stage, progress: { stage, current, total, percent: Math.round((current / total) * 100) },
+    ...clean,
+    state,
+    stage,
+    progress: { stage, current, total, percent: Math.round((current / total) * 100) },
   })
   const queued = Array.from({ length: Math.max(0, options.queuedAhead ?? 0) }, (_, index) => ({
-    ...at('idle', 0, 'queued'), queuePosition: (options.queuedAhead ?? 0) - index,
+    ...at('idle', 0, 'queued'),
+    queuePosition: (options.queuedAhead ?? 0) - index,
   }))
   const frames = Math.max(0, options.previews ?? 0)
   const denoise = frames
@@ -324,12 +362,7 @@ export function jobLifecycle(base: JobRecord, options: JobLifecycleOptions = {})
         return { ...at('denoise', step, 'running'), preview: { path: previewPathFixture(base.id), step, total, seq: index + 1 } }
       })
     : [at('denoise', Math.floor(total / 2), 'running'), at('denoise', total, 'running')]
-  const running = [
-    ...queued,
-    at('load', 0, 'starting'),
-    at('text', 0, 'running'),
-    ...denoise,
-  ]
+  const running = [...queued, at('load', 0, 'starting'), at('text', 0, 'running'), ...denoise]
   if (options.fail) {
     return [...running, { ...at('denoise', total, 'failed'), error: options.fail, endedAt: FIXTURE_NOW, exitCode: 1 }]
   }
@@ -371,9 +404,11 @@ export function submittedJobFixture(body: Record<string, unknown>, id: string): 
       seed: Number(body['seed'] ?? 0),
       profile: body['profile'] === 'dmd8' ? 'dmd8' : 'base',
       ...(Array.isArray(body['adapters']) ? { adapters: structuredClone(body['adapters']) as JobParams['adapters'] } : {}),
-      ...Object.fromEntries((['initImage', 'mask', 'control', 'references', 'sampling'] as const)
-        .filter((key) => body[key] !== undefined && body[key] !== null)
-        .map((key) => [key, structuredClone(body[key])])),
+      ...Object.fromEntries(
+        (['initImage', 'mask', 'control', 'references', 'sampling'] as const)
+          .filter((key) => body[key] !== undefined && body[key] !== null)
+          .map((key) => [key, structuredClone(body[key])]),
+      ),
     },
   })
   return { ...base, progress: { stage: 'idle', current: 0, total: base.params.steps, percent: 0 } }
@@ -381,14 +416,26 @@ export function submittedJobFixture(body: Record<string, unknown>, id: string): 
 
 export function jobLogFixture(jobId: string, count: number, startSeq = 0): JobLogLine[] {
   return Array.from({ length: count }, (_, index) => ({
-    jobId, seq: startSeq + index, at: FIXTURE_NOW, stream: 'stdout' as const, text: `line ${startSeq + index}`,
+    jobId,
+    seq: startSeq + index,
+    at: FIXTURE_NOW,
+    stream: 'stdout' as const,
+    text: `line ${startSeq + index}`,
   }))
 }
 
 export function launchRowFixture(patch: Partial<LaunchRow> = {}): LaunchRow {
   return {
-    id: 'row-1', caseName: 'Default', instanceId: 'mossinfer', instanceName: 'MossInfer', workspace: 'clover',
-    deviceId: 'cuda:0', profile: 'base', state: 'queued', queuedAt: FIXTURE_NOW, ...patch,
+    id: 'row-1',
+    caseName: 'Default',
+    instanceId: 'mossinfer',
+    instanceName: 'MossInfer',
+    workspace: 'clover',
+    deviceId: 'cuda:0',
+    profile: 'base',
+    state: 'queued',
+    queuedAt: FIXTURE_NOW,
+    ...patch,
   }
 }
 
@@ -397,9 +444,19 @@ export function launchRowFixture(patch: Partial<LaunchRow> = {}): LaunchRow {
 
 export function diagnosticFixture(patch: Partial<Diagnostic> = {}): Diagnostic {
   return {
-    id: 'diag-1', ruleId: 'cuda-oom', severity: 'error', title: '显存不足', explain: 'CUDA out of memory',
-    solutions: [{ label: '更换模型目录', action: 'open_settings', params: { tab: 'storage' } }], raw: 'CUDA error: out of memory',
-    signature: 'cuda-oom', count: 1, firstAt: FIXTURE_NOW, lastAt: FIXTURE_NOW, toast: true, ...patch,
+    id: 'diag-1',
+    ruleId: 'cuda-oom',
+    severity: 'error',
+    title: '显存不足',
+    explain: 'CUDA out of memory',
+    solutions: [{ label: '更换模型目录', action: 'open_settings', params: { tab: 'storage' } }],
+    raw: 'CUDA error: out of memory',
+    signature: 'cuda-oom',
+    count: 1,
+    firstAt: FIXTURE_NOW,
+    lastAt: FIXTURE_NOW,
+    toast: true,
+    ...patch,
   }
 }
 
@@ -415,10 +472,28 @@ export function announcementFixture(patch: Partial<UpdateAnnouncement> = {}): Up
 /** Installed build on the newest version: nothing to do. */
 export function updaterStateFixture(patch: Partial<UpdaterState> = {}): UpdaterState {
   return {
-    supported: true, unsupportedReason: null, current: '1.0.3', channel: 'stable', autoDownload: true,
-    phase: 'idle', checkedAt: FIXTURE_NOW, available: null, progress: null, pending: null,
-    previous: null, canRollback: false, minimumVersion: null, required: false, busy: [],
-    restartWhenIdle: false, error: null, announcements: [], skippedVersion: null, failedVersion: null, failedNotice: false, ...patch,
+    supported: true,
+    unsupportedReason: null,
+    current: '1.0.3',
+    channel: 'stable',
+    autoDownload: true,
+    phase: 'idle',
+    checkedAt: FIXTURE_NOW,
+    available: null,
+    progress: null,
+    pending: null,
+    previous: null,
+    canRollback: false,
+    minimumVersion: null,
+    required: false,
+    busy: [],
+    restartWhenIdle: false,
+    error: null,
+    announcements: [],
+    skippedVersion: null,
+    failedVersion: null,
+    failedNotice: false,
+    ...patch,
   }
 }
 
@@ -428,7 +503,10 @@ export function updateAvailableFixture(version = '1.1.0', patch: Partial<Updater
     phase: 'available',
     autoDownload: false,
     available: {
-      version, publishedAt: '2026-10-30T08:00:00.000Z', kind: 'delta', downloadSize: 48_000_000,
+      version,
+      publishedAt: '2026-10-30T08:00:00.000Z',
+      kind: 'delta',
+      downloadSize: 48_000_000,
       notes: `## MossStudio ${version}\n\n- 生成更快，显存占用更少\n- 作品页可以按日期筛选\n- 修复了若干问题`,
       notesUrl: `https://github.com/CloverIris/MossStudio/releases/tag/v${version}`,
     },
@@ -441,7 +519,8 @@ export function updateDownloadingFixture(version = '1.1.0', percent = 40, patch:
   const available = updateAvailableFixture(version).available!
   const totalBytes = available.downloadSize
   return updaterStateFixture({
-    phase: 'downloading', available,
+    phase: 'downloading',
+    available,
     progress: { bytes: Math.round((totalBytes * percent) / 100), totalBytes, speedBps: 6_000_000, percent },
     ...patch,
   })
@@ -462,9 +541,20 @@ export function updateFailedFixture(version = '1.1.0', patch: Partial<UpdaterSta
 
 export function sshHostFixture(patch: Partial<ManagedHost> = {}): ManagedHost {
   return {
-    id: 'ssh-gpu', name: 'Linux GPU', kind: 'ssh', host: 'gpu.example.test', user: 'moss', port: 22,
-    authMethod: 'identityFile', identityFile: '/home/moss/.ssh/id_ed25519', trainerRoot: '~/.mossstudio/trainer',
-    engineRoot: '~/.mossstudio/engine', status: 'ok', lastCheckedAt: FIXTURE_NOW, devices: [], ...patch,
+    id: 'ssh-gpu',
+    name: 'Linux GPU',
+    kind: 'ssh',
+    host: 'gpu.example.test',
+    user: 'moss',
+    port: 22,
+    authMethod: 'identityFile',
+    identityFile: '/home/moss/.ssh/id_ed25519',
+    trainerRoot: '~/.mossstudio/trainer',
+    engineRoot: '~/.mossstudio/engine',
+    status: 'ok',
+    lastCheckedAt: FIXTURE_NOW,
+    devices: [],
+    ...patch,
   }
 }
 
@@ -478,24 +568,52 @@ export function localHostFixture(patch: Partial<ManagedHost> = {}): ManagedHost 
 export function galleryItemFixture(index = 0, patch: Partial<GalleryItem> = {}): GalleryItem {
   const name = `moss_${String(index).padStart(4, '0')}.png`
   return {
-    id: `gallery-${index}`, path: `/fixture/outputs/${name}`, name, dir: '/fixture/outputs', root: '/fixture/outputs',
-    size: 1_500_000 + index, mtime: Date.parse(FIXTURE_NOW) - index * 60_000, ext: '.png', width: 1024, height: 1024,
-    prompt: `prompt ${index}`, seed: index, ...patch,
+    id: `gallery-${index}`,
+    path: `/fixture/outputs/${name}`,
+    name,
+    dir: '/fixture/outputs',
+    root: '/fixture/outputs',
+    size: 1_500_000 + index,
+    mtime: Date.parse(FIXTURE_NOW) - index * 60_000,
+    ext: '.png',
+    width: 1024,
+    height: 1024,
+    prompt: `prompt ${index}`,
+    seed: index,
+    ...patch,
   }
 }
 
 export function canvasFixture(patch: Partial<ProjectCanvas> = {}): ProjectCanvas {
   return {
-    id: 'canvas-1', kind: 'layout', title: 'Canvas 1', x: 0, y: 0, width: 1024, height: 1024,
+    id: 'canvas-1',
+    kind: 'layout',
+    title: 'Canvas 1',
+    x: 0,
+    y: 0,
+    width: 1024,
+    height: 1024,
     summary: { caption: 'A poster', meta: [], canvas: 'single' },
-    layers: [], prompt: '', negative: '', seed: 42, steps: 28, cfg: 4.5, ...patch,
+    layers: [],
+    prompt: '',
+    negative: '',
+    seed: 42,
+    steps: 28,
+    cfg: 4.5,
+    ...patch,
   }
 }
 
 export function projectFixture(patch: Partial<ProjectDocument> = {}): ProjectDocument {
   return {
-    schemaVersion: 3, id: 'project-1', name: 'Project 1', canvases: [canvasFixture()], selectedCanvasId: 'canvas-1',
-    createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, ...patch,
+    schemaVersion: 3,
+    id: 'project-1',
+    name: 'Project 1',
+    canvases: [canvasFixture()],
+    selectedCanvasId: 'canvas-1',
+    createdAt: FIXTURE_NOW,
+    updatedAt: FIXTURE_NOW,
+    ...patch,
   }
 }
 
@@ -503,7 +621,16 @@ export function projectFixture(patch: Partial<ProjectDocument> = {}): ProjectDoc
 // AI
 
 export function aiProviderFixture(patch: Partial<AiProviderInfo> = {}): AiProviderInfo {
-  return { id: 'fixture-ai', name: 'Fixture AI', kind: 'openai', baseUrl: 'https://example.test', model: 'fixture', temperature: 0.7, hasKey: true, ...patch }
+  return {
+    id: 'fixture-ai',
+    name: 'Fixture AI',
+    kind: 'openai',
+    baseUrl: 'https://example.test',
+    model: 'fixture',
+    temperature: 0.7,
+    hasKey: true,
+    ...patch,
+  }
 }
 
 export function conversationFixture(patch: Partial<AiConversationInfo> = {}): AiConversationInfo {
@@ -518,15 +645,26 @@ export function envReportFixture(patch: Partial<EnvReport> = {}): EnvReport {
     scannedAt: FIXTURE_NOW,
     appVersion: '1.0.3',
     device: {
-      platform: 'win32', arch: 'x64', osVersion: '10.0.26100', hostname: 'fixture', cpuModel: 'Fixture CPU', cpuCores: 16,
-      memoryTotal: 64 * GiB, memoryFree: 40 * GiB, diskTotal: 2000 * GiB, diskFree: 900 * GiB,
-      dataPath: '/fixture/data', modelsPath: '/fixture/data/models',
+      platform: 'win32',
+      arch: 'x64',
+      osVersion: '10.0.26100',
+      hostname: 'fixture',
+      cpuModel: 'Fixture CPU',
+      cpuCores: 16,
+      memoryTotal: 64 * GiB,
+      memoryFree: 40 * GiB,
+      diskTotal: 2000 * GiB,
+      diskFree: 900 * GiB,
+      dataPath: '/fixture/data',
+      modelsPath: '/fixture/data/models',
     },
     gpu: { kind: 'nvidia', name: 'NVIDIA GeForce RTX 4090', memoryBytes: 24 * GiB, cuda: '13.0', driver: '581.42', available: true },
     pythons: [],
     tools: { git: { found: true, version: '2.51.0', path: '/usr/bin/git' }, uv: { found: false } },
     network: {
-      checkedAt: FIXTURE_NOW, mode: 'auto', probes: [],
+      checkedAt: FIXTURE_NOW,
+      mode: 'auto',
+      probes: [],
       selected: { git: null, pip: null, hf: 'https://huggingface.co', manifest: null },
     },
     checks: [],
@@ -541,25 +679,54 @@ export function envReportFixture(patch: Partial<EnvReport> = {}): EnvReport {
 /** A LoRA the user imported from disk (provider `local`, already installed). */
 export function localAdapterFixture(patch: Partial<AdapterEntry> = {}): AdapterEntry {
   return {
-    id: 'local-lora-ink', name: 'Ink Style LoRA', provider: 'local', repo: '/fixture/loras/ink-style.safetensors', revision: 'local',
-    kind: 'lora', license: 'unknown', files: ['ink-style.safetensors'], sizeBytes: 151_000_000, tags: ['imported'],
-    installed: true, installedBytes: 151_000_000, ...patch,
+    id: 'local-lora-ink',
+    name: 'Ink Style LoRA',
+    provider: 'local',
+    repo: '/fixture/loras/ink-style.safetensors',
+    revision: 'local',
+    kind: 'lora',
+    license: 'unknown',
+    files: ['ink-style.safetensors'],
+    sizeBytes: 151_000_000,
+    tags: ['imported'],
+    installed: true,
+    installedBytes: 151_000_000,
+    ...patch,
   }
 }
 
 export function engineReleaseFixture(patch: Partial<MossInferRelease> = {}): MossInferRelease {
   return {
-    tag: 'v2.1.1', name: 'MossInfer v2.1.1', publishedAt: FIXTURE_NOW, body: '',
-    assets: [{ name: 'mossinfer-win-x64-cu13.zip', size: 900_000_000 }], ...patch,
+    tag: 'v2.1.1',
+    name: 'MossInfer v2.1.1',
+    publishedAt: FIXTURE_NOW,
+    body: '',
+    assets: [{ name: 'mossinfer-win-x64-cu13.zip', size: 900_000_000 }],
+    ...patch,
   }
 }
 
 export function trainerVersionFixture(patch: Partial<TrainerVersion> = {}): TrainerVersion {
   return {
-    id: 'trainer-main', hostId: 'local', hostName: '本机', name: 'main', branch: 'main', commit: 'a1b2c3d4e5f6',
-    shortCommit: 'a1b2c3d', commitDate: FIXTURE_NOW, subject: 'Fixture trainer', author: 'fixture', channel: 'stable',
-    path: '/fixture/trainer/main', runtimeId: 'runtime-main', runtimeState: 'ready', createdAt: FIXTURE_NOW,
-    lastUsedAt: null, dirty: false, status: 'ok', ...patch,
+    id: 'trainer-main',
+    hostId: 'local',
+    hostName: '本机',
+    name: 'main',
+    branch: 'main',
+    commit: 'a1b2c3d4e5f6',
+    shortCommit: 'a1b2c3d',
+    commitDate: FIXTURE_NOW,
+    subject: 'Fixture trainer',
+    author: 'fixture',
+    channel: 'stable',
+    path: '/fixture/trainer/main',
+    runtimeId: 'runtime-main',
+    runtimeState: 'ready',
+    createdAt: FIXTURE_NOW,
+    lastUsedAt: null,
+    dirty: false,
+    status: 'ok',
+    ...patch,
   }
 }
 

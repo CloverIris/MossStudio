@@ -19,7 +19,12 @@ const managed = (name: string): LocalEngineVersion => ({ id: name, name, path: `
 describe('lib/engineInstall planLines', () => {
   it('one line per GPU with the package and its size', () => {
     expect(planLines(plan('nvidia'))).toEqual([
-      { gpuId: 'GPU-00000000-1111-2222-3333-444444444444', gpu: 'NVIDIA GeForce RTX 4090', detail: 'CUDA 13 引擎 · 352 MB', supported: true },
+      {
+        gpuId: 'GPU-00000000-1111-2222-3333-444444444444',
+        gpu: 'NVIDIA GeForce RTX 4090',
+        detail: 'CUDA 13 引擎 · 352 MB',
+        supported: true,
+      },
     ])
   })
 
@@ -39,7 +44,9 @@ describe('lib/engineInstall planLines', () => {
   })
 
   it('starts the download line at 0 MB of the known size, not 未知', () => {
-    expect(engineDownloadLabel(engineDownloadFixture({ phase: 'downloading', bytes: 0, totalBytes: 24 * 1024 ** 2 }))).toBe('正在下载 0 MB / 24 MB')
+    expect(engineDownloadLabel(engineDownloadFixture({ phase: 'downloading', bytes: 0, totalBytes: 24 * 1024 ** 2 }))).toBe(
+      '正在下载 0 MB / 24 MB',
+    )
   })
 
   it('names a package shared by several GPUs once and marks installed ones', () => {
@@ -54,7 +61,11 @@ describe('lib/engineInstall planLines', () => {
 
   it('counts only what is still missing', () => {
     expect(planMissingBytes(plan('multiGpu'))).toBe(386148983 + 556009175 + 1280514)
-    expect(planMissingBytes(plan('multiGpu', [managed('stable-v2.2.0-cu13'), managed('stable-v2.2.0-cu12-sm70'), managed('stable-v2.2.0-vulkan')]))).toBe(0)
+    expect(
+      planMissingBytes(
+        plan('multiGpu', [managed('stable-v2.2.0-cu13'), managed('stable-v2.2.0-cu12-sm70'), managed('stable-v2.2.0-vulkan')]),
+      ),
+    ).toBe(0)
   })
 
   it('labels package ids plainly', () => {
@@ -66,23 +77,45 @@ describe('lib/engineInstall planLines', () => {
   })
 
   it('says which package of several is installing', () => {
-    const state = engineDownloadFixture({ phase: 'downloading', bytes: 0, totalBytes: 0, step: { index: 1, count: 2, packageId: 'vulkan' } })
+    const state = engineDownloadFixture({
+      phase: 'downloading',
+      bytes: 0,
+      totalBytes: 0,
+      step: { index: 1, count: 2, packageId: 'vulkan' },
+    })
     expect(engineDownloadLabel(state)).toBe('兼容模式（2/2）· 正在下载')
     expect(engineDownloadLabel({ ...state, step: { index: 0, count: 1, packageId: 'cu13' } })).toBe('正在下载')
   })
 })
 
 describe('lib/engineInstall progress helpers', () => {
-  const phases: Array<MossInferDownloadState['phase']> = ['querying', 'downloading', 'verifying', 'extracting', 'cuda_libs', 'done', 'error', 'canceled']
+  const phases: Array<MossInferDownloadState['phase']> = [
+    'querying',
+    'downloading',
+    'verifying',
+    'extracting',
+    'cuda_libs',
+    'done',
+    'error',
+    'canceled',
+  ]
 
   it('only non-terminal phases are active', () => {
-    expect(phases.filter((phase) => engineDownloadActive(engineDownloadFixture({ phase })))).toEqual(['querying', 'downloading', 'verifying', 'extracting', 'cuda_libs'])
+    expect(phases.filter((phase) => engineDownloadActive(engineDownloadFixture({ phase })))).toEqual([
+      'querying',
+      'downloading',
+      'verifying',
+      'extracting',
+      'cuda_libs',
+    ])
     expect(engineDownloadActive(null)).toBe(false)
     expect(engineDownloadActive(undefined)).toBe(false)
   })
 
   it('labels downloads with byte progress and other phases with their name', () => {
-    expect(engineDownloadLabel(engineDownloadFixture({ phase: 'downloading', bytes: 186 * 1024 ** 2, totalBytes: 290 * 1024 ** 2 }))).toBe('正在下载 186 MB / 290 MB')
+    expect(engineDownloadLabel(engineDownloadFixture({ phase: 'downloading', bytes: 186 * 1024 ** 2, totalBytes: 290 * 1024 ** 2 }))).toBe(
+      '正在下载 186 MB / 290 MB',
+    )
     expect(engineDownloadLabel(engineDownloadFixture({ phase: 'downloading', totalBytes: 0 }))).toBe('正在下载')
     expect(engineDownloadLabel(engineDownloadFixture({ phase: 'cuda_libs' }))).toBe('正在准备运行库')
     expect(new Set(phases.map((phase) => engineDownloadLabel(engineDownloadFixture({ phase, totalBytes: 0 })))).size).toBe(phases.length)

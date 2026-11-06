@@ -160,19 +160,17 @@ function upsertDiagnostic(list: Diagnostic[], diagnostic: Diagnostic): Diagnosti
 function upsertDownload(list: DownloadTask[], task: DownloadTask): DownloadTask[] {
   // Progress and state updates must not move existing rows in the queue.
   if (list.some((item) => item.id === task.id)) {
-    return list.map((item) => item.id === task.id ? task : item)
+    return list.map((item) => (item.id === task.id ? task : item))
   }
   return [...list, task]
 }
 
-function withEngineDownload(
-  readiness: EngineReadiness | null,
-  download: MossInferDownloadState | null,
-): EngineReadiness | null {
+function withEngineDownload(readiness: EngineReadiness | null, download: MossInferDownloadState | null): EngineReadiness | null {
   if (!readiness) return null
-  const installing = download && !['done', 'error', 'canceled'].includes(download.phase)
-    ? { phase: download.phase, percent: download.percent, version: download.version }
-    : undefined
+  const installing =
+    download && !['done', 'error', 'canceled'].includes(download.phase)
+      ? { phase: download.phase, percent: download.percent, version: download.version }
+      : undefined
   return { ...readiness, installing }
 }
 
@@ -218,7 +216,11 @@ export const useApp = create<AppStore>((set, get) => {
       get().pushNotification({ tone: 'warning', title: '必须更新', message: requiredUpdateMessage(state.minimumVersion) })
     }
     if (state.supported && state.failedNotice && state.failedVersion && once(`failed:${state.failedVersion}`)) {
-      get().pushNotification({ tone: 'warning', title: '新版本没能启动', message: failedUpdateText(state.failedVersion, state.current).notice })
+      get().pushNotification({
+        tone: 'warning',
+        title: '新版本没能启动',
+        message: failedUpdateText(state.failedVersion, state.current).notice,
+      })
       // Said once, plainly: open the title bar popover, where 再试一次 is.
       set({ updatePopoverOpen: true })
     }
@@ -249,7 +251,10 @@ export const useApp = create<AppStore>((set, get) => {
 
   /** The snapshot list with every item an event delivered during startup put over it. */
   function mergeStartup<T extends { id: string }>(snapshot: T[], fromEvents: Map<string, T>, upsert: (list: T[], item: T) => T[]): T[] {
-    return [...fromEvents.values()].reduce(upsert, snapshot.filter((item) => !fromEvents.has(item.id)))
+    return [...fromEvents.values()].reduce(
+      upsert,
+      snapshot.filter((item) => !fromEvents.has(item.id)),
+    )
   }
 
   function mergeDownloadSnapshot(snapshot: DownloadTask[]): DownloadTask[] {
@@ -366,24 +371,28 @@ export const useApp = create<AppStore>((set, get) => {
         engineReadiness: withEngineDownload(state.engineReadiness, download),
       }))
       if (download.phase === 'done' && previous?.phase !== 'done') {
-        void get().refreshEngineReadiness().then(() => {
-          get().pushNotification({
-            tone: 'success',
-            title: 'MossInfer 引擎已就绪',
-            message: download.version ? `${download.version} 已安装并设为当前版本` : '引擎已安装并设为当前版本',
+        void get()
+          .refreshEngineReadiness()
+          .then(() => {
+            get().pushNotification({
+              tone: 'success',
+              title: 'MossInfer 引擎已就绪',
+              message: download.version ? `${download.version} 已安装并设为当前版本` : '引擎已安装并设为当前版本',
+            })
           })
-        })
       } else if (download.phase === 'error' && previous?.phase !== 'error') {
-        void get().refreshEngineReadiness().then((readiness) => {
-          const currentReady = (readiness ?? get().engineReadiness)?.state === 'ready'
-          get().pushNotification({
-            tone: currentReady ? 'warning' : 'error',
-            title: currentReady ? 'MossInfer 引擎更新失败' : 'MossInfer 引擎安装失败',
-            message: currentReady
-              ? `当前引擎仍可用 · ${download.error ?? '上次更新未完成'}`
-              : download.error ?? '查看引擎页的安装状态了解详情',
+        void get()
+          .refreshEngineReadiness()
+          .then((readiness) => {
+            const currentReady = (readiness ?? get().engineReadiness)?.state === 'ready'
+            get().pushNotification({
+              tone: currentReady ? 'warning' : 'error',
+              title: currentReady ? 'MossInfer 引擎更新失败' : 'MossInfer 引擎安装失败',
+              message: currentReady
+                ? `当前引擎仍可用 · ${download.error ?? '上次更新未完成'}`
+                : (download.error ?? '查看引擎页的安装状态了解详情'),
+            })
           })
-        })
       } else if (download.phase === 'canceled' && previous?.phase !== 'canceled') {
         void get().refreshEngineReadiness()
         get().pushNotification({
@@ -475,12 +484,13 @@ export const useApp = create<AppStore>((set, get) => {
           ])
         // An event since the call went out is newer than its answer: keep what the event set.
         const current = get()
-        const updateState = eventCounts.update !== before.update
-          ? current.update
-          : update.status === 'fulfilled' ? update.value : null
-        const engineDownloadState = eventCounts.mossInferDownload !== before.mossInferDownload
-          ? current.mossInferDownload
-          : engineDownload.status === 'fulfilled' ? engineDownload.value : null
+        const updateState = eventCounts.update !== before.update ? current.update : update.status === 'fulfilled' ? update.value : null
+        const engineDownloadState =
+          eventCounts.mossInferDownload !== before.mossInferDownload
+            ? current.mossInferDownload
+            : engineDownload.status === 'fulfilled'
+              ? engineDownload.value
+              : null
         const jobList = mergeStartup(jobs.status === 'fulfilled' ? jobs.value : [], startupJobs, upsertJob)
         set({
           env: env.status === 'fulfilled' ? env.value : null,
@@ -798,6 +808,5 @@ export const useApp = create<AppStore>((set, get) => {
     async startNextQueued(_deviceId) {
       // Gradio launch queue is retired; MossStudio jobs are submitted directly.
     },
-
   }
 })

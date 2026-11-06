@@ -39,7 +39,9 @@ function png(width: number, height: number, text: Record<string, string> = {}): 
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
-    ...Object.entries(text).map(([key, value]) => chunk('tEXt', Buffer.concat([Buffer.from(key, 'latin1'), Buffer.from([0]), Buffer.from(value, 'utf8')]))),
+    ...Object.entries(text).map(([key, value]) =>
+      chunk('tEXt', Buffer.concat([Buffer.from(key, 'latin1'), Buffer.from([0]), Buffer.from(value, 'utf8')])),
+    ),
     chunk('IEND', Buffer.alloc(0)),
   ])
 }

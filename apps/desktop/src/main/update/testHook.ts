@@ -33,8 +33,11 @@ export function parseTestHook(text: string): UpdateTestHook | null {
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const value = raw as { pollMs?: unknown; crashVersions?: unknown }
-  const pollMs = typeof value.pollMs === 'number' && Number.isFinite(value.pollMs) && value.pollMs > 0 ? Math.max(200, Math.round(value.pollMs)) : null
-  const crashVersions = Array.isArray(value.crashVersions) ? value.crashVersions.filter((item): item is string => typeof item === 'string') : []
+  const pollMs =
+    typeof value.pollMs === 'number' && Number.isFinite(value.pollMs) && value.pollMs > 0 ? Math.max(200, Math.round(value.pollMs)) : null
+  const crashVersions = Array.isArray(value.crashVersions)
+    ? value.crashVersions.filter((item): item is string => typeof item === 'string')
+    : []
   return { pollMs, crashVersions }
 }
 

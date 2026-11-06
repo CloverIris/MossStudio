@@ -8,6 +8,8 @@
     "build": "pnpm --filter @clover/desktop build",
     "typecheck": "pnpm --filter @clover/desktop typecheck",
     "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "smoke": "pnpm --filter @clover/desktop smoke",
     "test": "pnpm test:unit",
     "test:unit": "pnpm --filter @clover/desktop test",

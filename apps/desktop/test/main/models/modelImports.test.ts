@@ -127,10 +127,34 @@ describe('readImportedModels', () => {
   it.each([
     ['an unknown schema', { schema_version: 3, models: [] }],
     ['a non-array model list', { schema_version: 2, models: {} }],
-    ['a record with a bad hash', { schema_version: 2, models: [{ id: 'a', name: 'a', path: '/a', relativePath: 'a', sha256: 'zz', size: 1, mtimeMs: 1, role: 'dit', importedAt: 'x' }] }],
-    ['a record with zero size', { schema_version: 2, models: [{ id: 'a', name: 'a', path: '/a', relativePath: 'a', size: 0, mtimeMs: 1, role: 'dit', importedAt: 'x' }] }],
-    ['a record with an unknown role', { schema_version: 1, models: [{ id: 'a', name: 'a', path: '/a', relativePath: 'a', size: 1, mtimeMs: 1, role: 'lora', importedAt: 'x' }] }],
-    ['a record with an unknown layout', { schema_version: 2, models: [{ id: 'a', name: 'a', path: '/a', relativePath: 'a', size: 1, mtimeMs: 1, role: 'dit', layout: 'x', importedAt: 'x' }] }],
+    [
+      'a record with a bad hash',
+      {
+        schema_version: 2,
+        models: [{ id: 'a', name: 'a', path: '/a', relativePath: 'a', sha256: 'zz', size: 1, mtimeMs: 1, role: 'dit', importedAt: 'x' }],
+      },
+    ],
+    [
+      'a record with zero size',
+      {
+        schema_version: 2,
+        models: [{ id: 'a', name: 'a', path: '/a', relativePath: 'a', size: 0, mtimeMs: 1, role: 'dit', importedAt: 'x' }],
+      },
+    ],
+    [
+      'a record with an unknown role',
+      {
+        schema_version: 1,
+        models: [{ id: 'a', name: 'a', path: '/a', relativePath: 'a', size: 1, mtimeMs: 1, role: 'lora', importedAt: 'x' }],
+      },
+    ],
+    [
+      'a record with an unknown layout',
+      {
+        schema_version: 2,
+        models: [{ id: 'a', name: 'a', path: '/a', relativePath: 'a', size: 1, mtimeMs: 1, role: 'dit', layout: 'x', importedAt: 'x' }],
+      },
+    ],
   ])('rejects %s', async (_label, index) => {
     await put(indexFile(), JSON.stringify(index))
     await expect(readImportedModels(indexFile())).rejects.toThrow('本地模型导入记录无效')
@@ -177,7 +201,14 @@ describe('registerScannedModels', () => {
     const again = await registerScannedModels(indexFile(), [{ path: dit, role: 'full', name: 'renamed' }])
     expect(again).toEqual({ added: 0, updated: 1, missing: [] })
     const [updated] = await readImportedModels(indexFile())
-    expect(updated).toMatchObject({ id: record!.id, importedAt: record!.importedAt, role: 'full', name: 'renamed', size: 14, layout: 'comfyui-single-file' })
+    expect(updated).toMatchObject({
+      id: record!.id,
+      importedAt: record!.importedAt,
+      role: 'full',
+      name: 'renamed',
+      size: 14,
+      layout: 'comfyui-single-file',
+    })
   })
 
   it('reports missing, empty and directory paths and does not write an index for nothing', async () => {

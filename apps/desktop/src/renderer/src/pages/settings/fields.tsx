@@ -15,25 +15,31 @@ export function errorText(error: unknown): string {
 export function useSaveSettings(): (patch: Partial<Settings> & { hfToken?: string | null }, success?: string) => Promise<boolean> {
   const saveSettings = useApp((state) => state.saveSettings)
   const toast = useToast()
-  return useCallback(async (patch, success) => {
-    try {
-      await saveSettings(patch)
-      if (success) toast.push(success, 'success')
-      return true
-    } catch (error) {
-      toast.push(`没有保存：${errorText(error)}`, 'error')
-      return false
-    }
-  }, [saveSettings, toast])
+  return useCallback(
+    async (patch, success) => {
+      try {
+        await saveSettings(patch)
+        if (success) toast.push(success, 'success')
+        return true
+      } catch (error) {
+        toast.push(`没有保存：${errorText(error)}`, 'error')
+        return false
+      }
+    },
+    [saveSettings, toast],
+  )
 }
 
 /** Open a folder in the system file manager. */
 export function useOpenPath(): (path: string | null | undefined) => void {
   const toast = useToast()
-  return useCallback((path) => {
-    if (!path) return
-    void call(Ipc.openPath, { path }).catch((error: unknown) => toast.push(errorText(error), 'error'))
-  }, [toast])
+  return useCallback(
+    (path) => {
+      if (!path) return
+      void call(Ipc.openPath, { path }).catch((error: unknown) => toast.push(errorText(error), 'error'))
+    },
+    [toast],
+  )
 }
 
 export async function pickFolder(title: string): Promise<string | null> {
@@ -41,7 +47,13 @@ export async function pickFolder(title: string): Promise<string | null> {
 }
 
 /** A row whose control sits under its title, for long values like paths and addresses. */
-export function StackRow({ title, description, error, children, htmlFor }: {
+export function StackRow({
+  title,
+  description,
+  error,
+  children,
+  htmlFor,
+}: {
   title: ReactNode
   description?: ReactNode
   error?: string | null
@@ -52,14 +64,20 @@ export function StackRow({ title, description, error, children, htmlFor }: {
     <div className="flex flex-col gap-2 rounded-lg px-3.5 py-3">
       <div className="flex flex-col gap-0.5">
         {htmlFor ? (
-          <label htmlFor={htmlFor} className="text-control text-ink">{title}</label>
+          <label htmlFor={htmlFor} className="text-control text-ink">
+            {title}
+          </label>
         ) : (
           <div className="text-control text-ink">{title}</div>
         )}
         {description ? <div className="text-caption text-ink-2">{description}</div> : null}
       </div>
       {children}
-      {error ? <p role="alert" className="text-caption text-danger">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-caption text-danger">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -109,13 +127,20 @@ export function TextSetting<T = string | null>({
 
   // Follow changes made elsewhere (another window, a reset) unless the person is typing.
   useEffect(() => {
-    if (!focused.current) { setDraft(saved); setError(null); guard.reset() }
+    if (!focused.current) {
+      setDraft(saved)
+      setError(null)
+      guard.reset()
+    }
   }, [saved, guard])
 
   async function commit(): Promise<void> {
     if (!guard.shouldCommit(draft)) return
     const result = commitText<T>(draft, value, { validate, parse })
-    if (result.kind === 'invalid') { setError(result.message); return }
+    if (result.kind === 'invalid') {
+      setError(result.message)
+      return
+    }
     setError(null)
     if (result.kind === 'unchanged') return
     guard.sent(draft)
@@ -136,12 +161,28 @@ export function TextSetting<T = string | null>({
       spellCheck={false}
       aria-invalid={error ? true : undefined}
       aria-busy={saving || undefined}
-      onFocus={() => { focused.current = true }}
-      onChange={(event) => { setDraft(event.target.value); guard.reset(); if (error) setError(null) }}
-      onBlur={() => { focused.current = false; void commit() }}
+      onFocus={() => {
+        focused.current = true
+      }}
+      onChange={(event) => {
+        setDraft(event.target.value)
+        guard.reset()
+        if (error) setError(null)
+      }}
+      onBlur={() => {
+        focused.current = false
+        void commit()
+      }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') { event.preventDefault(); void commit() }
-        if (event.key === 'Escape') { event.preventDefault(); setDraft(saved); setError(null) }
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          void commit()
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setDraft(saved)
+          setError(null)
+        }
       }}
       className={cn(mono && 'font-mono text-caption', inline ? 'w-40' : 'w-full', inputClassName)}
     />
@@ -154,7 +195,11 @@ export function TextSetting<T = string | null>({
           {input}
           {trailing}
         </Row>
-        {error ? <p role="alert" className="-mt-1 px-3.5 pb-2 text-right text-caption text-danger">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="-mt-1 px-3.5 pb-2 text-right text-caption text-danger">
+            {error}
+          </p>
+        ) : null}
       </div>
     )
   }
@@ -168,7 +213,13 @@ export function TextSetting<T = string | null>({
   )
 }
 
-export function SwitchRow({ title, description, checked, onChange, disabled }: {
+export function SwitchRow({
+  title,
+  description,
+  checked,
+  onChange,
+  disabled,
+}: {
   title: ReactNode
   description?: ReactNode
   checked: boolean
@@ -177,18 +228,20 @@ export function SwitchRow({ title, description, checked, onChange, disabled }: {
 }): React.JSX.Element {
   return (
     <Row title={title} description={description}>
-      <Switch
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={onChange}
-        aria-label={typeof title === 'string' ? title : undefined}
-      />
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} aria-label={typeof title === 'string' ? title : undefined} />
     </Row>
   )
 }
 
 /** A folder setting: shows the folder in use, lets the person pick another or go back to the default. */
-export function FolderRow({ title, description, value, fallback, onChange, pickTitle }: {
+export function FolderRow({
+  title,
+  description,
+  value,
+  fallback,
+  onChange,
+  pickTitle,
+}: {
   title: ReactNode
   description?: ReactNode
   /** The custom folder, or null for the default. */
@@ -214,12 +267,19 @@ export function FolderRow({ title, description, value, fallback, onChange, pickT
   return (
     <StackRow title={title} description={description}>
       <div className="flex min-w-0 items-center gap-2">
-        <span className="selectable min-w-0 flex-1 truncate rounded-md bg-well px-2.5 py-1.5 font-mono text-caption text-ink-2" title={shown ?? undefined}>
+        <span
+          className="selectable min-w-0 flex-1 truncate rounded-md bg-well px-2.5 py-1.5 font-mono text-caption text-ink-2"
+          title={shown ?? undefined}
+        >
           {shown ?? '默认位置'}
           {!value && shown ? '（默认）' : ''}
         </span>
         <Button onClick={() => void pick()}>更改</Button>
-        {value ? <Button tone="ghost" onClick={() => void onChange(null)}>恢复默认</Button> : null}
+        {value ? (
+          <Button tone="ghost" onClick={() => void onChange(null)}>
+            恢复默认
+          </Button>
+        ) : null}
         <IconButton label="在文件管理器中打开" disabled={!shown} onClick={() => openPath(shown)}>
           <FolderOpen className="size-4" />
         </IconButton>

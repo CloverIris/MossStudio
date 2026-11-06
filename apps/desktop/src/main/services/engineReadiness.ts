@@ -1,10 +1,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { EngineReadiness } from '@shared/types'
-import {
-  getEngineInstallProgress,
-  readEngineLastAttempt,
-} from '../lib/engineStore'
+import { getEngineInstallProgress, readEngineLastAttempt } from '../lib/engineStore'
 import { paths } from '../lib/paths'
 import { resolveServerPath } from './mossInfer'
 import { getSettings } from './settings'
@@ -32,7 +29,8 @@ function calculateReadiness(): ReadinessBase {
     path: engine?.binaryPath ?? null,
   }))
   const selection = getSettings().gpuSelection
-  const preferred = typeof selection === 'object' ? devices.find((device) => device.deviceUuid === selection.uuid && device.path) : undefined
+  const preferred =
+    typeof selection === 'object' ? devices.find((device) => device.deviceUuid === selection.uuid && device.path) : undefined
   const first = preferred ?? devices.find((device) => device.path)
   if (first?.path) return { state: 'ready', path: first.path, devices }
   if (engines.length === 0) {
@@ -51,7 +49,11 @@ function fingerprint(): string {
   const path = resolveServerPath(getSettings())
   const legacy = path && existsSync(path) ? `${resolve(path)}:${statSync(path).mtimeMs}` : 'none'
   let root = 'none'
-  try { root = String(statSync(paths.mossinfer()).mtimeMs) } catch { /* no engine root yet */ }
+  try {
+    root = String(statSync(paths.mossinfer()).mtimeMs)
+  } catch {
+    /* no engine root yet */
+  }
   const settings = getSettings()
   return `${legacy}|${root}|${settings.mossInferServerPath ?? ''}|${JSON.stringify(settings.engineDeviceOverrides ?? {})}`
 }

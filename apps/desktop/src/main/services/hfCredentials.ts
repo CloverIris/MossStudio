@@ -19,8 +19,10 @@ export function saveHfToken(scope: string, token: string | null): void {
   const credentials = load()
   if (!token) delete credentials[scope]
   else {
-    if (!safeStorage.isEncryptionAvailable() ||
-      (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')) {
+    if (
+      !safeStorage.isEncryptionAvailable() ||
+      (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
+    ) {
       throw new Error('系统安全存储不可用，无法保存 HF Token')
     }
     credentials[scope] = safeStorage.encryptString(token).toString('base64')

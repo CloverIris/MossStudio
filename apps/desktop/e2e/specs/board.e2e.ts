@@ -22,23 +22,54 @@ interface BoardSetup {
 /** A project with one imported picture (img-1) and one layout canvas (canvas-1), selected. */
 async function openBoard(app: E2eApp, setup: BoardSetup = {}): Promise<Page> {
   const page = await app.open({ scenario: 'ready', route: '/studio', defer: true, theme: setup.theme })
-  await page.evaluate((options) => {
-    const { canvasFixture, projectFixture, engineFeaturesFixture, controlAdapterFixture } = window.__mock.fixtures
-    const picture = canvasFixture({
-      id: 'img-1', kind: 'image', title: '小猫照片', imagePath: '/fixture/projects/project-1/assets/cat-1600x1200.png', imageSize: { width: 1600, height: 1200 },
-      x: 0, y: 0, width: 1024, height: 768, steps: 1,
-    })
-    const second = canvasFixture({
-      id: 'img-2', kind: 'image', title: '线稿', imagePath: '/fixture/projects/project-1/assets/lines-800x1280.png', x: 0, y: 360, width: 640, height: 1024, steps: 1,
-    })
-    const layout = canvasFixture({
-      id: 'canvas-1', title: '画面 1', prompt: '一只橘猫坐在窗台上', x: 420, y: 0, ...(options.inputs ? { inputs: options.inputs } : {}),
-      ...(options.outputs ? { outputs: [{ path: '/fixture/outputs/old-1024x1024.png', width: 1024, height: 1024, seed: 3 }], jobState: 'succeeded' as const } : {}),
-    })
-    window.__mock.state.projects = [projectFixture({ id: 'project-1', name: '小猫', canvases: [picture, second, layout], selectedCanvasId: 'canvas-1' })]
-    window.__mock.state.engineFeatures = engineFeaturesFixture(options.features ?? {})
-    window.__mock.state.controlAdapters = options.adapters ? [controlAdapterFixture()] : []
-  }, { inputs: setup.inputs, features: setup.features, adapters: setup.adapters, outputs: setup.outputs })
+  await page.evaluate(
+    (options) => {
+      const { canvasFixture, projectFixture, engineFeaturesFixture, controlAdapterFixture } = window.__mock.fixtures
+      const picture = canvasFixture({
+        id: 'img-1',
+        kind: 'image',
+        title: '小猫照片',
+        imagePath: '/fixture/projects/project-1/assets/cat-1600x1200.png',
+        imageSize: { width: 1600, height: 1200 },
+        x: 0,
+        y: 0,
+        width: 1024,
+        height: 768,
+        steps: 1,
+      })
+      const second = canvasFixture({
+        id: 'img-2',
+        kind: 'image',
+        title: '线稿',
+        imagePath: '/fixture/projects/project-1/assets/lines-800x1280.png',
+        x: 0,
+        y: 360,
+        width: 640,
+        height: 1024,
+        steps: 1,
+      })
+      const layout = canvasFixture({
+        id: 'canvas-1',
+        title: '画面 1',
+        prompt: '一只橘猫坐在窗台上',
+        x: 420,
+        y: 0,
+        ...(options.inputs ? { inputs: options.inputs } : {}),
+        ...(options.outputs
+          ? {
+              outputs: [{ path: '/fixture/outputs/old-1024x1024.png', width: 1024, height: 1024, seed: 3 }],
+              jobState: 'succeeded' as const,
+            }
+          : {}),
+      })
+      window.__mock.state.projects = [
+        projectFixture({ id: 'project-1', name: '小猫', canvases: [picture, second, layout], selectedCanvasId: 'canvas-1' }),
+      ]
+      window.__mock.state.engineFeatures = engineFeaturesFixture(options.features ?? {})
+      window.__mock.state.controlAdapters = options.adapters ? [controlAdapterFixture()] : []
+    },
+    { inputs: setup.inputs, features: setup.features, adapters: setup.adapters, outputs: setup.outputs },
+  )
   await app.start()
   await page.locator('[data-project-switcher]').waitFor()
   await page.locator('article[data-canvas-card="canvas-1"]').waitFor()
@@ -69,20 +100,34 @@ async function savedInputs(page: Page, canvasId = 'canvas-1'): Promise<CanvasInp
 }
 
 async function emitJob(page: Page, id: string, patch: Partial<JobRecord>): Promise<void> {
-  await page.evaluate(([jobId, change]) => {
-    const mock = window.__mock
-    const job = { ...mock.state.jobs.find((item) => item.id === jobId)!, ...change } as JobRecord
-    mock.state.jobs = [job, ...mock.state.jobs.filter((item) => item.id !== jobId)]
-    mock.emit(mock.Events.job, job)
-  }, [id, patch] as const)
+  await page.evaluate(
+    ([jobId, change]) => {
+      const mock = window.__mock
+      const job = { ...mock.state.jobs.find((item) => item.id === jobId)!, ...change } as JobRecord
+      mock.state.jobs = [job, ...mock.state.jobs.filter((item) => item.id !== jobId)]
+      mock.emit(mock.Events.job, job)
+    },
+    [id, patch] as const,
+  )
 }
 
 /** The n-th saved mask PNG: who it is for and its IHDR. */
-async function savedMask(page: Page, index = 0): Promise<{ projectId: string; canvasId: string; signature: number[]; width: number; height: number; depth: number; colour: number }> {
+async function savedMask(
+  page: Page,
+  index = 0,
+): Promise<{ projectId: string; canvasId: string; signature: number[]; width: number; height: number; depth: number; colour: number }> {
   return page.evaluate((n) => {
     const call = window.__mock.callsTo('studio:save-mask')[n] as { projectId: string; canvasId: string; png: Uint8Array }
     const view = new DataView(call.png.buffer, call.png.byteOffset)
-    return { projectId: call.projectId, canvasId: call.canvasId, signature: [...call.png.slice(0, 4)], width: view.getUint32(16), height: view.getUint32(20), depth: call.png[24]!, colour: call.png[25]! }
+    return {
+      projectId: call.projectId,
+      canvasId: call.canvasId,
+      signature: [...call.png.slice(0, 4)],
+      width: view.getUint32(16),
+      height: view.getUint32(20),
+      depth: call.png[24]!,
+      colour: call.png[25]!,
+    }
   }, index)
 }
 
@@ -140,7 +185,8 @@ describe('studio board', () => {
     for (const kind of ['深度', '边缘', '姿态']) expect(await menu.getByRole('menuitem', { name: kind }).isVisible()).toBe(true)
     await menu.getByRole('menuitem', { name: '深度' }).click()
     await page.getByRole('button', { name: '连线：控制 · 深度' }).waitFor()
-    await expect.poll(() => savedInputs(page), { timeout: 10_000 })
+    await expect
+      .poll(() => savedInputs(page), { timeout: 10_000 })
       .toMatchObject({ control: { adapterId: 'control-union', images: [{ kind: 'depth', link: { canvasId: 'img-2' } }] } })
   })
 
@@ -208,14 +254,21 @@ describe('studio board', () => {
     const page = await openBoard(app)
     const before = await page.locator('article[data-canvas-kind="image"]').count()
     const target = await center(page, '[data-board]')
-    await page.evaluate(([base64, x, y]) => {
-      const bytes = Uint8Array.from(atob(base64 as string), (char) => char.charCodeAt(0))
-      const data = new DataTransfer()
-      data.items.add(new File([bytes], 'dropped.png', { type: 'image/png' }))
-      const board = document.querySelector('[data-board]')!
-      board.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, clientX: x as number, clientY: y as number, bubbles: true, cancelable: true }))
-      board.dispatchEvent(new DragEvent('drop', { dataTransfer: data, clientX: x as number, clientY: y as number, bubbles: true, cancelable: true }))
-    }, [PNG_1PX, target.x, target.y + 200] as const)
+    await page.evaluate(
+      ([base64, x, y]) => {
+        const bytes = Uint8Array.from(atob(base64 as string), (char) => char.charCodeAt(0))
+        const data = new DataTransfer()
+        data.items.add(new File([bytes], 'dropped.png', { type: 'image/png' }))
+        const board = document.querySelector('[data-board]')!
+        board.dispatchEvent(
+          new DragEvent('dragover', { dataTransfer: data, clientX: x as number, clientY: y as number, bubbles: true, cancelable: true }),
+        )
+        board.dispatchEvent(
+          new DragEvent('drop', { dataTransfer: data, clientX: x as number, clientY: y as number, bubbles: true, cancelable: true }),
+        )
+      },
+      [PNG_1PX, target.x, target.y + 200] as const,
+    )
     await expect.poll(() => page.locator('article[data-canvas-kind="image"]').count()).toBe(before + 1)
     const [dropped] = await app.calls<{ projectId: string; bytes?: Uint8Array; name?: string }>('studio:import-image')
     expect(dropped).toMatchObject({ projectId: 'project-1', name: 'dropped.png' })
@@ -250,8 +303,17 @@ describe('studio board', () => {
 
     await expect.poll(() => app.calls('studio:save-mask').then((calls) => calls.length), { timeout: 5_000 }).toBeGreaterThan(0)
     // An 8-bit greyscale PNG at the start picture's own pixel size (1600×1200), not the canvas's (1024×1024).
-    expect(await savedMask(page)).toEqual({ projectId: 'project-1', canvasId: 'canvas-1', signature: [0x89, 0x50, 0x4e, 0x47], width: 1600, height: 1200, depth: 8, colour: 0 })
-    await expect.poll(() => savedInputs(page), { timeout: 10_000 })
+    expect(await savedMask(page)).toEqual({
+      projectId: 'project-1',
+      canvasId: 'canvas-1',
+      signature: [0x89, 0x50, 0x4e, 0x47],
+      width: 1600,
+      height: 1200,
+      depth: 8,
+      colour: 0,
+    })
+    await expect
+      .poll(() => savedInputs(page), { timeout: 10_000 })
       .toMatchObject({ mask: { path: '/fixture/projects/project-1/assets/mask-canvas-1.png' } })
     await app.screenshot('board-mask-light')
 
@@ -329,7 +391,12 @@ describe('studio board', () => {
     await emitJob(page, id, { state: 'queued', queuePosition: 2 })
     await expect.poll(() => card.getByText('排队中 · 第 2 个').first().isVisible()).toBe(true)
 
-    await emitJob(page, id, { state: 'running', stage: 'load', queuePosition: undefined, progress: { stage: 'load', current: 0, total: 30, percent: 0 } })
+    await emitJob(page, id, {
+      state: 'running',
+      stage: 'load',
+      queuePosition: undefined,
+      progress: { stage: 'load', current: 0, total: 30, percent: 0 },
+    })
     await expect.poll(() => card.getByText('正在加载模型').first().isVisible()).toBe(true)
 
     const preview = { path: `/fixture/cache/previews/${id}.png`, step: 12, total: 30, seq: 1 }
@@ -340,7 +407,10 @@ describe('studio board', () => {
     expect(await card.getByRole('progressbar', { name: '生成进度' }).getAttribute('aria-valuenow')).toBe('40')
     await app.screenshot('board-live-preview-light')
 
-    await emitJob(page, id, { progress: { stage: 'denoise', current: 18, total: 30, percent: 60, etaMs: 5000 }, preview: { ...preview, step: 18, seq: 2 } })
+    await emitJob(page, id, {
+      progress: { stage: 'denoise', current: 18, total: 30, percent: 60, etaMs: 5000 },
+      preview: { ...preview, step: 18, seq: 2 },
+    })
     await expect.poll(() => front.getAttribute('src')).toContain('seq=2')
     // Never blank between frames: a front picture is always up.
     expect(await front.count()).toBe(1)
@@ -355,17 +425,21 @@ describe('studio board', () => {
 
   /** Bounding boxes of every wire chip on screen. */
   async function chipBoxes(page: Page): Promise<Array<{ x: number; y: number; width: number; height: number }>> {
-    return page.locator('[data-wire-chip] button[aria-label^="连线："]').evaluateAll((items) => items.map((item) => {
-      const rect = item.getBoundingClientRect()
-      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-    }))
+    return page.locator('[data-wire-chip] button[aria-label^="连线："]').evaluateAll((items) =>
+      items.map((item) => {
+        const rect = item.getBoundingClientRect()
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      }),
+    )
   }
 
   function overlapping(boxes: Array<{ x: number; y: number; width: number; height: number }>): string[] {
     const hits: string[] = []
-    boxes.forEach((a, i) => boxes.slice(i + 1).forEach((b, k) => {
-      if (a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y) hits.push(`${i}×${i + k + 1}`)
-    }))
+    boxes.forEach((a, i) =>
+      boxes.slice(i + 1).forEach((b, k) => {
+        if (a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y) hits.push(`${i}×${i + k + 1}`)
+      }),
+    )
     return hits
   }
 

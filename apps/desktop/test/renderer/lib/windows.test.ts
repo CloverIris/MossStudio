@@ -9,10 +9,15 @@ afterEach(() => uninstall())
 function setup(windowKind: 'launcher' | 'trainer' = 'launcher'): { backend: MockBackend; intents: WindowIntent[] } {
   const backend = createMockBackend('ready', { bridge: { windowKind } })
   const intents: WindowIntent[] = []
-  const listener = (event: Event): void => { intents.push((event as CustomEvent<WindowIntent>).detail) }
+  const listener = (event: Event): void => {
+    intents.push((event as CustomEvent<WindowIntent>).detail)
+  }
   window.addEventListener('mossstudio:window-intent', listener)
   const restore = backend.install()
-  uninstall = () => { restore(); window.removeEventListener('mossstudio:window-intent', listener) }
+  uninstall = () => {
+    restore()
+    window.removeEventListener('mossstudio:window-intent', listener)
+  }
   return { backend, intents }
 }
 

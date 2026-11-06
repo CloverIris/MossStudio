@@ -47,9 +47,7 @@ describe('selectAutomaticGpu', () => {
         middle: busy(0, 0),
       })?.uuid,
     ).toBe('fast')
-    expect(
-      selectAutomaticGpu(devices, all, { slow: busy(1), fast: busy(2, 3), middle: busy(1, 1) })?.uuid,
-    ).toBe('slow')
+    expect(selectAutomaticGpu(devices, all, { slow: busy(1), fast: busy(2, 3), middle: busy(1, 1) })?.uuid).toBe('slow')
   })
 
   it('counts running and queued tasks equally', () => {

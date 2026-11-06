@@ -7,7 +7,9 @@ export function FieldLabel({ children, value, htmlFor }: { children: ReactNode; 
   return (
     <div className="flex items-baseline justify-between gap-2">
       {htmlFor ? (
-        <label htmlFor={htmlFor} className="text-caption font-semibold text-ink-2">{children}</label>
+        <label htmlFor={htmlFor} className="text-caption font-semibold text-ink-2">
+          {children}
+        </label>
       ) : (
         <span className="text-caption font-semibold text-ink-2">{children}</span>
       )}
@@ -104,7 +106,9 @@ export function OptionalNumberInput({
       placeholder={placeholder}
       onChange={(event) => setDraft(event.target.value.replace(/[^\d.-]/g, ''))}
       onBlur={commit}
-      onKeyDown={(event) => { if (event.key === 'Enter') commit() }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') commit()
+      }}
       className={cn('tabular', className)}
     />
   )

@@ -13,7 +13,9 @@ describe('engine activation lock', () => {
     let finish!: () => void
     const activation = withEngineActivation(async () => {
       order.push('activate:start')
-      await new Promise<void>((resolve) => { finish = resolve })
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
       order.push('activate:end')
     })
     expect(engineActivationInProgress()).toBe(true)
@@ -32,7 +34,9 @@ describe('engine activation lock', () => {
 
   it('waits while jobs run and switches once they are done', async () => {
     let busy = true
-    const sleep = vi.fn(async () => { busy = false })
+    const sleep = vi.fn(async () => {
+      busy = false
+    })
     const onWaiting = vi.fn()
     const activate = vi.fn(async () => 'new-engine')
     await expect(activateWhenAllowed(activate, { canActivate: async () => !busy, sleep, onWaiting })).resolves.toBe('new-engine')
@@ -49,7 +53,9 @@ describe('engine activation lock', () => {
       retryMs: 1000,
       timeoutMs: 5000,
       now: () => time,
-      sleep: async (ms) => { time += ms },
+      sleep: async (ms) => {
+        time += ms
+      },
     })
     await expect(result).rejects.toBeInstanceOf(ActivationTimeoutError)
     expect(activate).not.toHaveBeenCalled()
@@ -61,7 +67,9 @@ describe('engine activation lock', () => {
     const result = activateWhenAllowed(async () => 'x', {
       canActivate: async () => false,
       signal: controller.signal,
-      sleep: async () => { controller.abort() },
+      sleep: async () => {
+        controller.abort()
+      },
     })
     await expect(result).rejects.toThrow('已取消')
   })
@@ -71,12 +79,13 @@ describe('engine activation lock ordering', () => {
   it('lets only one activation hold the lock at a time', async () => {
     let inside = 0
     let most = 0
-    const run = () => withEngineActivation(async () => {
-      inside += 1
-      most = Math.max(most, inside)
-      await new Promise((resolve) => setTimeout(resolve, 1))
-      inside -= 1
-    })
+    const run = () =>
+      withEngineActivation(async () => {
+        inside += 1
+        most = Math.max(most, inside)
+        await new Promise((resolve) => setTimeout(resolve, 1))
+        inside -= 1
+      })
     await Promise.all([run(), run(), run()])
     expect(most).toBe(1)
   })

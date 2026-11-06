@@ -23,15 +23,27 @@ describe('first run', () => {
       const recommended = window.__mock.state.catalog.bundles.find((item) => item.recommended)!
       return [...Object.values(recommended.components), recommended.support]
     })
-    await expect.poll(() => app.calls<{ kind: string; id: string }>('models:download').then((calls) => calls.map((call) => call.id).sort())).toEqual([...bundle].sort())
+    await expect
+      .poll(() => app.calls<{ kind: string; id: string }>('models:download').then((calls) => calls.map((call) => call.id).sort()))
+      .toEqual([...bundle].sort())
 
     // Progress arrives as events from the main process.
     await page.evaluate(() => {
       const { fixtures, Events, state } = window.__mock
-      const engine: MossInferDownloadState = fixtures.engineDownloadFixture({ phase: 'downloading', bytes: 360_000_000, percent: 40, speedBps: 20_000_000 })
+      const engine: MossInferDownloadState = fixtures.engineDownloadFixture({
+        phase: 'downloading',
+        bytes: 360_000_000,
+        percent: 40,
+        speedBps: 20_000_000,
+      })
       window.__mock.emit(Events.mossInferDownload, engine)
       for (const task of state.downloads) {
-        window.__mock.emit(Events.download, { ...task, state: 'running', bytes: Math.floor(task.totalBytes / 4), speedBps: 30_000_000 } satisfies DownloadTask)
+        window.__mock.emit(Events.download, {
+          ...task,
+          state: 'running',
+          bytes: Math.floor(task.totalBytes / 4),
+          speedBps: 30_000_000,
+        } satisfies DownloadTask)
       }
     })
     const steps = page.getByRole('list', { name: '准备步骤' })
@@ -66,7 +78,9 @@ describe('first run', () => {
     await expect.poll(() => blockers.filter({ hasText: '还没有可用的模型' }).count()).toBe(0)
 
     // Back on 准备, 开始创作 completes onboarding.
-    await page.evaluate(() => { window.location.hash = '#/setup' })
+    await page.evaluate(() => {
+      window.location.hash = '#/setup'
+    })
     await expect.poll(() => page.getByRole('heading', { name: '一切就绪' }).isVisible()).toBe(true)
     await app.screenshot('setup-done-light')
     await page.getByRole('button', { name: '开始创作' }).click()
@@ -102,7 +116,9 @@ describe('first run', () => {
     await page.getByRole('button', { name: '重新检测' }).click()
     await expect.poll(() => app.calls('gpu:inventory-refresh').then((calls) => calls.length)).toBeGreaterThan(0)
     // The machine is probed again too (AMD / Intel GPUs come from there).
-    await expect.poll(() => app.calls<{ refresh?: boolean }>('engine:plan').then((calls) => calls.filter((call) => call?.refresh).length)).toBeGreaterThan(1)
+    await expect
+      .poll(() => app.calls<{ refresh?: boolean }>('engine:plan').then((calls) => calls.filter((call) => call?.refresh).length))
+      .toBeGreaterThan(1)
     await expect.poll(() => page.getByRole('button', { name: '开始准备' }).isEnabled()).toBe(true)
     await expect.poll(() => page.getByText('在这台电脑上没有找到能运行引擎的显卡', { exact: false }).count()).toBe(0)
   })
@@ -110,7 +126,11 @@ describe('first run', () => {
   it('已有模型文件？ uses a local folder instead of the 25 GB download', async () => {
     const page = await app.open({ scenario: 'firstRun', route: '/setup', defer: true })
     await page.evaluate(() => {
-      window.__mock.state.localModelFolder = { path: '/workspace/Models/MOSS-Image/sft', name: 'MOSS-Image SFT（sft）', bundleId: 'moss-sft' }
+      window.__mock.state.localModelFolder = {
+        path: '/workspace/Models/MOSS-Image/sft',
+        name: 'MOSS-Image SFT（sft）',
+        bundleId: 'moss-sft',
+      }
     })
     await app.start()
     const steps = page.getByRole('list', { name: '准备步骤' })
@@ -168,9 +188,25 @@ describe('readiness in 创作', () => {
   })
 
   it('has no placeholder buttons anywhere', async () => {
-    const routes = ['/studio', '/library', '/models', '/settings/general', '/settings/devices', '/settings/storage', '/settings/network', '/settings/features', '/settings/updates', '/settings/about', '/training']
+    const routes = [
+      '/studio',
+      '/library',
+      '/models',
+      '/settings/general',
+      '/settings/devices',
+      '/settings/storage',
+      '/settings/network',
+      '/settings/features',
+      '/settings/updates',
+      '/settings/about',
+      '/training',
+    ]
     for (const route of routes) {
-      const page = await app.open({ scenario: 'ready', route, settings: { trainingEnabled: true, remoteHostsEnabled: true, lanWebEnabled: true } })
+      const page = await app.open({
+        scenario: 'ready',
+        route,
+        settings: { trainingEnabled: true, remoteHostsEnabled: true, lanWebEnabled: true },
+      })
       const text = await page.evaluate(() => document.body.innerText)
       for (const stub of ['后续版本', '即将推出', '敬请期待', 'TODO', 'Coming soon', '未实现']) {
         expect(text, `${route} shows "${stub}"`).not.toContain(stub)

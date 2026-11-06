@@ -97,7 +97,9 @@ const cases = {
       'null LAN port': { lanWebPort: null },
       'concurrency 1': { modelDownloadConcurrency: 1 },
       'feature toggles': { remoteHostsEnabled: true, trainingEnabled: false, engineAutoUpdate: true },
-      'per-GPU engines': { engineDeviceOverrides: { 'GPU-1': 'cu13-sm75-system-cuda', 'vk-1002-744c-0': 'hip', 'vk-8086-56a0-0': 'vulkan' } },
+      'per-GPU engines': {
+        engineDeviceOverrides: { 'GPU-1': 'cu13-sm75-system-cuda', 'vk-1002-744c-0': 'hip', 'vk-8086-56a0-0': 'vulkan' },
+      },
       'no per-GPU engines': { engineDeviceOverrides: {} },
     },
     rejects: {
@@ -129,7 +131,13 @@ const cases = {
   mossInferDownload: {
     valid: { channel: 'stable' },
     accepts: {
-      'every option': { channel: 'dev', packages: ['cu13-sm75-system-cuda', 'vulkan', 'hip', 'cu12-sm70'], all: true, cudaWheels: true, releaseTag: 'v2.1.1' },
+      'every option': {
+        channel: 'dev',
+        packages: ['cu13-sm75-system-cuda', 'vulkan', 'hip', 'cu12-sm70'],
+        all: true,
+        cudaWheels: true,
+        releaseTag: 'v2.1.1',
+      },
       'the old flavour fields are ignored': { channel: 'stable', flavour: 'cu12', variant: 'bundled' },
     },
     rejects: {
@@ -415,7 +423,12 @@ const cases = {
 
   modelsRemoteDelete: {
     valid: { hostId: 'h1', ids: ['moss-sft-dit', 'qwen35-encoder'] },
-    rejects: { 'no ids': { hostId: 'h1', ids: [] }, 'empty id': { hostId: 'h1', ids: [''] }, 'too many': { hostId: 'h1', ids: Array.from({ length: 51 }, (_, i) => `m${i}`) }, 'empty host': { hostId: '', ids: ['m'] } },
+    rejects: {
+      'no ids': { hostId: 'h1', ids: [] },
+      'empty id': { hostId: 'h1', ids: [''] },
+      'too many': { hostId: 'h1', ids: Array.from({ length: 51 }, (_, i) => `m${i}`) },
+      'empty host': { hostId: '', ids: ['m'] },
+    },
   },
 
   remoteDownloadsRefresh: { valid: { hostId: 'h1' }, rejects: { 'empty host': { hostId: '' } } },
@@ -475,14 +488,19 @@ const cases = {
 
   trainerCreate: {
     valid: { branch: 'main', commit: 'abcdef0' },
-    rejects: { 'short commit': { branch: 'main', commit: 'abcdef' }, 'overlong name': { branch: 'main', commit: 'abcdef0', name: long(121) } },
+    rejects: {
+      'short commit': { branch: 'main', commit: 'abcdef' },
+      'overlong name': { branch: 'main', commit: 'abcdef0', name: long(121) },
+    },
   },
 
   trainerId: { valid: { id: 't1' }, rejects: { 'empty id': { id: '' } } },
 
   launchRow: {
     valid: launchRow,
-    accepts: { 'optional fields': { ...launchRow, caseId: 'c', jobId: 'j', startedAt: 'x', error: long(2000), state: 'failed', profile: 'dmd8' } },
+    accepts: {
+      'optional fields': { ...launchRow, caseId: 'c', jobId: 'j', startedAt: 'x', error: long(2000), state: 'failed', profile: 'dmd8' },
+    },
     rejects: {
       'other workspace': { ...launchRow, workspace: 'comfy' },
       'unknown state': { ...launchRow, state: 'paused' },
@@ -572,7 +590,10 @@ const cases = {
   gbcThumbnails: {
     valid: { paths: [] },
     output: { paths: [], width: 160 },
-    accepts: { 'width bounds low': { paths: ['/a'], width: 32 }, 'width bounds high': { paths: Array.from({ length: 120 }, () => '/a'), width: 1600 } },
+    accepts: {
+      'width bounds low': { paths: ['/a'], width: 32 },
+      'width bounds high': { paths: Array.from({ length: 120 }, () => '/a'), width: 1600 },
+    },
     rejects: {
       'width 31': { paths: [], width: 31 },
       'width 1601': { paths: [], width: 1601 },
@@ -672,7 +693,12 @@ const cases = {
       },
       'a control image linked before an adapter is picked': {
         name: 'Project',
-        canvases: [{ ...canvas, inputs: { control: { adapterId: '', images: [{ kind: 'depth', link: { canvasId: 'x' }, strength: 1, start: 0, end: 1 }] } } }],
+        canvases: [
+          {
+            ...canvas,
+            inputs: { control: { adapterId: '', images: [{ kind: 'depth', link: { canvasId: 'x' }, strength: 1, start: 0, end: 1 }] } },
+          },
+        ],
       },
       'image canvas and a layout with every input': {
         name: 'Project',
@@ -683,11 +709,22 @@ const cases = {
             inputs: {
               init: { link: { canvasId: 'img' }, strength: 0.6, resize: 'fit' },
               mask: { path: '/p/assets/mask-c1-x.png' },
-              control: { adapterId: 'control-1', loraStrength: 1, images: [{ kind: 'depth', link: { canvasId: 'img', output: 1 }, strength: 1, start: 0, end: 1 }] },
+              control: {
+                adapterId: 'control-1',
+                loraStrength: 1,
+                images: [{ kind: 'depth', link: { canvasId: 'img', output: 1 }, strength: 1, start: 0, end: 1 }],
+              },
               references: { links: [{ canvasId: 'img' }], maxEdge: 1024 },
             },
             baseSize: { width: 1024, height: 1024 },
-            sampling: { sampler: 'euler', scheduler: 'karras', shift: 3, hires: { width: 1536, height: 1536, steps: 10, strength: 0.4 }, stepCache: 'fbcache', cfgTruncation: 0.5 },
+            sampling: {
+              sampler: 'euler',
+              scheduler: 'karras',
+              shift: 3,
+              hires: { width: 1536, height: 1536, steps: 10, strength: 0.4 },
+              stepCache: 'fbcache',
+              cfgTruncation: 0.5,
+            },
           },
         ],
       },
@@ -704,12 +741,18 @@ const cases = {
       'cfg above 20': { name: 'P', canvases: [{ ...canvas, cfg: 20.5 }] },
       'unknown job state': { name: 'P', canvases: [{ ...canvas, jobState: 'idle' }] },
       'unknown summary canvas': { name: 'P', canvases: [{ ...canvas, summary: { ...canvas.summary, canvas: 'grid' } }] },
-      '17 adapters': { name: 'P', canvases: [{ ...canvas, adapters: Array.from({ length: 17 }, (_, i) => ({ id: `a${i}`, strength: 1 })) }] },
+      '17 adapters': {
+        name: 'P',
+        canvases: [{ ...canvas, adapters: Array.from({ length: 17 }, (_, i) => ({ id: `a${i}`, strength: 1 })) }],
+      },
       'adapter strength above 2': { name: 'P', canvases: [{ ...canvas, adapters: [{ id: 'a', strength: 2.5 }] }] },
       'invalid layer': { name: 'P', canvases: [{ ...canvas, layers: [{ ...layer, opacity: 2 }] }] },
       'empty device uuid': { name: 'P', canvases: [{ ...canvas, deviceUuid: '' }] },
       'unknown canvas kind': { name: 'P', canvases: [{ ...canvas, kind: 'mask' }] },
-      'five reference links': { name: 'P', canvases: [{ ...canvas, inputs: { references: { links: Array.from({ length: 5 }, () => ({ canvasId: 'x' })) } } }] },
+      'five reference links': {
+        name: 'P',
+        canvases: [{ ...canvas, inputs: { references: { links: Array.from({ length: 5 }, () => ({ canvasId: 'x' })) } } }],
+      },
       'init strength above 1': { name: 'P', canvases: [{ ...canvas, inputs: { init: { link: { canvasId: 'x' }, strength: 1.5 } } }] },
       'fractional image size': { name: 'P', canvases: [{ ...canvas, kind: 'image', imageSize: { width: 10.5, height: 10 } }] },
       'base size too small': { name: 'P', canvases: [{ ...canvas, baseSize: { width: 32, height: 1024 } }] },
@@ -745,7 +788,16 @@ const cases = {
       'size bounds': { ...job, width: 256, height: 2048 },
       'seed bounds': { ...job, seed: 4294967295 },
       'steps 100 and cfg 20': { ...job, steps: 100, cfg: 20 },
-      'every option': { ...job, profile: 'dmd8', mode: 'simulate', workspace: 'clover', kind: 'training', caseId: 'c', caseName: 'n', deviceId: 'd' },
+      'every option': {
+        ...job,
+        profile: 'dmd8',
+        mode: 'simulate',
+        workspace: 'clover',
+        kind: 'training',
+        caseId: 'c',
+        caseName: 'n',
+        deviceId: 'd',
+      },
     },
     rejects: {
       'width not multiple of 16': { ...job, width: 520 },
@@ -822,7 +874,11 @@ const cases = {
 
   galleryItem: { valid: { path: ' /g/a.png ' }, output: { path: '/g/a.png' }, rejects: { 'blank path': { path: ' ' } } },
   galleryReveal: { valid: { path: '/g/a.png' }, rejects: { 'blank path': { path: '' } } },
-  galleryTrash: { valid: { path: ' /g/a.png ' }, output: { path: '/g/a.png' }, rejects: { 'blank path': { path: ' ' }, 'missing path': {} } },
+  galleryTrash: {
+    valid: { path: ' /g/a.png ' },
+    output: { path: '/g/a.png' },
+    rejects: { 'blank path': { path: ' ' }, 'missing path': {} },
+  },
 
   pickImages: {
     valid: {},

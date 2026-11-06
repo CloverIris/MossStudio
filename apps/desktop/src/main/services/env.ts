@@ -3,15 +3,7 @@ import { gitBinary } from '../lib/gitBinary'
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import { isAbsolute } from 'node:path'
-import type {
-  CheckItem,
-  EnvReport,
-  GpuInfo,
-  PythonInfo,
-  Recommendation,
-  Settings,
-  ToolState,
-} from '@shared/types'
+import type { CheckItem, EnvReport, GpuInfo, PythonInfo, Recommendation, Settings, ToolState } from '@shared/types'
 import { firstLine, run } from '../lib/run'
 import { paths } from '../lib/paths'
 import { probeNetwork } from './network'
@@ -60,7 +52,12 @@ async function detectGpu(): Promise<GpuInfo> {
     }
     const brand = await run('sysctl', ['-n', 'machdep.cpu.brand_string'], { timeoutMs: 3000 })
     const name = firstLine(brand.stdout) || 'Apple GPU'
-    return { kind: process.arch === 'arm64' ? 'apple' : 'unknown', name, metal: process.arch === 'arm64', available: process.arch === 'arm64' }
+    return {
+      kind: process.arch === 'arm64' ? 'apple' : 'unknown',
+      name,
+      metal: process.arch === 'arm64',
+      available: process.arch === 'arm64',
+    }
   }
 
   if (process.platform === 'win32') {
@@ -75,7 +72,13 @@ async function detectGpu(): Promise<GpuInfo> {
       const best = list.find((item) => /nvidia|amd|radeon|intel|arc/i.test(item.Name ?? '')) ?? list[0]
       if (best?.Name) {
         return {
-          kind: /nvidia/i.test(best.Name) ? 'nvidia' : /amd|radeon/i.test(best.Name) ? 'amd' : /intel|arc/i.test(best.Name) ? 'intel' : 'unknown',
+          kind: /nvidia/i.test(best.Name)
+            ? 'nvidia'
+            : /amd|radeon/i.test(best.Name)
+              ? 'amd'
+              : /intel|arc/i.test(best.Name)
+                ? 'intel'
+                : 'unknown',
           name: best.Name,
           driver: best.DriverVersion,
           available: true,
@@ -91,7 +94,11 @@ async function detectGpu(): Promise<GpuInfo> {
     const result = await run('lspci', [], { timeoutMs: 4000 })
     const line = result.stdout.split('\n').find((l) => /VGA|3D|Display/i.test(l))
     if (line) {
-      return { kind: /nvidia/i.test(line) ? 'nvidia' : /amd|radeon/i.test(line) ? 'amd' : /intel/i.test(line) ? 'intel' : 'unknown', name: line.split(':').slice(2).join(':').trim() || line, available: true }
+      return {
+        kind: /nvidia/i.test(line) ? 'nvidia' : /amd|radeon/i.test(line) ? 'amd' : /intel/i.test(line) ? 'intel' : 'unknown',
+        name: line.split(':').slice(2).join(':').trim() || line,
+        available: true,
+      }
     }
   } catch {
     // ignore
@@ -176,8 +183,7 @@ async function availableMemory(total: number): Promise<number> {
         const match = result.stdout.match(new RegExp(`${label}:\\s+(\\d+)\\.`))
         return match ? Number(match[1]) : 0
       }
-      const reclaimable =
-        pages('Pages free') + pages('Pages inactive') + pages('Pages speculative') + pages('Pages purgeable')
+      const reclaimable = pages('Pages free') + pages('Pages inactive') + pages('Pages speculative') + pages('Pages purgeable')
       if (reclaimable > 0) return reclaimable * pageSize
     } catch {
       // fall through
@@ -194,7 +200,6 @@ async function diskInfo(target: string): Promise<{ total: number; free: number }
     return { total: 0, free: 0 }
   }
 }
-
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '未知'
@@ -260,12 +265,8 @@ function recommendationFor(memoryTotal: number, gpu: GpuInfo): Recommendation {
   }
 }
 
-export async function scanEnvironment(
-  settings: Settings,
-  onProgress?: ProgressFn,
-): Promise<EnvReport> {
-  const report = (section: string, status: ScanProgress['status'], detail?: string): void =>
-    onProgress?.({ section, status, detail })
+export async function scanEnvironment(settings: Settings, onProgress?: ProgressFn): Promise<EnvReport> {
+  const report = (section: string, status: ScanProgress['status'], detail?: string): void => onProgress?.({ section, status, detail })
 
   report('system', 'running')
   const cpu = os.cpus()
@@ -319,10 +320,7 @@ export async function scanEnvironment(
       label: '内存',
       status: memoryGb >= 16 ? 'ok' : 'warn',
       value: `${memoryGb.toFixed(0)} GB 统一内存`,
-      detail:
-        memoryGb < 16
-          ? '低于 16 GB 时请使用 512² + int4 档。'
-          : `当前可用约 ${formatBytes(device.memoryFree)}（含可回收缓存）。`,
+      detail: memoryGb < 16 ? '低于 16 GB 时请使用 512² + int4 档。' : `当前可用约 ${formatBytes(device.memoryFree)}（含可回收缓存）。`,
     },
     {
       id: 'disk',
@@ -331,10 +329,9 @@ export async function scanEnvironment(
       status: device.diskFree < 30 * GB ? 'error' : device.diskFree < 60 * GB ? 'warn' : 'ok',
       value: `剩余 ${formatBytes(device.diskFree)} / ${formatBytes(device.diskTotal)}`,
       detail:
-        device.diskFree < 60 * GB
-          ? 'bf16 全量权重约 27 GB，加上运行时与输出，建议至少 60 GB 空闲。'
-          : '空间足够容纳 bf16 权重与运行时。',
-      actions: device.diskFree < 60 * GB ? [{ id: 'storage', label: '打开存储设置', kind: 'open-settings', payload: 'storage' }] : undefined,
+        device.diskFree < 60 * GB ? 'bf16 全量权重约 27 GB，加上运行时与输出，建议至少 60 GB 空闲。' : '空间足够容纳 bf16 权重与运行时。',
+      actions:
+        device.diskFree < 60 * GB ? [{ id: 'storage', label: '打开存储设置', kind: 'open-settings', payload: 'storage' }] : undefined,
     },
     {
       id: 'gpu',
@@ -355,9 +352,7 @@ export async function scanEnvironment(
       label: 'Python',
       status: pythons.length ? 'ok' : 'warn',
       value: pythons.length ? pythons.map((p) => p.version).join(' / ') : '未找到 3.10+',
-      detail: pythons.length
-        ? `运行时默认使用 ${pythons[0]!.path}`
-        : '可以稍后一键安装托管 Python，不要求系统预装。',
+      detail: pythons.length ? `运行时默认使用 ${pythons[0]!.path}` : '可以稍后一键安装托管 Python，不要求系统预装。',
       actions: pythons.length ? undefined : [{ id: 'python', label: '查看安装方式', kind: 'open-settings', payload: 'runtime' }],
     },
     {

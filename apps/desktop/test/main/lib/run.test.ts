@@ -15,9 +15,14 @@ describe('run', () => {
   })
 
   it('passes input on stdin and merges env over process.env', async () => {
-    const result = await run(node, script('let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(d+process.env.RUN_TEST_VAR))'), {
-      input: 'hello-', env: { RUN_TEST_VAR: 'world' },
-    })
+    const result = await run(
+      node,
+      script('let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(d+process.env.RUN_TEST_VAR))'),
+      {
+        input: 'hello-',
+        env: { RUN_TEST_VAR: 'world' },
+      },
+    )
     expect(result.code).toBe(0)
     expect(result.stdout.trim()).toBe('hello-world')
   })
@@ -46,7 +51,12 @@ describe('run', () => {
 describe('runStream', () => {
   it('emits each non-blank line per stream, including a trailing partial line', async () => {
     const lines: Array<[string, string]> = []
-    const result = await runStream(node, script('process.stdout.write("a\\n\\nb\\r\\nc"); process.stderr.write("e1\\n")'), {}, (line, stream) => lines.push([line, stream]))
+    const result = await runStream(
+      node,
+      script('process.stdout.write("a\\n\\nb\\r\\nc"); process.stderr.write("e1\\n")'),
+      {},
+      (line, stream) => lines.push([line, stream]),
+    )
     expect(result.code).toBe(0)
     expect(lines.filter(([, s]) => s === 'stdout').map(([l]) => l)).toEqual(['a', 'b', 'c'])
     expect(lines.filter(([, s]) => s === 'stderr').map(([l]) => l)).toEqual(['e1'])
@@ -55,7 +65,9 @@ describe('runStream', () => {
 
   it('handles lines split across chunks', async () => {
     const lines: string[] = []
-    await runStream(node, script('process.stdout.write("hel"); setTimeout(() => process.stdout.write("lo\\nworld\\n"), 30)'), {}, (line) => lines.push(line))
+    await runStream(node, script('process.stdout.write("hel"); setTimeout(() => process.stdout.write("lo\\nworld\\n"), 30)'), {}, (line) =>
+      lines.push(line),
+    )
     expect(lines).toEqual(['hello', 'world'])
   })
 

@@ -131,14 +131,18 @@ export function DetailPanel({
         </div>
 
         <div className="min-w-0">
-          <div className="truncate text-control font-medium text-ink" title={item.name}>{item.name}</div>
+          <div className="truncate text-control font-medium text-ink" title={item.name}>
+            {item.name}
+          </div>
         </div>
 
         {error ? (
           <div className="flex flex-col gap-2 rounded-lg bg-danger-soft p-3">
             <p className="text-ui text-danger">读不到这张图片的信息：{error}</p>
             <div>
-              <Button tone="secondary" onClick={() => setAttempt((value) => value + 1)}>重试</Button>
+              <Button tone="secondary" onClick={() => setAttempt((value) => value + 1)}>
+                重试
+              </Button>
             </div>
           </div>
         ) : !shown ? (

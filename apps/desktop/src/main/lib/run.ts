@@ -32,13 +32,10 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
     let stdout = ''
     let stderr = ''
     let timedOut = false
-    const timer = setTimeout(
-      () => {
-        timedOut = true
-        child?.kill('SIGKILL')
-      },
-      options.timeoutMs ?? 15_000,
-    )
+    const timer = setTimeout(() => {
+      timedOut = true
+      child?.kill('SIGKILL')
+    }, options.timeoutMs ?? 15_000)
 
     child.stdout?.setEncoding('utf8')
     child.stderr?.setEncoding('utf8')

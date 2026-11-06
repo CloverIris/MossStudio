@@ -31,17 +31,7 @@ export interface ImportFolderResult {
 }
 
 const modelExtensions = new Set(['.safetensors', '.ckpt', '.pt', '.pth', '.bin', '.gguf', '.onnx'])
-const skippedDirectories = new Set([
-  '.git',
-  '.venv',
-  'venv',
-  'node_modules',
-  '__pycache__',
-  'cache',
-  'input',
-  'output',
-  'temp',
-])
+const skippedDirectories = new Set(['.git', '.venv', 'venv', 'node_modules', '__pycache__', 'cache', 'input', 'output', 'temp'])
 const maxDepth = 12
 const maxFiles = 5000
 
@@ -59,8 +49,7 @@ function isImportedModelFile(value: unknown): value is ImportedModelFile {
     typeof model.mtimeMs === 'number' &&
     Number.isFinite(model.mtimeMs) &&
     ['full', 'dit', 'text_encoder', 'vae', 'support'].includes(model.role ?? '') &&
-    (model.layout === undefined ||
-      ['comfyui-single-file', 'diffusers-folder'].includes(model.layout)) &&
+    (model.layout === undefined || ['comfyui-single-file', 'diffusers-folder'].includes(model.layout)) &&
     typeof model.importedAt === 'string'
   )
 }
@@ -96,7 +85,10 @@ async function writeImportedModels(indexFile: string, models: ImportedModelFile[
 }
 
 function roleFor(relativePath: string): ImportedModelRole {
-  const directories = relativePath.split(/[\\/]/).slice(0, -1).map((part) => part.toLowerCase())
+  const directories = relativePath
+    .split(/[\\/]/)
+    .slice(0, -1)
+    .map((part) => part.toLowerCase())
   if (directories.some((part) => /^(vae|vaes)$/.test(part))) return 'vae'
   if (directories.some((part) => /^(text[_-]?encoders?|clip)$/.test(part))) return 'text_encoder'
   if (directories.some((part) => /^(diffusion[_-]?models?|unet|checkpoints?)$/.test(part))) return 'dit'
@@ -141,9 +133,7 @@ export async function importModelFolder(directory: string, indexFile: string): P
   if (files.length === 0) throw new Error('所选目录中没有可导入的模型文件')
 
   const models = await readImportedModels(indexFile)
-  const byHash = new Map(
-    models.filter((model) => model.sha256).map((model) => [model.sha256 as string, model]),
-  )
+  const byHash = new Map(models.filter((model) => model.sha256).map((model) => [model.sha256 as string, model]))
   let added = 0
   let duplicates = 0
   for (const file of files) {
@@ -157,11 +147,7 @@ export async function importModelFolder(directory: string, indexFile: string): P
     const existing = byHash.get(sha256)
     if (existing) {
       try {
-        if (
-          existing.path === file ||
-          (await stat(existing.path)).isFile() &&
-            (await hashFile(existing.path)) === sha256
-        ) {
+        if (existing.path === file || ((await stat(existing.path)).isFile() && (await hashFile(existing.path)) === sha256)) {
           duplicates += 1
           continue
         }
@@ -229,7 +215,7 @@ async function safetensorsDtype(file: string): Promise<string | null> {
         bytes.set(tensor.dtype, (bytes.get(tensor.dtype) ?? 0) + Math.max(0, end - start))
       }
       const top = [...bytes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
-      return top ? DTYPES[top] ?? top.toLowerCase() : null
+      return top ? (DTYPES[top] ?? top.toLowerCase()) : null
     } finally {
       await handle.close()
     }
@@ -281,13 +267,17 @@ export async function inspectDiffusersFolder(directory: string): Promise<Diffuse
     const title = /^#\s+(.+)$/m.exec(await readFile(join(directory, 'README.md'), 'utf8'))?.[1] ?? ''
     if (/MOSS-Image-SFT/i.test(title)) flavor = 'sft'
     else if (/MOSS-Image-Base/i.test(title)) flavor = 'base'
-  } catch { /* no README */ }
+  } catch {
+    /* no README */
+  }
   if (!flavor) {
     const name = basename(directory).toLowerCase()
     if (/(^|[^a-z])sft([^a-z]|$)/.test(name)) flavor = 'sft'
     else if (/(^|[^a-z])base([^a-z]|$)/.test(name)) flavor = 'base'
   }
-  const shard = files.filter((file) => file.path.startsWith('transformer/') && file.path.endsWith('.safetensors')).sort((a, b) => a.path.localeCompare(b.path))[0]
+  const shard = files
+    .filter((file) => file.path.startsWith('transformer/') && file.path.endsWith('.safetensors'))
+    .sort((a, b) => a.path.localeCompare(b.path))[0]
   const index = files.find((file) => file.path === 'model_index.json')!
   return {
     size: files.reduce((sum, file) => sum + file.size, 0),
@@ -331,10 +321,7 @@ export interface RegisterScanResult {
  * ComfyUI folder is only read, and the record points at the original file.
  * Re-registering the same path updates its role/size instead of adding a row.
  */
-export async function registerScannedModels(
-  indexFile: string,
-  items: ScannedRegistration[],
-): Promise<RegisterScanResult> {
+export async function registerScannedModels(indexFile: string, items: ScannedRegistration[]): Promise<RegisterScanResult> {
   const models = await readImportedModels(indexFile)
   const byPath = new Map(models.map((model) => [model.path.toLowerCase(), model]))
   const result: RegisterScanResult = { added: 0, updated: 0, missing: [] }

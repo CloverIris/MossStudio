@@ -24,7 +24,10 @@ describe('minimumVersion gate in the job start path', () => {
     const { startRequestedEngineJob } = await import('@main/services/engineJobStart')
     gate.setMinimumVersion('1.1.0', '1.0.3')
     expect(gate.updateRequired()).toEqual({ required: true, minimumVersion: '1.1.0' })
-    await expect(startRequestedEngineJob(request)).rejects.toMatchObject({ code: 'E_UPDATE_REQUIRED', message: requiredUpdateMessage('1.1.0') })
+    await expect(startRequestedEngineJob(request)).rejects.toMatchObject({
+      code: 'E_UPDATE_REQUIRED',
+      message: requiredUpdateMessage('1.1.0'),
+    })
     expect(startEngineJob).not.toHaveBeenCalled()
   })
 

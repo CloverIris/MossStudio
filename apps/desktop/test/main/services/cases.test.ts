@@ -19,14 +19,34 @@ const input = { name: '', instanceId: 'inst', workspace: 'clover' as const, devi
 
 describe('cases', () => {
   it('migrates stored cases and rewrites retired fields once', async () => {
-    writeFileSync(file(), JSON.stringify([
-      { id: 'c1', instanceId: 'inst', name: '  ', backend: 'gradio', port: 1, createdAt: '2026-01-01T00:00:00Z', profile: 'dmd8' },
-      { id: 'c2', instanceId: 'inst', name: 'Named', workspace: 'official', deviceId: 'cuda:1', createdAt: '2026-01-02T00:00:00Z', lastUsedAt: '2026-05-01T00:00:00Z' },
-      { id: 'broken' },
-    ]))
+    writeFileSync(
+      file(),
+      JSON.stringify([
+        { id: 'c1', instanceId: 'inst', name: '  ', backend: 'gradio', port: 1, createdAt: '2026-01-01T00:00:00Z', profile: 'dmd8' },
+        {
+          id: 'c2',
+          instanceId: 'inst',
+          name: 'Named',
+          workspace: 'official',
+          deviceId: 'cuda:1',
+          createdAt: '2026-01-02T00:00:00Z',
+          lastUsedAt: '2026-05-01T00:00:00Z',
+        },
+        { id: 'broken' },
+      ]),
+    )
     const cases = (await load()).listCases()
     expect(cases.map((item) => item.id)).toEqual(['c2', 'c1'])
-    expect(cases[1]).toEqual({ id: 'c1', name: 'inst', instanceId: 'inst', workspace: 'clover', deviceId: 'mps', profile: 'dmd8', createdAt: '2026-01-01T00:00:00Z', lastUsedAt: undefined })
+    expect(cases[1]).toEqual({
+      id: 'c1',
+      name: 'inst',
+      instanceId: 'inst',
+      workspace: 'clover',
+      deviceId: 'mps',
+      profile: 'dmd8',
+      createdAt: '2026-01-01T00:00:00Z',
+      lastUsedAt: undefined,
+    })
     expect(cases[0]).toMatchObject({ name: 'Named', workspace: 'clover', deviceId: 'cuda:1', profile: 'base' })
     const stored = JSON.parse(readFileSync(file(), 'utf8')) as Array<Record<string, unknown>>
     expect(stored.some((item) => 'backend' in item || 'port' in item)).toBe(false)

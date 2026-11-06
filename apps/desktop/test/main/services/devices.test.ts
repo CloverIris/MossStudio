@@ -39,7 +39,14 @@ describe('listDevices', () => {
     state.sync = '0, NVIDIA GeForce RTX 4090, 24564\n1, NVIDIA A100, N/A\n, broken, 1\n'
     const devices = (await load()).listDevices()
     expect(devices.map((device) => device.id)).toEqual(['cuda:0', 'cuda:1', 'cpu'])
-    expect(devices[0]).toEqual({ id: 'cuda:0', name: 'NVIDIA GeForce RTX 4090', kind: 'cuda', detail: 'CUDA · 24 GB', memoryBytes: 24564 * 1024 * 1024, available: true })
+    expect(devices[0]).toEqual({
+      id: 'cuda:0',
+      name: 'NVIDIA GeForce RTX 4090',
+      kind: 'cuda',
+      detail: 'CUDA · 24 GB',
+      memoryBytes: 24564 * 1024 * 1024,
+      available: true,
+    })
     expect(devices[1]).toMatchObject({ detail: 'CUDA · 显存未知', memoryBytes: undefined })
     expect(devices[2]!.kind).toBe('cpu')
   })
@@ -74,7 +81,10 @@ describe('refreshGpuInventory', () => {
     ]
     const snapshot = await (await load()).refreshGpuInventory()
     expect(snapshot.status).toBe('ok')
-    expect(snapshot.devices.map((device) => device.computeCapability)).toEqual([{ major: 8, minor: 6 }, { major: 8, minor: 9 }])
+    expect(snapshot.devices.map((device) => device.computeCapability)).toEqual([
+      { major: 8, minor: 6 },
+      { major: 8, minor: 9 },
+    ])
     expect(snapshot.recommendedGpuUuid).toBe('GPU-b')
     expect(snapshot.capabilityNotice).toBeUndefined()
     expect(state.events).toEqual([{ channel: 'event:gpu-inventory', payload: snapshot }])
@@ -86,14 +96,23 @@ describe('refreshGpuInventory', () => {
     const partial = await refreshGpuInventory()
     expect(partial.capabilityNotice).toMatch(/未知设备不会被自动归类/)
     expect(partial.recommendedGpuUuid).toBeUndefined()
-    state.async = [{ stdout: '0, GPU-a, X, 1, 1, 1, N/A\n' }, { error: new Error('Field "compute_cap" is not a valid field'), stderr: 'bad field' }]
-    expect((await refreshGpuInventory()).capabilityNotice).toBe('无法从 NVIDIA 驱动读取 SM 计算能力：nvidia-smi --query-gpu=uuid,compute_cap 失败：bad field')
+    state.async = [
+      { stdout: '0, GPU-a, X, 1, 1, 1, N/A\n' },
+      { error: new Error('Field "compute_cap" is not a valid field'), stderr: 'bad field' },
+    ]
+    expect((await refreshGpuInventory()).capabilityNotice).toBe(
+      '无法从 NVIDIA 驱动读取 SM 计算能力：nvidia-smi --query-gpu=uuid,compute_cap 失败：bad field',
+    )
   })
 
   it('reports unavailable for missing nvidia-smi or empty output, error otherwise', async () => {
     const { refreshGpuInventory } = await load()
     state.async = [{ error: new Error('spawn nvidia-smi ENOENT') }]
-    expect(await refreshGpuInventory()).toMatchObject({ status: 'unavailable', devices: [], error: expect.stringContaining('未找到 nvidia-smi') })
+    expect(await refreshGpuInventory()).toMatchObject({
+      status: 'unavailable',
+      devices: [],
+      error: expect.stringContaining('未找到 nvidia-smi'),
+    })
     state.async = [{ stdout: '\n' }]
     expect(await refreshGpuInventory()).toMatchObject({ status: 'unavailable', error: 'nvidia-smi 未返回可识别的 NVIDIA GPU' })
     state.async = [{ error: new Error('exit 9'), stderr: 'NVIDIA-SMI has failed' }]

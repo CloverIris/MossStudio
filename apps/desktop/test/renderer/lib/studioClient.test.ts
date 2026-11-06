@@ -11,7 +11,16 @@ describe('electronStudioClient', () => {
     const backend = createMockBackend(scenario('ready', { projects: [projectFixture()] }))
     uninstall = backend.install()
     expect(await electronStudioClient.listProjects()).toEqual([
-      { id: 'project-1', name: 'Project 1', width: 1024, height: 1024, layerCount: 0, seriesId: undefined, page: undefined, updatedAt: '2026-11-01T00:00:00.000Z' },
+      {
+        id: 'project-1',
+        name: 'Project 1',
+        width: 1024,
+        height: 1024,
+        layerCount: 0,
+        seriesId: undefined,
+        page: undefined,
+        updatedAt: '2026-11-01T00:00:00.000Z',
+      },
     ])
     const saved = await electronStudioClient.saveProject({ name: 'New', canvases: [canvasFixture({ id: 'c2' })] })
     expect(saved).toMatchObject({ schemaVersion: 3, name: 'New', id: 'project-2' })
@@ -24,7 +33,9 @@ describe('electronStudioClient', () => {
 
 describe('WebStudioClient', () => {
   function stubFetch(response: Response | (() => Response)) {
-    const fetch = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => (typeof response === 'function' ? response() : response))
+    const fetch = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      typeof response === 'function' ? response() : response,
+    )
     vi.stubGlobal('fetch', fetch)
     return fetch
   }

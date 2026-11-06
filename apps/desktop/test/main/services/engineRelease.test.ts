@@ -7,10 +7,12 @@ const { releaseAfterSettingsChange } = await import('@main/services/engineInstal
 
 describe('settings update → release stale moss-servers (ipc settings:update calls this)', () => {
   it('switching a GPU to another engine frees its old moss-server at once', () => {
-    expect(releaseAfterSettingsChange(
-      { engineDeviceOverrides: {}, mossInferServerPath: null },
-      { engineDeviceOverrides: { 'GPU-a': 'vulkan' }, mossInferServerPath: null },
-    )).toBe(true)
+    expect(
+      releaseAfterSettingsChange(
+        { engineDeviceOverrides: {}, mossInferServerPath: null },
+        { engineDeviceOverrides: { 'GPU-a': 'vulkan' }, mossInferServerPath: null },
+      ),
+    ).toBe(true)
     expect(releaseStaleMossInferRuntimes).toHaveBeenCalledTimes(1)
     expect(releaseStaleMossInferRuntimes).toHaveBeenCalledWith()
   })

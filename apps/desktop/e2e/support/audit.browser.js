@@ -12,9 +12,30 @@
 // matching `selector` (or inside one) are exempt from those rules.
 ;(() => {
   const TOKENS = [
-    'frame', 'board', 'panel', 'surface', 'raised', 'well', 'well-strong', 'well-hover',
-    'ink', 'ink-2', 'ink-3', 'on-ink', 'accent', 'accent-soft', 'on-accent',
-    'ok', 'warn', 'danger', 'ok-soft', 'warn-soft', 'danger-soft', 'scrim', 'image-placeholder', 'scrollbar',
+    'frame',
+    'board',
+    'panel',
+    'surface',
+    'raised',
+    'well',
+    'well-strong',
+    'well-hover',
+    'ink',
+    'ink-2',
+    'ink-3',
+    'on-ink',
+    'accent',
+    'accent-soft',
+    'on-accent',
+    'ok',
+    'warn',
+    'danger',
+    'ok-soft',
+    'warn-soft',
+    'danger-soft',
+    'scrim',
+    'image-placeholder',
+    'scrollbar',
   ]
   const TEXT_TOKENS = ['ink', 'ink-2', 'ink-3', 'on-ink', 'accent', 'on-accent', 'ok', 'warn', 'danger']
   const READABLE = ['ink', 'ink-2']
@@ -30,14 +51,16 @@
     const l_ = L + 0.3963377774 * a + 0.2158037573 * b
     const m_ = L - 0.1055613458 * a - 0.0638541728 * b
     const s_ = L - 0.0894841775 * a - 1.291485548 * b
-    const l = l_ ** 3, m = m_ ** 3, s = s_ ** 3
+    const l = l_ ** 3,
+      m = m_ ** 3,
+      s = s_ ** 3
     return [
       toSrgb(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
       toSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
       toSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s),
     ]
   }
-  const num = (token, scale = 1) => token.endsWith('%') ? (parseFloat(token) / 100) * scale : parseFloat(token)
+  const num = (token, scale = 1) => (token.endsWith('%') ? (parseFloat(token) / 100) * scale : parseFloat(token))
   /** [r, g, b, a] (0–255, 0–1) or null for anything it does not understand. */
   function parse(color) {
     if (!color || color === 'transparent') return [0, 0, 0, 0]
@@ -57,12 +80,14 @@
     }
     if (fn === 'oklab') return [...oklabToRgb(num(parts[0]), num(parts[1], 0.4), num(parts[2], 0.4)), alpha]
     if (fn === 'oklch') {
-      const L = num(parts[0]), C = num(parts[1], 0.4), H = (parseFloat(parts[2]) * Math.PI) / 180
+      const L = num(parts[0]),
+        C = num(parts[1], 0.4),
+        H = (parseFloat(parts[2]) * Math.PI) / 180
       return [...oklabToRgb(L, C * Math.cos(H), C * Math.sin(H)), alpha]
     }
     return null
   }
-  const fmt = (c) => c ? `rgba(${c.map((v, i) => i === 3 ? +v.toFixed(3) : Math.round(v)).join(', ')})` : 'unparsed'
+  const fmt = (c) => (c ? `rgba(${c.map((v, i) => (i === 3 ? +v.toFixed(3) : Math.round(v))).join(', ')})` : 'unparsed')
 
   function tokenValues() {
     const probe = document.createElement('div')
@@ -76,7 +101,8 @@
     probe.remove()
     return values
   }
-  const sameRgb = (a, b, tolerance = 3) => Math.abs(a[0] - b[0]) <= tolerance && Math.abs(a[1] - b[1]) <= tolerance && Math.abs(a[2] - b[2]) <= tolerance
+  const sameRgb = (a, b, tolerance = 3) =>
+    Math.abs(a[0] - b[0]) <= tolerance && Math.abs(a[1] - b[1]) <= tolerance && Math.abs(a[2] - b[2]) <= tolerance
   /** Name of the token this colour is (any alpha for opaque tokens; the token's own alpha for translucent ones). */
   function matchToken(color, tokens, names) {
     for (const name of names) {
@@ -133,7 +159,10 @@
     return out
   }
   function luminance([r, g, b]) {
-    const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
+    const lin = (v) => {
+      v /= 255
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+    }
     return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
   }
   const contrast = (a, b) => {
@@ -152,7 +181,8 @@
 
     // The window itself must never scroll sideways.
     const docWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)
-    if (docWidth > innerWidth + 1) violations.push({ rule: 'overflow', element: '<html>', detail: `document is ${docWidth}px wide in a ${innerWidth}px window` })
+    if (docWidth > innerWidth + 1)
+      violations.push({ rule: 'overflow', element: '<html>', detail: `document is ${docWidth}px wide in a ${innerWidth}px window` })
 
     for (const element of document.body.querySelectorAll('*')) {
       if (element.closest('svg') && element.tagName.toLowerCase() !== 'svg') continue
@@ -173,7 +203,12 @@
       if (style.boxShadow && style.boxShadow !== 'none' && element !== document.activeElement) {
         // "0 0 0 1px color" (blur 0, spread > 0) is a ring drawn as a line.
         for (const shadow of style.boxShadow.split(/,(?![^(]*\))/)) {
-          const lengths = shadow.replace(/(rgba?|color|oklab|oklch)\([^)]*\)/g, '').trim().split(/\s+/).filter((t) => /px$/.test(t)).map(parseFloat)
+          const lengths = shadow
+            .replace(/(rgba?|color|oklab|oklch)\([^)]*\)/g, '')
+            .trim()
+            .split(/\s+/)
+            .filter((t) => /px$/.test(t))
+            .map(parseFloat)
           const color = parse((/(rgba?|color|oklab|oklch)\([^)]*\)/.exec(shadow) ?? [])[0])
           // Selection rings (accent or ink) and their offset gap (a tone colour) are allowed.
           const named = color && matchToken(color, tokens, RING_OK)
@@ -200,7 +235,8 @@
 
       // (d) visible text pushed outside the window
       const rect = element.getBoundingClientRect()
-      if (text && (rect.right > innerWidth + 1 || rect.left < -1)) add('overflow', element, `text box ${Math.round(rect.left)}–${Math.round(rect.right)} outside 0–${innerWidth}`)
+      if (text && (rect.right > innerWidth + 1 || rect.left < -1))
+        add('overflow', element, `text box ${Math.round(rect.left)}–${Math.round(rect.right)} outside 0–${innerWidth}`)
 
       // (c) contrast of readable text
       if (!text || !name || !READABLE.includes(name)) continue
@@ -212,7 +248,12 @@
       const alpha = color[3] * opacity
       const ink = color.slice(0, 3).map((v, i) => v * alpha + background[i] * (1 - alpha))
       const ratio = contrast(ink, background)
-      if (ratio < 4.5) add('contrast', element, `${name} ${fmt(color)}${opacity < 1 ? ` at opacity ${opacity.toFixed(2)}` : ''} on ${fmt([...background, 1])} = ${ratio.toFixed(2)}:1`)
+      if (ratio < 4.5)
+        add(
+          'contrast',
+          element,
+          `${name} ${fmt(color)}${opacity < 1 ? ` at opacity ${opacity.toFixed(2)}` : ''} on ${fmt([...background, 1])} = ${ratio.toFixed(2)}:1`,
+        )
     }
     return violations
   }

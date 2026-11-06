@@ -55,7 +55,8 @@ export function trainingRuns(jobs: readonly JobRecord[], hostId: string): Traini
       const percent = total ? Math.max(0, Math.min(100, (step / total) * 100)) : Math.max(0, Math.min(100, job.progress.percent || 0))
       const loss = typeof job.metrics?.loss === 'number' && Number.isFinite(job.metrics.loss) ? job.metrics.loss : null
       const active = job.state === 'queued' || job.state === 'starting' || job.state === 'running'
-      const stateLabel = job.state === 'running' && loss !== null ? `${STATE_LABEL.running} · loss ${loss.toFixed(3)}` : STATE_LABEL[job.state]
+      const stateLabel =
+        job.state === 'running' && loss !== null ? `${STATE_LABEL.running} · loss ${loss.toFixed(3)}` : STATE_LABEL[job.state]
       return {
         id: job.id,
         name: job.trainerRunName || job.instanceName || '未命名训练',

@@ -20,7 +20,13 @@ export function LoraTab({ catalog, location }: { catalog: Catalog; location: Mod
   const [busy, setBusy] = useState<string | null>(null)
   const [removing, setRemoving] = useState<AdapterEntry | null>(null)
   if (!location.ready) {
-    return <p className="px-1 text-ui text-ink-2">{location.scanning ? `正在查看 ${location.host?.name ?? '远程主机'} 上的 LoRA` : `读不到 ${location.host?.name ?? '远程主机'} 上的 LoRA，回到「模型」重试。`}</p>
+    return (
+      <p className="px-1 text-ui text-ink-2">
+        {location.scanning
+          ? `正在查看 ${location.host?.name ?? '远程主机'} 上的 LoRA`
+          : `读不到 ${location.host?.name ?? '远程主机'} 上的 LoRA，回到「模型」重试。`}
+      </p>
+    )
   }
   const adapters = catalog.adapters.filter((adapter) => location.kind === 'local' || adapter.provider !== 'local')
   const installed = adapters.filter((adapter) => location.isAdapterInstalled(adapter))
@@ -109,7 +115,9 @@ export function LoraTab({ catalog, location }: { catalog: Catalog; location: Mod
                   description={
                     <span className="flex flex-col gap-1.5">
                       <span>{adapterDescription(adapter)}</span>
-                      {state.percent !== null ? <ProgressBar value={state.percent} label={`${adapter.name} 下载进度`} className="max-w-64" /> : null}
+                      {state.percent !== null ? (
+                        <ProgressBar value={state.percent} label={`${adapter.name} 下载进度`} className="max-w-64" />
+                      ) : null}
                     </span>
                   }
                 >
@@ -117,8 +125,20 @@ export function LoraTab({ catalog, location }: { catalog: Catalog; location: Mod
                     <span className={cn('tabular text-caption', state.tone === 'danger' ? 'text-danger' : 'text-ink-2')}>{state.text}</span>
                   ) : null}
                   {state.action && state.action !== 'delete' ? (
-                    <Button tone="secondary" disabled={busy !== null} onClick={() => void act(adapter, state.action as 'download' | 'resume' | 'pause', task)}>
-                      {busy === adapter.id ? <Spinner /> : state.action === 'pause' ? <Pause className="size-4" strokeWidth={1.6} /> : state.action === 'resume' ? <Play className="size-4" strokeWidth={1.6} /> : <ArrowDownToLine className="size-4" strokeWidth={1.6} />}
+                    <Button
+                      tone="secondary"
+                      disabled={busy !== null}
+                      onClick={() => void act(adapter, state.action as 'download' | 'resume' | 'pause', task)}
+                    >
+                      {busy === adapter.id ? (
+                        <Spinner />
+                      ) : state.action === 'pause' ? (
+                        <Pause className="size-4" strokeWidth={1.6} />
+                      ) : state.action === 'resume' ? (
+                        <Play className="size-4" strokeWidth={1.6} />
+                      ) : (
+                        <ArrowDownToLine className="size-4" strokeWidth={1.6} />
+                      )}
                       {state.actionLabel}
                     </Button>
                   ) : null}

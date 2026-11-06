@@ -98,14 +98,22 @@ function hostOf(url: string): string {
  */
 export async function saveFeedCache(dir: string, channel: UpdateChannel, fetched: Pick<FetchedFeed, 'bytes' | 'sig'>): Promise<void> {
   await mkdir(dir, { recursive: true })
-  for (const [name, data] of [[`update-${channel}.json`, fetched.bytes], [`update-${channel}.json.sig`, fetched.sig]] as const) {
+  for (const [name, data] of [
+    [`update-${channel}.json`, fetched.bytes],
+    [`update-${channel}.json.sig`, fetched.sig],
+  ] as const) {
     const file = join(dir, name)
     await writeFile(`${file}.tmp`, data)
     await rename(`${file}.tmp`, file)
   }
 }
 
-export async function loadFeedCache(dir: string, channel: UpdateChannel, keys: readonly UpdatePublicKey[], highWater: FeedHighWater | null = null): Promise<UpdateFeed | null> {
+export async function loadFeedCache(
+  dir: string,
+  channel: UpdateChannel,
+  keys: readonly UpdatePublicKey[],
+  highWater: FeedHighWater | null = null,
+): Promise<UpdateFeed | null> {
   try {
     const bytes = await readFile(join(dir, `update-${channel}.json`))
     const sig = await readFile(join(dir, `update-${channel}.json.sig`))
@@ -126,7 +134,8 @@ async function readHighWaterFile(dir: string): Promise<HighWaterFile> {
     const result: HighWaterFile = {}
     for (const channel of ['stable', 'beta'] as const) {
       const entry = raw[channel] as Partial<FeedHighWater> | undefined
-      if (entry && typeof entry.version === 'string' && typeof entry.publishedAt === 'string') result[channel] = { version: entry.version, publishedAt: entry.publishedAt }
+      if (entry && typeof entry.version === 'string' && typeof entry.publishedAt === 'string')
+        result[channel] = { version: entry.version, publishedAt: entry.publishedAt }
     }
     return result
   } catch {
@@ -146,7 +155,11 @@ export async function loadHighWater(dir: string, channel: UpdateChannel): Promis
 }
 
 /** Raise the channel's mark to `feed` when it is newer; never lowers it. */
-export async function raiseHighWater(dir: string, channel: UpdateChannel, feed: Pick<UpdateFeed, 'version' | 'publishedAt'>): Promise<void> {
+export async function raiseHighWater(
+  dir: string,
+  channel: UpdateChannel,
+  feed: Pick<UpdateFeed, 'version' | 'publishedAt'>,
+): Promise<void> {
   const marks = await readHighWaterFile(dir)
   const mark = marks[channel]
   if (mark && compareToHighWater(feed, mark) <= 0) return

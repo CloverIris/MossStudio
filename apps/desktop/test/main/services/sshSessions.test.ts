@@ -6,18 +6,40 @@ import { settingsFixture, sshHostFixture } from '@test/mocks/backend/fixtures'
 class FakeChild extends EventEmitter {
   stdout = new PassThrough()
   stderr = new PassThrough()
-  stdin = { written: [] as string[], write: (data: string) => { this.stdin.written.push(data); return true } }
+  stdin = {
+    written: [] as string[],
+    write: (data: string) => {
+      this.stdin.written.push(data)
+      return true
+    },
+  }
   kill = vi.fn(() => true)
 }
 
-const state = { children: [] as FakeChild[], hosts: [sshHostFixture({ id: 'ssh-a', name: 'A' }), { id: 'local', name: 'L', kind: 'local' }] }
+const state = {
+  children: [] as FakeChild[],
+  hosts: [sshHostFixture({ id: 'ssh-a', name: 'A' }), { id: 'local', name: 'L', kind: 'local' }],
+}
 const emitted: Array<{ channel: string; payload: unknown }> = []
-const spawn = vi.fn(() => { const child = new FakeChild(); state.children.push(child); return child })
-vi.mock('node:child_process', async (importOriginal) => ({ ...(await importOriginal<object>()), spawn: (...args: unknown[]) => spawn(...(args as [])) }))
+const spawn = vi.fn(() => {
+  const child = new FakeChild()
+  state.children.push(child)
+  return child
+})
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  spawn: (...args: unknown[]) => spawn(...(args as [])),
+}))
 vi.mock('@main/lib/events', () => ({ emit: (channel: string, payload: unknown) => emitted.push({ channel, payload }) }))
 vi.mock('@main/services/settings', () => ({ getSettings: () => settingsFixture() }))
-vi.mock('@main/services/trainingHosts', () => ({ getTrainingHost: (_settings: unknown, id: string) => state.hosts.find((host) => host.id === id) }))
-vi.mock('@main/services/ssh', () => ({ sshCommand: () => 'ssh', sshEnv: () => ({ E: '1' }), sshTerminalArgs: () => ['-tt', 'moss@host', 'bash -l'] }))
+vi.mock('@main/services/trainingHosts', () => ({
+  getTrainingHost: (_settings: unknown, id: string) => state.hosts.find((host) => host.id === id),
+}))
+vi.mock('@main/services/ssh', () => ({
+  sshCommand: () => 'ssh',
+  sshEnv: () => ({ E: '1' }),
+  sshTerminalArgs: () => ['-tt', 'moss@host', 'bash -l'],
+}))
 
 beforeEach(() => {
   vi.resetModules()
@@ -47,7 +69,10 @@ describe('ssh terminal sessions', () => {
     state.children[0]!.stderr.write('world')
     await tick()
     expect(getSshTerminal('ssh-a')!.buffer).toBe('hello world')
-    expect(emitted.map((event) => event.payload)).toEqual([{ sessionId: session.id, data: 'hello ' }, { sessionId: session.id, data: 'world' }])
+    expect(emitted.map((event) => event.payload)).toEqual([
+      { sessionId: session.id, data: 'hello ' },
+      { sessionId: session.id, data: 'world' },
+    ])
     expect(listSshTerminals()).toHaveLength(1)
   })
 
@@ -87,7 +112,9 @@ describe('ssh terminal sessions', () => {
     const { openSshTerminal, closeSshTerminal, closeAllSshTerminals, listSshTerminals } = await load()
     const session = openSshTerminal('ssh-a')
     closeSshTerminal('unknown')
-    state.children[0]!.kill.mockImplementation(() => { throw new Error('gone') })
+    state.children[0]!.kill.mockImplementation(() => {
+      throw new Error('gone')
+    })
     expect(() => closeSshTerminal(session.id)).not.toThrow()
     expect(state.children[0]!.kill).toHaveBeenCalledWith('SIGTERM')
     closeAllSshTerminals()

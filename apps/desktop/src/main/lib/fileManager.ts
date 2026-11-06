@@ -7,9 +7,7 @@ function powershellLiteral(value: string): string {
 
 async function runWindowsShell(script: string): Promise<void> {
   const systemRoot = process.env['SystemRoot']
-  const executable = systemRoot
-    ? `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
-    : 'powershell.exe'
+  const executable = systemRoot ? `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe` : 'powershell.exe'
   const command = [
     "$ErrorActionPreference = 'Stop'",
     "$ProgressPreference = 'SilentlyContinue'",
@@ -31,9 +29,13 @@ async function runWindowsShell(script: string): Promise<void> {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     child.stdout?.setEncoding('utf8')
-    child.stdout?.on('data', (chunk: string) => { stdout += chunk })
+    child.stdout?.on('data', (chunk: string) => {
+      stdout += chunk
+    })
     child.stderr?.setEncoding('utf8')
-    child.stderr?.on('data', (chunk: string) => { stderr += chunk })
+    child.stderr?.on('data', (chunk: string) => {
+      stderr += chunk
+    })
     child.once('error', reject)
     child.once('close', (code) => {
       if (code === 0) {
@@ -48,11 +50,13 @@ async function runWindowsShell(script: string): Promise<void> {
 
 export async function openDirectoryInFileManager(directory: string): Promise<void> {
   if (process.platform === 'win32') {
-    await runWindowsShell([
-      '$fileManager = New-Object -ComObject Shell.Application',
-      `$target = ${powershellLiteral(directory)}`,
-      '$fileManager.ShellExecute($target, \'\', \'\', \'open\', 1)',
-    ].join('\n'))
+    await runWindowsShell(
+      [
+        '$fileManager = New-Object -ComObject Shell.Application',
+        `$target = ${powershellLiteral(directory)}`,
+        "$fileManager.ShellExecute($target, '', '', 'open', 1)",
+      ].join('\n'),
+    )
     return
   }
   const error = await shell.openPath(directory)
@@ -62,10 +66,12 @@ export async function openDirectoryInFileManager(directory: string): Promise<voi
 export async function revealInFileManager(target: string): Promise<void> {
   if (process.platform === 'win32') {
     const explorer = `${process.env['SystemRoot'] ?? 'C:\\Windows'}\\explorer.exe`
-    await runWindowsShell([
-      '$fileManager = New-Object -ComObject Shell.Application',
-      `$fileManager.ShellExecute(${powershellLiteral(explorer)}, ${powershellLiteral(`/select,"${target}"`)}, '', 'open', 1)`,
-    ].join('\n'))
+    await runWindowsShell(
+      [
+        '$fileManager = New-Object -ComObject Shell.Application',
+        `$fileManager.ShellExecute(${powershellLiteral(explorer)}, ${powershellLiteral(`/select,"${target}"`)}, '', 'open', 1)`,
+      ].join('\n'),
+    )
     return
   }
   shell.showItemInFolder(target)

@@ -32,12 +32,7 @@ export function listDevices(settings?: Pick<Settings, 'disabledDevices' | 'devic
   }
 
   if (process.platform !== 'darwin') {
-    const rows = command('nvidia-smi', [
-      '--query-gpu=index,name,memory.total',
-      '--format=csv,noheader,nounits',
-    ])
-      .split('\n')
-      .filter(Boolean)
+    const rows = command('nvidia-smi', ['--query-gpu=index,name,memory.total', '--format=csv,noheader,nounits']).split('\n').filter(Boolean)
     for (const row of rows) {
       const [index, name, memory] = row.split(',').map((part) => part.trim())
       if (!index || !name) continue
@@ -111,10 +106,7 @@ export async function refreshGpuInventory(): Promise<GpuInventorySnapshot> {
       } else {
         let capabilityNotice: string | undefined
         try {
-          const capabilityOutput = await runNvidiaSmi([
-            '--query-gpu=uuid,compute_cap',
-            '--format=csv,noheader,nounits',
-          ])
+          const capabilityOutput = await runNvidiaSmi(['--query-gpu=uuid,compute_cap', '--format=csv,noheader,nounits'])
           const capabilities = parseNvidiaComputeCapabilities(capabilityOutput)
           for (const device of devices) device.computeCapability = capabilities.get(device.uuid)
           if (devices.some((device) => !device.computeCapability)) {
@@ -138,9 +130,7 @@ export async function refreshGpuInventory(): Promise<GpuInventorySnapshot> {
         scannedAt: new Date().toISOString(),
         status: unavailable ? 'unavailable' : 'error',
         devices: [],
-        error: unavailable
-          ? '未找到 nvidia-smi；请安装 NVIDIA 驱动或使用手动架构选择。'
-          : message,
+        error: unavailable ? '未找到 nvidia-smi；请安装 NVIDIA 驱动或使用手动架构选择。' : message,
       }
     }
     nvidiaOnly = next

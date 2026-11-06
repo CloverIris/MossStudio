@@ -48,13 +48,15 @@ describe('listBranches', () => {
     }
     const branches = await (await load()).listBranches()
     expect(branches.map((branch) => [branch.name, branch.isDefault, branch.isStable])).toEqual([
-      ['alpha', true, false], ['main', true, true], ['zeta', false, false],
+      ['alpha', true, false],
+      ['main', true, true],
+      ['zeta', false, false],
     ])
     expect(state.calls[0]).toEqual(['-C', mirror(), 'for-each-ref', '--format=%(refname:short)|%(objectname)|%(HEAD)', 'refs/heads'])
   })
 
   it('uses a per-source mirror for other sources', async () => {
-    state.handler = (args) => args.includes('for-each-ref') ? { stdout: 'main|deadbeef|\n' } : { code: 128 }
+    state.handler = (args) => (args.includes('for-each-ref') ? { stdout: 'main|deadbeef|\n' } : { code: 128 })
     const { listBranches } = await load()
     const [main] = await listBranches('https://example.com/fork.git')
     expect(main!.isStable).toBe(false)
@@ -74,7 +76,13 @@ describe('listCommits', () => {
   it('parses unit-separated log lines and sanitises the branch name', async () => {
     state.handler = () => ({ stdout: `${'a'.repeat(40)}\u001faaaaaaa\u001f1700000000\u001ffeat: x | y\u001fAlice\nbad\n` })
     const commits = await (await load()).listCommits('main; rm -rf /', 5)
-    expect(commits[0]).toEqual({ sha: 'a'.repeat(40), short: 'aaaaaaa', date: new Date(1700000000 * 1000).toISOString(), subject: 'feat: x | y', author: 'Alice' })
+    expect(commits[0]).toEqual({
+      sha: 'a'.repeat(40),
+      short: 'aaaaaaa',
+      date: new Date(1700000000 * 1000).toISOString(),
+      subject: 'feat: x | y',
+      author: 'Alice',
+    })
     expect(commits[1]).toEqual({ sha: 'bad', short: '', date: new Date(0).toISOString(), subject: '', author: '' })
     expect(state.calls[0]!.slice(-3)).toEqual(['-n5', '--format=%H%x1f%h%x1f%ct%x1f%s%x1f%an', 'mainrm-rf/'])
   })
@@ -154,9 +162,13 @@ describe('ensureMirror', () => {
   it('repairs an unhealthy mirror by fetch, then by re-cloning', async () => {
     mkdirSync(mirror(), { recursive: true })
     writeFileSync(join(mirror(), 'HEAD'), 'x')
-    state.health = [{ healthy: false, branches: 0 }, { healthy: false, branches: 0 }, { healthy: true, branches: 1 }]
+    state.health = [
+      { healthy: false, branches: 0 },
+      { healthy: false, branches: 0 },
+      { healthy: true, branches: 1 },
+    ]
     await (await load()).ensureMirror(settings)
-    expect(state.calls.map((args) => args[0] === 'clone' ? 'clone' : args[2])).toEqual(['fetch', 'clone'])
+    expect(state.calls.map((args) => (args[0] === 'clone' ? 'clone' : args[2]))).toEqual(['fetch', 'clone'])
     expect(readdirSync(dirname(mirror())).some((name) => name.startsWith('moss-image.git.broken-'))).toBe(true)
   })
 

@@ -32,7 +32,11 @@ function detectTools(): SshTools {
     const git = win32.join(directory, 'git.exe')
     if (!existsSync(git)) continue
     let real = git
-    try { real = realpathSync(git) } catch { /* use the PATH entry */ }
+    try {
+      real = realpathSync(git)
+    } catch {
+      /* use the PATH entry */
+    }
     for (const bin of new Set([directory, win32.dirname(real)])) {
       for (const candidate of [bin, win32.resolve(bin, '../usr/bin'), win32.resolve(bin, '../../usr/bin')]) {
         const suite = gitSuite(candidate)
@@ -61,7 +65,11 @@ function detectTools(): SshTools {
   }
   const directory = win32.join(env['SystemRoot'] || 'C:\\Windows', 'System32/OpenSSH')
   if (['ssh.exe', 'scp.exe', 'ssh-keyscan.exe'].every((name) => existsSync(win32.join(directory, name)))) {
-    return { ssh: win32.join(directory, 'ssh.exe'), scp: win32.join(directory, 'scp.exe'), keyscan: win32.join(directory, 'ssh-keyscan.exe') }
+    return {
+      ssh: win32.join(directory, 'ssh.exe'),
+      scp: win32.join(directory, 'scp.exe'),
+      keyscan: win32.join(directory, 'ssh-keyscan.exe'),
+    }
   }
   return system
 }
@@ -73,8 +81,8 @@ export function getSshTools(): SshTools {
     const candidate = join(dirname(ssh!), process.platform === 'win32' ? `${name}.exe` : name)
     return existsSync(candidate) ? candidate : name
   }
-  const shell = ssh && process.platform === 'win32' && existsSync(join(dirname(ssh), 'msys-2.0.dll'))
-    ? join(dirname(ssh), 'sh.exe') : undefined
+  const shell =
+    ssh && process.platform === 'win32' && existsSync(join(dirname(ssh), 'msys-2.0.dll')) ? join(dirname(ssh), 'sh.exe') : undefined
   return {
     ssh: ssh || detected.ssh,
     scp: process.env['CLOVER_SCP_BIN'] || (ssh ? sibling('scp') : detected.scp),

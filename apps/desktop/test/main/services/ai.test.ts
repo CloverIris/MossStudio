@@ -14,18 +14,26 @@ beforeEach(() => {
   vi.resetModules()
   replies = []
   requests = []
-  vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: { headers: Record<string, string>; body: string }) => {
-    const body = JSON.parse(init.body) as Record<string, unknown>
-    requests.push({ url: String(input), headers: init.headers, body })
-    const reply = replies.shift()
-    if (!reply) throw new Error('no reply queued')
-    return reply(String(input), body)
-  }))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL, init: { headers: Record<string, string>; body: string }) => {
+      const body = JSON.parse(init.body) as Record<string, unknown>
+      requests.push({ url: String(input), headers: init.headers, body })
+      const reply = replies.shift()
+      if (!reply) throw new Error('no reply queued')
+      return reply(String(input), body)
+    }),
+  )
 })
 const load = () => import('@main/services/ai')
 
-const tools: AiToolDefinition[] = [{ name: 'studio_read_context', description: 'Read', inputSchema: { type: 'object' } } as AiToolDefinition]
-const sse = (events: unknown[]) => new Response(events.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } })
+const tools: AiToolDefinition[] = [
+  { name: 'studio_read_context', description: 'Read', inputSchema: { type: 'object' } } as AiToolDefinition,
+]
+const sse = (events: unknown[]) =>
+  new Response(events.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join(''), {
+    headers: { 'content-type': 'text/event-stream' },
+  })
 
 async function provider(kind: AiProviderKind, apiKey = 'sk-test') {
   const api = await load()
@@ -33,12 +41,19 @@ async function provider(kind: AiProviderKind, apiKey = 'sk-test') {
   return { api, id: saved.id }
 }
 
-function run(api: Awaited<ReturnType<typeof load>>, input: Parameters<Awaited<ReturnType<typeof load>>['chat']>[0], toolResult: AiToolResult = { ok: true, content: '{"ok":1}' }) {
+function run(
+  api: Awaited<ReturnType<typeof load>>,
+  input: Parameters<Awaited<ReturnType<typeof load>>['chat']>[0],
+  toolResult: AiToolResult = { ok: true, content: '{"ok":1}' },
+) {
   const events: AiStreamEvent[] = []
   const calls: AiToolCall[] = []
   const promise = api.chat(input, {
     emit: (event) => events.push(event),
-    runTool: async (call) => { calls.push(call); return toolResult },
+    runTool: async (call) => {
+      calls.push(call)
+      return toolResult
+    },
     tools,
   })
   return { promise, events, calls }
@@ -71,7 +86,9 @@ describe('providers', () => {
 describe('chat with an OpenAI-compatible provider', () => {
   it('streams deltas, saves the conversation and authenticates with a bearer key', async () => {
     const { api, id } = await provider('openai')
-    replies.push(() => sse([{ choices: [{ delta: { content: 'Hel' } }] }, 'not json', { choices: [{ delta: { content: 'lo ' } }] }, '[DONE]']))
+    replies.push(() =>
+      sse([{ choices: [{ delta: { content: 'Hel' } }] }, 'not json', { choices: [{ delta: { content: 'lo ' } }] }, '[DONE]']),
+    )
     const { promise, events } = run(api, { providerId: id, message: 'Hi there', context: 'Canvas: 1024²' })
     const result = await promise
     expect(result.reply).toBe('Hello')
@@ -82,7 +99,10 @@ describe('chat with an OpenAI-compatible provider', () => {
     expect(messages[0]!.role).toBe('system')
     expect(messages[0]!.content.endsWith('Canvas: 1024²')).toBe(true)
     expect(messages[1]).toEqual({ role: 'user', content: 'Hi there' })
-    expect((requests[0]!.body['tools'] as unknown[])[0]).toEqual({ type: 'function', function: { name: 'studio_read_context', description: 'Read', parameters: { type: 'object' } } })
+    expect((requests[0]!.body['tools'] as unknown[])[0]).toEqual({
+      type: 'function',
+      function: { name: 'studio_read_context', description: 'Read', parameters: { type: 'object' } },
+    })
     expect(result.conversation).toMatchObject({ title: 'Hi there', providerId: id })
     expect(result.conversation.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
     expect(store().conversations).toHaveLength(1)
@@ -90,10 +110,12 @@ describe('chat with an OpenAI-compatible provider', () => {
 
   it('assembles streamed tool calls, runs them and sends results back', async () => {
     const { api, id } = await provider('openai', '')
-    replies.push(() => sse([
-      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'studio_', arguments: '{"a"' } }] } }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'read_context', arguments: ':1}' } }] } }] },
-    ]))
+    replies.push(() =>
+      sse([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'studio_', arguments: '{"a"' } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'read_context', arguments: ':1}' } }] } }] },
+      ]),
+    )
     replies.push(() => sse([{ choices: [{ delta: { content: 'Done.' } }] }]))
     const { promise, events, calls } = run(api, { providerId: id, message: 'look' })
     const result = await promise
@@ -102,7 +124,11 @@ describe('chat with an OpenAI-compatible provider', () => {
     expect(requests[0]!.headers['authorization']).toBeUndefined()
     const second = requests[1]!.body['messages'] as Array<Record<string, unknown>>
     expect(second.slice(-2)).toEqual([
-      { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'studio_read_context', arguments: '{"a":1}' } }] },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'studio_read_context', arguments: '{"a":1}' } }],
+      },
       { role: 'tool', tool_call_id: 'call_1', content: '{"ok":1}' },
     ])
     expect(result.conversation.messages.map((message) => message.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
@@ -118,7 +144,11 @@ describe('chat with an OpenAI-compatible provider', () => {
   it('stops after four tool rounds', async () => {
     const { api, id } = await provider('openai')
     for (let index = 0; index < 4; index += 1) {
-      replies.push(() => Response.json({ choices: [{ message: { content: '', tool_calls: [{ id: `c${index}`, function: { name: 'studio_read_context' } }] } }] }))
+      replies.push(() =>
+        Response.json({
+          choices: [{ message: { content: '', tool_calls: [{ id: `c${index}`, function: { name: 'studio_read_context' } }] } }],
+        }),
+      )
     }
     const { promise, calls } = run(api, { providerId: id, message: 'loop' })
     await promise
@@ -139,7 +169,14 @@ describe('chat with an OpenAI-compatible provider', () => {
 describe('chat with other providers', () => {
   it('maps tool turns into Anthropic blocks, merging consecutive user content', async () => {
     const { api, id } = await provider('anthropic')
-    replies.push(() => Response.json({ content: [{ type: 'text', text: 'Reading.' }, { type: 'tool_use', id: 'tu_1', name: 'studio_read_context', input: { x: 1 } }] }))
+    replies.push(() =>
+      Response.json({
+        content: [
+          { type: 'text', text: 'Reading.' },
+          { type: 'tool_use', id: 'tu_1', name: 'studio_read_context', input: { x: 1 } },
+        ],
+      }),
+    )
     replies.push(() => Response.json({ content: [{ type: 'text', text: 'All set.' }] }))
     const result = await run(api, { providerId: id, message: 'check' }).promise
     expect(requests[0]!.url).toBe('https://llm.example.test/v1/messages')
@@ -147,7 +184,13 @@ describe('chat with other providers', () => {
     expect(requests[0]!.body['system']).toEqual(expect.stringContaining('MossStudio'))
     expect(requests[1]!.body['messages']).toEqual([
       { role: 'user', content: [{ type: 'text', text: 'check' }] },
-      { role: 'assistant', content: [{ type: 'text', text: 'Reading.' }, { type: 'tool_use', id: 'tu_1', name: 'studio_read_context', input: { x: 1 } }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Reading.' },
+          { type: 'tool_use', id: 'tu_1', name: 'studio_read_context', input: { x: 1 } },
+        ],
+      },
       { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: '{"ok":1}' }] },
     ])
     expect(result.reply).toBe('All set.')
@@ -155,7 +198,9 @@ describe('chat with other providers', () => {
 
   it('maps tool turns into Gemini contents and puts the key in the query', async () => {
     const { api, id } = await provider('gemini', 'g k')
-    replies.push(() => Response.json({ candidates: [{ content: { parts: [{ functionCall: { name: 'studio_read_context', args: { y: 2 } } }] } }] }))
+    replies.push(() =>
+      Response.json({ candidates: [{ content: { parts: [{ functionCall: { name: 'studio_read_context', args: { y: 2 } } }] } }] }),
+    )
     replies.push(() => Response.json({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }))
     await run(api, { providerId: id, message: 'go' }).promise
     expect(requests[0]!.url).toBe('https://llm.example.test/models/m:generateContent?key=g%20k')
@@ -210,7 +255,10 @@ describe('conversations', () => {
 
   it('truncates long titles to 48 characters and lists newest first', async () => {
     const { api, id } = await provider('ollama')
-    replies.push(() => Response.json({ message: { content: 'a' } }), () => Response.json({ message: { content: 'b' } }))
+    replies.push(
+      () => Response.json({ message: { content: 'a' } }),
+      () => Response.json({ message: { content: 'b' } }),
+    )
     const older = await run(api, { providerId: id, message: 'y'.repeat(100) }).promise
     expect(older.conversation.title).toHaveLength(48)
     await new Promise((resolve) => setTimeout(resolve, 5))

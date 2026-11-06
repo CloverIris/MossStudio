@@ -37,7 +37,13 @@ function handleRpc(message: Record<string, unknown>): void {
         // The LAN web UI uploads the picture's bytes (it has no local path).
         respond(await importImageBytes(String(params['projectId'] ?? ''), Buffer.from(String(params['base64'] ?? ''), 'base64')))
       } else if (method === 'saveMask') {
-        respond(await saveMask(String(params['projectId'] ?? ''), String(params['canvasId'] ?? ''), Buffer.from(String(params['base64'] ?? ''), 'base64')))
+        respond(
+          await saveMask(
+            String(params['projectId'] ?? ''),
+            String(params['canvasId'] ?? ''),
+            Buffer.from(String(params['base64'] ?? ''), 'base64'),
+          ),
+        )
       } else if (method === 'cancelJob') {
         respond(await cancelJob(String(params['id'] ?? '')))
       } else if (method === 'getJob') {
@@ -162,9 +168,7 @@ export function getWebAccessInfo(): WebAccessInfo {
       hosts.push({ host: address.address, score: virtual ? 50 : wired ? 10 : 20 })
     }
   }
-  const unique = [...new Map(hosts.map((item) => [item.host, item])).values()]
-    .sort((a, b) => a.score - b.score)
-    .map((item) => item.host)
+  const unique = [...new Map(hosts.map((item) => [item.host, item])).values()].sort((a, b) => a.score - b.score).map((item) => item.host)
   return {
     ready: true,
     token: info.token,

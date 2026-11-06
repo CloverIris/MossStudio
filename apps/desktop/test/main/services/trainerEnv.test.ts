@@ -99,11 +99,24 @@ describe('pickPython', () => {
 
 describe('parseTrainerDeps', () => {
   it('reads the [project] dependencies array', async () => {
-    writeFileSync(join(temp(), 'pyproject.toml'), [
-      '[build-system]', 'requires = ["setuptools"]', '',
-      '[project]', 'name = "trainer"', 'dependencies = [', '  "torch>=2.4",', "  'safetensors',", '  "diffusers==0.31",', ']', '',
-      '[tool.ruff]', 'dependencies = ["not-this"]',
-    ].join('\n'))
+    writeFileSync(
+      join(temp(), 'pyproject.toml'),
+      [
+        '[build-system]',
+        'requires = ["setuptools"]',
+        '',
+        '[project]',
+        'name = "trainer"',
+        'dependencies = [',
+        '  "torch>=2.4",',
+        "  'safetensors',",
+        '  "diffusers==0.31",',
+        ']',
+        '',
+        '[tool.ruff]',
+        'dependencies = ["not-this"]',
+      ].join('\n'),
+    )
     const { parseTrainerDeps } = await load()
     expect(parseTrainerDeps(temp())).toEqual(['torch>=2.4', 'safetensors', 'diffusers==0.31'])
   })
@@ -118,15 +131,18 @@ describe('parseTrainerDeps', () => {
   })
 
   it('keeps requirements with extras and ignores comments', async () => {
-    writeFileSync(join(temp(), 'pyproject.toml'), [
-      '[project]',
-      'dependencies = [',
-      '  "torch", # the trainer pins CUDA wheels separately',
-      '  "diffusers[torch]==0.31",',
-      "  'accelerate>=1.0',",
-      ']',
-      '[tool.uv]',
-    ].join('\n'))
+    writeFileSync(
+      join(temp(), 'pyproject.toml'),
+      [
+        '[project]',
+        'dependencies = [',
+        '  "torch", # the trainer pins CUDA wheels separately',
+        '  "diffusers[torch]==0.31",',
+        "  'accelerate>=1.0',",
+        ']',
+        '[tool.uv]',
+      ].join('\n'),
+    )
     const { parseTrainerDeps } = await load()
     expect(parseTrainerDeps(temp())).toEqual(['torch', 'diffusers[torch]==0.31', 'accelerate>=1.0'])
   })

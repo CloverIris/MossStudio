@@ -15,12 +15,23 @@ export function useGpuInventory(): {
   useEffect(() => {
     let canceled = false
     void call<GpuInventorySnapshot>(Ipc.gpuInventory)
-      .then((snapshot) => { if (!canceled) setInventory(snapshot) })
+      .then((snapshot) => {
+        if (!canceled) setInventory(snapshot)
+      })
       .catch((error: unknown) => {
-        if (!canceled) setInventory({ scannedAt: new Date().toISOString(), status: 'error', devices: [], error: error instanceof Error ? error.message : String(error) })
+        if (!canceled)
+          setInventory({
+            scannedAt: new Date().toISOString(),
+            status: 'error',
+            devices: [],
+            error: error instanceof Error ? error.message : String(error),
+          })
       })
     const off = onEvent<GpuInventorySnapshot>(Events.gpuInventory, setInventory)
-    return () => { canceled = true; off() }
+    return () => {
+      canceled = true
+      off()
+    }
   }, [])
 
   const refresh = useCallback(async () => {
@@ -30,7 +41,12 @@ export function useGpuInventory(): {
       setInventory(snapshot)
       return snapshot
     } catch (error) {
-      const failed: GpuInventorySnapshot = { scannedAt: new Date().toISOString(), status: 'error', devices: [], error: error instanceof Error ? error.message : String(error) }
+      const failed: GpuInventorySnapshot = {
+        scannedAt: new Date().toISOString(),
+        status: 'error',
+        devices: [],
+        error: error instanceof Error ? error.message : String(error),
+      }
       setInventory(failed)
       return failed
     } finally {

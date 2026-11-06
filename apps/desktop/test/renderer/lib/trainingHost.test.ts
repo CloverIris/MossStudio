@@ -21,7 +21,9 @@ describe('lib/trainingHost', () => {
   })
 
   it('falls back to local when storage throws', () => {
-    const denied = (): never => { throw new Error('denied') }
+    const denied = (): never => {
+      throw new Error('denied')
+    }
     vi.stubGlobal('localStorage', { getItem: denied, setItem: denied })
     expect(() => setSelectedTrainingHost('ssh')).not.toThrow()
     expect(getSelectedTrainingHost()).toBe('local')
@@ -29,7 +31,9 @@ describe('lib/trainingHost', () => {
 
   it('announce stores the host and dispatches the change event', () => {
     const seen: unknown[] = []
-    const listener = (event: Event): void => { seen.push((event as CustomEvent).detail) }
+    const listener = (event: Event): void => {
+      seen.push((event as CustomEvent).detail)
+    }
     window.addEventListener(TRAINING_HOST_EVENT, listener)
     announceTrainingHost('ssh-2')
     window.removeEventListener(TRAINING_HOST_EVENT, listener)
@@ -38,7 +42,10 @@ describe('lib/trainingHost', () => {
   })
 
   describe('resolveTrainingHost', () => {
-    const hosts = [{ id: 'ssh-a', kind: 'ssh' }, { id: 'local-like', kind: 'local' }]
+    const hosts = [
+      { id: 'ssh-a', kind: 'ssh' },
+      { id: 'local-like', kind: 'local' },
+    ]
     it.each([
       [undefined, true, 'local'],
       [null, true, 'local'],

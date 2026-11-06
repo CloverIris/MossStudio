@@ -21,8 +21,14 @@ export function UninstallRow(): React.JSX.Element | null {
   useEffect(() => {
     let canceled = false
     // Dev and loose builds have nothing installed: main refuses, and the row stays away.
-    void call<UninstallInfo>(Ipc.uninstallInfo).then((next) => { if (!canceled) setInfo(next) }).catch(() => undefined)
-    return () => { canceled = true }
+    void call<UninstallInfo>(Ipc.uninstallInfo)
+      .then((next) => {
+        if (!canceled) setInfo(next)
+      })
+      .catch(() => undefined)
+    return () => {
+      canceled = true
+    }
   }, [])
 
   const entry = uninstallEntry({ platform: info?.platform ?? window.clover.platform, info, inAppOnWindows: IN_APP_ON_WINDOWS })
@@ -41,23 +47,42 @@ export function UninstallRow(): React.JSX.Element | null {
 
   return (
     <>
-      <Row title="卸载 MossStudio" description={info.method === 'trash' ? '把 MossStudio 移到废纸篓，可以选择是否保留你的数据。' : '删除 MossStudio 的程序文件和快捷方式，可以选择是否保留你的数据。'}>
-        <Button tone="danger" onClick={() => { setRemoveData(false); setOpen(true) }}>卸载…</Button>
+      <Row
+        title="卸载 MossStudio"
+        description={
+          info.method === 'trash'
+            ? '把 MossStudio 移到废纸篓，可以选择是否保留你的数据。'
+            : '删除 MossStudio 的程序文件和快捷方式，可以选择是否保留你的数据。'
+        }
+      >
+        <Button
+          tone="danger"
+          onClick={() => {
+            setRemoveData(false)
+            setOpen(true)
+          }}
+        >
+          卸载…
+        </Button>
       </Row>
       <Modal
         open={open}
-        onClose={() => { if (!starting) setOpen(false) }}
+        onClose={() => {
+          if (!starting) setOpen(false)
+        }}
         title="卸载 MossStudio"
         description={uninstallSummary(removeData, info.method)}
         width="max-w-lg"
-        footer={(
+        footer={
           <>
-            <Button tone="ghost" size="md" data-dialog-initial-focus disabled={starting} onClick={() => setOpen(false)}>取消</Button>
+            <Button tone="ghost" size="md" data-dialog-initial-focus disabled={starting} onClick={() => setOpen(false)}>
+              取消
+            </Button>
             <Button tone="danger" size="md" disabled={starting} onClick={() => void start()}>
               {starting ? <Spinner /> : null}卸载
             </Button>
           </>
-        )}
+        }
       >
         <div className="flex flex-col gap-2">
           <div className="-mx-1 rounded-xl bg-panel p-1.5">
@@ -69,8 +94,16 @@ export function UninstallRow(): React.JSX.Element | null {
               description={dataChoiceText({ dataBytes: info.dataBytes, dataRoot: info.dataRoot })}
             />
           </div>
-          {removeData ? <p className="text-ui text-danger" role="status">作品、模型和设置会被永久删除，无法恢复。需要的话请先备份。</p> : null}
-          {starting ? <p className="text-ui text-ink-2" role="status">正在卸载，MossStudio 马上会关闭…</p> : null}
+          {removeData ? (
+            <p className="text-ui text-danger" role="status">
+              作品、模型和设置会被永久删除，无法恢复。需要的话请先备份。
+            </p>
+          ) : null}
+          {starting ? (
+            <p className="text-ui text-ink-2" role="status">
+              正在卸载，MossStudio 马上会关闭…
+            </p>
+          ) : null}
         </div>
       </Modal>
     </>

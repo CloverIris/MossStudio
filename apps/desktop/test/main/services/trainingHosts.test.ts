@@ -15,7 +15,11 @@ vi.mock('@main/lib/run', () => ({ run: async () => ({ code: state.nvidia, stdout
 vi.mock('@main/services/devices', () => ({ listDevices: () => state.devices }))
 vi.mock('@main/services/ssh', () => ({ probeHost: (...args: unknown[]) => state.probe(...args) }))
 vi.mock('@main/services/sshHostKeys', () => ({ trustUnknownHost: (...args: unknown[]) => state.trust(...(args as [])) }))
-vi.mock('@main/services/sshCredentials', () => ({ hasSshPassword: () => false, saveSshPassword: () => undefined, removeSshPassword: () => undefined }))
+vi.mock('@main/services/sshCredentials', () => ({
+  hasSshPassword: () => false,
+  saveSshPassword: () => undefined,
+  removeSshPassword: () => undefined,
+}))
 vi.mock('@main/services/hfCredentials', () => ({ hasHfToken: (id: string) => id === 'with-token', saveHfToken: vi.fn() }))
 
 const root = useTempDataRoot()
@@ -35,10 +39,17 @@ const load = () => import('@main/services/trainingHosts')
 describe('inventory', () => {
   it('always lists the local host first with resolved paths', async () => {
     const { listTrainingHosts } = await load()
-    expect(listTrainingHosts(settings)).toEqual([{
-      id: 'local', name: '本机', kind: 'local', status: 'unchecked',
-      trainerRoot: join(root(), 'trainer'), instanceRoot: join(root(), 'instances'), modelsRoot: join(root(), 'models'),
-    }])
+    expect(listTrainingHosts(settings)).toEqual([
+      {
+        id: 'local',
+        name: '本机',
+        kind: 'local',
+        status: 'unchecked',
+        trainerRoot: join(root(), 'trainer'),
+        instanceRoot: join(root(), 'instances'),
+        modelsRoot: join(root(), 'models'),
+      },
+    ])
   })
 
   it('migrates the legacy training-hosts.json once without touching it', async () => {
@@ -63,7 +74,16 @@ describe('saveTrainingHost', () => {
   it('trims input, falls back to the host as name and defaults port/auth', async () => {
     const { saveTrainingHost } = await load()
     const saved = saveTrainingHost(input)
-    expect(saved).toMatchObject({ name: 'gpu.test', host: 'gpu.test', user: 'moss', trainerRoot: '~/t', port: 22, authMethod: 'identityFile', hasPassword: false, status: 'unchecked' })
+    expect(saved).toMatchObject({
+      name: 'gpu.test',
+      host: 'gpu.test',
+      user: 'moss',
+      trainerRoot: '~/t',
+      port: 22,
+      authMethod: 'identityFile',
+      hasPassword: false,
+      status: 'unchecked',
+    })
     expect(saved.id).toMatch(/^ssh-[0-9a-f]{8}$/)
     expect(stored()).toHaveLength(1)
     expect(saveTrainingHost({ ...input, name: ' Named ', host: ' spaced.test ' })).toMatchObject({ name: 'Named', host: 'spaced.test' })
@@ -71,9 +91,22 @@ describe('saveTrainingHost', () => {
 
   it('keeps optional paths on edit unless explicitly cleared', async () => {
     const { saveTrainingHost } = await load()
-    const first = saveTrainingHost({ ...input, engineRoot: '/e', downloadProxy: 'http://p', hfEndpoint: 'https://hf', downloadConcurrency: 3, modelsRoot: '/m' })
+    const first = saveTrainingHost({
+      ...input,
+      engineRoot: '/e',
+      downloadProxy: 'http://p',
+      hfEndpoint: 'https://hf',
+      downloadConcurrency: 3,
+      modelsRoot: '/m',
+    })
     const edited = saveTrainingHost({ ...input, id: first.id })
-    expect(edited).toMatchObject({ engineRoot: '/e', downloadProxy: 'http://p', hfEndpoint: 'https://hf', downloadConcurrency: 3, modelsRoot: undefined })
+    expect(edited).toMatchObject({
+      engineRoot: '/e',
+      downloadProxy: 'http://p',
+      hfEndpoint: 'https://hf',
+      downloadConcurrency: 3,
+      modelsRoot: undefined,
+    })
     const cleared = saveTrainingHost({ ...input, id: first.id, downloadProxy: '  ', hfEndpoint: '', downloadConcurrency: null })
     expect(cleared).toMatchObject({ downloadProxy: undefined, hfEndpoint: undefined, downloadConcurrency: undefined, engineRoot: '/e' })
     expect(stored()).toHaveLength(1)
@@ -126,7 +159,15 @@ describe('testTrainingHost', () => {
   it('stores the probe result on success and a truncated error on failure', async () => {
     const { saveTrainingHost, testTrainingHost } = await load()
     const saved = saveTrainingHost(input)
-    state.probe.mockResolvedValueOnce({ os: 'Linux', gpu: 'A100, 81920', git: 'git', uv: '', python: 'Python 3.12', rootReady: true, raw: 'raw' })
+    state.probe.mockResolvedValueOnce({
+      os: 'Linux',
+      gpu: 'A100, 81920',
+      git: 'git',
+      uv: '',
+      python: 'Python 3.12',
+      rootReady: true,
+      raw: 'raw',
+    })
     const ok = await testTrainingHost(settings, saved.id)
     expect(ok).toMatchObject({ status: 'ok', error: undefined, remote: { os: 'Linux', gpu: 'A100, 81920', rootReady: true } })
     expect(stored()[0]!.status).toBe('ok')
@@ -140,7 +181,8 @@ describe('testTrainingHost', () => {
   it('retries the probe once after the user trusts a new host key', async () => {
     const { saveTrainingHost, testTrainingHost } = await load()
     const saved = saveTrainingHost(input)
-    state.probe.mockRejectedValueOnce(new Error('No ED25519 host key is known for gpu.test'))
+    state.probe
+      .mockRejectedValueOnce(new Error('No ED25519 host key is known for gpu.test'))
       .mockResolvedValueOnce({ os: 'Linux', gpu: '', git: '', uv: '', python: '', rootReady: false, raw: '' })
     state.trust.mockResolvedValueOnce(true)
     expect((await testTrainingHost(settings, saved.id)).status).toBe('ok')
@@ -150,14 +192,36 @@ describe('testTrainingHost', () => {
 
 describe('managed hosts', () => {
   it('parses remote GPU rows into devices only for healthy SSH hosts', async () => {
-    writeFileSync(join(root(), 'hosts.json'), JSON.stringify([
-      { id: 'a', name: 'A', kind: 'ssh', host: 'a', user: 'u', trainerRoot: '~', status: 'ok', remote: { gpu: 'NVIDIA A100, 81920\n\nRTX, bogus\n, 1024' } },
-      { id: 'b', name: 'B', kind: 'ssh', host: 'b', user: 'u', trainerRoot: '~', status: 'error', remote: { gpu: 'NVIDIA A100, 81920' } },
-    ]))
+    writeFileSync(
+      join(root(), 'hosts.json'),
+      JSON.stringify([
+        {
+          id: 'a',
+          name: 'A',
+          kind: 'ssh',
+          host: 'a',
+          user: 'u',
+          trainerRoot: '~',
+          status: 'ok',
+          remote: { gpu: 'NVIDIA A100, 81920\n\nRTX, bogus\n, 1024' },
+        },
+        { id: 'b', name: 'B', kind: 'ssh', host: 'b', user: 'u', trainerRoot: '~', status: 'error', remote: { gpu: 'NVIDIA A100, 81920' } },
+      ]),
+    )
     const { listManagedHosts } = await load()
     const [, a, b] = listManagedHosts(settings)
     expect(a!.devices).toEqual([
-      { id: 'a:cuda:0', hostId: 'a', hostName: 'A', name: 'NVIDIA A100', kind: 'cuda', detail: 'CUDA · 80 GB', memoryBytes: 81920 * 1024 * 1024, available: true, source: 'remote' },
+      {
+        id: 'a:cuda:0',
+        hostId: 'a',
+        hostName: 'A',
+        name: 'NVIDIA A100',
+        kind: 'cuda',
+        detail: 'CUDA · 80 GB',
+        memoryBytes: 81920 * 1024 * 1024,
+        available: true,
+        source: 'remote',
+      },
       expect.objectContaining({ id: 'a:cuda:1', name: 'RTX', detail: 'CUDA · 显存未知', memoryBytes: undefined }),
       expect.objectContaining({ id: 'a:cuda:2', name: 'GPU 2', detail: 'CUDA · 1 GB' }),
     ])
@@ -174,7 +238,8 @@ describe('managed hosts', () => {
     const local = listManagedHosts(settings)[0]!
     expect(local.status).toBe('ok')
     expect(local.devices.map((device) => [device.name, device.hostId, device.source])).toEqual([
-      ['Apple M3', 'local', 'local'], ['Apple M3 · CPU', 'local', 'local'],
+      ['Apple M3', 'local', 'local'],
+      ['Apple M3 · CPU', 'local', 'local'],
     ])
     state.nvidia = 1
     // The local device manager never runs the trainer's CUDA check.

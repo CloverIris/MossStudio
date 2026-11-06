@@ -56,10 +56,7 @@ export function modelStorageRoot(
   return join(modelsRoot(customModelsRoot), folder[role])
 }
 
-export function adapterStorageRoot(
-  customModelsRoot?: string | null,
-  directories?: Partial<ModelDirectories>,
-): string {
+export function adapterStorageRoot(customModelsRoot?: string | null, directories?: Partial<ModelDirectories>): string {
   const custom = directories?.adapters?.trim()
   return custom ? resolve(custom) : join(modelsRoot(customModelsRoot), 'adapters')
 }
@@ -84,8 +81,7 @@ export const paths = {
     modelStorageRoot(role, custom, directories),
   roleHub: (role: ModelEntry['role'], custom?: string | null, directories?: Partial<ModelDirectories>) =>
     join(modelStorageRoot(role, custom, directories), 'hf', 'hub'),
-  adapters: (custom?: string | null, directories?: Partial<ModelDirectories>) =>
-    adapterStorageRoot(custom, directories),
+  adapters: (custom?: string | null, directories?: Partial<ModelDirectories>) => adapterStorageRoot(custom, directories),
   modelImports: (custom?: string | null) => join(modelsRoot(custom), 'imports'),
   downloads: () => join(root(), 'downloads'),
   outputs: () => join(root(), 'outputs'),
@@ -101,10 +97,7 @@ export const paths = {
   trainerRuntime: (id: string) => join(root(), 'trainer', 'runtimes', id),
 }
 
-export function ensureDirs(
-  customModelsRoot?: string | null,
-  modelDirectories?: Partial<ModelDirectories>,
-): void {
+export function ensureDirs(customModelsRoot?: string | null, modelDirectories?: Partial<ModelDirectories>): void {
   const core = [
     paths.root(),
     paths.git(),
@@ -127,9 +120,7 @@ export function ensureDirs(
   const model = [
     paths.models(customModelsRoot),
     paths.hub(customModelsRoot),
-    ...(['dit', 'text_encoder', 'vae', 'support', 'full'] as const).map((role) =>
-      paths.roleHub(role, customModelsRoot, modelDirectories),
-    ),
+    ...(['dit', 'text_encoder', 'vae', 'support', 'full'] as const).map((role) => paths.roleHub(role, customModelsRoot, modelDirectories)),
     paths.adapters(customModelsRoot, modelDirectories),
     paths.modelImports(customModelsRoot),
   ].filter((dir) => isInside(root(), dir))

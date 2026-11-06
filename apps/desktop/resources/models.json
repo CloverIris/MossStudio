@@ -11,17 +11,12 @@
       "role": "dit",
       "precision": "bf16",
       "size_bytes": 10164704750,
-      "files": [
-        "transformer/*"
-      ],
+      "files": ["transformer/*"],
       "subfolder": "transformer",
       "format": "diffusers",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "official",
-        "sft"
-      ],
+      "tags": ["official", "sft"],
       "notes": "官方 SFT 主模型，适合日常生成。"
     },
     {
@@ -33,17 +28,12 @@
       "role": "dit",
       "precision": "bf16",
       "size_bytes": 10164704750,
-      "files": [
-        "transformer/*"
-      ],
+      "files": ["transformer/*"],
       "subfolder": "transformer",
       "format": "diffusers",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "official",
-        "base"
-      ],
+      "tags": ["official", "base"],
       "notes": "官方 Base 主模型，适合继续训练与微调。"
     },
     {
@@ -55,19 +45,9 @@
       "role": "dit",
       "precision": "fp16",
       "size_bytes": 10164704750,
-      "files": [
-        "base/transformer/*"
-      ],
+      "files": ["base/transformer/*"],
       "license": "Apache-2.0",
-      "tags": [
-        "community",
-        "fp16",
-        "fixed",
-        "base",
-        "diffusers",
-        "2080ti",
-        "v100"
-      ],
+      "tags": ["community", "fp16", "fixed", "base", "diffusers", "2080ti", "v100"],
       "preview": "https://huggingface.co/KBlueLeaf/MOSS-Image-FP16-fixed/resolve/main/images/gallery/base_diffusers_p3_s11.webp",
       "notes": "社区 FP16 修复版主模型；与共享 Qwen、VAE 组合使用，按 FP16 加载。",
       "format": "diffusers",
@@ -83,19 +63,9 @@
       "role": "dit",
       "precision": "fp16",
       "size_bytes": 10164704750,
-      "files": [
-        "sft/transformer/*"
-      ],
+      "files": ["sft/transformer/*"],
       "license": "Apache-2.0",
-      "tags": [
-        "community",
-        "fp16",
-        "fixed",
-        "sft",
-        "diffusers",
-        "2080ti",
-        "v100"
-      ],
+      "tags": ["community", "fp16", "fixed", "sft", "diffusers", "2080ti", "v100"],
       "preview": "https://huggingface.co/KBlueLeaf/MOSS-Image-FP16-fixed/resolve/main/images/gallery/sft_diffusers_p3_s11.webp",
       "notes": "社区 FP16 修复版主模型；与共享 Qwen、VAE 组合使用，按 FP16 加载。",
       "format": "diffusers",
@@ -111,19 +81,9 @@
       "role": "dit",
       "precision": "fp16",
       "size_bytes": 10164655600,
-      "files": [
-        "comfyui/moss_image_base_fp16_fixed.safetensors"
-      ],
+      "files": ["comfyui/moss_image_base_fp16_fixed.safetensors"],
       "license": "Apache-2.0",
-      "tags": [
-        "community",
-        "fp16",
-        "fixed",
-        "base",
-        "comfyui",
-        "2080ti",
-        "v100"
-      ],
+      "tags": ["community", "fp16", "fixed", "base", "comfyui", "2080ti", "v100"],
       "preview": "https://huggingface.co/KBlueLeaf/MOSS-Image-FP16-fixed/resolve/main/images/gallery/base_comfyui_p3_s11.webp",
       "notes": "社区 FP16 修复版主模型；供 ComfyUI 使用，不支持绑定到官方 Gradio。",
       "format": "comfyui",
@@ -139,19 +99,9 @@
       "role": "dit",
       "precision": "fp16",
       "size_bytes": 10164655600,
-      "files": [
-        "comfyui/moss_image_sft_fp16_fixed.safetensors"
-      ],
+      "files": ["comfyui/moss_image_sft_fp16_fixed.safetensors"],
       "license": "Apache-2.0",
-      "tags": [
-        "community",
-        "fp16",
-        "fixed",
-        "sft",
-        "comfyui",
-        "2080ti",
-        "v100"
-      ],
+      "tags": ["community", "fp16", "fixed", "sft", "comfyui", "2080ti", "v100"],
       "preview": "https://huggingface.co/KBlueLeaf/MOSS-Image-FP16-fixed/resolve/main/images/gallery/sft_comfyui_p3_s11.webp",
       "notes": "社区 FP16 修复版主模型；供 ComfyUI 使用，不支持绑定到官方 Gradio。",
       "format": "comfyui",
@@ -167,18 +117,12 @@
       "role": "text_encoder",
       "precision": "bf16",
       "size_bytes": 16785543633,
-      "files": [
-        "text_encoder/*",
-        "tokenizer/*"
-      ],
+      "files": ["text_encoder/*", "tokenizer/*"],
       "subfolder": "text_encoder",
       "format": "diffusers",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "official",
-        "shared"
-      ],
+      "tags": ["official", "shared"],
       "notes": "含 tokenizer 与配置，Base、SFT 和 FP16-fixed 共用。"
     },
     {
@@ -190,17 +134,12 @@
       "role": "vae",
       "precision": "fp32",
       "size_bytes": 249522210,
-      "files": [
-        "vae/*"
-      ],
+      "files": ["vae/*"],
       "subfolder": "vae",
       "format": "diffusers",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "official",
-        "shared"
-      ],
+      "tags": ["official", "shared"],
       "notes": "与官方 MOSS 匹配的 small decoder，运行时使用 FP32。"
     },
     {
@@ -212,11 +151,7 @@
       "role": "support",
       "precision": "mixed",
       "size_bytes": 50000,
-      "files": [
-        "model_index.json",
-        "pipeline_moss_image.py",
-        "scheduler/*"
-      ],
+      "files": ["model_index.json", "pipeline_moss_image.py", "scheduler/*"],
       "subfolder": "",
       "format": "diffusers",
       "family": "moss-image",
@@ -260,16 +195,12 @@
       "role": "dit",
       "precision": "bf16",
       "size_bytes": 10164655808,
-      "files": [
-        "diffusion_models/moss_image_base_bf16.safetensors"
-      ],
+      "files": ["diffusion_models/moss_image_base_bf16.safetensors"],
       "subfolder": "",
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "comfyui"
-      ],
+      "tags": ["comfyui"],
       "notes": "ComfyUI 单文件，仅供下载；不能绑定到官方 Gradio。"
     },
     {
@@ -281,16 +212,12 @@
       "role": "dit",
       "precision": "int8",
       "size_bytes": 5413698958,
-      "files": [
-        "diffusion_models/moss_image_base_int8_convrot.safetensors"
-      ],
+      "files": ["diffusion_models/moss_image_base_int8_convrot.safetensors"],
       "subfolder": "",
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "comfyui"
-      ],
+      "tags": ["comfyui"],
       "notes": "ComfyUI 单文件，仅供下载；不能绑定到官方 Gradio。"
     },
     {
@@ -302,16 +229,12 @@
       "role": "dit",
       "precision": "bf16",
       "size_bytes": 10164655808,
-      "files": [
-        "diffusion_models/moss_image_sft_bf16.safetensors"
-      ],
+      "files": ["diffusion_models/moss_image_sft_bf16.safetensors"],
       "subfolder": "",
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "comfyui"
-      ],
+      "tags": ["comfyui"],
       "notes": "ComfyUI 单文件，仅供下载；不能绑定到官方 Gradio。"
     },
     {
@@ -323,16 +246,12 @@
       "role": "dit",
       "precision": "int8",
       "size_bytes": 5413698958,
-      "files": [
-        "diffusion_models/moss_image_sft_int8_convrot.safetensors"
-      ],
+      "files": ["diffusion_models/moss_image_sft_int8_convrot.safetensors"],
       "subfolder": "",
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "comfyui"
-      ],
+      "tags": ["comfyui"],
       "notes": "ComfyUI 单文件，仅供下载；不能绑定到官方 Gradio。"
     },
     {
@@ -344,16 +263,12 @@
       "role": "text_encoder",
       "precision": "bf16",
       "size_bytes": 19306312328,
-      "files": [
-        "text_encoders/qwen3.5_9b_bf16.safetensors"
-      ],
+      "files": ["text_encoders/qwen3.5_9b_bf16.safetensors"],
       "subfolder": "",
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "comfyui"
-      ],
+      "tags": ["comfyui"],
       "notes": "ComfyUI 编码器，量化版本需对应加载器。"
     },
     {
@@ -365,16 +280,12 @@
       "role": "text_encoder",
       "precision": "int8",
       "size_bytes": 9748121532,
-      "files": [
-        "text_encoders/qwen3.5_9b_int8_convrot.safetensors"
-      ],
+      "files": ["text_encoders/qwen3.5_9b_int8_convrot.safetensors"],
       "subfolder": "",
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "comfyui"
-      ],
+      "tags": ["comfyui"],
       "notes": "ComfyUI 编码器，量化版本需对应加载器。"
     },
     {
@@ -386,16 +297,12 @@
       "role": "text_encoder",
       "precision": "w4a8",
       "size_bytes": 7343591088,
-      "files": [
-        "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors"
-      ],
+      "files": ["text_encoders/qwen3.5_9b_w4a8_gptq.safetensors"],
       "subfolder": "",
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "comfyui"
-      ],
+      "tags": ["comfyui"],
       "notes": "ComfyUI 编码器，量化版本需对应加载器。"
     },
     {
@@ -407,16 +314,12 @@
       "role": "vae",
       "precision": "fp32",
       "size_bytes": 249521340,
-      "files": [
-        "vae/flux2-vae_small.safetensors"
-      ],
+      "files": ["vae/flux2-vae_small.safetensors"],
       "subfolder": "",
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "comfyui"
-      ],
+      "tags": ["comfyui"],
       "notes": "ComfyUI VAE 单文件，仅供下载。"
     },
     {
@@ -428,16 +331,12 @@
       "role": "vae",
       "precision": "fp32",
       "size_bytes": 336211292,
-      "files": [
-        "vae/flux2-vae.safetensors"
-      ],
+      "files": ["vae/flux2-vae.safetensors"],
       "subfolder": "",
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": [
-        "comfyui"
-      ],
+      "tags": ["comfyui"],
       "notes": "ComfyUI VAE 单文件，仅供下载。"
     }
   ],
@@ -451,19 +350,11 @@
       "kind": "dmd",
       "base": "moss-sft",
       "license": "Apache-2.0",
-      "files": [
-        "lora.safetensors",
-        "time_embedding.safetensors",
-        "dataspace.safetensors"
-      ],
+      "files": ["lora.safetensors", "time_embedding.safetensors", "dataspace.safetensors"],
       "size_bytes": 1271000000,
       "size_estimated": true,
       "requires_profile": "dmd8",
-      "tags": [
-        "few-step",
-        "recommended",
-        "8-step"
-      ],
+      "tags": ["few-step", "recommended", "8-step"],
       "notes": "data-space DMD：8 次前向、无 CFG、fp32；必须使用专用采样器，不是普通 LoRA。"
     },
     {
@@ -475,18 +366,11 @@
       "kind": "dmd",
       "base": "moss-base",
       "license": "Apache-2.0",
-      "files": [
-        "lora.safetensors",
-        "time_embedding.safetensors",
-        "dataspace.safetensors"
-      ],
+      "files": ["lora.safetensors", "time_embedding.safetensors", "dataspace.safetensors"],
       "size_bytes": 1271000000,
       "size_estimated": true,
       "requires_profile": "dmd8",
-      "tags": [
-        "few-step",
-        "8-step"
-      ],
+      "tags": ["few-step", "8-step"],
       "notes": "Base 版 DMD 适配器。"
     },
     {
@@ -498,16 +382,9 @@
       "kind": "lora",
       "base": "moss-sft",
       "license": "Apache-2.0",
-      "files": [
-        "pytorch_lora_weights.safetensors"
-      ],
+      "files": ["pytorch_lora_weights.safetensors"],
       "size_bytes": 74377208,
-      "tags": [
-        "community",
-        "lora",
-        "portrait",
-        "style"
-      ],
+      "tags": ["community", "lora", "portrait", "style"],
       "notes": "人像/美妆风格 LoRA（PEFT 格式，引擎开发期实测可加载）。触发词 moss_beauty_style，建议强度 1.0、30 步，与官方 SFT 组合最佳。"
     },
     {
@@ -519,15 +396,9 @@
       "kind": "lora",
       "base": "moss-sft",
       "license": "Apache-2.0",
-      "files": [
-        "loras/moss_sft_destripe_top64_bf16.safetensors"
-      ],
+      "files": ["loras/moss_sft_destripe_top64_bf16.safetensors"],
       "size_bytes": 1900586,
-      "tags": [
-        "community",
-        "lora",
-        "fix"
-      ],
+      "tags": ["community", "lora", "fix"],
       "notes": "1.9 MB 修复 LoRA，去掉 SFT 在平滑区域画出的竖向色带；强度 1.0，可与其他 LoRA 叠加。"
     },
     {
@@ -539,16 +410,9 @@
       "kind": "lora",
       "base": "moss-sft",
       "license": "Apache-2.0",
-      "files": [
-        "MOSS-Image-SFT-Turbo-MFD-v0.1.comfy.safetensors"
-      ],
+      "files": ["MOSS-Image-SFT-Turbo-MFD-v0.1.comfy.safetensors"],
       "size_bytes": 75126744,
-      "tags": [
-        "community",
-        "lora",
-        "few-step",
-        "turbo"
-      ],
+      "tags": ["community", "lora", "few-step", "turbo"],
       "notes": "Mean Flow Distillation 少步 LoRA（SFT 版，kohya 格式）：4–6 步、CFG 1、强度 1.0；按普通步数生成会明显掉质。"
     },
     {
@@ -560,16 +424,9 @@
       "kind": "lora",
       "base": "moss-sft",
       "license": "Apache-2.0",
-      "files": [
-        "lora.safetensors"
-      ],
+      "files": ["lora.safetensors"],
       "size_bytes": 1189176752,
-      "tags": [
-        "community",
-        "lora",
-        "few-step",
-        "distill"
-      ],
+      "tags": ["community", "lora", "few-step", "distill"],
       "notes": "Euler 原生 4 步蒸馏 LoRA（1.1 GB，DMD）：4 步、CFG 1，用普通采样器即可，不需要 data-space 采样器或额外 time embedding。"
     }
   ],

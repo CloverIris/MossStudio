@@ -29,9 +29,15 @@ export function UninstallPage(): React.JSX.Element {
   useEffect(() => {
     let canceled = false
     void call<UninstallInfo>(Ipc.uninstallInfo)
-      .then((next) => { if (!canceled) setState(next) })
-      .catch((error: unknown) => { if (!canceled) setLoadError(`没能读取安装信息：${message(error)}`) })
-    return () => { canceled = true }
+      .then((next) => {
+        if (!canceled) setState(next)
+      })
+      .catch((error: unknown) => {
+        if (!canceled) setLoadError(`没能读取安装信息：${message(error)}`)
+      })
+    return () => {
+      canceled = true
+    }
   }, [])
 
   async function start(): Promise<void> {
@@ -43,7 +49,9 @@ export function UninstallPage(): React.JSX.Element {
     } catch (error) {
       setRun({ status: 'failed', error: message(error) })
       // E.g. MossStudio was still open: re-read, so 重试 works once it has been closed.
-      void call<UninstallInfo>(Ipc.uninstallInfo).then(setState).catch(() => undefined)
+      void call<UninstallInfo>(Ipc.uninstallInfo)
+        .then(setState)
+        .catch(() => undefined)
     } finally {
       setStarting(false)
     }
@@ -57,22 +65,37 @@ export function UninstallPage(): React.JSX.Element {
     <WindowChrome title="卸载 MossStudio" onClose={close} closeDisabled={running}>
       <div data-uninstall-screen={screen} className="h-full">
         {screen === 'loading' ? (
-          <Screen actions={loadError ? <Button size="lg" onClick={close}>关闭</Button> : undefined}>
+          <Screen
+            actions={
+              loadError ? (
+                <Button size="lg" onClick={close}>
+                  关闭
+                </Button>
+              ) : undefined
+            }
+          >
             <ScreenHeading title="卸载 MossStudio" subtitle={loadError ?? undefined} />
-            {loadError ? null : <div className="flex items-center gap-2 text-ui text-ink-2" role="status"><Spinner />正在读取…</div>}
+            {loadError ? null : (
+              <div className="flex items-center gap-2 text-ui text-ink-2" role="status">
+                <Spinner />
+                正在读取…
+              </div>
+            )}
           </Screen>
         ) : null}
 
         {screen === 'confirm' && state ? (
           <Screen
-            actions={(
+            actions={
               <>
-                <Button tone="ghost" size="lg" onClick={close}>取消</Button>
+                <Button tone="ghost" size="lg" onClick={close}>
+                  取消
+                </Button>
                 <Button tone="danger" size="lg" disabled={starting} onClick={() => void start()}>
                   {starting ? <Spinner /> : null}卸载
                 </Button>
               </>
-            )}
+            }
           >
             <ScreenHeading title="卸载 MossStudio" subtitle={`版本 ${state.version}。${uninstallSummary(removeData, state.method)}`} />
             <div className="rounded-xl bg-surface p-1.5">
@@ -84,7 +107,9 @@ export function UninstallPage(): React.JSX.Element {
               />
             </div>
             {removeData ? (
-              <p className="px-1 text-ui text-danger" role="status">作品、模型和设置会被永久删除，无法恢复。需要的话请先备份。</p>
+              <p className="px-1 text-ui text-danger" role="status">
+                作品、模型和设置会被永久删除，无法恢复。需要的话请先备份。
+              </p>
             ) : null}
             {state.running ? (
               <p className="flex items-start gap-2 rounded-lg bg-warn-soft px-3.5 py-2.5 text-ui text-ink" role="status" data-app-running>
@@ -99,7 +124,9 @@ export function UninstallPage(): React.JSX.Element {
           <Screen>
             <ScreenHeading
               title="正在卸载 MossStudio"
-              subtitle={state?.method === 'trash' ? 'MossStudio 会移到废纸篓，然后自动关闭。' : 'MossStudio 会自动关闭，剩下的文件随后删除。'}
+              subtitle={
+                state?.method === 'trash' ? 'MossStudio 会移到废纸篓，然后自动关闭。' : 'MossStudio 会自动关闭，剩下的文件随后删除。'
+              }
             />
             <ProgressBlock label="正在卸载…" percent={null} />
           </Screen>
@@ -107,17 +134,21 @@ export function UninstallPage(): React.JSX.Element {
 
         {screen === 'failed' ? (
           <Screen
-            actions={(
+            actions={
               <>
-                <Button tone="ghost" size="lg" onClick={close}>关闭</Button>
+                <Button tone="ghost" size="lg" onClick={close}>
+                  关闭
+                </Button>
                 <Button tone="primary" size="lg" disabled={starting} onClick={() => void start()}>
                   {starting ? <Spinner /> : null}重试
                 </Button>
               </>
-            )}
+            }
           >
             <ScreenHeading title="卸载没有完成" subtitle="MossStudio 还在电脑上，可以重试。" />
-            <FailureBlock><p className="text-control text-ink">{run?.error ?? '卸载时出了问题。'}</p></FailureBlock>
+            <FailureBlock>
+              <p className="text-control text-ink">{run?.error ?? '卸载时出了问题。'}</p>
+            </FailureBlock>
           </Screen>
         ) : null}
       </div>

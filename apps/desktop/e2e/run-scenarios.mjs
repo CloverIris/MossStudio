@@ -35,6 +35,13 @@ for (const name of names) {
   const ok = result.status === 0
   if (!ok) failed += 1
   console.log(`${ok ? '✓' : '✗'} ${name} (${((Date.now() - started) / 1000).toFixed(1)}s)`)
-  if (!ok) console.log(`${result.stdout}\n${result.stderr}`.split('\n').filter((line) => line && !/dbus|Fontconfig|Security Warning|electronjs\.org\/docs/.test(line)).slice(-40).join('\n'))
+  if (!ok)
+    console.log(
+      `${result.stdout}\n${result.stderr}`
+        .split('\n')
+        .filter((line) => line && !/dbus|Fontconfig|Security Warning|electronjs\.org\/docs/.test(line))
+        .slice(-40)
+        .join('\n'),
+    )
 }
 process.exit(failed ? 1 : 0)

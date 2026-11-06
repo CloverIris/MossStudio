@@ -35,7 +35,9 @@ describe('store.init', () => {
   })
 
   it('applies appearance: explicit theme, animation from settings, acrylic from the bridge', async () => {
-    const { backend, store } = await loadStore(scenario('ready', { settings: settingsFixture({ theme: 'light', uiAnimation: 'off' }) }), { bridge: { acrylic: true } })
+    const { backend, store } = await loadStore(scenario('ready', { settings: settingsFixture({ theme: 'light', uiAnimation: 'off' }) }), {
+      bridge: { acrylic: true },
+    })
     await store().init()
     expect(backend.bridge.acrylic).toBe(true)
     expect(document.documentElement.dataset.theme).toBe('light')
@@ -45,20 +47,34 @@ describe('store.init', () => {
 
   it('resolves the system theme from prefers-color-scheme', async () => {
     const { store } = await loadStore(scenario('ready', { settings: settingsFixture({ theme: 'system' }) }))
-    const matchMedia = vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
-      matches: query === '(prefers-color-scheme: dark)', media: query, onchange: null,
-      addEventListener: () => undefined, removeEventListener: () => undefined,
-      addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
-    }) as MediaQueryList)
+    const matchMedia = vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query: string) =>
+        ({
+          matches: query === '(prefers-color-scheme: dark)',
+          media: query,
+          onchange: null,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+          addListener: () => undefined,
+          removeListener: () => undefined,
+          dispatchEvent: () => false,
+        }) as MediaQueryList,
+    )
     await store().init()
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(matchMedia).toHaveBeenCalledWith('(prefers-color-scheme: dark)')
   })
 
   it('selects the first running or starting job as the active job', async () => {
-    const { store } = await loadStore(scenario('ready', {
-      jobs: [jobFixture({ id: 'done', state: 'succeeded' }), jobFixture({ id: 'starting', state: 'starting' }), jobFixture({ id: 'running', state: 'running' })],
-    }))
+    const { store } = await loadStore(
+      scenario('ready', {
+        jobs: [
+          jobFixture({ id: 'done', state: 'succeeded' }),
+          jobFixture({ id: 'starting', state: 'starting' }),
+          jobFixture({ id: 'running', state: 'running' }),
+        ],
+      }),
+    )
     await store().init()
     expect(store().activeJobId).toBe('starting')
   })
@@ -110,16 +126,32 @@ describe('store.init', () => {
   it('subscribes to each event channel exactly once', async () => {
     const { backend, store } = await loadStore('ready')
     await store().init()
-    for (const event of [Events.download, Events.job, Events.jobLog, Events.diagnostic, Events.gpuTelemetry, Events.settingsChanged,
-      Events.updateState, Events.mossInferDownload, Events.envProgress, Events.gitProgress, Events.runtimeLog]) {
+    for (const event of [
+      Events.download,
+      Events.job,
+      Events.jobLog,
+      Events.diagnostic,
+      Events.gpuTelemetry,
+      Events.settingsChanged,
+      Events.updateState,
+      Events.mossInferDownload,
+      Events.envProgress,
+      Events.gitProgress,
+      Events.runtimeLog,
+    ]) {
       expect(backend.listenerCount(event), event).toBe(1)
     }
   })
 
   it('merges download events that arrive before the snapshot and drops canceled tasks', async () => {
-    const { backend, store } = await loadStore(scenario('ready', {
-      downloads: [downloadFixture({ id: 'model:a', targetId: 'a', state: 'running' }), downloadFixture({ id: 'model:b', targetId: 'b', state: 'running' })],
-    }))
+    const { backend, store } = await loadStore(
+      scenario('ready', {
+        downloads: [
+          downloadFixture({ id: 'model:a', targetId: 'a', state: 'running' }),
+          downloadFixture({ id: 'model:b', targetId: 'b', state: 'running' }),
+        ],
+      }),
+    )
     const held = backend.hold(Ipc.downloadsList)
     const pending = store().init()
     await held.called
@@ -138,14 +170,16 @@ describe('store.init', () => {
   it('schedules the queued launch rows of each device once', async () => {
     vi.useFakeTimers()
     try {
-      const { useApp, store } = await loadStore(scenario('ready', {
-        launchRows: [
-          launchRowFixture({ id: 'r1', deviceId: 'cuda:0' }),
-          launchRowFixture({ id: 'r2', deviceId: 'cuda:0' }),
-          launchRowFixture({ id: 'r3', deviceId: 'cuda:1' }),
-          launchRowFixture({ id: 'r4', deviceId: 'cuda:2', state: 'running' }),
-        ],
-      }))
+      const { useApp, store } = await loadStore(
+        scenario('ready', {
+          launchRows: [
+            launchRowFixture({ id: 'r1', deviceId: 'cuda:0' }),
+            launchRowFixture({ id: 'r2', deviceId: 'cuda:0' }),
+            launchRowFixture({ id: 'r3', deviceId: 'cuda:1' }),
+            launchRowFixture({ id: 'r4', deviceId: 'cuda:2', state: 'running' }),
+          ],
+        }),
+      )
       const startNextQueued = vi.fn(async (_deviceId: string) => undefined)
       useApp.setState({ startNextQueued })
       await store().init()
@@ -188,9 +222,11 @@ describe('store.init', () => {
     })
 
     it('does not repeat an announcement or version on later checks', async () => {
-      const { backend, store } = await loadStore(scenario('updateAvailable', {
-        update: updateAvailableFixture('1.1.0', { announcements: [announcementFixture()] }),
-      }))
+      const { backend, store } = await loadStore(
+        scenario('updateAvailable', {
+          update: updateAvailableFixture('1.1.0', { announcements: [announcementFixture()] }),
+        }),
+      )
       await store().init()
       expect(store().notifications).toHaveLength(2)
       await store().checkForUpdates()
@@ -202,7 +238,9 @@ describe('store.init', () => {
 
   describe('events that arrive while the startup snapshots are in flight', () => {
     it('keeps an update event over the older update:state answer (a slow envScan holds every snapshot)', async () => {
-      const { backend, store } = await loadStore(scenario('ready', { update: updateDownloadingFixture('1.0.4', 100, { phase: 'installing' }) }))
+      const { backend, store } = await loadStore(
+        scenario('ready', { update: updateDownloadingFixture('1.0.4', 100, { phase: 'installing' }) }),
+      )
       const env = backend.hold(Ipc.envScan)
       const starting = store().init()
       await env.called
@@ -226,11 +264,13 @@ describe('store.init', () => {
     })
 
     it('keeps job, diagnostic and engine-download events over their snapshots', async () => {
-      const { backend, store } = await loadStore(scenario('ready', {
-        jobs: [jobFixture({ id: 'job-a', state: 'running' }), jobFixture({ id: 'job-b', state: 'queued' })],
-        diagnostics: [diagnosticFixture({ id: 'diag-a', title: 'old' })],
-        engineDownload: engineDownloadFixture({ phase: 'downloading', percent: 10 }),
-      }))
+      const { backend, store } = await loadStore(
+        scenario('ready', {
+          jobs: [jobFixture({ id: 'job-a', state: 'running' }), jobFixture({ id: 'job-b', state: 'queued' })],
+          diagnostics: [diagnosticFixture({ id: 'diag-a', title: 'old' })],
+          engineDownload: engineDownloadFixture({ phase: 'downloading', percent: 10 }),
+        }),
+      )
       const env = backend.hold(Ipc.envScan)
       const starting = store().init()
       await env.called

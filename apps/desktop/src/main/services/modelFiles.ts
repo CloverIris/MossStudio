@@ -16,14 +16,7 @@ export interface Snapshot {
 export function safePath(root: string, file: string): string {
   const target = resolve(root, file)
   const rel = relative(resolve(root), target)
-  if (
-    isAbsolute(file) ||
-    !rel ||
-    rel.startsWith('..') ||
-    isAbsolute(rel) ||
-    file.includes('\\') ||
-    file.includes(':')
-  ) {
+  if (isAbsolute(file) || !rel || rel.startsWith('..') || isAbsolute(rel) || file.includes('\\') || file.includes(':')) {
     throw new Error(`不合法的模型文件路径：${file}`)
   }
   return target
@@ -42,8 +35,7 @@ export function matchesFile(pattern: string, file: string): boolean {
 export function selectFiles(files: ModelFile[], patterns?: string[]): ModelFile[] {
   if (!patterns?.length) return files
   for (const pattern of patterns) {
-    if (!files.some((file) => matchesFile(pattern, file.path)))
-      throw new Error(`仓库缺少文件：${pattern}`)
+    if (!files.some((file) => matchesFile(pattern, file.path))) throw new Error(`仓库缺少文件：${pattern}`)
   }
   return files.filter((file) => patterns.some((pattern) => matchesFile(pattern, file.path)))
 }
@@ -56,24 +48,21 @@ export async function resolveFiles(
   transport?: (url: string) => Promise<Response>,
 ): Promise<Snapshot> {
   const request = async (url: string): Promise<Response> => {
-    const response = transport ? await transport(url) : await fetch(url, {
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-        : AbortSignal.timeout(30_000),
-    })
+    const response = transport
+      ? await transport(url)
+      : await fetch(url, {
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
+        })
     if (!response.ok) throw new Error(`模型清单 HTTP ${response.status}`)
     return response
   }
-  const meta = (await (
-    await request(`${base}/api/models/${repo}/revision/${encodeURIComponent(revision)}`)
-  ).json()) as { sha: string }
+  const meta = (await (await request(`${base}/api/models/${repo}/revision/${encodeURIComponent(revision)}`)).json()) as { sha: string }
   if (!/^[a-f0-9]{40,64}$/.test(meta.sha)) throw new Error('模型 revision 未解析到有效提交')
   let url: string | null = `${base}/api/models/${repo}/tree/${meta.sha}?recursive=true&limit=1000`
   const files: ModelFile[] = []
   const visited = new Set<string>()
   while (url) {
-    if (visited.has(url) || new URL(url).origin !== new URL(base).origin)
-      throw new Error('模型清单分页无效')
+    if (visited.has(url) || new URL(url).origin !== new URL(base).origin) throw new Error('模型清单分页无效')
     visited.add(url)
     const response = await request(url)
     const tree = (await response.json()) as Array<{
@@ -86,11 +75,9 @@ export async function resolveFiles(
     for (const item of tree) {
       if (item.type !== 'file') continue
       safePath('/model-cache', item.path)
-      if (!Number.isSafeInteger(item.size) || item.size < 0)
-        throw new Error(`文件大小无效：${item.path}`)
+      if (!Number.isSafeInteger(item.size) || item.size < 0) throw new Error(`文件大小无效：${item.path}`)
       const oid = item.lfs?.oid ?? item.oid ?? null
-      if (oid && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(oid))
-        throw new Error(`文件 hash 无效：${item.path}`)
+      if (oid && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(oid)) throw new Error(`文件 hash 无效：${item.path}`)
       files.push({ path: item.path, size: item.size, oid })
     }
     const next =
@@ -212,26 +199,27 @@ export async function downloadFile(
           offset = 0
         }
         let response = await fetch(url, {
-          headers: { ...(offset ? { range: `bytes=${offset}-` } : {}), ...(options.token ? { authorization: `Bearer ${options.token}` } : {}) },
+          headers: {
+            ...(offset ? { range: `bytes=${offset}-` } : {}),
+            ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
+          },
           signal,
           redirect: 'follow',
         })
         if (response.status === 416) {
           await response.body?.cancel()
           offset = 0
-          response = await fetch(url, { signal, redirect: 'follow', headers: options.token ? { authorization: `Bearer ${options.token}` } : undefined })
+          response = await fetch(url, {
+            signal,
+            redirect: 'follow',
+            headers: options.token ? { authorization: `Bearer ${options.token}` } : undefined,
+          })
         }
-        if (response.status !== 200 && response.status !== 206)
-          throw new Error(`下载 HTTP ${response.status}`)
+        if (response.status !== 200 && response.status !== 206) throw new Error(`下载 HTTP ${response.status}`)
         if (response.status === 200) offset = 0
         if (response.status === 206) {
           const range = response.headers.get('content-range')?.match(/^bytes (\d+)-(\d+)\/(\d+)$/)
-          if (
-            !range ||
-            Number(range[1]) !== offset ||
-            Number(range[3]) !== file.size ||
-            Number(range[2]) !== file.size - 1
-          ) {
+          if (!range || Number(range[1]) !== offset || Number(range[3]) !== file.size || Number(range[2]) !== file.size - 1) {
             await response.body?.cancel()
             throw new Error('服务器返回了无效的续传范围，请重试')
           }
@@ -277,23 +265,13 @@ export async function downloadFile(
   }
 }
 
-export async function validateSnapshot(
-  root: string,
-  files: ModelFile[],
-  role: string,
-  subfolder = '',
-): Promise<boolean> {
+export async function validateSnapshot(root: string, files: ModelFile[], role: string, subfolder = ''): Promise<boolean> {
   try {
     if (!files.length) return false
-    for (const file of files)
-      if ((await fileSize(safePath(root, file.path))) !== file.size) return false
+    for (const file of files) if ((await fileSize(safePath(root, file.path))) !== file.size) return false
     const component = subfolder ? safePath(root, subfolder) : root
     if (role === 'support') {
-      for (const file of [
-        'model_index.json',
-        'pipeline_moss_image.py',
-        'scheduler/scheduler_config.json',
-      ]) {
+      for (const file of ['model_index.json', 'pipeline_moss_image.py', 'scheduler/scheduler_config.json']) {
         if ((await fileSize(safePath(root, file))) <= 0) return false
       }
     } else if (['dit', 'text_encoder', 'vae'].includes(role)) {
@@ -302,26 +280,19 @@ export async function validateSnapshot(
       const localFiles = files.filter((file) => file.path.startsWith(prefix))
       const weights = localFiles.filter((file) => file.path.endsWith('.safetensors'))
       if (!weights.length) return false
-      for (const file of localFiles.filter((item) =>
-        item.path.endsWith('.safetensors.index.json'),
-      )) {
+      for (const file of localFiles.filter((item) => item.path.endsWith('.safetensors.index.json'))) {
         const index = JSON.parse(await readFile(safePath(root, file.path), 'utf8')) as {
           weight_map: Record<string, string>
         }
         const shards = [...new Set(Object.values(index.weight_map))]
         if (!shards.length) return false
-        for (const shard of shards)
-          if ((await fileSize(safePath(dirname(safePath(root, file.path)), shard))) <= 0)
-            return false
+        for (const shard of shards) if ((await fileSize(safePath(dirname(safePath(root, file.path)), shard))) <= 0) return false
       }
       if (role === 'text_encoder') {
         if ((await fileSize(safePath(root, 'tokenizer/tokenizer_config.json'))) <= 0) return false
         if (
           (await fileSize(safePath(root, 'tokenizer/tokenizer.json'))) <= 0 &&
-          !(
-            (await fileSize(safePath(root, 'tokenizer/vocab.json'))) > 0 &&
-            (await fileSize(safePath(root, 'tokenizer/merges.txt'))) > 0
-          )
+          !((await fileSize(safePath(root, 'tokenizer/vocab.json'))) > 0 && (await fileSize(safePath(root, 'tokenizer/merges.txt'))) > 0)
         )
           return false
       }

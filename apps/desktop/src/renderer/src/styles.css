@@ -1,6 +1,6 @@
-﻿@import "tailwindcss";
-@import "./styles/dropdowns.css";
-@import "./styles/studio.css";
+﻿@import 'tailwindcss';
+@import './styles/dropdowns.css';
+@import './styles/studio.css';
 /* The Markdown renderer ships Tailwind classes; generate them. */
 @source "../../../node_modules/@openai/apps-sdk-ui";
 
@@ -67,9 +67,10 @@
   --text-display: 28px;
   --text-display--line-height: 36px;
 
-  --font-sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "PingFang SC",
-    "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
-  --font-mono: "Cascadia Mono", "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --font-sans:
+    'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    'Noto Sans SC', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
 
   --default-transition-duration: 140ms;
   --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
@@ -122,7 +123,7 @@
   --radius-dialog: 12px;
 }
 
-html[data-theme="dark"] {
+html[data-theme='dark'] {
   color-scheme: dark;
   --frame: #0e0e0f;
   --board: #111112;
@@ -167,7 +168,7 @@ body {
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "tnum" 0;
+  font-feature-settings: 'tnum' 0;
 }
 
 * {
@@ -219,11 +220,11 @@ button:disabled {
   padding-right: 8px;
 }
 
-.app-titlebar[data-platform="darwin"] {
+.app-titlebar[data-platform='darwin'] {
   padding-left: 80px;
 }
 
-.app-titlebar[data-platform="win32"] {
+.app-titlebar[data-platform='win32'] {
   height: max(40px, env(titlebar-area-height, 40px));
   padding-left: calc(env(titlebar-area-x, 0px) + 12px);
   padding-right: calc(100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100% - 138px)) + 8px);
@@ -243,7 +244,9 @@ button:disabled {
     font-size: var(--text-control);
     line-height: 20px;
     outline: none;
-    transition: background-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease);
+    transition:
+      background-color var(--motion-fast) var(--motion-ease),
+      box-shadow var(--motion-fast) var(--motion-ease);
   }
 
   .ui-field::placeholder {
@@ -265,7 +268,7 @@ button:disabled {
     cursor: default;
   }
 
-  .ui-field[aria-invalid="true"] {
+  .ui-field[aria-invalid='true'] {
     box-shadow: 0 0 0 2px var(--danger);
   }
 
@@ -336,12 +339,14 @@ button:disabled {
   transition: opacity var(--motion-normal) var(--motion-ease);
 }
 
-.app-dialog[data-motion-state="closed"]::backdrop {
+.app-dialog[data-motion-state='closed']::backdrop {
   opacity: 0;
 }
 
 @starting-style {
-  .app-dialog[open]::backdrop { opacity: 0; }
+  .app-dialog[open]::backdrop {
+    opacity: 0;
+  }
 }
 
 .app-dialog-sheet {
@@ -357,10 +362,12 @@ button:disabled {
   grid-template-rows: 0fr;
   opacity: 0;
   overflow: hidden;
-  transition: grid-template-rows var(--motion-normal) var(--motion-ease), opacity var(--motion-normal) var(--motion-ease);
+  transition:
+    grid-template-rows var(--motion-normal) var(--motion-ease),
+    opacity var(--motion-normal) var(--motion-ease);
 }
 
-.app-collapse[data-open="true"] {
+.app-collapse[data-open='true'] {
   grid-template-rows: 1fr;
   opacity: 1;
 }
@@ -372,8 +379,12 @@ button:disabled {
 }
 
 /* Markdown (release notes, assistant replies). */
-.clover-md > :first-child { margin-top: 0; }
-.clover-md > :last-child { margin-bottom: 0; }
+.clover-md > :first-child {
+  margin-top: 0;
+}
+.clover-md > :last-child {
+  margin-bottom: 0;
+}
 
 .clover-md h1,
 .clover-md h2,
@@ -385,15 +396,32 @@ button:disabled {
   line-height: 1.4;
 }
 
-.clover-md h1 { font-size: 18px; }
-.clover-md h2 { font-size: 16px; }
-.clover-md h3 { font-size: 14px; }
-.clover-md p { margin: 0.45em 0; }
+.clover-md h1 {
+  font-size: 18px;
+}
+.clover-md h2 {
+  font-size: 16px;
+}
+.clover-md h3 {
+  font-size: 14px;
+}
+.clover-md p {
+  margin: 0.45em 0;
+}
 .clover-md ul,
-.clover-md ol { margin: 0.45em 0; padding-left: 1.15em; }
-.clover-md ul { list-style: disc; }
-.clover-md ol { list-style: decimal; }
-.clover-md li { margin: 0.15em 0; }
+.clover-md ol {
+  margin: 0.45em 0;
+  padding-left: 1.15em;
+}
+.clover-md ul {
+  list-style: disc;
+}
+.clover-md ol {
+  list-style: decimal;
+}
+.clover-md li {
+  margin: 0.15em 0;
+}
 
 .clover-md a {
   color: var(--ink);
@@ -434,10 +462,10 @@ button:disabled {
 }
 
 /* Motion preference: the setting wins over the OS when set explicitly. */
-html[data-ui-animation="off"] *,
-html[data-ui-animation="off"] *::before,
-html[data-ui-animation="off"] *::after,
-html[data-ui-animation="off"] *::backdrop {
+html[data-ui-animation='off'] *,
+html[data-ui-animation='off'] *::before,
+html[data-ui-animation='off'] *::after,
+html[data-ui-animation='off'] *::backdrop {
   animation-duration: 0s !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0s !important;
@@ -445,10 +473,10 @@ html[data-ui-animation="off"] *::backdrop {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html:not([data-ui-animation="on"]) *,
-  html:not([data-ui-animation="on"]) *::before,
-  html:not([data-ui-animation="on"]) *::after,
-  html:not([data-ui-animation="on"]) *::backdrop {
+  html:not([data-ui-animation='on']) *,
+  html:not([data-ui-animation='on']) *::before,
+  html:not([data-ui-animation='on']) *::after,
+  html:not([data-ui-animation='on']) *::backdrop {
     animation-duration: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0s !important;

@@ -39,10 +39,14 @@ const release = (names: string[] = V220_ASSETS): EngineAssetList => ({
   assets: names.map((name, index) => ({ name, size: 1_000_000 * (index + 1) })),
 })
 
-const without = (...patterns: RegExp[]): EngineAssetList => release(V220_ASSETS.filter((name) => !patterns.some((pattern) => pattern.test(name))))
+const without = (...patterns: RegExp[]): EngineAssetList =>
+  release(V220_ASSETS.filter((name) => !patterns.some((pattern) => pattern.test(name))))
 
 const vk = (index: number, usable = true, discrete = true): EngineMachineGpu['vulkan'] => ({
-  index, usable, discrete, ...(usable ? { kernels: 'coop' } : { reason: 'needs Vulkan 1.2' }),
+  index,
+  usable,
+  discrete,
+  ...(usable ? { kernels: 'coop' } : { reason: 'needs Vulkan 1.2' }),
 })
 
 function nvidia(cc: [number, number], driver: string | undefined, patch: Partial<EngineMachineGpu> = {}): EngineMachineGpu {
@@ -58,11 +62,22 @@ function nvidia(cc: [number, number], driver: string | undefined, patch: Partial
 }
 
 const amd = (gfx: string | undefined, patch: Partial<EngineMachineGpu> = {}): EngineMachineGpu => ({
-  id: `vk-1002-744c-0`, name: `AMD ${gfx ?? 'GPU'}`, vendor: 'amd', pciId: '1002:744c', gfxTarget: gfx, vulkan: vk(0), ...patch,
+  id: `vk-1002-744c-0`,
+  name: `AMD ${gfx ?? 'GPU'}`,
+  vendor: 'amd',
+  pciId: '1002:744c',
+  gfxTarget: gfx,
+  vulkan: vk(0),
+  ...patch,
 })
 
 const intel = (patch: Partial<EngineMachineGpu> = {}): EngineMachineGpu => ({
-  id: 'vk-8086-56a0-0', name: 'Intel Arc A770', vendor: 'intel', pciId: '8086:56a0', vulkan: vk(0), ...patch,
+  id: 'vk-8086-56a0-0',
+  name: 'Intel Arc A770',
+  vendor: 'intel',
+  pciId: '8086:56a0',
+  vulkan: vk(0),
+  ...patch,
 })
 
 function machine(os: EngineOs, gpus: EngineMachineGpu[], patch: Partial<EngineMachine> = {}): EngineMachine {
@@ -75,7 +90,13 @@ function pick(os: EngineOs, gpu: EngineMachineGpu, patch: Partial<EngineMachine>
 }
 
 describe('chooseEnginePackages — NVIDIA with a standard kernel image (8.x, 12.x)', () => {
-  const ccs: Array<[number, number]> = [[8, 0], [8, 6], [8, 9], [12, 0], [12, 1]]
+  const ccs: Array<[number, number]> = [
+    [8, 0],
+    [8, 6],
+    [8, 9],
+    [12, 0],
+    [12, 1],
+  ]
   for (const os of ['windows', 'linux'] as const) {
     for (const cc of ccs) {
       it(`${os} SM${cc.join('')}: CUDA 13 with an R580 driver`, () => {
@@ -87,7 +108,10 @@ describe('chooseEnginePackages — NVIDIA with a standard kernel image (8.x, 12.
       })
       it(`${os} SM${cc.join('')}: Vulkan with a driver too old for CUDA 12`, () => {
         const plan = chooseEnginePackages(machine(os, [nvidia(cc, '470.256.02')]), release())
-        expect(plan.choices[0]).toMatchObject({ packageId: 'vulkan', tip: expect.stringContaining(os === 'linux' ? '525.60.13' : '527.41') })
+        expect(plan.choices[0]).toMatchObject({
+          packageId: 'vulkan',
+          tip: expect.stringContaining(os === 'linux' ? '525.60.13' : '527.41'),
+        })
       })
     }
   }
@@ -158,7 +182,13 @@ describe('chooseEnginePackages — NVIDIA Volta (7.0)', () => {
 })
 
 describe('chooseEnginePackages — NVIDIA without a CUDA kernel image', () => {
-  const ccs: Array<[number, number]> = [[6, 1], [5, 2], [9, 0], [10, 0], [11, 0]]
+  const ccs: Array<[number, number]> = [
+    [6, 1],
+    [5, 2],
+    [9, 0],
+    [10, 0],
+    [11, 0],
+  ]
   for (const os of ['windows', 'linux'] as const) {
     for (const cc of ccs) {
       it(`${os} SM${cc.join('')}: Vulkan when usable`, () => {
@@ -254,15 +284,24 @@ describe('chooseEnginePackages — machines', () => {
     const assets = release()
     const plan = chooseEnginePackages(machine('linux', gpus, { rocm7: true }), assets)
     expect(plan.choices.map((choice) => [choice.gpuId, choice.packageId])).toEqual([
-      ['GPU-a', 'cu13'], ['GPU-b', 'cu13'], ['GPU-c', 'cu12-sm70'], ['vk-1002-744c-0', 'hip'], ['vk-8086-56a0-0', 'vulkan'],
+      ['GPU-a', 'cu13'],
+      ['GPU-b', 'cu13'],
+      ['GPU-c', 'cu12-sm70'],
+      ['vk-1002-744c-0', 'hip'],
+      ['vk-8086-56a0-0', 'vulkan'],
     ])
     expect(plan.packages.map((item) => [item.packageId, item.gpuIds])).toEqual([
-      ['cu13', ['GPU-a', 'GPU-b']], ['cu12-sm70', ['GPU-c']], ['hip', ['vk-1002-744c-0']], ['vulkan', ['vk-8086-56a0-0']],
+      ['cu13', ['GPU-a', 'GPU-b']],
+      ['cu12-sm70', ['GPU-c']],
+      ['hip', ['vk-1002-744c-0']],
+      ['vulkan', ['vk-8086-56a0-0']],
     ])
     const size = (name: string): number => assets.assets.find((asset) => asset.name === name)!.size
     expect(plan.totalBytes).toBe(
-      size('mossinfer-2.2.0-linux-cu13-x86_64.tar.gz') + size('mossinfer-2.2.0-linux-cu12-x86_64-sm70.tar.gz') +
-      size('mossinfer-2.2.0-linux-hip-x86_64.tar.gz') + size('mossinfer-2.2.0-linux-vulkan-x86_64.tar.gz'),
+      size('mossinfer-2.2.0-linux-cu13-x86_64.tar.gz') +
+        size('mossinfer-2.2.0-linux-cu12-x86_64-sm70.tar.gz') +
+        size('mossinfer-2.2.0-linux-hip-x86_64.tar.gz') +
+        size('mossinfer-2.2.0-linux-vulkan-x86_64.tar.gz'),
     )
     expect(plan.blocked).toBeUndefined()
   })
@@ -274,8 +313,12 @@ describe('chooseEnginePackages — machines', () => {
   })
 
   it('picks the Windows .zip and the Linux .tar.gz', () => {
-    expect(chooseEnginePackages(machine('windows', [nvidia([8, 9], '581.42')]), release()).packages[0]!.asset.name).toBe('mossinfer-2.2.0-windows-cu13-x86_64.zip')
-    expect(chooseEnginePackages(machine('linux', [nvidia([8, 9], '581.42')]), release()).packages[0]!.asset.name).toBe('mossinfer-2.2.0-linux-cu13-x86_64.tar.gz')
+    expect(chooseEnginePackages(machine('windows', [nvidia([8, 9], '581.42')]), release()).packages[0]!.asset.name).toBe(
+      'mossinfer-2.2.0-windows-cu13-x86_64.zip',
+    )
+    expect(chooseEnginePackages(machine('linux', [nvidia([8, 9], '581.42')]), release()).packages[0]!.asset.name).toBe(
+      'mossinfer-2.2.0-linux-cu13-x86_64.tar.gz',
+    )
   })
 })
 
@@ -296,10 +339,13 @@ describe('chooseEnginePackages — releases missing assets', () => {
     expect(plan.blocked).toBeTruthy()
   })
   it('an older release with only CUDA 13 standard packages (v2.1)', () => {
-    const old: EngineAssetList = { version: '2.1.1', assets: [
-      { name: 'mossinfer-2.1.1-linux-cu13-x86_64.tar.gz', size: 1 },
-      { name: 'mossinfer-2.1.1-linux-cu13-x86_64-system-cuda.tar.gz', size: 1 },
-    ] }
+    const old: EngineAssetList = {
+      version: '2.1.1',
+      assets: [
+        { name: 'mossinfer-2.1.1-linux-cu13-x86_64.tar.gz', size: 1 },
+        { name: 'mossinfer-2.1.1-linux-cu13-x86_64-system-cuda.tar.gz', size: 1 },
+      ],
+    }
     expect(pick('linux', nvidia([8, 9], '590.48.01'), {}, old)).toBe('cu13')
     expect(pick('linux', nvidia([8, 9], '560.35.03'), {}, old)).toBeNull()
   })
@@ -338,7 +384,10 @@ describe('chooseEnginePackages — compatible list and overrides', () => {
 
 describe('installedAsRelease', () => {
   it('lets the chooser pick among installed packages only', () => {
-    const installed = installedAsRelease('linux', ['cu12', 'vulkan'].map((id) => parseEnginePackageId(id)!))
+    const installed = installedAsRelease(
+      'linux',
+      ['cu12', 'vulkan'].map((id) => parseEnginePackageId(id)!),
+    )
     expect(pick('linux', nvidia([8, 9], '590.48.01'), {}, installed)).toBe('cu12')
     expect(pick('linux', amd('gfx1100'), { rocm7: true }, installed)).toBe('vulkan')
   })
@@ -366,7 +415,9 @@ describe('chooseEnginePackages — integrated GPUs next to a discrete one', () =
   })
 
   it('an explicit override still runs the integrated GPU', () => {
-    const plan = chooseEnginePackages(machine('windows', [nvidia([8, 9], '581.42'), igpu]), release(), { overrides: { [igpu.id]: 'vulkan' } })
+    const plan = chooseEnginePackages(machine('windows', [nvidia([8, 9], '581.42'), igpu]), release(), {
+      overrides: { [igpu.id]: 'vulkan' },
+    })
     expect(plan.choices[1]!.packageId).toBe('vulkan')
     expect(plan.choices[1]!.integratedSkipped).toBeUndefined()
   })
@@ -401,4 +452,3 @@ describe('chooseEnginePackages — HIP needs the GPU device nodes', () => {
     expect(pick('linux', amd('gfx1100'), { rocm7: true, hipAccess: undefined })).toBe('vulkan')
   })
 })
-

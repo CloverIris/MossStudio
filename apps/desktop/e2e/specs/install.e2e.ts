@@ -16,7 +16,11 @@ const ROOT = 'C:\\Users\\张 三\\AppData\\Local\\Programs\\MossStudio'
 
 type InstallSeed = (page: Page) => Promise<void>
 
-async function openSetup(app: E2eApp, seed: InstallSeed, options: { route?: '/install' | '/uninstall'; theme?: Theme; platform?: string } = {}): Promise<Page> {
+async function openSetup(
+  app: E2eApp,
+  seed: InstallSeed,
+  options: { route?: '/install' | '/uninstall'; theme?: Theme; platform?: string } = {},
+): Promise<Page> {
   await app.page.emulateMedia({ colorScheme: options.theme ?? 'light' })
   const page = await app.open({ route: options.route ?? '/install', size: SIZE, defer: true, platform: options.platform })
   await seed(page)
@@ -25,28 +29,51 @@ async function openSetup(app: E2eApp, seed: InstallSeed, options: { route?: '/in
 }
 
 /** Seed `state.install` from a named setup scenario, holding the run so a test can play it. */
-const scenario = (name: string, patch: Record<string, unknown> = {}): InstallSeed => async (page) => {
-  await page.evaluate(([setupName, extra]) => {
-    const { installStateFixture, setupScenario } = window.__mock.installFixtures
-    window.__mock.state.install = installStateFixture({ setup: setupScenario(setupName as never), outcome: 'hold', ...(extra as object) })
-  }, [name, patch] as const)
-}
+const scenario =
+  (name: string, patch: Record<string, unknown> = {}): InstallSeed =>
+  async (page) => {
+    await page.evaluate(
+      ([setupName, extra]) => {
+        const { installStateFixture, setupScenario } = window.__mock.installFixtures
+        window.__mock.state.install = installStateFixture({
+          setup: setupScenario(setupName as never),
+          outcome: 'hold',
+          ...(extra as object),
+        })
+      },
+      [name, patch] as const,
+    )
+  }
 
 const screen = (page: Page): Promise<string | null> => page.locator('[data-setup-screen]').getAttribute('data-setup-screen')
 const install = (page: Page) => page.evaluate(() => window.__mock.state.install)
 const installButton = (page: Page) => page.getByRole('button', { name: '安装', exact: true })
 
 async function emitProgress(page: Page, phase: string, percent: number): Promise<void> {
-  await page.evaluate(([step, value]) => {
-    const total = window.__mock.state.install.setup.requiredBytes
-    window.__mock.emit(window.__mock.Events.installProgress, { phase: step, percent: value, copiedBytes: Math.round((total * (value as number)) / 100), totalBytes: total })
-  }, [phase, percent] as const)
+  await page.evaluate(
+    ([step, value]) => {
+      const total = window.__mock.state.install.setup.requiredBytes
+      window.__mock.emit(window.__mock.Events.installProgress, {
+        phase: step,
+        percent: value,
+        copiedBytes: Math.round((total * (value as number)) / 100),
+        totalBytes: total,
+      })
+    },
+    [phase, percent] as const,
+  )
 }
 
 async function emitDone(page: Page): Promise<void> {
   await page.evaluate(() => {
     const { setup } = window.__mock.state.install
-    const result = { root: setup.location.path, dataRoot: `${setup.location.path}\\data`, version: setup.version, appPath: `${setup.location.path}\\app-${setup.version}`, warnings: [] }
+    const result = {
+      root: setup.location.path,
+      dataRoot: `${setup.location.path}\\data`,
+      version: setup.version,
+      appPath: `${setup.location.path}\\app-${setup.version}`,
+      warnings: [],
+    }
     window.__mock.state.install.setup = { ...setup, phase: 'done', result }
     window.__mock.emit(window.__mock.Events.installDone, result)
   })
@@ -54,11 +81,14 @@ async function emitDone(page: Page): Promise<void> {
 
 /** Make `path` check with a problem; the next 更改… picks it. */
 async function pickProblem(page: Page, path: string, check: Partial<SetupLocationCheck>): Promise<void> {
-  await page.evaluate(([folder, patch]) => {
-    const { locationCheckFixture } = window.__mock.installFixtures
-    window.__mock.state.install.checks[folder as string] = locationCheckFixture({ path: folder as string, ...(patch as object) })
-    window.__mock.state.install.folderChoice = { purpose: 'install', path: folder as string }
-  }, [path, check] as const)
+  await page.evaluate(
+    ([folder, patch]) => {
+      const { locationCheckFixture } = window.__mock.installFixtures
+      window.__mock.state.install.checks[folder as string] = locationCheckFixture({ path: folder as string, ...(patch as object) })
+      window.__mock.state.install.folderChoice = { purpose: 'install', path: folder as string }
+    },
+    [path, check] as const,
+  )
   await page.getByRole('region', { name: '安装位置' }).getByRole('button', { name: '更改…' }).click()
 }
 
@@ -118,7 +148,9 @@ describe('setup window: old 1.0.x install', () => {
     const reuse = card.getByRole('radio', { name: /继续使用这些数据（不复制）/ })
     expect(await reuse.getAttribute('aria-checked')).toBe('true')
     await installButton(page).click()
-    await expect.poll(() => install(page).then((state) => state.starts)).toEqual([{ root: 'D:\\MossStudio', legacy: { root: 'D:\\Apps\\MossStudio', mode: 'reuse' } }])
+    await expect
+      .poll(() => install(page).then((state) => state.starts))
+      .toEqual([{ root: 'D:\\MossStudio', legacy: { root: 'D:\\Apps\\MossStudio', mode: 'reuse' } }])
   })
 
   it('重新开始 starts fresh and leaves the old data alone', async () => {
@@ -146,7 +178,13 @@ describe('setup window: old 1.0.x install', () => {
       await p.evaluate(() => {
         const { setup } = window.__mock.state.install
         const fixtures = window.__mock.installFixtures
-        window.__mock.state.install.setup = { ...setup, legacy: fixtures.legacyInstallFixture({ ...setup.legacy!, warnings: fixtures.legacyWarningsFixture(setup.legacy!.root, 'linux') }) }
+        window.__mock.state.install.setup = {
+          ...setup,
+          legacy: fixtures.legacyInstallFixture({
+            ...setup.legacy!,
+            warnings: fixtures.legacyWarningsFixture(setup.legacy!.root, 'linux'),
+          }),
+        }
       })
     })
     const note = await page.locator('[data-legacy-warning="reuse"]').textContent()
@@ -159,16 +197,30 @@ describe('setup window: old 1.0.x install', () => {
       await scenario('first')(p)
       await p.evaluate(() => {
         const { legacyInstallFixture } = window.__mock.installFixtures
-        window.__mock.state.install.legacyAt['E:\\旧版\\MossStudio'] = legacyInstallFixture({ root: 'E:\\旧版\\MossStudio', dataDir: 'E:\\旧版\\MossStudio\\data', dataBytes: 2 * 1024 ** 3, source: 'picked' })
+        window.__mock.state.install.legacyAt['E:\\旧版\\MossStudio'] = legacyInstallFixture({
+          root: 'E:\\旧版\\MossStudio',
+          dataDir: 'E:\\旧版\\MossStudio\\data',
+          dataBytes: 2 * 1024 ** 3,
+          source: 'picked',
+        })
         window.__mock.state.install.folderChoice = { purpose: 'legacy', path: 'E:\\空文件夹' }
       })
     })
     await page.getByRole('button', { name: /高级/ }).click()
     await page.getByRole('button', { name: '选择文件夹…' }).click()
     await expect.poll(() => page.getByRole('alert').filter({ hasText: '这个文件夹里没有旧版 MossStudio' }).isVisible()).toBe(true)
-    await page.evaluate(() => { window.__mock.state.install.folderChoice = { purpose: 'legacy', path: 'E:\\旧版\\MossStudio' } })
+    await page.evaluate(() => {
+      window.__mock.state.install.folderChoice = { purpose: 'legacy', path: 'E:\\旧版\\MossStudio' }
+    })
     await page.getByRole('button', { name: '选择文件夹…' }).click()
-    await expect.poll(() => page.locator('[data-legacy-card]').getByText(/共 2\.0 GB/).isVisible()).toBe(true)
+    await expect
+      .poll(() =>
+        page
+          .locator('[data-legacy-card]')
+          .getByText(/共 2\.0 GB/)
+          .isVisible(),
+      )
+      .toBe(true)
     await installButton(page).click()
     await expect.poll(() => install(page).then((state) => state.starts[0]?.legacy)).toEqual({ root: 'E:\\旧版\\MossStudio', mode: 'reuse' })
   })
@@ -189,13 +241,17 @@ describe('setup window: data kept by an uninstall', () => {
     expect(note).toContain('请不要删除这个文件夹')
     expect(note).not.toContain('设置 › 应用')
     await installButton(page).click()
-    await expect.poll(() => install(page).then((state) => state.starts)).toEqual([{ root: 'D:\\MossStudio', legacy: { root: ROOT, mode: 'reuse' } }])
+    await expect
+      .poll(() => install(page).then((state) => state.starts))
+      .toEqual([{ root: 'D:\\MossStudio', legacy: { root: ROOT, mode: 'reuse' } }])
   })
 
   it('重新开始 leaves the kept data where it is', async () => {
     const page = await openSetup(app, scenario('keptData'))
     await page.getByRole('radio', { name: /重新开始/ }).click()
-    expect(await page.locator('[data-legacy-warning="fresh"]').textContent()).toBe(`这些数据仍留在 ${ROOT}\\data，不会被删除；不再需要时可以手动删除这个文件夹。`)
+    expect(await page.locator('[data-legacy-warning="fresh"]').textContent()).toBe(
+      `这些数据仍留在 ${ROOT}\\data，不会被删除；不再需要时可以手动删除这个文件夹。`,
+    )
     await installButton(page).click()
     await expect.poll(() => install(page).then((state) => state.starts[0]?.legacy)).toEqual({ root: ROOT, mode: 'fresh' })
   })
@@ -212,7 +268,9 @@ describe('setup window: data kept by an uninstall', () => {
   it('a chosen folder that holds kept data is accepted, and says it will be used', async () => {
     const page = await openSetup(app, scenario('first'))
     await pickProblem(page, 'E:\\MossStudio', { kind: 'data' })
-    await expect.poll(() => page.locator('[data-folder-note]').textContent()).toBe('这个文件夹里有上次卸载时保留的作品、模型和设置，装好后会继续使用它们。')
+    await expect
+      .poll(() => page.locator('[data-folder-note]').textContent())
+      .toBe('这个文件夹里有上次卸载时保留的作品、模型和设置，装好后会继续使用它们。')
     expect(await page.getByRole('alert').count()).toBe(0)
     await installButton(page).click()
     await expect.poll(() => install(page).then((state) => state.starts)).toEqual([{ root: 'E:\\MossStudio' }])
@@ -233,22 +291,45 @@ describe('setup window: folder problems', () => {
 
   it('a non-empty folder offers <chosen>\\MossStudio instead', async () => {
     const page = await openSetup(app, scenario('first'))
-    await pickProblem(page, 'D:\\Data', { ok: false, kind: 'occupied', problem: { code: 'E_NOT_EMPTY', message: '这个文件夹里已经有其他文件。' }, suggestion: 'D:\\Data\\MossStudio' })
+    await pickProblem(page, 'D:\\Data', {
+      ok: false,
+      kind: 'occupied',
+      problem: { code: 'E_NOT_EMPTY', message: '这个文件夹里已经有其他文件。' },
+      suggestion: 'D:\\Data\\MossStudio',
+    })
     const alert = page.getByRole('alert')
     await expect.poll(() => alert.getByText(/已经有别的文件/).isVisible()).toBe(true)
     expect(await installButton(page).isDisabled()).toBe(true)
     await alert.getByRole('button', { name: '改用 D:\\Data\\MossStudio' }).click()
-    await expect.poll(() => page.getByRole('region', { name: '安装位置' }).locator('[data-path]').textContent()).toBe('D:\\Data\\MossStudio')
+    await expect
+      .poll(() => page.getByRole('region', { name: '安装位置' }).locator('[data-path]').textContent())
+      .toBe('D:\\Data\\MossStudio')
     expect(await app.calls('install:validate')).toEqual([{ path: 'D:\\Data\\MossStudio', purpose: 'install' }])
     await expect.poll(() => installButton(page).isEnabled()).toBe(true)
     expect(await page.getByRole('alert').count()).toBe(0)
   })
 
   for (const [name, check, text] of [
-    ['no write access', { ok: false, problem: { code: 'E_NOT_WRITABLE', message: '没有写入这个文件夹的权限。' } }, '没有权限写入这个文件夹。请换一个位置，例如你自己的用户文件夹。'],
-    ['not enough space', { ok: false, freeBytes: 100 * 1024 ** 2, problem: { code: 'E_NO_SPACE', message: '磁盘空间不足。' } }, '这个磁盘的空间不够：需要 412 MB，只剩 100 MB。请清理一些空间，或换一个磁盘。'],
-    ['a system folder', { ok: false, problem: { code: 'E_SYSTEM_DIR', message: '这是系统文件夹，不能安装到这里。' } }, '不能装在系统文件夹或磁盘根目录，请换一个位置。'],
-    ['a drive root', { ok: false, problem: { code: 'E_DRIVE_ROOT', message: '不能直接装在磁盘根目录。' }, suggestion: 'E:\\MossStudio' }, '不能装在系统文件夹或磁盘根目录。'],
+    [
+      'no write access',
+      { ok: false, problem: { code: 'E_NOT_WRITABLE', message: '没有写入这个文件夹的权限。' } },
+      '没有权限写入这个文件夹。请换一个位置，例如你自己的用户文件夹。',
+    ],
+    [
+      'not enough space',
+      { ok: false, freeBytes: 100 * 1024 ** 2, problem: { code: 'E_NO_SPACE', message: '磁盘空间不足。' } },
+      '这个磁盘的空间不够：需要 412 MB，只剩 100 MB。请清理一些空间，或换一个磁盘。',
+    ],
+    [
+      'a system folder',
+      { ok: false, problem: { code: 'E_SYSTEM_DIR', message: '这是系统文件夹，不能安装到这里。' } },
+      '不能装在系统文件夹或磁盘根目录，请换一个位置。',
+    ],
+    [
+      'a drive root',
+      { ok: false, problem: { code: 'E_DRIVE_ROOT', message: '不能直接装在磁盘根目录。' }, suggestion: 'E:\\MossStudio' },
+      '不能装在系统文件夹或磁盘根目录。',
+    ],
   ] as const) {
     it(`refuses ${name} and says what to do`, async () => {
       const page = await openSetup(app, scenario('first'))
@@ -268,7 +349,12 @@ describe('setup window: folder problems', () => {
   for (const theme of ['light', 'dark'] as const) {
     it(`screenshot: a folder problem (${theme})`, async () => {
       const page = await openSetup(app, scenario('first'), { theme })
-      await pickProblem(page, 'D:\\Data', { ok: false, kind: 'occupied', problem: { code: 'E_NOT_EMPTY', message: '' }, suggestion: 'D:\\Data\\MossStudio' })
+      await pickProblem(page, 'D:\\Data', {
+        ok: false,
+        kind: 'occupied',
+        problem: { code: 'E_NOT_EMPTY', message: '' },
+        suggestion: 'D:\\Data\\MossStudio',
+      })
       await expect.poll(() => page.getByRole('alert').isVisible()).toBe(true)
       await app.screenshot(`install-folder-problem-${theme}`)
       await expectVisualRules(page, `install folder problem (${theme})`)
@@ -284,7 +370,9 @@ describe('setup window: later installs', () => {
       const page = await openSetup(app, scenario(kind))
       await expect.poll(() => install(page).then((state) => state.starts)).toEqual([{ root: ROOT }])
       expect(await screen(page)).toBe('progress')
-      expect(await page.getByRole('heading', { level: 1 }).textContent()).toBe(kind === 'update' ? '正在安装 MossStudio 2.0.0' : '正在修复 MossStudio')
+      expect(await page.getByRole('heading', { level: 1 }).textContent()).toBe(
+        kind === 'update' ? '正在安装 MossStudio 2.0.0' : '正在修复 MossStudio',
+      )
       expect(await installButton(page).count()).toBe(0)
       expect(await page.getByRole('region', { name: '安装位置' }).count()).toBe(0)
     })
@@ -331,7 +419,9 @@ describe('setup window: failure and macOS', () => {
     await expect.poll(() => app.calls('install:open-log')).toEqual([{ log: 'setup' }])
     await app.screenshot('install-failed-light')
     await expectVisualRules(page, 'install failed')
-    await page.evaluate(() => { window.__mock.state.install.outcome = 'success' })
+    await page.evaluate(() => {
+      window.__mock.state.install.outcome = 'success'
+    })
     await page.getByRole('button', { name: '重试' }).click()
     await expect.poll(() => screen(page)).toBe('done')
     expect((await install(page)).starts).toHaveLength(2)
@@ -340,7 +430,9 @@ describe('setup window: failure and macOS', () => {
   it('a start the main process refuses also lands on the failure screen', async () => {
     const page = await openSetup(app, async (p) => {
       await scenario('first')(p)
-      await p.evaluate(() => { window.__mock.fail(window.__mock.Ipc.installStart, { code: 'E_COPY', message: '复制文件时出错：磁盘已满。' }, { times: 1 }) })
+      await p.evaluate(() => {
+        window.__mock.fail(window.__mock.Ipc.installStart, { code: 'E_COPY', message: '复制文件时出错：磁盘已满。' }, { times: 1 })
+      })
     })
     await installButton(page).click()
     await expect.poll(() => page.getByRole('alert').textContent()).toContain('复制文件时出错：磁盘已满。')
@@ -353,11 +445,15 @@ describe('setup window: failure and macOS', () => {
     await page.getByRole('button', { name: /高级/ }).click()
     const data = page.getByRole('region', { name: '数据位置' })
     expect(await data.locator('[data-path]').textContent()).toBe('/Users/zhang/Library/Application Support/MossStudio')
-    await page.evaluate(() => { window.__mock.state.install.folderChoice = { purpose: 'data', path: '/Volumes/作品/MossStudio' } })
+    await page.evaluate(() => {
+      window.__mock.state.install.folderChoice = { purpose: 'data', path: '/Volumes/作品/MossStudio' }
+    })
     await data.getByRole('button', { name: '更改…' }).click()
     await expect.poll(() => data.locator('[data-path]').textContent()).toBe('/Volumes/作品/MossStudio')
     await installButton(page).click()
-    await expect.poll(() => install(page).then((state) => state.starts)).toEqual([{ root: '/Applications', dataRoot: '/Volumes/作品/MossStudio' }])
+    await expect
+      .poll(() => install(page).then((state) => state.starts))
+      .toEqual([{ root: '/Applications', dataRoot: '/Volumes/作品/MossStudio' }])
     await expect.poll(() => screen(page)).toBe('done')
     const eject = page.getByRole('checkbox', { name: '打开后推出安装盘' })
     expect(await eject.getAttribute('aria-checked')).toBe('true')
@@ -380,12 +476,14 @@ describe('setup window: failure and macOS', () => {
 
 describe('uninstall window', () => {
   const app = useApp()
-  const seed = (patch: Record<string, unknown> = {}): InstallSeed => async (page) => {
-    await page.evaluate((extra) => {
-      const { installStateFixture, uninstallInfoFixture } = window.__mock.installFixtures
-      window.__mock.state.install = installStateFixture({ uninstall: uninstallInfoFixture(extra as object) })
-    }, patch)
-  }
+  const seed =
+    (patch: Record<string, unknown> = {}): InstallSeed =>
+    async (page) => {
+      await page.evaluate((extra) => {
+        const { installStateFixture, uninstallInfoFixture } = window.__mock.installFixtures
+        window.__mock.state.install = installStateFixture({ uninstall: uninstallInfoFixture(extra as object) })
+      }, patch)
+    }
   const uninstall = (page: Page) => page.getByRole('button', { name: '卸载', exact: true })
 
   it('keeps the data unless asked, then uninstalls', async () => {
@@ -416,10 +514,16 @@ describe('uninstall window', () => {
     await expect.poll(() => install(page).then((state) => state.quit)).toBe(true)
     expect((await install(page)).uninstallStarted).toBeNull()
 
-    page = await openSetup(app, async (p) => {
-      await seed()(p)
-      await p.evaluate(() => { window.__mock.fail(window.__mock.Ipc.uninstallStart, { code: 'E_PLAN', message: '没能写入卸载计划。' }, { times: 1 }) })
-    }, { route: '/uninstall' })
+    page = await openSetup(
+      app,
+      async (p) => {
+        await seed()(p)
+        await p.evaluate(() => {
+          window.__mock.fail(window.__mock.Ipc.uninstallStart, { code: 'E_PLAN', message: '没能写入卸载计划。' }, { times: 1 })
+        })
+      },
+      { route: '/uninstall' },
+    )
     await uninstall(page).click()
     await expect.poll(() => page.getByRole('alert').textContent()).toContain('没能写入卸载计划。')
     await page.getByRole('button', { name: '重试' }).click()
@@ -432,21 +536,29 @@ describe('uninstall window', () => {
     await uninstall(page).click()
     await expect.poll(() => page.getByRole('alert').textContent()).toContain('MossStudio 正在运行')
     expect((await install(page)).uninstallStarted).toBeNull()
-    await page.evaluate(() => { window.__mock.state.install.uninstall = { ...window.__mock.state.install.uninstall, running: false } })
+    await page.evaluate(() => {
+      window.__mock.state.install.uninstall = { ...window.__mock.state.install.uninstall, running: false }
+    })
     await page.getByRole('button', { name: '重试' }).click()
     await expect.poll(() => install(page).then((state) => state.uninstallStarted)).toEqual({ removeData: false })
   })
 
   it('setup over a running install fails with the reason, and 重试 goes through once it is closed', async () => {
-    const page = await openSetup(app, async (p) => {
-      await p.evaluate(() => {
-        const { installStateFixture, setupScenario } = window.__mock.installFixtures
-        window.__mock.state.install = installStateFixture({ setup: setupScenario('update'), appRunning: true })
-      })
-    }, { route: '/install' })
+    const page = await openSetup(
+      app,
+      async (p) => {
+        await p.evaluate(() => {
+          const { installStateFixture, setupScenario } = window.__mock.installFixtures
+          window.__mock.state.install = installStateFixture({ setup: setupScenario('update'), appRunning: true })
+        })
+      },
+      { route: '/install' },
+    )
     await expect.poll(() => screen(page)).toBe('failed')
     expect(await page.getByRole('alert').textContent()).toContain('MossStudio 正在运行')
-    await page.evaluate(() => { window.__mock.state.install.appRunning = false })
+    await page.evaluate(() => {
+      window.__mock.state.install.appRunning = false
+    })
     await page.getByRole('button', { name: '重试' }).click()
     await expect.poll(() => screen(page)).toBe('done')
   })
@@ -467,11 +579,16 @@ describe('设置 › 关于 › 卸载', () => {
   async function about(platform: string, patch: Record<string, unknown> | null): Promise<Page> {
     await app.page.emulateMedia({ colorScheme: 'light' })
     const page = await app.open({ route: '/settings/about', platform, theme: 'light', defer: true })
-    await page.evaluate(([os, extra]) => {
-      const { installStateFixture, uninstallInfoFixture } = window.__mock.installFixtures
-      window.__mock.state.install = installStateFixture({ uninstall: uninstallInfoFixture({ platform: os as never, ...(extra as object) }) })
-      if (extra === null) window.__mock.fail(window.__mock.Ipc.uninstallInfo, { code: 'E_NOT_INSTALLED', message: '不是安装版' })
-    }, [platform, patch] as const)
+    await page.evaluate(
+      ([os, extra]) => {
+        const { installStateFixture, uninstallInfoFixture } = window.__mock.installFixtures
+        window.__mock.state.install = installStateFixture({
+          uninstall: uninstallInfoFixture({ platform: os as never, ...(extra as object) }),
+        })
+        if (extra === null) window.__mock.fail(window.__mock.Ipc.uninstallInfo, { code: 'E_NOT_INSTALLED', message: '不是安装版' })
+      },
+      [platform, patch] as const,
+    )
     await app.start()
     return page
   }
@@ -492,7 +609,14 @@ describe('设置 › 关于 › 卸载', () => {
   it('macOS: moves to the Trash', async () => {
     const page = await about('darwin', { method: 'trash' })
     await page.getByRole('button', { name: '卸载…' }).click()
-    await expect.poll(() => page.getByRole('dialog', { name: '卸载 MossStudio' }).getByText(/MossStudio 会被移到废纸篓/).isVisible()).toBe(true)
+    await expect
+      .poll(() =>
+        page
+          .getByRole('dialog', { name: '卸载 MossStudio' })
+          .getByText(/MossStudio 会被移到废纸篓/)
+          .isVisible(),
+      )
+      .toBe(true)
   })
 
   it('Windows: uninstalls from here too', async () => {

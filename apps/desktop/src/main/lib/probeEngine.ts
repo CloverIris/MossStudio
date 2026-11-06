@@ -1,10 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { extname } from 'node:path'
-import {
-  decodeEngineHello,
-  ENGINE_PROTOCOL_VERSION,
-  type EngineHello,
-} from '@shared/engineProtocol'
+import { decodeEngineHello, ENGINE_PROTOCOL_VERSION, type EngineHello } from '@shared/engineProtocol'
 
 export function spawnEngineServer(
   serverPath: string,
@@ -62,11 +58,13 @@ export async function probeEngine(
         clearTimeout(timer)
         reject(new Error(`moss-server 退出 (code ${code ?? 'null'})，未完成 hello`))
       })
-      proc.stdin.write(`${JSON.stringify({
-        id: 'probe',
-        method: 'hello',
-        params: { client: 'MossStudio', protocol_version: ENGINE_PROTOCOL_VERSION, devices: true },
-      })}\n`)
+      proc.stdin.write(
+        `${JSON.stringify({
+          id: 'probe',
+          method: 'hello',
+          params: { client: 'MossStudio', protocol_version: ENGINE_PROTOCOL_VERSION, devices: true },
+        })}\n`,
+      )
     })
     return decodeEngineHello(raw)
   } finally {
@@ -142,11 +140,13 @@ export async function requestEngineOnce(
       })
       proc.on('error', (error) => fail(error))
       proc.on('close', (code) => fail(new Error(`moss-server 退出 (code ${code ?? 'null'})，未完成 ${method}`)))
-      proc.stdin.write(`${JSON.stringify({
-        id: 'once-hello',
-        method: 'hello',
-        params: { client: 'MossStudio', protocol_version: ENGINE_PROTOCOL_VERSION },
-      })}\n`)
+      proc.stdin.write(
+        `${JSON.stringify({
+          id: 'once-hello',
+          method: 'hello',
+          params: { client: 'MossStudio', protocol_version: ENGINE_PROTOCOL_VERSION },
+        })}\n`,
+      )
       proc.stdin.write(`${JSON.stringify({ id: 'once-request', method, params })}\n`)
     })
   } finally {

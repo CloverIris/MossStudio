@@ -22,7 +22,12 @@ function FolderCheckLine({ check, onUse }: { check: FolderCheck | null; onUse: (
   const message = check ? folderProblemMessage(check) : null
   if (!message) return null
   const suggestion = message.suggestion
-  return <FolderProblem text={message.text} action={suggestion ? { label: suggestion.label, onClick: () => onUse(suggestion.path) } : undefined} />
+  return (
+    <FolderProblem
+      text={message.text}
+      action={suggestion ? { label: suggestion.label, onClick: () => onUse(suggestion.path) } : undefined}
+    />
+  )
 }
 
 function LegacyCard({ setup }: { setup: SetupController }): React.JSX.Element | null {
@@ -41,7 +46,9 @@ function LegacyCard({ setup }: { setup: SetupController }): React.JSX.Element | 
       </div>
       {inPlace ? (
         <p className="px-3.5 pb-2.5 text-ui text-ink">
-          {kept ? '装在原来的文件夹里：会继续使用这些作品、模型和设置。' : '装在旧版所在的文件夹里：旧的程序文件会被替换，作品、模型和设置原地保留。'}
+          {kept
+            ? '装在原来的文件夹里：会继续使用这些作品、模型和设置。'
+            : '装在旧版所在的文件夹里：旧的程序文件会被替换，作品、模型和设置原地保留。'}
         </p>
       ) : (
         <ChoiceList
@@ -76,11 +83,11 @@ function ChooseScreen({ setup }: { setup: SetupController }): React.JSX.Element 
   const note = setup.legacy && legacyInPlace(state.platform, setup.legacy, location) ? null : folderNote(location)
   return (
     <Screen
-      actions={(
+      actions={
         <Button tone="primary" size="lg" className="min-w-28" disabled={blocked || setup.starting} onClick={setup.install}>
           {setup.starting ? <Spinner /> : null}安装
         </Button>
-      )}
+      }
     >
       {/* The version sits in the window strip: 640×480 needs the room for the old-install card. */}
       <ScreenHeading title="安装 MossStudio" subtitle={setup.legacy ? undefined : '选好位置后点“安装”，装好会自动打开。'} />
@@ -106,7 +113,13 @@ function ChooseScreen({ setup }: { setup: SetupController }): React.JSX.Element 
       {mac && dataPath ? (
         <Advanced summary={`数据位置：${dataPath}`} className="-mx-1">
           <div className="px-1 pt-1">
-            <FolderField label="数据位置" path={dataPath} detail="作品、模型和设置保存在这里。" onChange={setup.chooseDataLocation} disabled={setup.starting}>
+            <FolderField
+              label="数据位置"
+              path={dataPath}
+              detail="作品、模型和设置保存在这里。"
+              onChange={setup.chooseDataLocation}
+              disabled={setup.starting}
+            >
               <FolderCheckLine check={setup.dataLocation} onUse={setup.selectDataLocation} />
             </FolderField>
           </div>
@@ -117,10 +130,18 @@ function ChooseScreen({ setup }: { setup: SetupController }): React.JSX.Element 
         <Advanced summary="旧版装在别的位置？" className="-mx-1">
           <div className="flex flex-col gap-2 px-1 pt-1">
             <div className="flex items-center gap-4 rounded-xl bg-surface px-5 py-3.5">
-              <p className="min-w-0 flex-1 text-caption text-ink-2">选择旧版 MossStudio 所在的文件夹，可以继续使用里面的作品、模型和设置。</p>
-              <Button onClick={setup.chooseLegacy} disabled={setup.starting}>选择文件夹…</Button>
+              <p className="min-w-0 flex-1 text-caption text-ink-2">
+                选择旧版 MossStudio 所在的文件夹，可以继续使用里面的作品、模型和设置。
+              </p>
+              <Button onClick={setup.chooseLegacy} disabled={setup.starting}>
+                选择文件夹…
+              </Button>
             </div>
-            {setup.legacyNotFound ? <p role="alert" className="px-1 text-caption text-warn">这个文件夹里没有旧版 MossStudio，请换一个。</p> : null}
+            {setup.legacyNotFound ? (
+              <p role="alert" className="px-1 text-caption text-warn">
+                这个文件夹里没有旧版 MossStudio，请换一个。
+              </p>
+            ) : null}
           </div>
         </Advanced>
       ) : null}
@@ -134,14 +155,16 @@ function DowngradeScreen({ setup }: { setup: SetupController }): React.JSX.Eleme
   const text = downgradeText(installed, state.version)
   return (
     <Screen
-      actions={(
+      actions={
         <>
-          <Button size="lg" onClick={setup.close}>保留 {installed}</Button>
+          <Button size="lg" onClick={setup.close}>
+            保留 {installed}
+          </Button>
           <Button tone="primary" size="lg" disabled={setup.starting} onClick={setup.acceptDowngrade}>
             {setup.starting ? <Spinner /> : null}换成 {state.version}
           </Button>
         </>
-      )}
+      }
     >
       <ScreenHeading title={text.title} subtitle={text.description} />
     </Screen>
@@ -152,11 +175,25 @@ function ProgressScreen({ setup }: { setup: SetupController }): React.JSX.Elemen
   const state = setup.state!
   const run = setup.run ?? { status: 'running' as const, step: null, percent: null }
   const root = state.installed?.root ?? setup.location?.path ?? state.location.path
-  const title = state.kind === 'first' ? '正在安装 MossStudio' : state.kind === 'repair' ? '正在修复 MossStudio' : `正在安装 MossStudio ${state.version}`
+  const title =
+    state.kind === 'first'
+      ? '正在安装 MossStudio'
+      : state.kind === 'repair'
+        ? '正在修复 MossStudio'
+        : `正在安装 MossStudio ${state.version}`
   return (
     <Screen>
       <ScreenHeading title={title} subtitle="请稍等，装好后会自动打开。你的作品、模型和设置不受影响。" />
-      <ProgressBlock label={progressLabel(run)} percent={progressPercent(run)} detail={<span className="flex min-w-0 gap-1"><span className="shrink-0">安装到</span><PathText path={root} className="text-caption text-ink-2" /></span>} />
+      <ProgressBlock
+        label={progressLabel(run)}
+        percent={progressPercent(run)}
+        detail={
+          <span className="flex min-w-0 gap-1">
+            <span className="shrink-0">安装到</span>
+            <PathText path={root} className="text-caption text-ink-2" />
+          </span>
+        }
+      />
     </Screen>
   )
 }
@@ -166,27 +203,38 @@ function DoneScreen({ setup }: { setup: SetupController }): React.JSX.Element {
   const warnings = state.result?.warnings ?? []
   return (
     <Screen
-      actions={state.canEject ? (
-        <Button tone="primary" size="lg" disabled={setup.launching} onClick={setup.launch}>
-          {setup.launching ? <Spinner /> : null}打开 MossStudio
-        </Button>
-      ) : undefined}
+      actions={
+        state.canEject ? (
+          <Button tone="primary" size="lg" disabled={setup.launching} onClick={setup.launch}>
+            {setup.launching ? <Spinner /> : null}打开 MossStudio
+          </Button>
+        ) : undefined
+      }
     >
       <ScreenHeading title="安装完成" subtitle={`MossStudio ${state.version} 已装好。`} />
       {state.canEject ? (
         <div className="rounded-xl bg-surface p-1.5">
-          <Checkbox checked={setup.eject} onCheckedChange={setup.setEject} label="打开后推出安装盘" description="安装盘里的文件已经不需要了。" />
+          <Checkbox
+            checked={setup.eject}
+            onCheckedChange={setup.setEject}
+            label="打开后推出安装盘"
+            description="安装盘里的文件已经不需要了。"
+          />
         </div>
       ) : (
         <div className="flex items-center gap-2.5 text-control text-ink" role="status">
-          <span className="flex size-6 items-center justify-center rounded-full bg-ok-soft text-ok"><Check className="size-4" aria-hidden="true" /></span>
+          <span className="flex size-6 items-center justify-center rounded-full bg-ok-soft text-ok">
+            <Check className="size-4" aria-hidden="true" />
+          </span>
           正在打开 MossStudio…
           <Spinner className="text-ink-2" />
         </div>
       )}
       {warnings.length ? (
         <ul className="flex flex-col gap-1 px-1 text-caption text-ink-2" aria-label="提示">
-          {warnings.map((warning) => <li key={warning}>{warning}</li>)}
+          {warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
         </ul>
       ) : null}
     </Screen>
@@ -196,15 +244,20 @@ function DoneScreen({ setup }: { setup: SetupController }): React.JSX.Element {
 function FailedScreen({ setup }: { setup: SetupController }): React.JSX.Element {
   return (
     <Screen
-      actions={(
+      actions={
         <>
-          <Button tone="ghost" size="lg" onClick={setup.close}>关闭</Button>
-          <Button size="lg" onClick={setup.openLog}><FileText className="size-4" />查看日志</Button>
+          <Button tone="ghost" size="lg" onClick={setup.close}>
+            关闭
+          </Button>
+          <Button size="lg" onClick={setup.openLog}>
+            <FileText className="size-4" />
+            查看日志
+          </Button>
           <Button tone="primary" size="lg" disabled={setup.starting} onClick={setup.retry}>
             {setup.starting ? <Spinner /> : <RotateCw className="size-4" />}重试
           </Button>
         </>
-      )}
+      }
     >
       <ScreenHeading title="安装没有完成" subtitle="你的作品、模型和设置没有受到影响。" />
       <FailureBlock>
@@ -217,9 +270,22 @@ function FailedScreen({ setup }: { setup: SetupController }): React.JSX.Element 
 
 function LoadingScreen({ setup }: { setup: SetupController }): React.JSX.Element {
   return (
-    <Screen actions={setup.loadError ? <Button size="lg" onClick={setup.close}>关闭</Button> : undefined}>
+    <Screen
+      actions={
+        setup.loadError ? (
+          <Button size="lg" onClick={setup.close}>
+            关闭
+          </Button>
+        ) : undefined
+      }
+    >
       <ScreenHeading title="安装 MossStudio" subtitle={setup.loadError ?? undefined} />
-      {setup.loadError ? null : <div className="flex items-center gap-2 text-ui text-ink-2" role="status"><Spinner />正在准备…</div>}
+      {setup.loadError ? null : (
+        <div className="flex items-center gap-2 text-ui text-ink-2" role="status">
+          <Spinner />
+          正在准备…
+        </div>
+      )}
     </Screen>
   )
 }
@@ -227,10 +293,18 @@ function LoadingScreen({ setup }: { setup: SetupController }): React.JSX.Element
 /** The setup window (`#/install`): where to install, then progress, then done or failed. */
 export function InstallPage(): React.JSX.Element {
   const setup = useInstall()
-  const screen = setupScreen({ kind: setup.state?.kind ?? null, phase: setup.state?.phase ?? null, downgradeAccepted: setup.downgradeAccepted })
+  const screen = setupScreen({
+    kind: setup.state?.kind ?? null,
+    phase: setup.state?.phase ?? null,
+    downgradeAccepted: setup.downgradeAccepted,
+  })
   const busy = screen === 'progress' || (screen === 'done' && !setup.state?.canEject)
   return (
-    <WindowChrome title={setup.state ? `MossStudio ${setup.state.version} 安装` : 'MossStudio 安装'} onClose={setup.close} closeDisabled={busy}>
+    <WindowChrome
+      title={setup.state ? `MossStudio ${setup.state.version} 安装` : 'MossStudio 安装'}
+      onClose={setup.close}
+      closeDisabled={busy}
+    >
       <div data-setup-screen={screen} className="h-full">
         {screen === 'loading' ? <LoadingScreen setup={setup} /> : null}
         {screen === 'choose' ? <ChooseScreen setup={setup} /> : null}

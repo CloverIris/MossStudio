@@ -43,7 +43,7 @@ const platform = thisPlatform()
 
 function newVersion(): { dir: string; list: FileList } {
   const dir = tree(join(temp(), 'source-1.1.0'), {
-    'MossStudio': { data: 'binary 1.1.0', mode: 0o755 },
+    MossStudio: { data: 'binary 1.1.0', mode: 0o755 },
     'resources/app.asar': 'asar 1.1.0',
     'resources/unchanged.pak': 'same in both',
     'locales/zh-CN.pak': '中文',
@@ -58,7 +58,13 @@ describe('materialize (full package)', () => {
     const { dir, list } = newVersion()
     const zip = write('full.zip', makeZip(zipOf(list, dir)))
     const root = join(temp(), 'R')
-    const finalDir = await materialize({ kind: 'full', zipPath: zip, fileList: list, partialDir: join(root, 'app-1.1.0.partial'), finalDir: join(root, 'app-1.1.0') })
+    const finalDir = await materialize({
+      kind: 'full',
+      zipPath: zip,
+      fileList: list,
+      partialDir: join(root, 'app-1.1.0.partial'),
+      finalDir: join(root, 'app-1.1.0'),
+    })
     expect(finalDir).toBe(join(root, 'app-1.1.0'))
     expect(existsSync(join(root, 'app-1.1.0.partial'))).toBe(false)
     expect(readFileSync(join(finalDir, 'resources', 'app.asar'), 'utf8')).toBe('asar 1.1.0')
@@ -71,13 +77,29 @@ describe('materialize (full package)', () => {
   it.each([
     ['an extra file', (items: ZipItem[]) => [...items, { name: 'evil.dll', data: 'x' }], '清单之外'],
     ['a missing file', (items: ZipItem[]) => items.filter((item) => item.name !== 'locales/zh-CN.pak'), '缺少文件'],
-    ['a changed byte', (items: ZipItem[]) => items.map((item) => (item.name === 'resources/app.asar' ? { ...item, data: 'asar 1.1.1' } : item)), '校验失败'],
-    ['a wrong size', (items: ZipItem[]) => items.map((item) => (item.name === 'resources/app.asar' ? { ...item, data: 'asar' } : item)), '大小不符'],
+    [
+      'a changed byte',
+      (items: ZipItem[]) => items.map((item) => (item.name === 'resources/app.asar' ? { ...item, data: 'asar 1.1.1' } : item)),
+      '校验失败',
+    ],
+    [
+      'a wrong size',
+      (items: ZipItem[]) => items.map((item) => (item.name === 'resources/app.asar' ? { ...item, data: 'asar' } : item)),
+      '大小不符',
+    ],
   ])('refuses %s and removes the partial folder', async (_name, change, message) => {
     const { dir, list } = newVersion()
     const zip = write('full.zip', makeZip(change(zipOf(list, dir))))
     const root = join(temp(), 'R')
-    await expect(materialize({ kind: 'full', zipPath: zip, fileList: list, partialDir: join(root, 'app-1.1.0.partial'), finalDir: join(root, 'app-1.1.0') })).rejects.toThrow(message)
+    await expect(
+      materialize({
+        kind: 'full',
+        zipPath: zip,
+        fileList: list,
+        partialDir: join(root, 'app-1.1.0.partial'),
+        finalDir: join(root, 'app-1.1.0'),
+      }),
+    ).rejects.toThrow(message)
     expect(existsSync(join(root, 'app-1.1.0.partial'))).toBe(false)
     expect(existsSync(join(root, 'app-1.1.0'))).toBe(false)
   })
@@ -85,16 +107,35 @@ describe('materialize (full package)', () => {
   it.runIf(unix)('refuses a wrong mode and a wrong symlink target', async () => {
     const { dir, list } = newVersion()
     const root = join(temp(), 'R')
-    const run = (items: ZipItem[]) => materialize({ kind: 'full', zipPath: write('full.zip', makeZip(items)), fileList: list, partialDir: join(root, 'p'), finalDir: join(root, 'f') })
-    await expect(run(zipOf(list, dir).map((item) => (item.name === 'MossStudio' ? { ...item, mode: 0o644 } : item)))).rejects.toThrow('权限不符')
-    await expect(run(zipOf(list, dir).map((item) => (item.name === 'lib/current' ? { ...item, symlink: 'v1' } : item)))).rejects.toThrow('目标不符')
+    const run = (items: ZipItem[]) =>
+      materialize({
+        kind: 'full',
+        zipPath: write('full.zip', makeZip(items)),
+        fileList: list,
+        partialDir: join(root, 'p'),
+        finalDir: join(root, 'f'),
+      })
+    await expect(run(zipOf(list, dir).map((item) => (item.name === 'MossStudio' ? { ...item, mode: 0o644 } : item)))).rejects.toThrow(
+      '权限不符',
+    )
+    await expect(run(zipOf(list, dir).map((item) => (item.name === 'lib/current' ? { ...item, symlink: 'v1' } : item)))).rejects.toThrow(
+      '目标不符',
+    )
   })
 
   it('refuses a traversal entry before writing anything outside', async () => {
     const { dir, list } = newVersion()
     const zip = write('full.zip', makeZip([...zipOf(list, dir), { name: '../../escaped.txt', data: 'x' }]))
     const root = join(temp(), 'R')
-    await expect(materialize({ kind: 'full', zipPath: zip, fileList: list, partialDir: join(root, 'app-1.1.0.partial'), finalDir: join(root, 'app-1.1.0') })).rejects.toThrow()
+    await expect(
+      materialize({
+        kind: 'full',
+        zipPath: zip,
+        fileList: list,
+        partialDir: join(root, 'app-1.1.0.partial'),
+        finalDir: join(root, 'app-1.1.0'),
+      }),
+    ).rejects.toThrow()
     expect(existsSync(join(temp(), 'escaped.txt'))).toBe(false)
     expect(existsSync(join(root, 'escaped.txt'))).toBe(false)
   })
@@ -103,27 +144,48 @@ describe('materialize (full package)', () => {
 describe('materialize (delta)', () => {
   function setup() {
     const base = tree(join(temp(), 'R', 'app-1.0.3'), {
-      'MossStudio': { data: 'binary 1.0.3', mode: 0o755 },
+      MossStudio: { data: 'binary 1.0.3', mode: 0o755 },
       'resources/app.asar': 'asar 1.0.3',
       'resources/unchanged.pak': 'same in both',
       'locales/zh-CN.pak': '中文',
       'removed/old.js': 'gone in 1.1.0',
-      ...(unix ? { 'lib/current': { data: '', link: 'v1' }, 'lib/v1/libx.so': { data: 'old lib', mode: 0o755 }, 'lib/v2/libx.so': { data: 'lib', mode: 0o755 } } : {}),
+      ...(unix
+        ? {
+            'lib/current': { data: '', link: 'v1' },
+            'lib/v1/libx.so': { data: 'old lib', mode: 0o755 },
+            'lib/v2/libx.so': { data: 'lib', mode: 0o755 },
+          }
+        : {}),
     })
     const { dir, list } = newVersion()
     const filesJson = Buffer.from(JSON.stringify(list))
     const changed = ['MossStudio', 'resources/app.asar', 'new/feature.js', ...(unix ? ['lib/current'] : [])]
-    const manifest = { schema: 1, platform, from: '1.0.3', to: '1.1.0', files: { sha256: sha256(filesJson), size: filesJson.length }, changed, removed: ['removed/old.js', ...(unix ? ['lib/v1/libx.so'] : [])] }
+    const manifest = {
+      schema: 1,
+      platform,
+      from: '1.0.3',
+      to: '1.1.0',
+      files: { sha256: sha256(filesJson), size: filesJson.length },
+      changed,
+      removed: ['removed/old.js', ...(unix ? ['lib/v1/libx.so'] : [])],
+    }
     const items = (patch: { manifest?: object; extra?: ZipItem[] } = {}): ZipItem[] => [
       { name: 'delta.json', data: JSON.stringify(patch.manifest ?? manifest) },
       ...zipOf({ ...list, entries: list.entries.filter((entry) => changed.includes(entry.path)) }, dir, 'files/'),
       ...(patch.extra ?? []),
     ]
     const root = join(temp(), 'R')
-    const run = (zipItems: ZipItem[], baseVersion = '1.0.3') => materialize({
-      kind: 'delta', zipPath: write('delta.zip', makeZip(zipItems)), fileList: list, baseDir: base, baseVersion, filesSha256: manifest.files.sha256,
-      partialDir: join(root, 'app-1.1.0.partial'), finalDir: join(root, 'app-1.1.0'),
-    })
+    const run = (zipItems: ZipItem[], baseVersion = '1.0.3') =>
+      materialize({
+        kind: 'delta',
+        zipPath: write('delta.zip', makeZip(zipItems)),
+        fileList: list,
+        baseDir: base,
+        baseVersion,
+        filesSha256: manifest.files.sha256,
+        partialDir: join(root, 'app-1.1.0.partial'),
+        finalDir: join(root, 'app-1.1.0'),
+      })
     return { base, list, manifest, items, run, root }
   }
 

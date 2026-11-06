@@ -29,13 +29,38 @@ const catalog = {
   models: [
     rawModel({ id: 'moss-sft-dit', repo: SFT, role: 'dit', subfolder: 'transformer', files: ['transformer/*'] }),
     rawModel({ id: 'moss-base-dit', repo: BASE, role: 'dit', subfolder: 'transformer', files: ['transformer/*'] }),
-    rawModel({ id: 'qwen35-encoder', repo: SFT, role: 'text_encoder', subfolder: 'text_encoder', files: ['text_encoder/*', 'tokenizer/*'] }),
+    rawModel({
+      id: 'qwen35-encoder',
+      repo: SFT,
+      role: 'text_encoder',
+      subfolder: 'text_encoder',
+      files: ['text_encoder/*', 'tokenizer/*'],
+    }),
     rawModel({ id: 'flux2-vae-small', repo: SFT, role: 'vae', subfolder: 'vae', precision: 'fp32', files: ['vae/*'] }),
-    rawModel({ id: 'moss-pipeline', repo: SFT, role: 'support', subfolder: '', precision: 'mixed', files: ['model_index.json', 'pipeline_moss_image.py', 'scheduler/*'] }),
+    rawModel({
+      id: 'moss-pipeline',
+      repo: SFT,
+      role: 'support',
+      subfolder: '',
+      precision: 'mixed',
+      files: ['model_index.json', 'pipeline_moss_image.py', 'scheduler/*'],
+    }),
   ],
   bundles: [
-    { id: 'moss-sft', name: 'MOSS-Image SFT', description: '', support: 'moss-pipeline', components: { dit: 'moss-sft-dit', textEncoder: 'qwen35-encoder', vae: 'flux2-vae-small' } },
-    { id: 'moss-base', name: 'MOSS-Image Base', description: '', support: 'moss-pipeline', components: { dit: 'moss-base-dit', textEncoder: 'qwen35-encoder', vae: 'flux2-vae-small' } },
+    {
+      id: 'moss-sft',
+      name: 'MOSS-Image SFT',
+      description: '',
+      support: 'moss-pipeline',
+      components: { dit: 'moss-sft-dit', textEncoder: 'qwen35-encoder', vae: 'flux2-vae-small' },
+    },
+    {
+      id: 'moss-base',
+      name: 'MOSS-Image Base',
+      description: '',
+      support: 'moss-pipeline',
+      components: { dit: 'moss-base-dit', textEncoder: 'qwen35-encoder', vae: 'flux2-vae-small' },
+    },
   ],
 }
 
@@ -58,9 +83,12 @@ function diffusersFolder(name: string, title = 'MOSS-Image-SFT', dtype: 'BF16' |
     'transformer/config.json': '{"num_layers":42}',
     'transformer/diffusion_pytorch_model-00001-of-00002.safetensors': safetensors(dtype),
     'transformer/diffusion_pytorch_model-00002-of-00002.safetensors': safetensors(dtype),
-    'transformer/diffusion_pytorch_model.safetensors.index.json': JSON.stringify({ weight_map: {
-      a: 'diffusion_pytorch_model-00001-of-00002.safetensors', b: 'diffusion_pytorch_model-00002-of-00002.safetensors',
-    } }),
+    'transformer/diffusion_pytorch_model.safetensors.index.json': JSON.stringify({
+      weight_map: {
+        a: 'diffusion_pytorch_model-00001-of-00002.safetensors',
+        b: 'diffusion_pytorch_model-00002-of-00002.safetensors',
+      },
+    }),
     'text_encoder/config.json': '{}',
     'text_encoder/model.safetensors': safetensors(dtype),
     'tokenizer/tokenizer.json': '{}',
@@ -93,7 +121,10 @@ describe('inspectDiffusersFolder', () => {
     const info = await imports.inspectDiffusersFolder(diffusersFolder('sft'))
     expect(info).toMatchObject({ flavor: 'sft', dtype: 'bf16' })
     expect(info!.files.some((file) => file.path.startsWith('__pycache__'))).toBe(false)
-    expect((await imports.inspectDiffusersFolder(diffusersFolder('my-base', 'MOSS-Image-Base', 'F16')))).toMatchObject({ flavor: 'base', dtype: 'fp16' })
+    expect(await imports.inspectDiffusersFolder(diffusersFolder('my-base', 'MOSS-Image-Base', 'F16'))).toMatchObject({
+      flavor: 'base',
+      dtype: 'fp16',
+    })
   })
 
   it('is null for an incomplete folder or a file', async () => {
@@ -109,22 +140,41 @@ describe('using an existing diffusers folder in place', () => {
     const root = diffusersFolder('sft')
     const scan = await models.scanModels(root)
     expect(scan.candidates).toHaveLength(1)
-    expect(scan.candidates[0]).toMatchObject({ layout: 'diffusers-folder', name: 'MOSS-Image SFT（sft）', relativePath: 'sft', role: 'full' })
+    expect(scan.candidates[0]).toMatchObject({
+      layout: 'diffusers-folder',
+      name: 'MOSS-Image SFT（sft）',
+      relativePath: 'sft',
+      role: 'full',
+    })
     expect(scan.candidates[0]!.size).toBeGreaterThan(0)
   })
 
   it('registers the folder as one installed model, and the matching catalog bundle becomes ready', async () => {
     const root = diffusersFolder('sft')
     const scan = await models.scanModels(root)
-    const result = await models.registerScannedModels(settings, scan.candidates.map((candidate) => ({
-      path: candidate.path, role: candidate.role as 'full', layout: candidate.layout as 'diffusers-folder', name: candidate.name, relativePath: candidate.relativePath,
-    })))
+    const result = await models.registerScannedModels(
+      settings,
+      scan.candidates.map((candidate) => ({
+        path: candidate.path,
+        role: candidate.role as 'full',
+        layout: candidate.layout as 'diffusers-folder',
+        name: candidate.name,
+        relativePath: candidate.relativePath,
+      })),
+    )
     expect(result).toEqual({ added: 1, updated: 0, missing: [] })
 
     const loaded = await models.getCatalog(settings, true)
     const local = loaded.models.filter((model) => model.provider === 'local')
     expect(local).toHaveLength(1)
-    expect(local[0]).toMatchObject({ name: 'MOSS-Image SFT（sft）', role: 'full', format: 'diffusers', precision: 'bf16', installed: true, localPath: root })
+    expect(local[0]).toMatchObject({
+      name: 'MOSS-Image SFT（sft）',
+      role: 'full',
+      format: 'diffusers',
+      precision: 'bf16',
+      installed: true,
+      localPath: root,
+    })
     // The SFT components are served by the folder; the Base DiT is not (another fine-tune).
     const installed = (id: string) => loaded.models.find((model) => model.id === id)!
     for (const id of ['moss-sft-dit', 'qwen35-encoder', 'flux2-vae-small', 'moss-pipeline']) {
@@ -163,8 +213,12 @@ describe('using an existing diffusers folder in place', () => {
     const loaded = await models.getCatalog(settings, true)
     expect(loaded.models.find((model) => model.id === 'moss-base-dit')).toMatchObject({ installed: true, localPath: base })
     expect(loaded.models.find((model) => model.id === 'moss-sft-dit')!.installed).toBe(false)
-    expect(loaded.models.filter((model) => model.provider === 'local').map((model) => model.name).sort())
-      .toEqual(['MOSS-Image Base（downloads）', 'something-else'])
+    expect(
+      loaded.models
+        .filter((model) => model.provider === 'local')
+        .map((model) => model.name)
+        .sort(),
+    ).toEqual(['MOSS-Image Base（downloads）', 'something-else'])
   })
 
   it('a folder that lost a part is no longer installed', async () => {
@@ -181,7 +235,10 @@ describe('using an existing diffusers folder in place', () => {
     const result = await models.importModelFolder(userDisk(), settings)
     expect(result).toMatchObject({ added: 2, duplicates: 0, folders: ['MOSS-Image Base（base）', 'MOSS-Image SFT（sft）'] })
     const records = await imports.readImportedModels(await index())
-    expect(records.map((record) => [record.layout, record.role])).toEqual([['diffusers-folder', 'full'], ['diffusers-folder', 'full']])
+    expect(records.map((record) => [record.layout, record.role])).toEqual([
+      ['diffusers-folder', 'full'],
+      ['diffusers-folder', 'full'],
+    ])
     // Nothing was hashed (that would read 27 GB): the records carry no sha256.
     expect(records.every((record) => record.sha256 === undefined)).toBe(true)
     // Picking it again updates instead of adding rows.

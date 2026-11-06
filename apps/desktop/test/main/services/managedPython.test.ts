@@ -57,7 +57,9 @@ const root = useTempDataRoot()
 const originalPlatform = process.platform
 const originalArch = process.arch
 const triples: Record<string, string> = {
-  'win32-x64': 'x86_64-pc-windows-msvc', 'linux-x64': 'x86_64-unknown-linux-gnu', 'darwin-arm64': 'aarch64-apple-darwin',
+  'win32-x64': 'x86_64-pc-windows-msvc',
+  'linux-x64': 'x86_64-unknown-linux-gnu',
+  'darwin-arm64': 'aarch64-apple-darwin',
 }
 
 function setPlatform(platform: NodeJS.Platform, arch: NodeJS.Architecture): { name: string; url: string } {
@@ -66,30 +68,51 @@ function setPlatform(platform: NodeJS.Platform, arch: NodeJS.Architecture): { na
   vi.spyOn(process.report, 'getReport').mockReturnValue({ header: { glibcVersionRuntime: '2.36' } } as never)
   const name = `cpython-${version}+${release}-${triples[`${platform}-${arch}`]}-install_only.tar.gz`
   const url = `https://github.com/astral-sh/python-build-standalone/releases/download/${release}/${name}`
-  vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
-    const request = String(input)
-    state.requests.push(request)
-    if (request.endsWith('/releases/latest')) {
-      return new Response(JSON.stringify({
-        tag_name: release,
-        assets: [
-          { name: `cpython-3.11.9+${release}-${triples[`${platform}-${arch}`]}-install_only.tar.gz`, browser_download_url: url, size: 1 },
-          { name, browser_download_url: url, size: archive.length, digest: state.noDigest ? null : `sha256:${state.failHash ? '0'.repeat(64) : checksum}` },
-        ],
-      }))
-    }
-    if (request.endsWith('/SHA256SUMS')) return new Response(`${'f'.repeat(64)}  other.tar.gz\n${checksum}  ${name}\n`)
-    if (request === url) return new Response(archive)
-    return new Response('', { status: 404 })
-  }))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL) => {
+      const request = String(input)
+      state.requests.push(request)
+      if (request.endsWith('/releases/latest')) {
+        return new Response(
+          JSON.stringify({
+            tag_name: release,
+            assets: [
+              {
+                name: `cpython-3.11.9+${release}-${triples[`${platform}-${arch}`]}-install_only.tar.gz`,
+                browser_download_url: url,
+                size: 1,
+              },
+              {
+                name,
+                browser_download_url: url,
+                size: archive.length,
+                digest: state.noDigest ? null : `sha256:${state.failHash ? '0'.repeat(64) : checksum}`,
+              },
+            ],
+          }),
+        )
+      }
+      if (request.endsWith('/SHA256SUMS')) return new Response(`${'f'.repeat(64)}  other.tar.gz\n${checksum}  ${name}\n`)
+      if (request === url) return new Response(archive)
+      return new Response('', { status: 404 })
+    }),
+  )
   return { name, url }
 }
 
 beforeEach(() => {
   vi.resetModules()
   Object.assign(state, {
-    settings: settingsFixture({ theme: 'dark' }), existing: false, failHash: false, failProbe: false, noDigest: false,
-    tarCalls: 0, probeArgs: [], events: [], requests: [],
+    settings: settingsFixture({ theme: 'dark' }),
+    existing: false,
+    failHash: false,
+    failProbe: false,
+    noDigest: false,
+    tarCalls: 0,
+    probeArgs: [],
+    events: [],
+    requests: [],
   })
 })
 afterEach(() => {
@@ -97,8 +120,11 @@ afterEach(() => {
   Object.defineProperty(process, 'arch', { value: originalArch, configurable: true })
 })
 const load = () => import('@main/services/managedPython')
-const phases = () => state.events.filter((event) => event.name === 'event:python-install').map((event) => event.value.phase)
-  .filter((phase, index, all) => phase !== all[index - 1])
+const phases = () =>
+  state.events
+    .filter((event) => event.name === 'event:python-install')
+    .map((event) => event.value.phase)
+    .filter((phase, index, all) => phase !== all[index - 1])
 
 describe('installManagedPython', () => {
   it('reuses an existing Python without downloading or changing settings', async () => {
@@ -112,7 +138,11 @@ describe('installManagedPython', () => {
     expect(getPythonInstallState()).toBe(result)
   })
 
-  it.each([['darwin', 'arm64'], ['win32', 'x64'], ['linux', 'x64']] as const)('installs and verifies app-local Python on %s', async (platform, arch) => {
+  it.each([
+    ['darwin', 'arm64'],
+    ['win32', 'x64'],
+    ['linux', 'x64'],
+  ] as const)('installs and verifies app-local Python on %s', async (platform, arch) => {
     setPlatform(platform, arch)
     const { installManagedPython } = await load()
     const first = installManagedPython()
@@ -121,7 +151,9 @@ describe('installManagedPython', () => {
     expect(result.phase).toBe('done')
     expect(result.version).toBe(version)
     expect(existsSync(result.path!)).toBe(true)
-    expect(result.path!.startsWith(join(root(), 'runtimes', 'python', `cpython-${version}-${release}-${triples[`${platform}-${arch}`]}`))).toBe(true)
+    expect(
+      result.path!.startsWith(join(root(), 'runtimes', 'python', `cpython-${version}-${release}-${triples[`${platform}-${arch}`]}`)),
+    ).toBe(true)
     expect(state.settings.pythonPath).toBe(result.path)
     expect(state.settings.theme).toBe('dark')
     expect(state.tarCalls).toBe(1)
@@ -179,7 +211,10 @@ describe('installManagedPython', () => {
     expect(unsupported).toMatchObject({ phase: 'error', error: '内置 Python 暂不支持 ia32' })
     vi.resetModules()
     setPlatform('linux', 'x64')
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 403 })))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 403 })),
+    )
     expect((await (await load()).installManagedPython()).error).toBe('查询内置 Python 下载失败：HTTP 403')
   })
 })

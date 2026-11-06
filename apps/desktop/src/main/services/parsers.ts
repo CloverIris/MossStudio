@@ -36,14 +36,15 @@ export interface ParsedProgress {
   label?: string
 }
 
-const TQDM =
-  /^\s*(?<pct>\d{1,3})%\|.*?\|\s*(?<cur>\d+)\/(?<total>\d+)\s*\[(?<elapsed>[^<\]]*)<(?<eta>[^,\]]*)(?:,\s*(?<rate>[^\]]*))?\]/
+const TQDM = /^\s*(?<pct>\d{1,3})%\|.*?\|\s*(?<cur>\d+)\/(?<total>\d+)\s*\[(?<elapsed>[^<\]]*)<(?<eta>[^,\]]*)(?:,\s*(?<rate>[^\]]*))?\]/
 
-const DOWNLOAD =
-  /^(?<label>.+?):\s*(?<pct>\d{1,3})%\|.*?\|\s*(?<cur>[\d.]+[KMG]?i?B?)\/(?<total>[\d.]+[KMG]?i?B?)/i
+const DOWNLOAD = /^(?<label>.+?):\s*(?<pct>\d{1,3})%\|.*?\|\s*(?<cur>[\d.]+[KMG]?i?B?)\/(?<total>[\d.]+[KMG]?i?B?)/i
 
 function etaToMs(value: string): number | undefined {
-  const parts = value.trim().split(':').map((part) => Number.parseInt(part, 10))
+  const parts = value
+    .trim()
+    .split(':')
+    .map((part) => Number.parseInt(part, 10))
   if (parts.some((part) => Number.isNaN(part))) return undefined
   if (parts.length === 2) return (parts[0]! * 60 + parts[1]!) * 1000
   if (parts.length === 3) return ((parts[0]! * 60 + parts[1]!) * 60 + parts[2]!) * 1000
@@ -77,11 +78,7 @@ export function parseDownloadProgress(line: string): ParsedProgress | null {
   }
 }
 
-export function progressFor(
-  line: string,
-  stage: JobStage,
-  current: JobProgress,
-): JobProgress | null {
+export function progressFor(line: string, stage: JobStage, current: JobProgress): JobProgress | null {
   const parsed = parseTqdm(line)
   if (!parsed) return null
   const next: JobProgress = {
@@ -209,7 +206,11 @@ export function normalizeSignature(ruleId: string, raw: string): string {
   return `${ruleId}:${normalized}`
 }
 
-export function toDiagnostic(rule: ErrorRule, raw: string, jobId?: string): Omit<Diagnostic, 'id' | 'count' | 'firstAt' | 'lastAt' | 'toast'> {
+export function toDiagnostic(
+  rule: ErrorRule,
+  raw: string,
+  jobId?: string,
+): Omit<Diagnostic, 'id' | 'count' | 'firstAt' | 'lastAt' | 'toast'> {
   const match = rule.regex?.exec(raw)
   const render = (text: string): string => text.replace(/\{(\d+)\}/g, (_, index: string) => match?.[Number(index)] ?? '未知')
   const solutions: DiagnosticSolution[] = (rule.solutions ?? []).map((solution) => ({

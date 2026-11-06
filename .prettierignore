@@ -1,0 +1,14 @@
+# Prettier formats code and config; prose and generated files are left alone.
+node_modules/
+dist/
+out/
+coverage/
+.dev-data/
+.omc/
+.claude/
+release/
+pnpm-lock.yaml
+*.md
+docs/
+# Go has gofmt.
+apps/launcher/

@@ -8,24 +8,37 @@ const REAL_RTX_4090 = 'device 0: NVIDIA GeForce RTX 4090 Laptop GPU [10de:2757] 
 
 describe('parseVulkanDeviceList', () => {
   it('reads the real output of moss-infer-vulkan', () => {
-    expect(parseVulkanDeviceList(REAL_RTX_4090)).toEqual([{
-      index: 0, name: 'NVIDIA GeForce RTX 4090 Laptop GPU', vendorId: 0x10de, deviceId: 0x2757, pciId: '10de:2757',
-      discrete: true, usable: true, kernels: 'coop', cpu: false,
-    }])
+    expect(parseVulkanDeviceList(REAL_RTX_4090)).toEqual([
+      {
+        index: 0,
+        name: 'NVIDIA GeForce RTX 4090 Laptop GPU',
+        vendorId: 0x10de,
+        deviceId: 0x2757,
+        pciId: '10de:2757',
+        discrete: true,
+        usable: true,
+        kernels: 'coop',
+        cpu: false,
+      },
+    ])
   })
 
   it('reads integrated, unusable and software devices', () => {
-    const devices = parseVulkanDeviceList([
-      'device 0: AMD Radeon RX 7900 XTX (RADV NAVI31) [1002:744c] discrete',
-      '  kernels: coop-f16',
-      'device 1: Intel(R) Graphics (ADL GT2) [8086:46a6]',
-      '  kernels: plain (no coop: no VK_KHR_cooperative_matrix)',
-      'device 2: Intel(R) HD Graphics 530 [8086:1912]',
-      '  unusable: needs Vulkan 1.2',
-      'device 3: llvmpipe (LLVM 19.1.7, 256 bits) [10005:0000]',
-      '  kernels: plain',
-    ].join('\r\n'))
-    expect(devices.map((device) => [device.index, device.pciId, device.discrete, device.usable, device.kernels ?? device.reason, device.cpu])).toEqual([
+    const devices = parseVulkanDeviceList(
+      [
+        'device 0: AMD Radeon RX 7900 XTX (RADV NAVI31) [1002:744c] discrete',
+        '  kernels: coop-f16',
+        'device 1: Intel(R) Graphics (ADL GT2) [8086:46a6]',
+        '  kernels: plain (no coop: no VK_KHR_cooperative_matrix)',
+        'device 2: Intel(R) HD Graphics 530 [8086:1912]',
+        '  unusable: needs Vulkan 1.2',
+        'device 3: llvmpipe (LLVM 19.1.7, 256 bits) [10005:0000]',
+        '  kernels: plain',
+      ].join('\r\n'),
+    )
+    expect(
+      devices.map((device) => [device.index, device.pciId, device.discrete, device.usable, device.kernels ?? device.reason, device.cpu]),
+    ).toEqual([
       [0, '1002:744c', true, true, 'coop-f16', false],
       [1, '8086:46a6', false, true, 'plain', false],
       [2, '8086:1912', false, false, 'needs Vulkan 1.2', false],
@@ -66,7 +79,12 @@ describe('AMD sysfs', () => {
       { node: 1, gfxTarget: 'gfx1100', vendorId: 0x1002, deviceId: 29772, pciId: '1002:744c' },
       { node: 2, gfxTarget: 'gfx1201', vendorId: 0x1002, deviceId: 0x7550, pciId: '1002:7550' },
     ])
-    expect(parseKfdProperties('a 1\nbad line\nb -2\n')).toEqual(new Map([['a', 1], ['b', -2]]))
+    expect(parseKfdProperties('a 1\nbad line\nb -2\n')).toEqual(
+      new Map([
+        ['a', 1],
+        ['b', -2],
+      ]),
+    )
   })
 
   it('reads DRM PCI ids and finds ROCm 7', () => {
@@ -89,10 +107,22 @@ describe('NVIDIA PCI ids and the merged inventory', () => {
   })
 
   it('adds the GPUs nvidia-smi cannot list and Vulkan indexes', () => {
-    const snapshot = { scannedAt: '', status: 'ok' as const, devices: [{ uuid: 'GPU-a', index: 0, name: 'RTX 4090', computeCapability: { major: 8, minor: 9 } }], recommendedGpuUuid: 'GPU-a' }
+    const snapshot = {
+      scannedAt: '',
+      status: 'ok' as const,
+      devices: [{ uuid: 'GPU-a', index: 0, name: 'RTX 4090', computeCapability: { major: 8, minor: 9 } }],
+      recommendedGpuUuid: 'GPU-a',
+    }
     const merged = mergeEngineGpus(snapshot, [
       { id: 'GPU-a', name: 'RTX 4090', vendor: 'nvidia', vulkan: { index: 1, usable: true, discrete: true } },
-      { id: 'vk-1002-744c-0', name: 'RX 7900 XTX', vendor: 'amd', pciId: '1002:744c', gfxTarget: 'gfx1100', vulkan: { index: 0, usable: true, discrete: true } },
+      {
+        id: 'vk-1002-744c-0',
+        name: 'RX 7900 XTX',
+        vendor: 'amd',
+        pciId: '1002:744c',
+        gfxTarget: 'gfx1100',
+        vulkan: { index: 0, usable: true, discrete: true },
+      },
     ])
     expect(merged.devices).toEqual([
       { uuid: 'GPU-a', index: 0, name: 'RTX 4090', computeCapability: { major: 8, minor: 9 }, vulkanIndex: 1 },
@@ -111,11 +141,24 @@ describe('NVIDIA PCI ids and the merged inventory', () => {
 
   it('adds an NVIDIA GPU only Vulkan saw (no nvidia-smi), but not a stale nvidia-smi row', () => {
     const merged = mergeEngineGpus({ scannedAt: '', status: 'unavailable', devices: [] }, [
-      { id: 'vk-10de-1e87-0', name: 'NVIDIA GeForce RTX 2080 (NVK TU104)', vendor: 'nvidia', pciId: '10de:1e87', vulkan: { index: 0, usable: true, discrete: true } },
+      {
+        id: 'vk-10de-1e87-0',
+        name: 'NVIDIA GeForce RTX 2080 (NVK TU104)',
+        vendor: 'nvidia',
+        pciId: '10de:1e87',
+        vulkan: { index: 0, usable: true, discrete: true },
+      },
       { id: 'GPU-gone', name: 'RTX 4090', vendor: 'nvidia' },
     ])
     expect(merged.devices).toEqual([
-      { uuid: 'vk-10de-1e87-0', index: 0, name: 'NVIDIA GeForce RTX 2080 (NVK TU104)', vendor: 'nvidia', pciId: '10de:1e87', vulkanIndex: 0 },
+      {
+        uuid: 'vk-10de-1e87-0',
+        index: 0,
+        name: 'NVIDIA GeForce RTX 2080 (NVK TU104)',
+        vendor: 'nvidia',
+        pciId: '10de:1e87',
+        vulkanIndex: 0,
+      },
     ])
     expect(merged).toMatchObject({ status: 'ok', recommendedGpuUuid: 'vk-10de-1e87-0' })
   })

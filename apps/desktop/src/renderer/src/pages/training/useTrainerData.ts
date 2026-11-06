@@ -2,12 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { TrainerVersion, TrainingHost } from '@shared/types'
 import { call, onEvent } from '../../lib/api'
-import {
-  TRAINING_HOST_EVENT,
-  announceTrainingHost,
-  getSelectedTrainingHost,
-  resolveTrainingHost,
-} from '../../lib/trainingHost'
+import { TRAINING_HOST_EVENT, announceTrainingHost, getSelectedTrainingHost, resolveTrainingHost } from '../../lib/trainingHost'
 import { useApp } from '../../store'
 
 export interface TrainerData {
@@ -42,8 +37,16 @@ export function useTrainerData(): TrainerData {
     }
   }, [])
 
-  useEffect(() => { void refresh().catch(() => undefined) }, [refresh])
-  useEffect(() => onEvent(Events.hostsChanged, () => { void refresh().catch(() => undefined) }), [refresh])
+  useEffect(() => {
+    void refresh().catch(() => undefined)
+  }, [refresh])
+  useEffect(
+    () =>
+      onEvent(Events.hostsChanged, () => {
+        void refresh().catch(() => undefined)
+      }),
+    [refresh],
+  )
   useEffect(() => {
     const sync = (): void => setSelected(getSelectedTrainingHost())
     window.addEventListener(TRAINING_HOST_EVENT, sync)

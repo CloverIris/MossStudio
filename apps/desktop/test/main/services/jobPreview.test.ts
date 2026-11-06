@@ -1,6 +1,13 @@
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PREVIEW_UPDATES_PER_SECOND, PreviewThrottle, jobPreviewPath, previewsDir, queuePositions, type JobPreview } from '@main/services/jobPreview'
+import {
+  PREVIEW_UPDATES_PER_SECOND,
+  PreviewThrottle,
+  jobPreviewPath,
+  previewsDir,
+  queuePositions,
+  type JobPreview,
+} from '@main/services/jobPreview'
 import { useTempDataRoot } from '@test/helpers/tempDir'
 
 const dataRoot = useTempDataRoot()
@@ -26,7 +33,12 @@ describe('PreviewThrottle', () => {
     now = 1000
     applied = []
     live = new Set(['j', 'a', 'b'])
-    throttle = new PreviewThrottle((jobId, preview) => applied.push({ jobId, preview }), (jobId) => live.has(jobId), 250, () => now)
+    throttle = new PreviewThrottle(
+      (jobId, preview) => applied.push({ jobId, preview }),
+      (jobId) => live.has(jobId),
+      250,
+      () => now,
+    )
   })
   afterEach(() => vi.useRealTimers())
 
@@ -79,7 +91,10 @@ describe('PreviewThrottle', () => {
   it('keeps jobs apart', () => {
     throttle.push('a', frame(1))
     throttle.push('b', frame(1))
-    expect(applied.map((item) => [item.jobId, item.preview.seq])).toEqual([['a', 1], ['b', 1]])
+    expect(applied.map((item) => [item.jobId, item.preview.seq])).toEqual([
+      ['a', 1],
+      ['b', 1],
+    ])
   })
 
   it('drops a held write when the job stops', () => {
@@ -115,7 +130,11 @@ describe('PreviewThrottle', () => {
 
 describe('queuePositions', () => {
   it('numbers the waiting jobs from 1 in queue order', () => {
-    expect([...queuePositions([{ job: { id: 'a' } }, { job: { id: 'b' } }, { job: { id: 'c' } }])]).toEqual([['a', 1], ['b', 2], ['c', 3]])
+    expect([...queuePositions([{ job: { id: 'a' } }, { job: { id: 'b' } }, { job: { id: 'c' } }])]).toEqual([
+      ['a', 1],
+      ['b', 2],
+      ['c', 3],
+    ])
     expect(queuePositions([]).size).toBe(0)
   })
 })

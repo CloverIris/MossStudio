@@ -8,7 +8,12 @@ import { useTempDir } from '@test/helpers/tempDir'
 const win: HostInfo = {
   platform: 'win32',
   home: 'C:\\Users\\张 三',
-  env: { SystemRoot: 'C:\\Windows', ProgramFiles: 'C:\\Program Files', 'ProgramFiles(x86)': 'C:\\Program Files (x86)', LOCALAPPDATA: 'C:\\Users\\张 三\\AppData\\Local' },
+  env: {
+    SystemRoot: 'C:\\Windows',
+    ProgramFiles: 'C:\\Program Files',
+    'ProgramFiles(x86)': 'C:\\Program Files (x86)',
+    LOCALAPPDATA: 'C:\\Users\\张 三\\AppData\\Local',
+  },
 }
 const winTemp = 'C:\\Users\\张 三\\AppData\\Local\\Temp'
 const linux: HostInfo = { platform: 'linux', home: '/home/张 三', env: {} }
@@ -19,7 +24,12 @@ const rule = (host: HostInfo, path: string, extra: { payloadDir?: string; volume
 
 describe('locationRule on Windows', () => {
   it('accepts ordinary folders, including Chinese names with spaces', () => {
-    for (const path of ['C:\\Users\\张 三\\AppData\\Local\\Programs\\MossStudio', 'D:\\我的 程序\\MossStudio', 'D:\\Moss Studio\\', '\\\\nas\\共享\\apps\\Moss']) {
+    for (const path of [
+      'C:\\Users\\张 三\\AppData\\Local\\Programs\\MossStudio',
+      'D:\\我的 程序\\MossStudio',
+      'D:\\Moss Studio\\',
+      '\\\\nas\\共享\\apps\\Moss',
+    ]) {
       expect(rule(win, path).problem, path).toBeNull()
     }
     expect(rule(win, 'D:\\Moss Studio\\').path).toBe('D:\\Moss Studio')
@@ -38,7 +48,13 @@ describe('locationRule on Windows', () => {
   })
 
   it('refuses system folders and everything inside them', () => {
-    for (const path of ['C:\\Windows', 'c:\\windows\\System32\\Moss', 'C:\\Program Files\\MossStudio', 'C:\\Program Files (x86)\\Moss', 'C:\\ProgramData\\Moss']) {
+    for (const path of [
+      'C:\\Windows',
+      'c:\\windows\\System32\\Moss',
+      'C:\\Program Files\\MossStudio',
+      'C:\\Program Files (x86)\\Moss',
+      'C:\\ProgramData\\Moss',
+    ]) {
       expect(rule(win, path).problem?.code, path).toBe('E_SYSTEM_DIR')
     }
   })
@@ -82,7 +98,9 @@ describe('inspectInstallFolder on this machine', () => {
 
   it('checkInstallLocation applies the rules before touching the disk', () => {
     const host: HostInfo = { platform: asOsPlatform(process.platform)!, home: join(temp(), 'home'), env: {} }
-    expect(checkInstallLocation(join(temp(), 'x'), { host, tempDir: temp(), requiredBytes: 0 }).problem?.code).toMatch(/^E_(TEMP|SYSTEM)_DIR$/)
+    expect(checkInstallLocation(join(temp(), 'x'), { host, tempDir: temp(), requiredBytes: 0 }).problem?.code).toMatch(
+      /^E_(TEMP|SYSTEM)_DIR$/,
+    )
     expect(checkInstallLocation('relative', { host, tempDir: temp(), requiredBytes: 0 }).problem?.code).toBe('E_NOT_ABSOLUTE')
   })
 
@@ -107,16 +125,33 @@ describe('inspectInstallFolder on this machine', () => {
     }
     mkdirSync(join(temp(), 'stuff'))
     writeFileSync(join(temp(), 'stuff', 'notes.txt'), '')
-    expect(check(join(temp(), 'stuff'))).toMatchObject({ ok: false, kind: 'occupied', problem: { code: 'E_NOT_EMPTY' }, suggestion: join(temp(), 'stuff', 'MossStudio') })
+    expect(check(join(temp(), 'stuff'))).toMatchObject({
+      ok: false,
+      kind: 'occupied',
+      problem: { code: 'E_NOT_EMPTY' },
+      suggestion: join(temp(), 'stuff', 'MossStudio'),
+    })
   })
 
   it('accepts an existing MossStudio root and an old 1.0.x folder', () => {
     if (process.platform === 'darwin') return
     mkdirSync(join(temp(), 'R'))
-    writeFileSync(join(temp(), 'R', 'install.json'), JSON.stringify({
-      schema: 1, platform: 'linux-x64', root: join(temp(), 'R'), dataRoot: join(temp(), 'R', 'data'), portable: false, channel: 'stable',
-      current: '2.0.0', failed: [], confirmed: true, installedAt: '', updatedAt: '',
-    }))
+    writeFileSync(
+      join(temp(), 'R', 'install.json'),
+      JSON.stringify({
+        schema: 1,
+        platform: 'linux-x64',
+        root: join(temp(), 'R'),
+        dataRoot: join(temp(), 'R', 'data'),
+        portable: false,
+        channel: 'stable',
+        current: '2.0.0',
+        failed: [],
+        confirmed: true,
+        installedAt: '',
+        updatedAt: '',
+      }),
+    )
     expect(check(join(temp(), 'R'))).toMatchObject({ ok: true, kind: 'install' })
     const old = join(temp(), '旧 版')
     mkdirSync(join(old, 'resources'), { recursive: true })
@@ -158,11 +193,23 @@ describe('inspectInstallFolder on this machine', () => {
 
   it('counts install.json / portable.json only when they really are ours', () => {
     // (macOS installs MossStudio.app into a folder, so other files there never block it.)
-    for (const [name, text] of process.platform === 'darwin' ? [] : [['install.json', '{}'], ['install.json', '{"schema":1}'], ['portable.json', '{"app":"other"}'], ['install.json', 'not json']]) {
+    for (const [name, text] of process.platform === 'darwin'
+      ? []
+      : [
+          ['install.json', '{}'],
+          ['install.json', '{"schema":1}'],
+          ['portable.json', '{"app":"other"}'],
+          ['install.json', 'not json'],
+        ]) {
       const dir = join(temp(), `foreign-${name}-${text.length}`)
       mkdirSync(dir)
       writeFileSync(join(dir, name!), text!)
-      expect(check(dir), `${name} ${text}`).toMatchObject({ ok: false, kind: 'occupied', problem: { code: 'E_NOT_EMPTY' }, suggestion: join(dir, 'MossStudio') })
+      expect(check(dir), `${name} ${text}`).toMatchObject({
+        ok: false,
+        kind: 'occupied',
+        problem: { code: 'E_NOT_EMPTY' },
+        suggestion: join(dir, 'MossStudio'),
+      })
     }
     const portable = join(temp(), 'portable')
     mkdirSync(portable)
@@ -190,6 +237,10 @@ describe('inspectDataFolder', () => {
     expect(check(join(temp(), 'existing'))).toMatchObject({ ok: true, kind: 'data' })
     mkdirSync(join(temp(), 'other'))
     writeFileSync(join(temp(), 'other', 'a.txt'), '')
-    expect(check(join(temp(), 'other'))).toMatchObject({ ok: false, problem: { code: 'E_NOT_EMPTY' }, suggestion: join(temp(), 'other', 'MossStudio') })
+    expect(check(join(temp(), 'other'))).toMatchObject({
+      ok: false,
+      problem: { code: 'E_NOT_EMPTY' },
+      suggestion: join(temp(), 'other', 'MossStudio'),
+    })
   })
 })

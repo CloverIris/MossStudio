@@ -18,8 +18,16 @@ export const ZOOM_MAX = 3
 type Sized = Pick<ProjectCanvas, 'width' | 'height'>
 type Placed = Pick<ProjectCanvas, 'x' | 'y' | 'width' | 'height'>
 
-export interface Rect { x: number; y: number; w: number; h: number }
-export interface View { zoom: number; pan: { x: number; y: number } }
+export interface Rect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+export interface View {
+  zoom: number
+  pan: { x: number; y: number }
+}
 
 export function cardWidth(canvas: Sized): number {
   return Math.round(canvas.width * BOARD_UNIT)

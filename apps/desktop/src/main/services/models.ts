@@ -2,27 +2,9 @@ import { fetchHf } from './hfNetwork'
 import { getHfToken } from './hfCredentials'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import {
-  copyFile,
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  rmdir,
-  stat,
-  unlink,
-  writeFile,
-} from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import type {
-  AdapterEntry,
-  Catalog,
-  DownloadTask,
-  ModelEntry,
-  ModelBundle,
-  Settings,
-} from '@shared/types'
+import type { AdapterEntry, Catalog, DownloadTask, ModelEntry, ModelBundle, Settings } from '@shared/types'
 import { localFilesBundle } from '@shared/localBundle'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
@@ -169,11 +151,7 @@ export async function registerTrainedAdapter(
     origin,
   }
   const existing = (await readLocalAdapters(settings)).filter((item) => item.id !== id)
-  await writeFile(
-    localAdapterFile(settings),
-    JSON.stringify({ schema_version: 1, adapters: [...existing, record] }, null, 2),
-    'utf8',
-  )
+  await writeFile(localAdapterFile(settings), JSON.stringify({ schema_version: 1, adapters: [...existing, record] }, null, 2), 'utf8')
   invalidateCatalog()
   return {
     id,
@@ -208,13 +186,14 @@ function localAdapterNotes(origin: LocalAdapterRecord['origin']): string {
  * users routinely move or delete downloads, which would break a project that had
  * remembered the original location.
  */
-export async function importAdapterFile(
-  settings: Settings,
-  input: { sourcePath: string; name?: string },
-): Promise<AdapterEntry> {
+export async function importAdapterFile(settings: Settings, input: { sourcePath: string; name?: string }): Promise<AdapterEntry> {
   if (!/\.safetensors$/i.test(input.sourcePath)) throw new Error('只支持 .safetensors 格式的 LoRA / LyCORIS 文件')
   const stem = basename(input.sourcePath).replace(/\.[^.]+$/, '')
-  const base = stem.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 80) || 'lora'
+  const base =
+    stem
+      .replace(/[^A-Za-z0-9._-]/g, '-')
+      .replace(/^[^A-Za-z0-9]+/, '')
+      .slice(0, 80) || 'lora'
   const root = paths.adapters(settings.modelsRoot, settings.modelDirectories)
   await assertFreeSpace(root, (await stat(input.sourcePath)).size, `LoRA ${basename(input.sourcePath)}`)
   let id = base
@@ -280,24 +259,17 @@ interface InstallRecord {
 }
 
 function blobKey(file: ModelFile): string {
-  if (file.oid && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(file.oid))
-    throw new Error('缓存文件 hash 无效')
+  if (file.oid && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(file.oid)) throw new Error('缓存文件 hash 无效')
   return file.oid ?? createHash('sha1').update(file.path).digest('hex')
 }
 
 function cacheDir(settings: Settings, repo: string, role: ModelEntry['role'] = 'full'): string {
-  if (
-    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) ||
-    repo.split('/').some((part) => part === '.' || part === '..')
-  )
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || repo.split('/').some((part) => part === '.' || part === '..'))
     throw new Error('无效的模型仓库 ID')
   return join(paths.roleHub(role, settings.modelsRoot, settings.modelDirectories), `models--${repo.replace('/', '--')}`)
 }
 function legacyCacheDir(settings: Settings, repo: string): string {
-  if (
-    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) ||
-    repo.split('/').some((part) => part === '.' || part === '..')
-  )
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || repo.split('/').some((part) => part === '.' || part === '..'))
     throw new Error('无效的模型仓库 ID')
   return join(paths.hub(settings.modelsRoot), `models--${repo.replace('/', '--')}`)
 }
@@ -333,15 +305,7 @@ async function findInstall(
       )
         continue
       const root = join(dir, 'snapshots', record.sha)
-      if (
-        !(await validateSnapshot(
-          root,
-          record.entries,
-          model.format === 'comfyui' ? 'comfyui' : model.role,
-          model.subfolder,
-        ))
-      )
-        continue
+      if (!(await validateSnapshot(root, record.entries, model.format === 'comfyui' ? 'comfyui' : model.role, model.subfolder))) continue
       if (model.role === 'full') {
         let valid = true
         for (const [role, folder] of [
@@ -376,12 +340,8 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       raw = JSON.parse(await readFile(join(local, 'models.json'), 'utf8')) as RawCatalog
       source = 'local'
     } else {
-      const base =
-        getLastNetwork()?.selected.manifest ??
-        'https://raw.githubusercontent.com/CloverIris/MossStudio/main'
-      raw = JSON.parse(
-        await fetchText(`${base.replace(/\/$/, '')}/apps/desktop/resources/models.json`),
-      ) as RawCatalog
+      const base = getLastNetwork()?.selected.manifest ?? 'https://raw.githubusercontent.com/CloverIris/MossStudio/main'
+      raw = JSON.parse(await fetchText(`${base.replace(/\/$/, '')}/apps/desktop/resources/models.json`)) as RawCatalog
       source = 'remote'
     }
     if (!Array.isArray(raw.models)) throw new Error('无效目录')
@@ -451,9 +411,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       }
       const task = tasks.get(`model:${entry.id}`)
       const locations = cacheLocations(settings, entry.repo, entry.role)
-      let partial = locations.some((dir) =>
-        existsSync(`${markerAt(dir, entry.id)}.pending`) || existsSync(markerAt(dir, entry.id)),
-      )
+      let partial = locations.some((dir) => existsSync(`${markerAt(dir, entry.id)}.pending`) || existsSync(markerAt(dir, entry.id)))
       for (const dir of locations) {
         try {
           const sha = (await readFile(join(dir, 'refs', entry.revision), 'utf8')).trim()
@@ -462,14 +420,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
             partial ||= (
               await Promise.all(
                 (entry.files ?? []).map((pattern) =>
-                  fileSize(
-                    safePath(
-                      snapshot,
-                      pattern.includes('*')
-                        ? pattern.slice(0, pattern.indexOf('*')).replace(/\/$/, '')
-                        : pattern,
-                    ),
-                  ),
+                  fileSize(safePath(snapshot, pattern.includes('*') ? pattern.slice(0, pattern.indexOf('*')).replace(/\/$/, '') : pattern)),
                 ),
               )
             ).some((size) => size >= 0)
@@ -479,13 +430,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
         }
         if (partial) break
       }
-      entry.installState = entry.installed
-        ? 'ready'
-        : task?.state === 'error'
-          ? 'error'
-          : partial
-            ? 'partial'
-            : 'missing'
+      entry.installState = entry.installed ? 'ready' : task?.state === 'error' ? 'error' : partial ? 'partial' : 'missing'
       entry.resolvedRevision = record?.sha
       return entry
     }),
@@ -524,11 +469,12 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
         imported.layout === 'diffusers-folder' ? 'diffusers-folder' : 'comfyui',
         imported.sha256 ? `sha256:${imported.sha256}` : 'unhashed',
       ],
-      notes: imported.layout === 'diffusers-folder'
-        ? '在原位置使用的模型文件夹；不复制、不移动，移除记录也不会删除原文件夹。'
-        : imported.sha256
-        ? `外部文件引用；移除记录不会删除原文件。SHA256 ${imported.sha256}`
-        : '扫描登记的外部文件；不复制、不移动，移除记录也不会删除原文件。使用前不校验哈希。',
+      notes:
+        imported.layout === 'diffusers-folder'
+          ? '在原位置使用的模型文件夹；不复制、不移动，移除记录也不会删除原文件夹。'
+          : imported.sha256
+            ? `外部文件引用；移除记录不会删除原文件。SHA256 ${imported.sha256}`
+            : '扫描登记的外部文件；不复制、不移动，移除记录也不会删除原文件。使用前不校验哈希。',
       localPath: imported.path,
       installState: installed ? 'ready' : 'error',
       installed,
@@ -603,10 +549,7 @@ function touch(task: DownloadTask, patch: Partial<DownloadTask>): void {
   emit(Events.download, { ...task })
 }
 function endpoint(settings: Settings): string {
-  return (settings.hfEndpoint ?? getLastNetwork()?.selected.hf ?? 'https://huggingface.co').replace(
-    /\/$/,
-    '',
-  )
+  return (settings.hfEndpoint ?? getLastNetwork()?.selected.hf ?? 'https://huggingface.co').replace(/\/$/, '')
 }
 const repoRequests = new Map<string, Promise<Snapshot>>()
 async function resolveRepo(repo: string, revision: string, settings: Settings): Promise<Snapshot> {
@@ -620,12 +563,7 @@ async function resolveRepo(repo: string, revision: string, settings: Settings): 
   return request
 }
 
-async function runModelDownload(
-  task: DownloadTask,
-  entry: ModelEntry,
-  settings: Settings,
-  signal: AbortSignal,
-): Promise<void> {
+async function runModelDownload(task: DownloadTask, entry: ModelEntry, settings: Settings, signal: AbortSignal): Promise<void> {
   const { sha, files } = await resolveRepo(entry.repo, entry.revision, settings)
   signal.throwIfAborted()
   const selected = selectFiles(files, entry.files)
@@ -643,18 +581,18 @@ async function runModelDownload(
     /* No partial installation. */
   }
   const owned = new Set([...(oldRecord?.owned ?? []), ...pendingOwned])
-  const hubs = [...new Set([
-    paths.hub(settings.modelsRoot),
-    ...(['dit', 'text_encoder', 'vae', 'support'] as const).map((role) =>
-      paths.roleHub(role, settings.modelsRoot, settings.modelDirectories),
-    ),
-  ])]
+  const hubs = [
+    ...new Set([
+      paths.hub(settings.modelsRoot),
+      ...(['dit', 'text_encoder', 'vae', 'support'] as const).map((role) =>
+        paths.roleHub(role, settings.modelsRoot, settings.modelDirectories),
+      ),
+    ]),
+  ]
   const repos = (
     await Promise.all(
       hubs.map(async (hub) =>
-        (await readdir(hub).catch(() => [] as string[]))
-          .filter((name) => name.startsWith('models--'))
-          .map((name) => join(hub, name)),
+        (await readdir(hub).catch(() => [] as string[])).filter((name) => name.startsWith('models--')).map((name) => join(hub, name)),
       ),
     )
   ).flat()
@@ -665,18 +603,12 @@ async function runModelDownload(
     if ((await fileSize(blob)) >= 0 || !file.oid) continue
     if (file.oid.length === 64) {
       const imported = importedModels.find((candidate) => candidate.sha256 === file.oid)
-      if (
-        imported &&
-        (await verifyImportedModelFile(imported, file.oid, file.size))
-      ) {
+      if (imported && (await verifyImportedModelFile(imported, file.oid, file.size))) {
         const temporary = `${blob}.${randomUUID()}.importing`
         await mkdir(dirname(blob), { recursive: true })
         try {
           await copyFile(imported.path, temporary)
-          if (
-            (await fileSize(temporary)) === file.size &&
-            (await hashFile(temporary)) === file.oid
-          ) {
+          if ((await fileSize(temporary)) === file.size && (await hashFile(temporary)) === file.oid) {
             await rename(temporary, blob)
             owned.add(file.path)
             continue
@@ -698,8 +630,7 @@ async function runModelDownload(
   let missing = 0
   for (const file of selected) {
     const blob = join(dir, 'blobs', blobKey(file))
-    if ((await fileSize(blob)) !== file.size)
-      missing += Math.max(0, file.size - Math.max(0, await fileSize(`${blob}.part`)))
+    if ((await fileSize(blob)) !== file.size) missing += Math.max(0, file.size - Math.max(0, await fileSize(`${blob}.part`)))
   }
   await assertFreeSpace(
     paths.roleRoot(entry.role, settings.modelsRoot, settings.modelDirectories),
@@ -745,9 +676,7 @@ async function runModelDownload(
           touch(task, {
             state: verifying ? 'verifying' : 'running',
             bytes: value,
-            speedBps: verifying
-              ? 0
-              : Math.max(0, ((value - lastBytes) * 1000) / Math.max(1, now - last)),
+            speedBps: verifying ? 0 : Math.max(0, ((value - lastBytes) * 1000) / Math.max(1, now - last)),
           })
           last = now
           lastBytes = value
@@ -762,14 +691,7 @@ async function runModelDownload(
     done += file.size
     touch(task, { state: 'running', bytes: done, filesDone: index + 1 })
   }
-  if (
-    !(await validateSnapshot(
-      root,
-      selected,
-      entry.format === 'comfyui' ? 'comfyui' : entry.role,
-      entry.subfolder,
-    ))
-  )
+  if (!(await validateSnapshot(root, selected, entry.format === 'comfyui' ? 'comfyui' : entry.role, entry.subfolder)))
     throw new Error('组件配置或权重分片不完整')
   if (entry.role === 'full') {
     for (const [role, folder] of [
@@ -778,8 +700,7 @@ async function runModelDownload(
       ['vae', 'vae'],
       ['support', ''],
     ]) {
-      if (!(await validateSnapshot(root, selected, role!, folder)))
-        throw new Error(`完整模型缺少 ${role}`)
+      if (!(await validateSnapshot(root, selected, role!, folder))) throw new Error(`完整模型缺少 ${role}`)
     }
   }
   signal.throwIfAborted()
@@ -802,12 +723,7 @@ async function runModelDownload(
   await unlink(pendingFile).catch(() => undefined)
 }
 
-async function runAdapterDownload(
-  task: DownloadTask,
-  entry: AdapterEntry,
-  settings: Settings,
-  signal: AbortSignal,
-): Promise<void> {
+async function runAdapterDownload(task: DownloadTask, entry: AdapterEntry, settings: Settings, signal: AbortSignal): Promise<void> {
   const { sha, files } = await resolveRepo(entry.repo, entry.revision, settings)
   const selected = selectFiles(files, entry.files)
   if (!selected.length) throw new Error('适配器文件不在仓库中')
@@ -824,8 +740,7 @@ async function runAdapterDownload(
       safePath(dir, file.path),
       file,
       signal,
-      (bytes, verifying) =>
-        touch(task, { state: verifying ? 'verifying' : 'running', bytes: done + bytes }),
+      (bytes, verifying) => touch(task, { state: verifying ? 'verifying' : 'running', bytes: done + bytes }),
       { token: getHfToken(), concurrency: settings.modelDownloadConcurrency },
     )
     done += file.size
@@ -835,11 +750,7 @@ async function runAdapterDownload(
   await writeFile(join(dir, 'adapter.json'), JSON.stringify(entry, null, 2))
 }
 
-async function beginDownload(
-  kind: 'model' | 'adapter',
-  entry: ModelEntry | AdapterEntry,
-  settings: Settings,
-): Promise<DownloadTask> {
+async function beginDownload(kind: 'model' | 'adapter', entry: ModelEntry | AdapterEntry, settings: Settings): Promise<DownloadTask> {
   const id = `${kind}:${entry.id}`
   if (deleting.size > 0) throw new Error('组件正在删除，请稍后重试')
   const existing = tasks.get(id)
@@ -868,8 +779,7 @@ async function beginDownload(
   touch(task, {})
   const completion = (async () => {
     try {
-      if (kind === 'model')
-        await runModelDownload(task, entry as ModelEntry, settings, controller.signal)
+      if (kind === 'model') await runModelDownload(task, entry as ModelEntry, settings, controller.signal)
       else await runAdapterDownload(task, entry as AdapterEntry, settings, controller.signal)
       touch(task, { state: 'done', bytes: task.totalBytes, speedBps: 0, currentFile: undefined })
     } catch (error) {
@@ -891,16 +801,9 @@ async function beginDownload(
   return task
 }
 
-export async function startDownload(
-  kind: 'model' | 'adapter',
-  id: string,
-  settings: Settings,
-): Promise<DownloadTask> {
+export async function startDownload(kind: 'model' | 'adapter', id: string, settings: Settings): Promise<DownloadTask> {
   const catalog = await getCatalog(settings)
-  const entry =
-    kind === 'model'
-      ? catalog.models.find((m) => m.id === id)
-      : catalog.adapters.find((m) => m.id === id)
+  const entry = kind === 'model' ? catalog.models.find((m) => m.id === id) : catalog.adapters.find((m) => m.id === id)
   if (!entry) throw new Error('目录中没有该条目')
   if (entry.provider === 'local') throw new Error('本地导入文件不能作为远程下载任务')
   return beginDownload(kind, entry, settings)
@@ -918,11 +821,19 @@ export async function importModelFolder(
   const scan = await scanModelDirectory(directory)
   const folders = scan.candidates.filter((candidate) => candidate.layout === 'diffusers-folder')
   if (folders.length) {
-    const result = await registerImportedScan(importedModelsIndex(settings), folders.map((candidate) => ({
-      path: candidate.path, role: 'full', layout: 'diffusers-folder', name: candidate.name, relativePath: candidate.relativePath,
-    })))
+    const result = await registerImportedScan(
+      importedModelsIndex(settings),
+      folders.map((candidate) => ({
+        path: candidate.path,
+        role: 'full',
+        layout: 'diffusers-folder',
+        name: candidate.name,
+        relativePath: candidate.relativePath,
+      })),
+    )
     invalidateCatalog()
-    if (result.added + result.updated === 0) throw new Error('这个文件夹不是完整的模型文件夹（需要 model_index.json、transformer、text_encoder 和 vae）')
+    if (result.added + result.updated === 0)
+      throw new Error('这个文件夹不是完整的模型文件夹（需要 model_index.json、transformer、text_encoder 和 vae）')
     return { added: result.added, duplicates: result.updated, folders: folders.map((candidate) => candidate.name) }
   }
   const result = await importModelDirectory(directory, importedModelsIndex(settings))
@@ -936,10 +847,7 @@ export async function scanModels(directory: string): Promise<ScanResult> {
 }
 
 /** Register the files the user selected from a scan; no hashing, no copying. */
-export async function registerScannedModels(
-  settings: Settings,
-  items: ScannedRegistration[],
-): Promise<RegisterScanResult> {
+export async function registerScannedModels(settings: Settings, items: ScannedRegistration[]): Promise<RegisterScanResult> {
   const result = await registerImportedScan(importedModelsIndex(settings), items)
   invalidateCatalog()
   return result
@@ -1086,7 +994,10 @@ export async function localFolderInstall(
     if (!folder.info.flavor || (model.role === 'dit' && folder.info.flavor !== flavor)) continue
     let entries: ModelFile[]
     try {
-      entries = selectFiles(folder.info.files.map((file) => ({ ...file, oid: null })), model.files)
+      entries = selectFiles(
+        folder.info.files.map((file) => ({ ...file, oid: null })),
+        model.files,
+      )
     } catch {
       continue
     }
@@ -1094,37 +1005,32 @@ export async function localFolderInstall(
     return {
       root: folder.path,
       record: {
-        version: 2, id: model.id, repo: model.repo, revision: model.revision,
-        sha: createHash('sha1').update(folder.path).digest('hex'), entries, owned: [],
+        version: 2,
+        id: model.id,
+        repo: model.repo,
+        revision: model.revision,
+        sha: createHash('sha1').update(folder.path).digest('hex'),
+        entries,
+        owned: [],
       },
     }
   }
   return null
 }
 
-export async function deleteModel(
-  kind: 'model' | 'adapter',
-  id: string,
-  settings: Settings,
-): Promise<void> {
+export async function deleteModel(kind: 'model' | 'adapter', id: string, settings: Settings): Promise<void> {
   if (installing.size > 0) throw new Error('有组件正在下载或校验，请先暂停并稍后重试')
   deleting.add(id)
   try {
     const catalog = await getCatalog(settings)
-    const entry =
-      kind === 'model'
-        ? catalog.models.find((m) => m.id === id)
-        : catalog.adapters.find((m) => m.id === id)
+    const entry = kind === 'model' ? catalog.models.find((m) => m.id === id) : catalog.adapters.find((m) => m.id === id)
     if (!entry) return
     if ((await listJobs()).some((job) => ['starting', 'running', 'canceling'].includes(job.state)))
       throw new Error('有任务正在运行，请结束任务后再删除模型文件')
     if (kind === 'adapter') {
       await rm(join(paths.adapters(settings.modelsRoot, settings.modelDirectories), id), { recursive: true, force: true })
       const adapters = (await readLocalAdapters(settings)).filter((a) => a.id !== id)
-      await writeFile(
-        localAdapterFile(settings),
-        JSON.stringify({ schema_version: 1, adapters }, null, 2),
-      )
+      await writeFile(localAdapterFile(settings), JSON.stringify({ schema_version: 1, adapters }, null, 2))
       invalidateCatalog()
       return
     }
@@ -1169,8 +1075,7 @@ export async function deleteModel(
           version: number
           components: Array<{ id: string }>
         }
-        if (meta.version === 1 && meta.components.some((c) => c.id === id))
-          await rm(view, { recursive: true, force: true })
+        if (meta.version === 1 && meta.components.some((c) => c.id === id)) await rm(view, { recursive: true, force: true })
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
@@ -1197,11 +1102,7 @@ export async function deleteModel(
       const blobName = blobKey(file)
       const ownership = join(dir, '.clover-owned', blobName)
       if (unknown || (!record.owned.includes(file.path) && !existsSync(ownership))) continue
-      const shared = otherRecords.some((r) =>
-        r.entries?.some(
-          (f) => f.oid === file.oid || (r.sha === record.sha && f.path === file.path),
-        ),
-      )
+      const shared = otherRecords.some((r) => r.entries?.some((f) => f.oid === file.oid || (r.sha === record.sha && f.path === file.path)))
       if (shared) continue
       // Only remove a snapshot link if no other snapshot can reference this blob.
       const snapshots = await readdir(join(dir, 'snapshots')).catch(() => [] as string[])

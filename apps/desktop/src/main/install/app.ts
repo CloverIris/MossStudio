@@ -80,8 +80,9 @@ function handle<T>(channel: string, schema: ZodType<T> | null, fn: Handler<T>): 
       return {
         ok: false as const,
         error: {
-          code: error instanceof ZodError ? 'BAD_REQUEST' : errorCode(error) ?? 'INTERNAL',
-          message: error instanceof ZodError ? error.issues[0]?.message ?? '参数不合法' : error instanceof Error ? error.message : String(error),
+          code: error instanceof ZodError ? 'BAD_REQUEST' : (errorCode(error) ?? 'INTERNAL'),
+          message:
+            error instanceof ZodError ? (error.issues[0]?.message ?? '参数不合法') : error instanceof Error ? error.message : String(error),
         },
       }
     }
@@ -236,7 +237,9 @@ function launchInstalled(result: InstallResult, context: RunContext, eject: bool
 // --- setup mode -----------------------------------------------------------------
 
 async function runSetup(context: RunContext): Promise<void> {
-  log(`setup ${app.getVersion()} (${context.platformKey ?? process.platform}) origin=${context.setup?.origin} payload=${context.setup?.payloadDir ?? '-'} silent=${context.silent}`)
+  log(
+    `setup ${app.getVersion()} (${context.platformKey ?? process.platform}) origin=${context.setup?.origin} payload=${context.setup?.payloadDir ?? '-'} silent=${context.silent}`,
+  )
   const controller = await SetupController.create({
     context,
     host: host(context),
@@ -255,7 +258,12 @@ async function runSetup(context: RunContext): Promise<void> {
     logPath: setupLogPath(),
     appRunning: () => otherInstanceRunning(context.silent ? 'silent' : 'setup'),
     emit: (kind, payload) => {
-      const channel = { progress: Events.installProgress, done: Events.installDone, failed: Events.installFailed, state: Events.installState }[kind]
+      const channel = {
+        progress: Events.installProgress,
+        done: Events.installDone,
+        failed: Events.installFailed,
+        state: Events.installState,
+      }[kind]
       emit(channel, payload)
     },
   })
@@ -282,11 +290,11 @@ async function runSetup(context: RunContext): Promise<void> {
     const owner = BrowserWindow.getAllWindows()[0]
     const options: Electron.OpenDialogOptions = {
       title: purpose === 'legacy' ? '选择旧版 MossStudio 的文件夹' : purpose === 'data' ? '选择数据位置' : '选择安装位置',
-      defaultPath: defaultPath ?? (purpose === 'data' ? controller.state.defaults.dataRoot ?? undefined : controller.state.location.path),
+      defaultPath: defaultPath ?? (purpose === 'data' ? (controller.state.defaults.dataRoot ?? undefined) : controller.state.location.path),
       properties: ['openDirectory', 'createDirectory', 'promptToCreate'],
     }
     const picked = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options)
-    const path = picked.canceled ? null : picked.filePaths[0] ?? null
+    const path = picked.canceled ? null : (picked.filePaths[0] ?? null)
     if (!path) return { canceled: true, path: null, check: null, legacy: null }
     if (purpose === 'legacy') return { canceled: false, path, check: null, legacy: await controller.inspectLegacy(path) }
     return { canceled: false, path, check: controller.validate(path, purpose), legacy: null }
@@ -445,10 +453,11 @@ export async function runInstallMode(context: RunContext = getRunContext()): Pro
     try {
       await runSetup(context)
     } catch (error) {
-      log(`setup could not start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
+      log(`setup could not start: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       // This dialog says it: the stub's splash can go, and it must not report the exit again.
       writeReady(context)
-      if (!context.silent) dialog.showErrorBox(`${PRODUCT_NAME} 安装`, `安装程序无法启动：${error instanceof Error ? error.message : String(error)}`)
+      if (!context.silent)
+        dialog.showErrorBox(`${PRODUCT_NAME} 安装`, `安装程序无法启动：${error instanceof Error ? error.message : String(error)}`)
       exitCleanly(1)
     }
     return true

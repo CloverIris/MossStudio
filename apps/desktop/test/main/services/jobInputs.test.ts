@@ -22,7 +22,13 @@ function put(path: string, data: Buffer = PNG): string {
 }
 
 const features = (patch: Partial<EngineFeatures> = {}): EngineFeatures => ({
-  preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true,
+  preview: true,
+  imageInput: true,
+  control: true,
+  references: true,
+  hires: true,
+  samplers: true,
+  lora: true,
   values: { sampler: ['euler', 'heun'], scheduler: ['karras'], resize: ['crop', 'fit', 'stretch'], step_cache: ['off', 'fbcache'] },
   ...patch,
 })
@@ -47,8 +53,10 @@ async function failure(source: Record<string, unknown>, ctx: JobInputContext = c
 
 describe('pickJobInputs', () => {
   it('keeps only the image-input fields that are set', () => {
-    expect(pickJobInputs({ prompt: 'x', initImage: { path: '/a' }, mask: null, sampling: undefined, references: { paths: [] } }))
-      .toEqual({ initImage: { path: '/a' }, references: { paths: [] } })
+    expect(pickJobInputs({ prompt: 'x', initImage: { path: '/a' }, mask: null, sampling: undefined, references: { paths: [] } })).toEqual({
+      initImage: { path: '/a' },
+      references: { paths: [] },
+    })
   })
 })
 
@@ -63,19 +71,36 @@ describe('validateJobInputs: accepted requests', () => {
     const depth = put(join(outputs(), 'depth.jpg'), JPEG)
     const ref = put(join(outputs(), 'nested', 'ref.png'))
     const file = put(join(root(), 'models', 'union.safetensors'), Buffer.from('x'))
-    const result = await validateJobInputs({
-      initImage: { path: init, strength: 0.6, resize: 'fit' },
-      mask: { path: mask },
-      control: { adapter: file, loraStrength: 1, images: [{ kind: 'depth', path: depth, strength: 10, start: 0, end: 1 }] },
-      references: { paths: [ref, ref, ref, ref], maxEdge: 2048 },
-      sampling: { sampler: 'heun', scheduler: 'karras', shift: 3, hires: { width: 1536, height: 1536, steps: 0, strength: 1 }, stepCache: 'fbcache', cfgTruncation: 0 },
-    }, context({ controlAdapters: [adapter(file)] }))
+    const result = await validateJobInputs(
+      {
+        initImage: { path: init, strength: 0.6, resize: 'fit' },
+        mask: { path: mask },
+        control: { adapter: file, loraStrength: 1, images: [{ kind: 'depth', path: depth, strength: 10, start: 0, end: 1 }] },
+        references: { paths: [ref, ref, ref, ref], maxEdge: 2048 },
+        sampling: {
+          sampler: 'heun',
+          scheduler: 'karras',
+          shift: 3,
+          hires: { width: 1536, height: 1536, steps: 0, strength: 1 },
+          stepCache: 'fbcache',
+          cfgTruncation: 0,
+        },
+      },
+      context({ controlAdapters: [adapter(file)] }),
+    )
     expect(result).toEqual({
       initImage: { path: init, strength: 0.6, resize: 'fit' },
       mask: { path: mask },
       control: { adapter: file, loraStrength: 1, images: [{ kind: 'depth', path: depth, strength: 10, start: 0, end: 1 }] },
       references: { paths: [ref, ref, ref, ref], maxEdge: 2048 },
-      sampling: { sampler: 'heun', scheduler: 'karras', shift: 3, hires: { width: 1536, height: 1536, steps: 0, strength: 1 }, stepCache: 'fbcache', cfgTruncation: 0 },
+      sampling: {
+        sampler: 'heun',
+        scheduler: 'karras',
+        shift: 3,
+        hires: { width: 1536, height: 1536, steps: 0, strength: 1 },
+        stepCache: 'fbcache',
+        cfgTruncation: 0,
+      },
     })
   })
 
@@ -87,8 +112,9 @@ describe('validateJobInputs: accepted requests', () => {
 
   it('leaves the engine to judge when its features are unknown', async () => {
     const init = put(join(assets(), 'init.png'))
-    await expect(validateJobInputs({ initImage: { path: init, strength: 0.5 }, sampling: { sampler: 'anything' } }, context({ features: null })))
-      .resolves.toMatchObject({ sampling: { sampler: 'anything' } })
+    await expect(
+      validateJobInputs({ initImage: { path: init, strength: 0.5 }, sampling: { sampler: 'anything' } }, context({ features: null })),
+    ).resolves.toMatchObject({ sampling: { sampler: 'anything' } })
   })
 })
 
@@ -96,7 +122,8 @@ describe('validateJobInputs: paths', () => {
   it('rejects a picture outside every allowed folder', async () => {
     const stray = put(join(outside(), 'stray.png'))
     expect(await failure({ initImage: { path: stray, strength: 0.5 } })).toEqual({
-      code: 'E_INPUT_PATH', message: '起始图「stray.png」不在项目素材或作品库中，请先把它导入到画板',
+      code: 'E_INPUT_PATH',
+      message: '起始图「stray.png」不在项目素材或作品库中，请先把它导入到画板',
     })
   })
 
@@ -112,33 +139,50 @@ describe('validateJobInputs: paths', () => {
     // A directory junction needs no privilege on Windows; elsewhere it is a plain symlink.
     symlinkSync(join(outside(), 'secret'), join(assets(), 'linked'), 'junction')
     const escaped = join(assets(), 'linked', 'secret.png')
-    expect(await failure({ initImage: { path: escaped, strength: 0.5 } })).toMatchObject({ code: 'E_INPUT_PATH', message: expect.stringContaining('不在项目素材或作品库中') })
+    expect(await failure({ initImage: { path: escaped, strength: 0.5 } })).toMatchObject({
+      code: 'E_INPUT_PATH',
+      message: expect.stringContaining('不在项目素材或作品库中'),
+    })
   })
 
   it('rejects a missing file, a folder and a picture the engine cannot read', async () => {
     expect(await failure({ initImage: { path: join(assets(), 'gone.png'), strength: 0.5 } })).toEqual({
-      code: 'E_INPUT_PATH', message: '起始图「gone.png」找不到了，请重新选择图片',
+      code: 'E_INPUT_PATH',
+      message: '起始图「gone.png」找不到了，请重新选择图片',
     })
     mkdirSync(join(assets(), 'folder.png'), { recursive: true })
-    expect((await failure({ mask: { path: join(assets(), 'folder.png') }, initImage: { path: put(join(assets(), 'i.png')), strength: 1 } })).code).toBe('E_INPUT_PATH')
+    expect(
+      (await failure({ mask: { path: join(assets(), 'folder.png') }, initImage: { path: put(join(assets(), 'i.png')), strength: 1 } }))
+        .code,
+    ).toBe('E_INPUT_PATH')
     const webp = put(join(assets(), 'pic.webp'), WEBP)
-    expect(await failure({ references: { paths: [webp] } })).toEqual({ code: 'E_INPUT_PATH', message: '参考图 1「pic.webp」不是 PNG 或 JPEG 图片' })
+    expect(await failure({ references: { paths: [webp] } })).toEqual({
+      code: 'E_INPUT_PATH',
+      message: '参考图 1「pic.webp」不是 PNG 或 JPEG 图片',
+    })
   })
 
   it('accepts only a registered control adapter, by its resolved path', async () => {
     const depth = put(join(assets(), 'depth.png'))
     const registered = put(join(root(), 'models', 'union.safetensors'), Buffer.from('x'))
     const other = put(join(root(), 'models', 'other.safetensors'), Buffer.from('x'))
-    const control = (file: string, kind = 'depth') => ({ control: { adapter: file, images: [{ kind, path: depth, strength: 1, start: 0, end: 1 }] } })
+    const control = (file: string, kind = 'depth') => ({
+      control: { adapter: file, images: [{ kind, path: depth, strength: 1, start: 0, end: 1 }] },
+    })
     const ctx = context({ controlAdapters: [adapter(registered)] })
     expect((await failure(control(other), ctx)).code).toBe('E_INPUT_PATH')
     expect((await failure(control(join(root(), 'models', 'gone.safetensors')), ctx)).code).toBe('E_INPUT_PATH')
-    expect(await failure(control(registered, 'pose'), ctx)).toEqual({ code: 'E_INPUT', message: '「union.safetensors」不支持「pose」控制，可用：depth、canny' })
-    await expect(validateJobInputs(control(join(root(), 'models', '.', 'union.safetensors')), ctx)).resolves.toMatchObject({ control: { adapter: registered } })
+    expect(await failure(control(registered, 'pose'), ctx)).toEqual({
+      code: 'E_INPUT',
+      message: '「union.safetensors」不支持「pose」控制，可用：depth、canny',
+    })
+    await expect(validateJobInputs(control(join(root(), 'models', '.', 'union.safetensors')), ctx)).resolves.toMatchObject({
+      control: { adapter: registered },
+    })
   })
 })
 
-describe('validateJobInputs: limits (the engine\'s, test_protocol.py)', () => {
+describe("validateJobInputs: limits (the engine's, test_protocol.py)", () => {
   const cases: Array<[string, Record<string, unknown>, string]> = [
     ['init strength above 1', { initImage: { path: '/a.png', strength: 1.5 } }, '重绘幅度需在 0 到 1 之间'],
     ['negative init strength', { initImage: { path: '/a.png', strength: -0.1 } }, '重绘幅度需在 0 到 1 之间'],
@@ -148,10 +192,39 @@ describe('validateJobInputs: limits (the engine\'s, test_protocol.py)', () => {
     ['no references', { references: { paths: [] } }, '至少需要 1 张参考图'],
     ['reference edge below 16', { references: { paths: ['/1'], maxEdge: 8 } }, '参考图边长需在 16 到 2048 之间'],
     ['fractional reference edge', { references: { paths: ['/1'], maxEdge: 512.5 } }, '参考图边长需为整数'],
-    ['control strength above 10', { control: { adapter: '/c', images: [{ kind: 'depth', path: '/d', strength: 11, start: 0, end: 1 }] } }, '控制强度需在 0 到 10 之间'],
-    ['start after end', { control: { adapter: '/c', images: [{ kind: 'depth', path: '/d', strength: 1, start: 0.8, end: 0.2 }] } }, '控制图的开始位置不能晚于结束位置'],
-    ['two images of one kind', { control: { adapter: '/c', images: [{ kind: 'depth', path: '/d', strength: 1, start: 0, end: 1 }, { kind: 'depth', path: '/e', strength: 1, start: 0, end: 1 }] } }, '「depth」控制图只能有一张'],
-    ['17 control images', { control: { adapter: '/c', images: Array.from({ length: 17 }, (_, i) => ({ kind: `k${i}`, path: '/d', strength: 1, start: 0, end: 1 })) } }, '控制图最多 16 张'],
+    [
+      'control strength above 10',
+      { control: { adapter: '/c', images: [{ kind: 'depth', path: '/d', strength: 11, start: 0, end: 1 }] } },
+      '控制强度需在 0 到 10 之间',
+    ],
+    [
+      'start after end',
+      { control: { adapter: '/c', images: [{ kind: 'depth', path: '/d', strength: 1, start: 0.8, end: 0.2 }] } },
+      '控制图的开始位置不能晚于结束位置',
+    ],
+    [
+      'two images of one kind',
+      {
+        control: {
+          adapter: '/c',
+          images: [
+            { kind: 'depth', path: '/d', strength: 1, start: 0, end: 1 },
+            { kind: 'depth', path: '/e', strength: 1, start: 0, end: 1 },
+          ],
+        },
+      },
+      '「depth」控制图只能有一张',
+    ],
+    [
+      '17 control images',
+      {
+        control: {
+          adapter: '/c',
+          images: Array.from({ length: 17 }, (_, i) => ({ kind: `k${i}`, path: '/d', strength: 1, start: 0, end: 1 })),
+        },
+      },
+      '控制图最多 16 张',
+    ],
     ['hires not a multiple of 16', { sampling: { hires: { width: 1000, height: 1024 } } }, '高清修复尺寸需为 16 的倍数'],
     ['hires strength above 1', { sampling: { hires: { width: 1024, height: 1024, strength: 2 } } }, '高清修复重绘幅度需在 0 到 1 之间'],
     ['cfg truncation above 1', { sampling: { cfgTruncation: 1.5 } }, 'CFG 截断需在 0 到 1 之间'],
@@ -170,10 +243,17 @@ describe('validateJobInputs: limits (the engine\'s, test_protocol.py)', () => {
 
 describe('validateJobInputs: what the engine supports', () => {
   it('refuses inputs an older engine (no 2.2 capabilities) cannot use', async () => {
-    const old = context({ features: features({ imageInput: false, control: false, references: false, hires: false, samplers: false, values: {} }) })
-    expect(await failure({ initImage: { path: '/a.png', strength: 0.5 } }, old)).toEqual({ code: 'E_NOT_SUPPORTED', message: '当前引擎不支持起始图，请更新 MossInfer' })
+    const old = context({
+      features: features({ imageInput: false, control: false, references: false, hires: false, samplers: false, values: {} }),
+    })
+    expect(await failure({ initImage: { path: '/a.png', strength: 0.5 } }, old)).toEqual({
+      code: 'E_NOT_SUPPORTED',
+      message: '当前引擎不支持起始图，请更新 MossInfer',
+    })
     expect((await failure({ references: { paths: ['/a.png'] } }, old)).message).toBe('当前引擎不支持参考图，请更新 MossInfer')
-    expect((await failure({ sampling: { hires: { width: 1024, height: 1024 } } }, old)).message).toBe('当前引擎不支持高清修复，请更新 MossInfer')
+    expect((await failure({ sampling: { hires: { width: 1024, height: 1024 } } }, old)).message).toBe(
+      '当前引擎不支持高清修复，请更新 MossInfer',
+    )
     expect((await failure({ sampling: { sampler: 'euler' } }, old)).message).toBe('当前引擎不支持更换采样器，请更新 MossInfer')
     expect((await failure({ control: { adapter: '/c', images: [] } }, old)).message).toBe('当前引擎不支持控制图，请更新 MossInfer')
   })

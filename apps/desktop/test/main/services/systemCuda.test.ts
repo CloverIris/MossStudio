@@ -28,15 +28,26 @@ const load = () => import('@main/services/systemCuda')
 describe('detectSystemCuda', () => {
   it('is unsupported on macOS without running anything', async () => {
     setPlatform('darwin')
-    expect(await (await load()).detectSystemCuda()).toMatchObject({ supported: false, flavours: [], error: expect.stringContaining('macOS') })
+    expect(await (await load()).detectSystemCuda()).toMatchObject({
+      supported: false,
+      flavours: [],
+      error: expect.stringContaining('macOS'),
+    })
     expect(state.calls).toEqual([])
   })
 
   it('supports Linux with a CUDA 13 cuBLASLt and an R580+ driver', async () => {
     setPlatform('linux')
-    state.ldconfig = '\tlibcublasLt.so.13 (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libcublasLt.so.13\n\tlibcublasLt.so.12 (libc6,x86-64) => /usr/lib/libcublasLt.so.12\n\tlibfoo.so.1 => /x\n'
+    state.ldconfig =
+      '\tlibcublasLt.so.13 (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libcublasLt.so.13\n\tlibcublasLt.so.12 (libc6,x86-64) => /usr/lib/libcublasLt.so.12\n\tlibfoo.so.1 => /x\n'
     const status = await (await load()).detectSystemCuda()
-    expect(status).toMatchObject({ supported: true, flavours: ['cu12', 'cu13'], driverVersion: '581.42', driverCompatible: true, error: undefined })
+    expect(status).toMatchObject({
+      supported: true,
+      flavours: ['cu12', 'cu13'],
+      driverVersion: '581.42',
+      driverCompatible: true,
+      error: undefined,
+    })
     expect(status.cublasLt).toHaveLength(2)
     expect(state.calls).not.toContain('find')
   })
@@ -61,7 +72,12 @@ describe('detectSystemCuda', () => {
   it('reports a missing GPU and missing libraries', async () => {
     setPlatform('linux')
     state.smi = { code: 127, stdout: '' }
-    expect(await (await load()).detectSystemCuda()).toMatchObject({ supported: false, driverVersion: undefined, driverCompatible: undefined, error: '未检测到 NVIDIA GPU / nvidia-smi' })
+    expect(await (await load()).detectSystemCuda()).toMatchObject({
+      supported: false,
+      driverVersion: undefined,
+      driverCompatible: undefined,
+      error: '未检测到 NVIDIA GPU / nvidia-smi',
+    })
     state.smi = gpu('581.42')
     expect((await (await load()).detectSystemCuda()).error).toMatch(/未找到 CUDA 13/)
   })

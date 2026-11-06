@@ -88,16 +88,9 @@ export async function runModelManagementTests(): Promise<void> {
     await wait()
     catalog = await getCatalog(settings, true)
     const sft = catalog.bundles.find((b) => b.id === 'moss-sft')!
-    assert(
-      [...Object.values(sft.components), sft.support].every(
-        (id) => catalog.models.find((m) => m.id === id)?.installed,
-      ),
-    )
+    assert([...Object.values(sft.components), sft.support].every((id) => catalog.models.find((m) => m.id === id)?.installed))
     const path = await prepareModelBundle(bundleBinding(sft), settings)
-    assert.equal(
-      (await readFile(join(path, 'transformer/model.safetensors'))).toString(),
-      'dit-fixture',
-    )
+    assert.equal((await readFile(join(path, 'transformer/model.safetensors'))).toString(), 'dit-fixture')
     assert.equal(await prepareModelBundle(bundleBinding(sft), settings), path)
     assert.equal((await installBundle('moss-sft', settings)).length, 0)
     const previous = requested.length
@@ -108,15 +101,9 @@ export async function runModelManagementTests(): Promise<void> {
     await wait()
     const fixed = catalog.bundles.find((b) => b.id === 'moss-sft-fp16')!
     const fixedPath = await prepareModelBundle(bundleBinding(fixed), settings)
-    assert.equal(
-      (await readFile(join(fixedPath, 'transformer/model.safetensors'))).toString(),
-      'fp16-fixed-fixture',
-    )
+    assert.equal((await readFile(join(fixedPath, 'transformer/model.safetensors'))).toString(), 'fp16-fixed-fixture')
     const fixedManifest = JSON.parse(await readFile(join(fixedPath, 'clover_model.json'), 'utf8'))
-    assert.equal(
-      fixedManifest.components.find((c: { role: string }) => c.role === 'dit').precision,
-      'fp16',
-    )
+    assert.equal(fixedManifest.components.find((c: { role: string }) => c.role === 'dit').precision, 'fp16')
     // A complete directory name alone is never readiness evidence.
     await writeFile(join(path, 'vae/model.safetensors'), 'broken')
     catalog = await getCatalog(settings, true)
@@ -124,37 +111,25 @@ export async function runModelManagementTests(): Promise<void> {
     await startDownload('model', 'flux2-vae-small', settings)
     await wait()
     const repaired = await prepareModelBundle(bundleBinding(sft), settings)
-    assert.equal(
-      (await readFile(join(repaired, 'vae/model.safetensors'))).toString(),
-      'shared-vae-fixture',
-    )
+    assert.equal((await readFile(join(repaired, 'vae/model.safetensors'))).toString(), 'shared-vae-fixture')
     // Existing HF blobs are adopted after verification without requesting their bytes.
     const imported = { ...settings, modelsRoot: join(app.getPath('userData'), 'imported-models') }
     ensureDirs(imported.modelsRoot)
-    const oldBlobs = join(
-      paths.hub(imported.modelsRoot),
-      'models--OpenMOSS-Team--MOSS-Image-Base',
-      'blobs',
-    )
+    const oldBlobs = join(paths.hub(imported.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-Base', 'blobs')
     await mkdir(oldBlobs, { recursive: true })
     const te = payloads['text_encoder/model.safetensors']!
     await writeFile(join(oldBlobs, createHash('sha256').update(te).digest('hex')), te)
     const oldRequests = requested.filter((p) => p === 'text_encoder/model.safetensors').length
     await startDownload('model', 'qwen35-encoder', imported)
     await wait()
-    assert.equal(
-      requested.filter((p) => p === 'text_encoder/model.safetensors').length,
-      oldRequests,
-    )
+    assert.equal(requested.filter((p) => p === 'text_encoder/model.safetensors').length, oldRequests)
     assert((await componentSnapshot('qwen35-encoder', imported)).record.entries.length > 0)
     const encoder = (await getCatalog(imported, true)).models.find((model) => model.id === 'qwen35-encoder')!
     const encoderCacheName = `models--${encoder.repo.replace('/', '--')}`
     const legacyEncoderCache = join(paths.hub(imported.modelsRoot), encoderCacheName)
-    await cp(
-      join(paths.roleHub('text_encoder', imported.modelsRoot, imported.modelDirectories), encoderCacheName),
-      legacyEncoderCache,
-      { recursive: true },
-    )
+    await cp(join(paths.roleHub('text_encoder', imported.modelsRoot, imported.modelDirectories), encoderCacheName), legacyEncoderCache, {
+      recursive: true,
+    })
     const relocated = {
       ...imported,
       modelDirectories: {
@@ -163,10 +138,7 @@ export async function runModelManagementTests(): Promise<void> {
       },
     }
     ensureDirs(relocated.modelsRoot, relocated.modelDirectories)
-    assert.equal(
-      (await getCatalog(relocated, true)).models.find((model) => model.id === 'qwen35-encoder')?.installed,
-      true,
-    )
+    assert.equal((await getCatalog(relocated, true)).models.find((model) => model.id === 'qwen35-encoder')?.installed, true)
     assert((await componentSnapshot('qwen35-encoder', relocated)).root.startsWith(legacyEncoderCache))
     const external = {
       ...settings,
@@ -186,10 +158,7 @@ export async function runModelManagementTests(): Promise<void> {
     const modelRequests = requested.filter((p) => p === 'text_encoder/model.safetensors').length
     await startDownload('model', 'qwen35-encoder', external)
     await wait()
-    assert.equal(
-      requested.filter((p) => p === 'text_encoder/model.safetensors').length,
-      modelRequests,
-    )
+    assert.equal(requested.filter((p) => p === 'text_encoder/model.safetensors').length, modelRequests)
     await deleteModel('model', localModel!.id, external)
     assert.equal((await readFile(join(externalDir, 'qwen.safetensors'))).toString(), te.toString())
     // Deleting one bundle's main model keeps the components other bundles share.

@@ -19,8 +19,12 @@ const scpFrom = vi.fn(async (_host: unknown, _source: string, target: string) =>
 })
 vi.mock('@main/services/settings', () => ({ getSettings: () => settingsFixture() }))
 vi.mock('@main/services/trainers', () => ({ findTrainerVersion: async () => state.version }))
-vi.mock('@main/services/trainingHosts', () => ({ getTrainingHost: (_s: unknown, id: string) => (id === 'ssh-gpu' ? sshHostFixture() : undefined) }))
-vi.mock('@main/services/models', () => ({ registerTrainedAdapter: (...args: [unknown, { id: string }]) => registerTrainedAdapter(...args) }))
+vi.mock('@main/services/trainingHosts', () => ({
+  getTrainingHost: (_s: unknown, id: string) => (id === 'ssh-gpu' ? sshHostFixture() : undefined),
+}))
+vi.mock('@main/services/models', () => ({
+  registerTrainedAdapter: (...args: [unknown, { id: string }]) => registerTrainedAdapter(...args),
+}))
 vi.mock('@main/services/ssh', () => ({
   remoteAbsolute: async (_host: unknown, path: string) => path.replace(/^~\//, '/home/moss/'),
   sshExec: async (_host: unknown, command: string) => {
@@ -34,9 +38,15 @@ vi.mock('@main/services/ssh', () => ({
 
 const root = useTempDataRoot()
 const versionDir = useTempDir('trainer-version-')
-const job = (patch: Partial<JobRecord> = {}): JobRecord => jobFixture({
-  kind: 'training', state: 'succeeded', trainerVersionId: 'v1', trainerRunName: 'my run/1', trainerWeights: 'moss-base', ...patch,
-} as Partial<JobRecord>)
+const job = (patch: Partial<JobRecord> = {}): JobRecord =>
+  jobFixture({
+    kind: 'training',
+    state: 'succeeded',
+    trainerVersionId: 'v1',
+    trainerRunName: 'my run/1',
+    trainerWeights: 'moss-base',
+    ...patch,
+  } as Partial<JobRecord>)
 
 beforeEach(() => {
   vi.resetModules()
@@ -53,7 +63,12 @@ const load = () => import('@main/services/trainerArtifacts')
 describe('collectTrainerArtifact', () => {
   it('ignores jobs that are not finished training runs', async () => {
     const { collectTrainerArtifact } = await load()
-    for (const patch of [{ kind: 'generate' }, { state: 'failed' }, { trainerVersionId: undefined }, { trainerRunName: undefined }] as Array<Partial<JobRecord>>) {
+    for (const patch of [
+      { kind: 'generate' },
+      { state: 'failed' },
+      { trainerVersionId: undefined },
+      { trainerRunName: undefined },
+    ] as Array<Partial<JobRecord>>) {
       expect(await collectTrainerArtifact(job(patch))).toBeNull()
     }
     state.version = undefined
@@ -68,7 +83,12 @@ describe('collectTrainerArtifact', () => {
     const { collectTrainerArtifact } = await load()
     expect(await collectTrainerArtifact(job())).toBe('trained-my-run-1')
     expect(registerTrainedAdapter).toHaveBeenCalledWith(expect.anything(), {
-      id: 'trained-my-run-1', name: 'my-run-1 · Kohaku Trainer', sourcePath: source, kind: 'lora', base: 'moss-base', license: 'local',
+      id: 'trained-my-run-1',
+      name: 'my-run-1 · Kohaku Trainer',
+      sourcePath: source,
+      kind: 'lora',
+      base: 'moss-base',
+      license: 'local',
     })
   })
 

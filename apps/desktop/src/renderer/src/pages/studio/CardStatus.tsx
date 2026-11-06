@@ -93,7 +93,10 @@ export function StatusOverlay({ view, hasPicture }: { view: CardJobView; hasPict
     if (hasPicture) return null
     const text = view.phase === 'queued' ? view.detail : view.detail.split(' · ')[0]
     return (
-      <div data-card-status={view.phase} className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-caption text-ink-2">
+      <div
+        data-card-status={view.phase}
+        className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-caption text-ink-2"
+      >
         {view.phase === 'queued' ? null : <Spinner className="text-ink-3" />}
         <span className="tabular">{text}</span>
       </div>
@@ -101,7 +104,11 @@ export function StatusOverlay({ view, hasPicture }: { view: CardJobView; hasPict
   }
   if (view.state === 'failed' && view.outputs.length === 0) {
     return (
-      <div data-card-status="failed" role="alert" className="absolute inset-0 flex items-center justify-center bg-danger-soft p-4 text-center text-caption text-danger">
+      <div
+        data-card-status="failed"
+        role="alert"
+        className="absolute inset-0 flex items-center justify-center bg-danger-soft p-4 text-center text-caption text-danger"
+      >
         <span className="line-clamp-5 [overflow-wrap:anywhere]">{view.error}</span>
       </div>
     )
@@ -114,7 +121,11 @@ export function StatusOverlay({ view, hasPicture }: { view: CardJobView; hasPict
     )
   }
   if (view.state === 'canceled' && view.outputs.length === 0) {
-    return <div data-card-status="canceled" className="absolute inset-0 flex items-center justify-center text-caption text-ink-2">已取消</div>
+    return (
+      <div data-card-status="canceled" className="absolute inset-0 flex items-center justify-center text-caption text-ink-2">
+        已取消
+      </div>
+    )
   }
   return null
 }

@@ -83,7 +83,9 @@ export function TrainerWindow(): React.JSX.Element {
   const command = buildTrainingCommand(effective)
 
   const snapshot = JSON.stringify(effective)
-  useEffect(() => { saveTrainingForm(JSON.parse(snapshot) as TrainingForm) }, [snapshot])
+  useEffect(() => {
+    saveTrainingForm(JSON.parse(snapshot) as TrainingForm)
+  }, [snapshot])
 
   function update(patch: Partial<TrainingForm>): void {
     setForm((current) => ({ ...current, ...patch }))
@@ -100,7 +102,13 @@ export function TrainerWindow(): React.JSX.Element {
 
   async function run(action: TrainerAction): Promise<void> {
     setShowErrors(true)
-    const problem = !version ? '先在训练页准备训练器' : !ready ? '训练环境还没装好，先在训练页安装环境' : !hasGpu ? '这台电脑没有 NVIDIA 显卡，不能在本机训练' : firstTrainingFormError(effective, action)
+    const problem = !version
+      ? '先在训练页准备训练器'
+      : !ready
+        ? '训练环境还没装好，先在训练页安装环境'
+        : !hasGpu
+          ? '这台电脑没有 NVIDIA 显卡，不能在本机训练'
+          : firstTrainingFormError(effective, action)
     if (problem) {
       toast.push(problem, 'error')
       return
@@ -120,9 +128,11 @@ export function TrainerWindow(): React.JSX.Element {
     if (!version) return
     setChecking(true)
     try {
-      setDoctor(remote
-        ? await call<{ ok: boolean; output: string }>(Ipc.trainerRemoteDoctor, { hostId, versionId: version.id })
-        : await call<{ ok: boolean; output: string }>(Ipc.trainerDoctor, { id: version.id }))
+      setDoctor(
+        remote
+          ? await call<{ ok: boolean; output: string }>(Ipc.trainerRemoteDoctor, { hostId, versionId: version.id })
+          : await call<{ ok: boolean; output: string }>(Ipc.trainerDoctor, { id: version.id }),
+      )
     } catch (error) {
       toast.push(`体检没有完成：${errorText(error)}`, 'error')
     } finally {
@@ -141,7 +151,11 @@ export function TrainerWindow(): React.JSX.Element {
       <PageHeader
         title="新建训练"
         description="选好训练图片和底模，其余参数已经有合适的默认值。"
-        actions={<Button tone="ghost" onClick={openMainWindow}>在主窗口查看进度</Button>}
+        actions={
+          <Button tone="ghost" onClick={openMainWindow}>
+            在主窗口查看进度
+          </Button>
+        }
       />
 
       {!loading && !version ? (
@@ -156,7 +170,8 @@ export function TrainerWindow(): React.JSX.Element {
         <>
           {!hasGpu ? (
             <p role="status" className="rounded-lg bg-warn-soft px-3.5 py-2.5 text-ui text-warn">
-              这台电脑没有检测到 NVIDIA 显卡，不能在本机训练。{remoteHostsEnabled && sshHosts.length ? '可以把训练位置换成一台远程主机。' : ''}
+              这台电脑没有检测到 NVIDIA 显卡，不能在本机训练。
+              {remoteHostsEnabled && sshHosts.length ? '可以把训练位置换成一台远程主机。' : ''}
             </p>
           ) : version && !ready ? (
             <p role="status" className="rounded-lg bg-warn-soft px-3.5 py-2.5 text-ui text-warn">
@@ -170,7 +185,10 @@ export function TrainerWindow(): React.JSX.Element {
                 <Field label="训练位置">
                   <Select
                     value={hostId}
-                    onValueChange={(id) => { setHostId(id); update({ versionId: '' }) }}
+                    onValueChange={(id) => {
+                      setHostId(id)
+                      update({ versionId: '' })
+                    }}
                     options={[{ value: 'local', label: '本机' }, ...sshHosts.map((host) => ({ value: host.id, label: host.name }))]}
                   />
                 </Field>
@@ -182,7 +200,11 @@ export function TrainerWindow(): React.JSX.Element {
                   onChange={(event) => update({ runName: sanitizeRunName(event.target.value) })}
                 />
               </Field>
-              <Field label="训练图片" hint={hint(errors.dataset, pathHint ?? '一个放着图片和同名 .txt 描述的文件夹')} className="col-span-2">
+              <Field
+                label="训练图片"
+                hint={hint(errors.dataset, pathHint ?? '一个放着图片和同名 .txt 描述的文件夹')}
+                className="col-span-2"
+              >
                 <div className="flex gap-1.5">
                   <Input
                     value={form.dataset}
@@ -192,7 +214,9 @@ export function TrainerWindow(): React.JSX.Element {
                     className="min-w-0 flex-1"
                   />
                   {!remote ? (
-                    <IconButton label="选择训练图片文件夹" onClick={() => void pick('dataset')}><FolderOpen className="size-4" /></IconButton>
+                    <IconButton label="选择训练图片文件夹" onClick={() => void pick('dataset')}>
+                      <FolderOpen className="size-4" />
+                    </IconButton>
                   ) : null}
                 </div>
               </Field>
@@ -206,15 +230,26 @@ export function TrainerWindow(): React.JSX.Element {
                     className="min-w-0 flex-1"
                   />
                   {!remote ? (
-                    <IconButton label="选择底模权重文件夹" onClick={() => void pick('weights')}><FolderOpen className="size-4" /></IconButton>
+                    <IconButton label="选择底模权重文件夹" onClick={() => void pick('weights')}>
+                      <FolderOpen className="size-4" />
+                    </IconButton>
                   ) : null}
                 </div>
               </Field>
               <Field label="步数" hint={hint(errors.steps)}>
-                <Input inputMode="numeric" value={form.steps} onChange={(event) => update({ steps: digitsOnly(event.target.value) })} className="tabular" />
+                <Input
+                  inputMode="numeric"
+                  value={form.steps}
+                  onChange={(event) => update({ steps: digitsOnly(event.target.value) })}
+                  className="tabular"
+                />
               </Field>
               <Field label="算法">
-                <Select value={form.algo} onValueChange={(algo) => update({ algo })} options={ALGOS.map((algo) => ({ value: algo, label: algo.toUpperCase() }))} />
+                <Select
+                  value={form.algo}
+                  onValueChange={(algo) => update({ algo })}
+                  options={ALGOS.map((algo) => ({ value: algo, label: algo.toUpperCase() }))}
+                />
               </Field>
             </div>
 
@@ -225,9 +260,14 @@ export function TrainerWindow(): React.JSX.Element {
                     <Select
                       value={version?.id ?? ''}
                       onValueChange={(versionId) => update({ versionId })}
-                      options={available.length
-                        ? available.map((item) => ({ value: item.id, label: `${item.shortCommit} · ${item.subject.slice(0, 48)} · ${RUNTIME_LABEL[item.runtimeState]}` }))
-                        : [{ value: '', label: '没有可用的版本' }]}
+                      options={
+                        available.length
+                          ? available.map((item) => ({
+                              value: item.id,
+                              label: `${item.shortCommit} · ${item.subject.slice(0, 48)} · ${RUNTIME_LABEL[item.runtimeState]}`,
+                            }))
+                          : [{ value: '', label: '没有可用的版本' }]
+                      }
                     />
                   </Field>
                   <Field label="学习率" hint={hint(errors.lr)}>
@@ -243,7 +283,11 @@ export function TrainerWindow(): React.JSX.Element {
                     <Input inputMode="numeric" value={form.batch} onChange={(event) => update({ batch: digitsOnly(event.target.value) })} />
                   </Field>
                   <Field label="目标边长" hint={hint(errors.resolution)}>
-                    <Input inputMode="numeric" value={form.resolution} onChange={(event) => update({ resolution: digitsOnly(event.target.value) })} />
+                    <Input
+                      inputMode="numeric"
+                      value={form.resolution}
+                      onChange={(event) => update({ resolution: digitsOnly(event.target.value) })}
+                    />
                   </Field>
                 </div>
                 <Field label="额外参数（每行一个 KEY=VALUE）">
@@ -257,9 +301,14 @@ export function TrainerWindow(): React.JSX.Element {
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-caption font-medium text-ink-2">将要运行的命令</span>
-                    <Button tone="ghost" onClick={() => void copyText(command, '命令已复制')}><Copy className="size-4" aria-hidden="true" />复制</Button>
+                    <Button tone="ghost" onClick={() => void copyText(command, '命令已复制')}>
+                      <Copy className="size-4" aria-hidden="true" />
+                      复制
+                    </Button>
                   </div>
-                  <pre className="selectable max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-well p-3 font-mono text-caption text-ink-2">{command}</pre>
+                  <pre className="selectable max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-well p-3 font-mono text-caption text-ink-2">
+                    {command}
+                  </pre>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-caption text-ink-2">数据预处理：</span>
@@ -290,10 +339,14 @@ export function TrainerWindow(): React.JSX.Element {
               <Card className="flex flex-col gap-2 p-5">
                 <div className="flex items-center justify-between gap-3">
                   <span className="truncate text-control text-ink">{latestRun.name}</span>
-                  <Pill tone={latestRun.tone} className="tabular">{latestRun.stateLabel}</Pill>
+                  <Pill tone={latestRun.tone} className="tabular">
+                    {latestRun.stateLabel}
+                  </Pill>
                 </div>
                 <ProgressBar value={latestRun.percent} label="训练进度" />
-                <span className="tabular text-caption text-ink-2">{latestRun.algo} · {latestRun.progressLabel} 步</span>
+                <span className="tabular text-caption text-ink-2">
+                  {latestRun.algo} · {latestRun.progressLabel} 步
+                </span>
               </Card>
             </Section>
           ) : null}
@@ -306,7 +359,11 @@ export function TrainerWindow(): React.JSX.Element {
         title="环境体检"
         description={doctor?.ok ? '没有发现问题。' : '发现了问题，详情见下方输出。'}
         width="max-w-3xl"
-        footer={<Button tone="secondary" size="md" onClick={() => setDoctor(null)}>关闭</Button>}
+        footer={
+          <Button tone="secondary" size="md" onClick={() => setDoctor(null)}>
+            关闭
+          </Button>
+        }
       >
         <pre className="selectable max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg bg-well p-3 font-mono text-caption text-ink-2">
           {doctor?.output || '没有输出'}

@@ -56,11 +56,13 @@ describe('verifyFeedSignature', () => {
 describe('parseVerifiedFeed', () => {
   it('parses only after the signature checks out, ignoring unknown keys and platforms', () => {
     const asset = { url: 'https://github.com/CloverIris/MossStudio/releases/download/v1.1.0/a.zip', sha256: 'a'.repeat(64), size: 10 }
-    const raw = Buffer.from(JSON.stringify({
-      ...feedFixture({ version: '1.1.0' }),
-      futureField: { anything: true },
-      platforms: { 'linux-x64': { full: asset, files: asset }, 'freebsd-riscv64': { whatever: 1 } },
-    }))
+    const raw = Buffer.from(
+      JSON.stringify({
+        ...feedFixture({ version: '1.1.0' }),
+        futureField: { anything: true },
+        platforms: { 'linux-x64': { full: asset, files: asset }, 'freebsd-riscv64': { whatever: 1 } },
+      }),
+    )
     // An unknown platform with an unknown shape must not reject the feed.
     const parsed = parseVerifiedFeed(raw, signFeed(raw, key), [key.publicKey], 'stable')
     expect(parsed.version).toBe('1.1.0')
@@ -99,11 +101,17 @@ describe('keys and build defines', () => {
   it('defines no test keys and no feed override unless the BUILD env sets them (release config)', () => {
     expect(updateBuildDefines({})).toEqual({ __MOSS_UPDATE_TEST_KEYS__: '[]', __MOSS_UPDATE_FEED_URL__: '""' })
     // Runtime env never matters: only the build env passed here does.
-    expect(updateBuildDefines({ MOSS_UPDATE_TEST_KEYS: '', MOSS_UPDATE_FEED_URL: '' })).toEqual({ __MOSS_UPDATE_TEST_KEYS__: '[]', __MOSS_UPDATE_FEED_URL__: '""' })
+    expect(updateBuildDefines({ MOSS_UPDATE_TEST_KEYS: '', MOSS_UPDATE_FEED_URL: '' })).toEqual({
+      __MOSS_UPDATE_TEST_KEYS__: '[]',
+      __MOSS_UPDATE_FEED_URL__: '""',
+    })
   })
 
   it('bakes CI test keys and the feed URL in when the build env sets them', () => {
-    const defines = updateBuildDefines({ MOSS_UPDATE_TEST_KEYS: JSON.stringify([key.publicKey]), MOSS_UPDATE_FEED_URL: 'http://127.0.0.1:8080/feed' })
+    const defines = updateBuildDefines({
+      MOSS_UPDATE_TEST_KEYS: JSON.stringify([key.publicKey]),
+      MOSS_UPDATE_FEED_URL: 'http://127.0.0.1:8080/feed',
+    })
     expect(JSON.parse(defines.__MOSS_UPDATE_TEST_KEYS__)).toEqual([key.publicKey])
     expect(JSON.parse(defines.__MOSS_UPDATE_FEED_URL__)).toBe('http://127.0.0.1:8080/feed')
   })

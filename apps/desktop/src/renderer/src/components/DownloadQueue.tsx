@@ -5,7 +5,12 @@ import { ACTIVE_STATES, taskText, visibleTasks } from '../pages/models/logic'
 import { Group, IconButton, ProgressBar, cn, useToast } from './ui'
 
 /** The download queue of one machine, with pause / resume / cancel per task. */
-export function DownloadQueue({ tasks, onPause, onResume, onCancel }: {
+export function DownloadQueue({
+  tasks,
+  onPause,
+  onResume,
+  onCancel,
+}: {
   tasks: DownloadTask[]
   onPause: (task: DownloadTask) => Promise<unknown>
   onResume: (task: DownloadTask) => Promise<unknown>

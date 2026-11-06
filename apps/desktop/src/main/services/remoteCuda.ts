@@ -31,7 +31,12 @@ export function remoteMachine(info: Pick<RemoteEngineInfo, 'cuda' | 'gpu'>): Eng
     const ordinal = ordinals.get(pciId) ?? 0
     ordinals.set(pciId, ordinal + 1)
     const vendor = pciId.startsWith('1002:') ? 'amd' : pciId.startsWith('8086:') ? 'intel' : 'other'
-    gpus.push({ id: `remote-${pciId}-${ordinal}`, name: vendor === 'amd' ? 'AMD 显卡' : vendor === 'intel' ? 'Intel 显卡' : '显卡', vendor, pciId })
+    gpus.push({
+      id: `remote-${pciId}-${ordinal}`,
+      name: vendor === 'amd' ? 'AMD 显卡' : vendor === 'intel' ? 'Intel 显卡' : '显卡',
+      vendor,
+      pciId,
+    })
   }
   return { os: 'linux', gpus, systemCuda: cuda?.flavours ?? [], rocm7: false, vulkanProbed: true }
 }
@@ -60,7 +65,9 @@ root=$(readlink -m "$root")
 put ROOT "$root"
 if test -x "$root/bin/moss-server"; then put ENGINE yes; else put ENGINE no; fi
 put METADATA "$(head -c 65536 "$root/.mossstudio-engine.json" 2>/dev/null || true)"
-${scanCuda ? `
+${
+  scanCuda
+    ? `
 put DRIVER "$(cat /proc/driver/nvidia/version 2>/dev/null || true)"
 gpu=$(for info in /proc/driver/nvidia/gpus/*/information; do
   test -r "$info" && awk '/^Model:/ {sub(/^Model:[[:space:]]*/, "");print}' "$info"
@@ -102,7 +109,9 @@ while IFS= read -r directory; do
   case "$directory" in /*) ;; *) continue;; esac
   for major in 12 13; do library "$directory/libcublasLt.so.$major"; done
 done < <({ printf '%s' "$LD_LIBRARY_PATH" | tr ':' '\\n' | head -n 12; printf '\\n/usr/lib/x86_64-linux-gnu\\n/usr/lib64\\n/usr/lib\\n'; })
-` : ''}
+`
+    : ''
+}
 true`
   // nvidia-smi alone may take up to 15 s.
   const response = await sshExec(host, 'bash -s', scanCuda ? 30_000 : 12_000, script)
@@ -118,15 +127,24 @@ true`
       if (!major || !['passed', 'failed', 'unavailable'].includes(dependencyCheck ?? '')) continue
       const versionText = /libcublasLt\.so\.(\d+(?:\.\d+)*)$/.exec(path)?.[1]
       const matchesMajor = !versionText || versionText.split('.')[0] === major
-      libraries.push({ path, major: Number(major) as 12 | 13, versionText,
-        dependencyCheck: matchesMajor ? dependencyCheck as 'passed' | 'failed' | 'unavailable' : 'failed',
-        error: matchesMajor ? undefined : '库文件主版本与链接名称不一致' })
+      libraries.push({
+        path,
+        major: Number(major) as 12 | 13,
+        versionText,
+        dependencyCheck: matchesMajor ? (dependencyCheck as 'passed' | 'failed' | 'unavailable') : 'failed',
+        error: matchesMajor ? undefined : '库文件主版本与链接名称不一致',
+      })
     } else if (key && value !== undefined) fields.set(key, decode(value))
   }
   const root = posix.normalize(fields.get('ROOT') || configuredRoot)
-  const status: RemoteEngineInfo = { online: response.code >= 0 && response.code !== 255 && !response.timedOut,
-    available: response.code === 0 && fields.get('ENGINE') === 'yes', root, path: `${root}/bin/moss-server`,
-    gpu: fields.get('GPU') ?? '', checkedAt }
+  const status: RemoteEngineInfo = {
+    online: response.code >= 0 && response.code !== 255 && !response.timedOut,
+    available: response.code === 0 && fields.get('ENGINE') === 'yes',
+    root,
+    path: `${root}/bin/moss-server`,
+    gpu: fields.get('GPU') ?? '',
+    checkedAt,
+  }
   if (response.code !== 0 || !fields.has('ROOT')) {
     status.error = (response.stderr || response.stdout || '远端检测失败').trim().slice(-1200)
     return status
@@ -134,34 +152,57 @@ true`
   try {
     const record = JSON.parse(fields.get('METADATA') || '{}') as { version?: unknown }
     if (typeof record?.version === 'string') status.version = record.version
-  } catch { /* Custom/old engines need no metadata file. */ }
+  } catch {
+    /* Custom/old engines need no metadata file. */
+  }
   if (scanCuda) {
-    const rows = (fields.get('GPU_CSV') ?? '').split(/\r?\n/).map((row) => row.split(',').map((value) => value.trim())).filter((row) => row.length >= 3)
+    const rows = (fields.get('GPU_CSV') ?? '')
+      .split(/\r?\n/)
+      .map((row) => row.split(',').map((value) => value.trim()))
+      .filter((row) => row.length >= 3)
     if (rows.length) status.gpu = rows.map((row) => row.slice(0, 2).join(', ')).join('\n')
     const driverVersion = rows[0]?.[2] || /\b\d{3}\.\d+\.\d+\b/.exec(fields.get('DRIVER') ?? '')?.[0]
     const computeCapabilities = rows.map((row) => row[3]).filter((value): value is string => Boolean(value && /^\d+\.\d+$/.test(value)))
-    const flavours = [...new Set(libraries.filter((lib) => lib.dependencyCheck === 'passed').map((lib) => `cu${lib.major}` as 'cu12' | 'cu13'))]
+    const flavours = [
+      ...new Set(libraries.filter((lib) => lib.dependencyCheck === 'passed').map((lib) => `cu${lib.major}` as 'cu12' | 'cu13')),
+    ]
     const compatible = (['cu13', 'cu12'] as const).filter((flavour) => driverAllows(driverVersion, flavour))
     const recommendedFlavour = compatible.find((flavour) => flavours.includes(flavour)) ?? compatible[0]
     const standardArchitectureSupported = computeCapabilities.length ? computeCapabilities.some((cap) => Number(cap) >= 8) : undefined
     // Linux has the CUDA 12 SM70 build for Volta and Turing; below 7.0 nothing runs.
     const anyCudaBuild = computeCapabilities.length ? computeCapabilities.some((cap) => Number(cap) >= 7) : undefined
-    const pciIds = (fields.get('DRM') ?? '').split(/\r?\n/).map((row) => {
-      const [vendor, device] = row.split(':')
-      return vendor && device ? drmPciId(vendor, device) : null
-    }).filter((id): id is string => Boolean(id))
+    const pciIds = (fields.get('DRM') ?? '')
+      .split(/\r?\n/)
+      .map((row) => {
+        const [vendor, device] = row.split(':')
+        return vendor && device ? drmPciId(vendor, device) : null
+      })
+      .filter((id): id is string => Boolean(id))
     const nvidiaSmiTimedOut = fields.get('SMI_EXIT') === '124'
-    status.cuda = { checkedAt, durationMs: Date.now() - started, driverVersion, computeCapabilities, libraries, flavours,
+    status.cuda = {
+      checkedAt,
+      durationMs: Date.now() - started,
+      driverVersion,
+      computeCapabilities,
+      libraries,
+      flavours,
       ...(nvidiaSmiTimedOut ? { nvidiaSmiTimedOut } : {}),
       gpuNames: rows.map((row) => row[0] ?? '').filter(Boolean),
       pciIds,
-      foundFlavours: [...new Set(libraries.map((lib) => `cu${lib.major}` as 'cu12' | 'cu13'))], recommendedFlavour,
-      recommendedVariant: recommendedFlavour ? flavours.includes(recommendedFlavour) ? 'system-cuda' : 'bundled' : undefined,
+      foundFlavours: [...new Set(libraries.map((lib) => `cu${lib.major}` as 'cu12' | 'cu13'))],
+      recommendedFlavour,
+      recommendedVariant: recommendedFlavour ? (flavours.includes(recommendedFlavour) ? 'system-cuda' : 'bundled') : undefined,
       standardArchitectureSupported,
-      gpuReason: standardArchitectureSupported === false
-        ? `检测到 ${[...new Set(computeCapabilities)].map((cap) => `SM${cap.replace('.', '')}`).join(' / ')}；${anyCudaBuild ? '将使用 CUDA 12 的 SM70 引擎包（需要 525.60.13 或更新的驱动）。' : '没有对应的 Linux CUDA 引擎包（需要 SM70 或更新架构）。'}`
-        : undefined,
-      error: !libraries.length ? '未发现系统 cuBLASLt 12/13。' : !flavours.length ? '已发现库文件，但依赖检查未通过或不可用；引擎加载时仍需验证实际兼容性。' : undefined }
+      gpuReason:
+        standardArchitectureSupported === false
+          ? `检测到 ${[...new Set(computeCapabilities)].map((cap) => `SM${cap.replace('.', '')}`).join(' / ')}；${anyCudaBuild ? '将使用 CUDA 12 的 SM70 引擎包（需要 525.60.13 或更新的驱动）。' : '没有对应的 Linux CUDA 引擎包（需要 SM70 或更新架构）。'}`
+          : undefined,
+      error: !libraries.length
+        ? '未发现系统 cuBLASLt 12/13。'
+        : !flavours.length
+          ? '已发现库文件，但依赖检查未通过或不可用；引擎加载时仍需验证实际兼容性。'
+          : undefined,
+    }
   }
   return status
 }

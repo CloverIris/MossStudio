@@ -11,15 +11,47 @@ import { parseUpdateKeys } from '@shared/updateKeys'
 import { extractZip } from '@main/update/zip'
 import { materialize, verifyTree } from '@main/update/materialize'
 import { parseVerifiedFeed, verifyFeedSignature } from '@main/update/verify'
-import { fileListFromTree, normalizeMode, sha256Buffer, symlinkTargetIsSafe, walkTree, zipTree } from '../../../../tools/release/lib/tree.mjs'
+import {
+  fileListFromTree,
+  normalizeMode,
+  sha256Buffer,
+  symlinkTargetIsSafe,
+  walkTree,
+  zipTree,
+} from '../../../../tools/release/lib/tree.mjs'
 import { ZipWriter } from '../../../../tools/release/lib/zip.mjs'
 import { readZip } from '../../../../tools/release/lib/unzip.mjs'
 import { deltaBases, deltaManifest, planDelta, writeDelta } from '../../../../tools/release/lib/delta.mjs'
-import { assembleFeed, channelsFor, currentAnnouncements, describePlatforms, feedBytes, parseNotes } from '../../../../tools/release/lib/feed.mjs'
+import {
+  assembleFeed,
+  channelsFor,
+  currentAnnouncements,
+  describePlatforms,
+  feedBytes,
+  parseNotes,
+} from '../../../../tools/release/lib/feed.mjs'
 import { generateKeyPair, keyIdFor, parsePrivateKey, publicKeyBase64, signFeed, verifyFeed } from '../../../../tools/release/lib/sign.mjs'
-import { artifactNames, bumpPatch, compareVersions, deltaName, isPrerelease, parseDeltaName, portableMarker, releaseAssetUrl } from '../../../../tools/release/lib/version.mjs'
+import {
+  artifactNames,
+  bumpPatch,
+  compareVersions,
+  deltaName,
+  isPrerelease,
+  parseDeltaName,
+  portableMarker,
+  releaseAssetUrl,
+} from '../../../../tools/release/lib/version.mjs'
 import { asarPackageJson, readSetupTar, readTar, TRAILER_SIZE } from '../../../../tools/release/lib/inspect.mjs'
-import { checkDelta, checkFeed, checkFileList, checkFullZip, checkPortable, checkSetupFile, compareWithFileList, verifiedPublishedFeed } from '../../../../tools/release/lib/verify.mjs'
+import {
+  checkDelta,
+  checkFeed,
+  checkFileList,
+  checkFullZip,
+  checkPortable,
+  checkSetupFile,
+  compareWithFileList,
+  verifiedPublishedFeed,
+} from '../../../../tools/release/lib/verify.mjs'
 import { makeAppTree, makeMacBundle, useTemp } from './releaseFixtures.mjs'
 
 const temp = useTemp()
@@ -56,7 +88,11 @@ describe('versions and names', () => {
     expect(artifactNames('1.2.3', 'linux-x64').portable).toBe('MossStudio-1.2.3-linux-x64-portable.tar.gz')
     expect(artifactNames('1.2.3', 'darwin-arm64').setup).toBe('MossStudio-1.2.3-mac-arm64.dmg')
     expect(artifactNames('1.2.3', 'darwin-x64').portable).toBe('MossStudio-1.2.3-mac-x64-portable.zip')
-    expect(parseDeltaName(deltaName('1.0.0-beta.1', '1.0.0', 'darwin-arm64'))).toEqual({ from: '1.0.0-beta.1', to: '1.0.0', platform: 'darwin-arm64' })
+    expect(parseDeltaName(deltaName('1.0.0-beta.1', '1.0.0', 'darwin-arm64'))).toEqual({
+      from: '1.0.0-beta.1',
+      to: '1.0.0',
+      platform: 'darwin-arm64',
+    })
     expect(parseDeltaName('MossStudio-1.0.0-win32-x64-full.zip')).toBeNull()
     expect(releaseAssetUrl('1.2.3', 'a b.zip')).toBe('https://github.com/CloverIris/MossStudio/releases/download/v1.2.3/a%20b.zip')
     expect(() => artifactNames('1.2.3', 'linux-arm64')).toThrow(/unknown platform/)
@@ -76,8 +112,14 @@ describe('file lists', () => {
     expect(paths).not.toContain('resources')
     expect(list.entries.find((entry) => entry.path === 'MossStudio')).toMatchObject({ type: 'file', mode: 0o755 })
     expect(list.entries.find((entry) => entry.path === 'resources/models.json')).toMatchObject({ type: 'file', mode: 0o644, size: 13 })
-    expect(list.entries.find((entry) => entry.path === 'resources/内容 文件.txt')).toMatchObject({ sha256: sha256Buffer(readFileSync(join(app, 'resources/内容 文件.txt'))) })
-    expect(list.entries.find((entry) => entry.path === 'lib/libffmpeg.so')).toEqual({ path: 'lib/libffmpeg.so', type: 'symlink', target: '../libffmpeg.so' })
+    expect(list.entries.find((entry) => entry.path === 'resources/内容 文件.txt')).toMatchObject({
+      sha256: sha256Buffer(readFileSync(join(app, 'resources/内容 文件.txt'))),
+    })
+    expect(list.entries.find((entry) => entry.path === 'lib/libffmpeg.so')).toEqual({
+      path: 'lib/libffmpeg.so',
+      type: 'symlink',
+      target: '../libffmpeg.so',
+    })
     checkFileList(list, { version: '1.0.0', platform: 'linux-x64' })
   })
 
@@ -92,7 +134,9 @@ describe('file lists', () => {
     expect(symlinkTargetIsSafe('a/b', '../../c')).toBe(false)
     expect(symlinkTargetIsSafe('a', '/etc/passwd')).toBe(false)
     expect(symlinkTargetIsSafe('a', 'C:/x')).toBe(false)
-    expect(() => fileListFromTree([{ path: 'x', type: 'symlink', target: '../../x', mode: 0o120777 }], { version: '1.0.0', platform: 'linux-x64' })).toThrow(/escapes/)
+    expect(() =>
+      fileListFromTree([{ path: 'x', type: 'symlink', target: '../../x', mode: 0o120777 }], { version: '1.0.0', platform: 'linux-x64' }),
+    ).toThrow(/escapes/)
   })
 })
 
@@ -144,7 +188,9 @@ describe('zip writer', () => {
     const full = join(root, 'mac-full.zip')
     zipTree(tree, full, { platform: 'darwin-arm64' })
     expect(list.entries.find((entry) => entry.path === 'Contents/Frameworks/Electron Framework.framework/Versions/Current')).toEqual({
-      path: 'Contents/Frameworks/Electron Framework.framework/Versions/Current', type: 'symlink', target: 'A',
+      path: 'Contents/Frameworks/Electron Framework.framework/Versions/Current',
+      type: 'symlink',
+      target: 'A',
     })
     await checkFullZip(full, list)
     // As the updater does: the zip's entries are the bundle's contents.
@@ -170,7 +216,13 @@ describe('deltas', () => {
     const a = buildVersion(root, '1.0.0', 0)
     const b = buildVersion(root, '1.0.1', 1)
     const plan = planDelta(a.list, b.list)
-    expect(plan.changed.sort()).toEqual(['chrome_crashpad_handler', 'locales/current', 'new-only.dat', 'resources/app.asar', 'resources/models.json'])
+    expect(plan.changed.sort()).toEqual([
+      'chrome_crashpad_handler',
+      'locales/current',
+      'new-only.dat',
+      'resources/app.asar',
+      'resources/models.json',
+    ])
     expect(plan.removed).toEqual(['old-only.dat'])
     expect(plan.unchangedBytes).toBeGreaterThan(64 * 1024)
     expect(() => planDelta(a.list, { ...b.list, platform: 'win32-x64' })).toThrow(/across platforms/)
@@ -183,14 +235,30 @@ describe('deltas', () => {
     const deltaPath = join(root, deltaName('1.0.0', '1.0.1', 'linux-x64'))
     const manifest = await writeDelta({ from: a.list, to: b.list, filesJson: b.filesJson, fullZip: b.full, outPath: deltaPath })
     expect(deltaManifestSchema.parse(manifest)).toEqual(manifest)
-    expect(manifest).toMatchObject({ from: '1.0.0', to: '1.0.1', platform: 'linux-x64', files: { sha256: sha256Buffer(b.filesJson), size: b.filesJson.length } })
+    expect(manifest).toMatchObject({
+      from: '1.0.0',
+      to: '1.0.1',
+      platform: 'linux-x64',
+      files: { sha256: sha256Buffer(b.filesJson), size: b.filesJson.length },
+    })
     const zip = await readZip(deltaPath)
-    expect([...zip.keys()].filter((name) => !name.endsWith('/')).sort()).toEqual(['delta.json', ...manifest.changed.map((p) => `files/${p}`)].sort())
+    expect([...zip.keys()].filter((name) => !name.endsWith('/')).sort()).toEqual(
+      ['delta.json', ...manifest.changed.map((p) => `files/${p}`)].sort(),
+    )
     expect(zip.get('files/locales/current').kind).toBe('symlink')
     await checkDelta(deltaPath, { toList: b.list, toListBytes: b.filesJson, fromList: a.list, deltaManifestSchema })
 
     const finalDir = join(root, 'installed', 'app-1.0.1')
-    await materialize({ kind: 'delta', zipPath: deltaPath, fileList: b.list, partialDir: `${finalDir}.partial`, finalDir, baseDir: a.app, baseVersion: '1.0.0', filesSha256: sha256Buffer(b.filesJson) })
+    await materialize({
+      kind: 'delta',
+      zipPath: deltaPath,
+      fileList: b.list,
+      partialDir: `${finalDir}.partial`,
+      finalDir,
+      baseDir: a.app,
+      baseVersion: '1.0.0',
+      filesSha256: sha256Buffer(b.filesJson),
+    })
     await verifyTree(finalDir, b.list)
     expect(existsSync(join(finalDir, 'old-only.dat'))).toBe(false)
     expect(statSync(join(finalDir, 'chrome_crashpad_handler')).mode & 0o777).toBe(0o755)
@@ -204,8 +272,13 @@ describe('deltas', () => {
     const root = temp()
     const a = buildVersion(root, '1.0.0', 0)
     const b = buildVersion(root, '1.0.1', 1)
-    const tampered = { ...b.list, entries: b.list.entries.map((entry) => (entry.path === 'new-only.dat' ? { ...entry, sha256: '0'.repeat(64) } : entry)) }
-    await expect(writeDelta({ from: a.list, to: tampered, filesJson: b.filesJson, fullZip: b.full, outPath: join(root, 'd.zip') })).rejects.toThrow(/disagrees/)
+    const tampered = {
+      ...b.list,
+      entries: b.list.entries.map((entry) => (entry.path === 'new-only.dat' ? { ...entry, sha256: '0'.repeat(64) } : entry)),
+    }
+    await expect(
+      writeDelta({ from: a.list, to: tampered, filesJson: b.filesJson, fullZip: b.full, outPath: join(root, 'd.zip') }),
+    ).rejects.toThrow(/disagrees/)
     await expect(checkFullZip(b.full, tampered)).rejects.toThrow(/content differs/)
     expect(() => compareWithFileList('x', [], b.list)).toThrow(/missing/)
   })
@@ -214,7 +287,10 @@ describe('deltas', () => {
     const root = temp()
     const a = buildVersion(root, '1.0.0', 0)
     const b = buildVersion(root, '1.0.1', 1)
-    expect(deltaManifest({ from: a.list, to: b.list, filesJson: Buffer.from('x') }).files).toEqual({ sha256: sha256Buffer(Buffer.from('x')), size: 1 })
+    expect(deltaManifest({ from: a.list, to: b.list, filesJson: Buffer.from('x') }).files).toEqual({
+      sha256: sha256Buffer(Buffer.from('x')),
+      size: 1,
+    })
   })
 
   it('picks the two newest earlier stable releases (and the newest earlier beta for a beta)', () => {
@@ -242,16 +318,28 @@ describe('feeds and signatures', () => {
   it('routes prereleases to beta and stable releases to both, never replacing a newer or equal feed', () => {
     expect(channelsFor('1.1.0-beta.1')).toEqual({ channels: ['beta'], skipped: [] })
     expect(channelsFor('1.0.1')).toEqual({ channels: ['stable', 'beta'], skipped: [] })
-    expect(channelsFor('1.0.1', { currentStable: '1.0.0', currentBeta: '1.1.0-beta.1' })).toEqual({ channels: ['stable'], skipped: [{ channel: 'beta', current: '1.1.0-beta.1' }] })
+    expect(channelsFor('1.0.1', { currentStable: '1.0.0', currentBeta: '1.1.0-beta.1' })).toEqual({
+      channels: ['stable'],
+      skipped: [{ channel: 'beta', current: '1.1.0-beta.1' }],
+    })
     expect(channelsFor('1.1.0', { currentStable: '1.0.9', currentBeta: '1.1.0-beta.1' }).channels).toEqual(['stable', 'beta'])
     // Backport: v1.0.9 tagged after v1.1.0 must not send stable (or beta) clients backwards.
     expect(channelsFor('1.0.9', { currentStable: '1.1.0', currentBeta: '1.1.0' })).toEqual({
       channels: [],
-      skipped: [{ channel: 'stable', current: '1.1.0' }, { channel: 'beta', current: '1.1.0' }],
+      skipped: [
+        { channel: 'stable', current: '1.1.0' },
+        { channel: 'beta', current: '1.1.0' },
+      ],
     })
     // Re-running a release whose feeds already went out changes nothing.
-    expect(channelsFor('1.1.0', { currentStable: '1.1.0' })).toEqual({ channels: ['beta'], skipped: [{ channel: 'stable', current: '1.1.0' }] })
-    expect(channelsFor('1.2.0-beta.1', { currentStable: '1.3.0', currentBeta: '1.2.0-beta.2' })).toEqual({ channels: [], skipped: [{ channel: 'beta', current: '1.2.0-beta.2' }] })
+    expect(channelsFor('1.1.0', { currentStable: '1.1.0' })).toEqual({
+      channels: ['beta'],
+      skipped: [{ channel: 'stable', current: '1.1.0' }],
+    })
+    expect(channelsFor('1.2.0-beta.1', { currentStable: '1.3.0', currentBeta: '1.2.0-beta.2' })).toEqual({
+      channels: [],
+      skipped: [{ channel: 'beta', current: '1.2.0-beta.2' }],
+    })
   })
 
   it('trusts a published feed only when it is signed by a production key and is the channel it claims', () => {
@@ -259,18 +347,34 @@ describe('feeds and signatures', () => {
     const key = parsePrivateKey(pair.privateKeyBase64)
     const trusted = [{ id: pair.id, publicKey: pair.publicKey }]
     const opts = { channel: 'stable', trusted, updateFeedSchema, feedSignatureSchema }
-    const feed = assembleFeed({ channel: 'stable', version: '1.1.0', publishedAt: 'x', platforms: { 'linux-x64': { full: { url: 'https://github.com/a', sha256: 'a'.repeat(64), size: 1 }, files: { url: 'https://github.com/b', sha256: 'b'.repeat(64), size: 1 }, deltas: [] } } })
+    const feed = assembleFeed({
+      channel: 'stable',
+      version: '1.1.0',
+      publishedAt: 'x',
+      platforms: {
+        'linux-x64': {
+          full: { url: 'https://github.com/a', sha256: 'a'.repeat(64), size: 1 },
+          files: { url: 'https://github.com/b', sha256: 'b'.repeat(64), size: 1 },
+          deltas: [],
+        },
+      },
+    })
     const bytes = feedBytes(feed)
     const sig = Buffer.from(JSON.stringify(signFeed(bytes, key)))
     expect(verifiedPublishedFeed(bytes, sig, opts).version).toBe('1.1.0')
     expect(() => verifiedPublishedFeed(bytes, null, opts)).toThrow(/no .sig/)
     expect(() => verifiedPublishedFeed(Buffer.from(bytes.toString().replace('1.1.0', '9.9.9')), sig, opts)).toThrow(/does not verify/)
     expect(() => verifiedPublishedFeed(bytes, sig, { ...opts, channel: 'beta' })).toThrow(/says channel stable/)
-    expect(() => verifiedPublishedFeed(bytes, sig, { ...opts, trusted: [{ id: pair.id, publicKey: generateKeyPair().publicKey }] })).toThrow(/does not verify/)
+    expect(() =>
+      verifiedPublishedFeed(bytes, sig, { ...opts, trusted: [{ id: pair.id, publicKey: generateKeyPair().publicKey }] }),
+    ).toThrow(/does not verify/)
   })
 
   it('reads notes with optional front matter', () => {
-    expect(parseNotes('---\nminimumVersion: 1.0.0\n---\n## 新功能\n\n- A\n')).toEqual({ meta: { minimumVersion: '1.0.0' }, body: '## 新功能\n\n- A' })
+    expect(parseNotes('---\nminimumVersion: 1.0.0\n---\n## 新功能\n\n- A\n')).toEqual({
+      meta: { minimumVersion: '1.0.0' },
+      body: '## 新功能\n\n- A',
+    })
     expect(parseNotes('plain\r\n')).toEqual({ meta: {}, body: 'plain' })
     expect(() => parseNotes('---\nfoo: 1\n---\n')).toThrow(/unknown key/)
     expect(() => parseNotes('---\nminimumVersion: soon\n---\n')).toThrow(/not a version/)
@@ -278,7 +382,11 @@ describe('feeds and signatures', () => {
 
   it('drops expired announcements', () => {
     const now = new Date('2026-06-01T00:00:00Z')
-    expect(currentAnnouncements([{ id: 'a', until: '2026-01-01T00:00:00Z' }, { id: 'b', until: '2027-01-01T00:00:00Z' }, { id: 'c' }], now).map((a) => a.id)).toEqual(['b', 'c'])
+    expect(
+      currentAnnouncements([{ id: 'a', until: '2026-01-01T00:00:00Z' }, { id: 'b', until: '2027-01-01T00:00:00Z' }, { id: 'c' }], now).map(
+        (a) => a.id,
+      ),
+    ).toEqual(['b', 'c'])
   })
 
   it('assembles a feed the app accepts, with hashes, sizes and deltas newest first', () => {
@@ -287,13 +395,30 @@ describe('feeds and signatures', () => {
     const platforms = describePlatforms(dir, '1.0.1', urlFor)
     expect(Object.keys(platforms)).toEqual(['linux-x64'])
     const linux = platforms['linux-x64']
-    expect(linux.full).toEqual({ url: urlFor('MossStudio-1.0.1-linux-x64-full.zip'), sha256: sha256Buffer(Buffer.from('full bytes')), size: 10 })
+    expect(linux.full).toEqual({
+      url: urlFor('MossStudio-1.0.1-linux-x64-full.zip'),
+      sha256: sha256Buffer(Buffer.from('full bytes')),
+      size: 10,
+    })
     expect(linux.deltas.map((delta) => delta.from)).toEqual(['1.0.0', '0.9.0'])
     expect(linux.setup.url).toBe(urlFor('MossStudio-Setup-1.0.1-linux-x64.run'))
-    const feed = assembleFeed({ channel: 'stable', version: '1.0.1', publishedAt: '2026-11-05T00:00:00.000Z', notes: 'notes', minimumVersion: '1.0.0', platforms })
-    expect(updateFeedSchema.parse(JSON.parse(feedBytes(feed).toString()))).toMatchObject({ version: '1.0.1', minimumVersion: '1.0.0', channel: 'stable' })
+    const feed = assembleFeed({
+      channel: 'stable',
+      version: '1.0.1',
+      publishedAt: '2026-11-05T00:00:00.000Z',
+      notes: 'notes',
+      minimumVersion: '1.0.0',
+      platforms,
+    })
+    expect(updateFeedSchema.parse(JSON.parse(feedBytes(feed).toString()))).toMatchObject({
+      version: '1.0.1',
+      minimumVersion: '1.0.0',
+      channel: 'stable',
+    })
     expect(() => assembleFeed({ channel: 'stable', version: '1.0.1', publishedAt: 'x', platforms: {} })).toThrow(/no platform/)
-    expect(() => assembleFeed({ channel: 'stable', version: '1.0.1', publishedAt: 'x', platforms, minimumVersion: '2.0.0' })).toThrow(/above/)
+    expect(() => assembleFeed({ channel: 'stable', version: '1.0.1', publishedAt: 'x', platforms, minimumVersion: '2.0.0' })).toThrow(
+      /above/,
+    )
   })
 
   it('signs with a base64 seed or a PEM key and the app verifies it', () => {
@@ -319,7 +444,12 @@ describe('feeds and signatures', () => {
   it('verifies a signed feed against the artifacts and rejects other keys or changed files', () => {
     const dir = artifactsDir(temp())
     const pair = generateKeyPair()
-    const feed = assembleFeed({ channel: 'beta', version: '1.0.1', publishedAt: 'now', platforms: describePlatforms(dir, '1.0.1', (file) => releaseAssetUrl('1.0.1', file)) })
+    const feed = assembleFeed({
+      channel: 'beta',
+      version: '1.0.1',
+      publishedAt: 'now',
+      platforms: describePlatforms(dir, '1.0.1', (file) => releaseAssetUrl('1.0.1', file)),
+    })
     const path = join(dir, 'update-beta.json')
     writeFileSync(path, feedBytes(feed))
     writeFileSync(`${path}.sig`, JSON.stringify(signFeed(feedBytes(feed), parsePrivateKey(pair.privateKeyBase64))))
@@ -371,9 +501,15 @@ describe('setup files and portable packages', () => {
     mkdirSync(deep, { recursive: true })
     writeFileSync(join(deep, '长文件名.txt'), 'deep')
     const gnu = readTar(tarOf(root, ['p']))
-    expect(gnu.find((entry) => entry.name.endsWith('长文件名.txt'))).toMatchObject({ type: 'file', name: `p/${'x'.repeat(90)}/${'y'.repeat(90)}/长文件名.txt` })
+    expect(gnu.find((entry) => entry.name.endsWith('长文件名.txt'))).toMatchObject({
+      type: 'file',
+      name: `p/${'x'.repeat(90)}/${'y'.repeat(90)}/长文件名.txt`,
+    })
     const entries = readTar(tarOf(root, ['--format=pax', 'p']))
-    expect(entries.find((entry) => entry.name.endsWith('长文件名.txt'))).toMatchObject({ type: 'file', name: `p/${'x'.repeat(90)}/${'y'.repeat(90)}/长文件名.txt` })
+    expect(entries.find((entry) => entry.name.endsWith('长文件名.txt'))).toMatchObject({
+      type: 'file',
+      name: `p/${'x'.repeat(90)}/${'y'.repeat(90)}/长文件名.txt`,
+    })
   })
 
   it('checks the portable layout: launcher, app, portable.json and an empty data folder', async () => {
@@ -394,7 +530,11 @@ describe('setup files and portable packages', () => {
     await checkPortable(tgz, list)
     writeFileSync(join(stage, 'MossStudio', 'portable.json'), portableMarker('9.9.9'))
     const bad = join(root, 'bad.zip')
-    zipTree(walkTree(stage).filter((item) => !/MossStudio\/(full-|files-)/.test(item.path)), bad, { platform: 'linux-x64' })
+    zipTree(
+      walkTree(stage).filter((item) => !/MossStudio\/(full-|files-)/.test(item.path)),
+      bad,
+      { platform: 'linux-x64' },
+    )
     await expect(checkPortable(bad, list)).rejects.toThrow(/portable.json/)
   })
 

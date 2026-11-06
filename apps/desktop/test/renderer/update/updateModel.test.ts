@@ -37,25 +37,55 @@ describe('chipView', () => {
   })
 
   it('offers a new version quietly', () => {
-    expect(chipView(updateAvailableFixture('1.1.0'))).toEqual({ label: '新版本 1.1.0', tone: 'quiet', description: 'MossStudio 1.1.0 可以更新' })
+    expect(chipView(updateAvailableFixture('1.1.0'))).toEqual({
+      label: '新版本 1.1.0',
+      tone: 'quiet',
+      description: 'MossStudio 1.1.0 可以更新',
+    })
   })
 
   it('carries the download progress, clamped, and is indeterminate while preparing', () => {
-    expect(chipView(updateDownloadingFixture('1.1.0', 42))).toMatchObject({ label: '正在下载更新', tone: 'quiet', progress: 42, description: '正在下载 MossStudio 1.1.0 更新，42%' })
+    expect(chipView(updateDownloadingFixture('1.1.0', 42))).toMatchObject({
+      label: '正在下载更新',
+      tone: 'quiet',
+      progress: 42,
+      description: '正在下载 MossStudio 1.1.0 更新，42%',
+    })
     expect(chipView(updateDownloadingFixture('1.1.0', 140))!.progress).toBe(100)
-    expect(chipView(updateDownloadingFixture('1.1.0', 0, { progress: null }))).toMatchObject({ progress: null, description: '正在准备 MossStudio 1.1.0 更新' })
-    expect(chipView(updateDownloadingFixture('1.1.0', 100, { phase: 'verifying' }))).toMatchObject({ label: '正在准备更新', progress: null })
-    expect(chipView(updateDownloadingFixture('1.1.0', 100, { phase: 'installing' }))).toMatchObject({ label: '正在准备更新', progress: null })
+    expect(chipView(updateDownloadingFixture('1.1.0', 0, { progress: null }))).toMatchObject({
+      progress: null,
+      description: '正在准备 MossStudio 1.1.0 更新',
+    })
+    expect(chipView(updateDownloadingFixture('1.1.0', 100, { phase: 'verifying' }))).toMatchObject({
+      label: '正在准备更新',
+      progress: null,
+    })
+    expect(chipView(updateDownloadingFixture('1.1.0', 100, { phase: 'installing' }))).toMatchObject({
+      label: '正在准备更新',
+      progress: null,
+    })
   })
 
   it('asks for a restart once the update is ready', () => {
-    expect(chipView(updateReadyFixture('1.1.0'))).toEqual({ label: '重启以更新', tone: 'ready', description: 'MossStudio 1.1.0 已准备好，重启即可更新' })
+    expect(chipView(updateReadyFixture('1.1.0'))).toEqual({
+      label: '重启以更新',
+      tone: 'ready',
+      description: 'MossStudio 1.1.0 已准备好，重启即可更新',
+    })
     expect(chipView(updateReadyFixture('1.1.0', { available: null }))!.description).toBe('MossStudio 1.1.0 已准备好，重启即可更新')
   })
 
   it('says 必须更新 as a warning whenever the update is required, keeping the progress bar', () => {
-    expect(chipView(updateAvailableFixture('1.1.0', { required: true }))).toMatchObject({ label: '必须更新', tone: 'warn', description: '必须更新：这个版本已停止支持生成，请更新到 1.1.0' })
-    expect(chipView(updateDownloadingFixture('1.1.0', 30, { required: true }))).toMatchObject({ label: '必须更新', tone: 'warn', progress: 30 })
+    expect(chipView(updateAvailableFixture('1.1.0', { required: true }))).toMatchObject({
+      label: '必须更新',
+      tone: 'warn',
+      description: '必须更新：这个版本已停止支持生成，请更新到 1.1.0',
+    })
+    expect(chipView(updateDownloadingFixture('1.1.0', 30, { required: true }))).toMatchObject({
+      label: '必须更新',
+      tone: 'warn',
+      progress: 30,
+    })
     expect(chipView(updateReadyFixture('1.1.0', { required: true }))).toMatchObject({ label: '必须更新', progress: undefined })
     expect(chipView(updaterStateFixture({ required: true }))!.description).toBe('必须更新：这个版本已停止支持生成，请更新')
   })
@@ -63,7 +93,10 @@ describe('chipView', () => {
   it('covers waiting, restarting and a failed update', () => {
     expect(chipView(updateReadyFixture('1.1.0', { phase: 'waiting-idle' }))).toMatchObject({ label: '空闲后重启', tone: 'quiet' })
     expect(chipView(updateReadyFixture('1.1.0', { phase: 'restarting' }))).toMatchObject({ label: '正在重启…', progress: null })
-    expect(chipView(updateAvailableFixture('1.1.0', { phase: 'error', error: '网络断开' }))).toMatchObject({ label: '更新没有完成', description: '更新没有完成：网络断开' })
+    expect(chipView(updateAvailableFixture('1.1.0', { phase: 'error', error: '网络断开' }))).toMatchObject({
+      label: '更新没有完成',
+      description: '更新没有完成：网络断开',
+    })
     expect(chipView(updateAvailableFixture('1.1.0', { phase: 'error' }))!.description).toBe('更新没有完成：请稍后重试')
     // A failed check with nothing to offer stays quiet.
     expect(chipView(updaterStateFixture({ phase: 'error', error: '网络断开' }))).toBeNull()
@@ -77,19 +110,29 @@ describe('chipView', () => {
 describe('a version rolled back after a failed start', () => {
   it('shows a warning chip only on the start that tells about it, and only when nothing else is going on', () => {
     expect(chipView(updateFailedFixture('1.1.0'))).toEqual({
-      label: '新版本没能启动', tone: 'warn',
+      label: '新版本没能启动',
+      tone: 'warn',
       description: 'MossStudio 1.1.0 没能正常启动，已经自动回到 1.0.3。你的作品、模型和设置都没有受影响。',
     })
     expect(chipView(updateFailedFixture('1.1.0', { failedNotice: false }))).toBeNull()
-    expect(chipView(updateFailedFixture('1.1.0', { phase: 'available', available: updateAvailableFixture('1.2.0').available }))?.label).toBe('新版本 1.2.0')
+    expect(
+      chipView(updateFailedFixture('1.1.0', { phase: 'available', available: updateAvailableFixture('1.2.0').available }))?.label,
+    ).toBe('新版本 1.2.0')
   })
 
   it('explains in the popover and offers 再试一次 / 知道了, without release notes', () => {
     const view = popoverView(updateFailedFixture('1.1.0'))
     expect(view).toMatchObject({
-      title: '1.1.0 没能正常启动', meta: '当前 1.0.3', statusTone: 'warn', notes: '', primary: 'retry-failed', secondary: 'dismiss-failed',
+      title: '1.1.0 没能正常启动',
+      meta: '当前 1.0.3',
+      statusTone: 'warn',
+      notes: '',
+      primary: 'retry-failed',
+      secondary: 'dismiss-failed',
     })
-    expect(view.status).toBe('更新到 1.1.0 后它没能正常打开，所以 MossStudio 回到了 1.0.3，之后也不会再自动提示这个版本。如果当时是你自己关掉了它，可以放心再试一次。')
+    expect(view.status).toBe(
+      '更新到 1.1.0 后它没能正常打开，所以 MossStudio 回到了 1.0.3，之后也不会再自动提示这个版本。如果当时是你自己关掉了它，可以放心再试一次。',
+    )
     expect(ACTION_LABEL['retry-failed']).toBe('再试一次')
     expect(ACTION_LABEL['dismiss-failed']).toBe('知道了')
     expect(popoverView(updateFailedFixture('1.1.0', { failedNotice: false })).primary).toBeNull()
@@ -135,7 +178,11 @@ describe('popoverView', () => {
     expect(view.status).toBe('正在下载 23 MB / 46 MB。下载完成后，重启即可更新。')
     expect(view.meta).toBe('当前 1.0.3 · 2026年10月30日发布')
     expect(popoverView(updateDownloadingFixture('1.1.0', 0, { progress: null })).status).toBe('正在下载。下载完成后，重启即可更新。')
-    expect(popoverView(updateDownloadingFixture('1.1.0', 100, { phase: 'verifying' }))).toMatchObject({ progress: null, primary: null, secondary: null })
+    expect(popoverView(updateDownloadingFixture('1.1.0', 100, { phase: 'verifying' }))).toMatchObject({
+      progress: null,
+      primary: null,
+      secondary: null,
+    })
   })
 
   it('offers 重启以更新 when ready and nothing is running', () => {
@@ -144,21 +191,36 @@ describe('popoverView', () => {
 
   it('says what is running and offers 空闲后自动重启 / 稍后 when a restart would interrupt work', () => {
     const fromAnswer = popoverView(updateReadyFixture('1.1.0'), [JOB])
-    expect(fromAnswer).toMatchObject({ status: '2 个生成任务正在进行，现在重启会中断。', statusTone: 'warn', primary: 'restart-when-idle', secondary: 'later' })
+    expect(fromAnswer).toMatchObject({
+      status: '2 个生成任务正在进行，现在重启会中断。',
+      statusTone: 'warn',
+      primary: 'restart-when-idle',
+      secondary: 'later',
+    })
     // Reopened without a fresh answer: offer the restart again (main re-checks), whatever main last listed.
     expect(popoverView(updateReadyFixture('1.1.0', { busy: [DOWNLOAD] }))).toMatchObject({ primary: 'restart' })
   })
 
   it('while waiting for idle, names the work and offers to cancel', () => {
     expect(popoverView(updateReadyFixture('1.1.0', { phase: 'waiting-idle', busy: [JOB] }))).toMatchObject({
-      status: '等2 个生成任务结束后，会自动重启以更新。', primary: null, secondary: 'cancel-when-idle',
+      status: '等2 个生成任务结束后，会自动重启以更新。',
+      primary: null,
+      secondary: 'cancel-when-idle',
     })
     expect(popoverView(updateReadyFixture('1.1.0', { phase: 'waiting-idle' })).status).toBe('当前任务结束后，会自动重启以更新。')
   })
 
   it('shows restarting and a failure with 重试', () => {
-    expect(popoverView(updateReadyFixture('1.1.0', { phase: 'restarting' }))).toMatchObject({ status: '正在重启…', primary: null, secondary: null })
-    expect(popoverView(updateAvailableFixture('1.1.0', { phase: 'error', error: '校验失败' }))).toMatchObject({ status: '校验失败', statusTone: 'danger', primary: 'retry' })
+    expect(popoverView(updateReadyFixture('1.1.0', { phase: 'restarting' }))).toMatchObject({
+      status: '正在重启…',
+      primary: null,
+      secondary: null,
+    })
+    expect(popoverView(updateAvailableFixture('1.1.0', { phase: 'error', error: '校验失败' }))).toMatchObject({
+      status: '校验失败',
+      statusTone: 'danger',
+      primary: 'retry',
+    })
     expect(popoverView(updateAvailableFixture('1.1.0', { phase: 'error' })).status).toBe('更新没有完成，请稍后重试。')
   })
 
@@ -190,7 +252,9 @@ describe('settings lines', () => {
   })
 
   it('gives the reason when this copy cannot update here', () => {
-    expect(settingsStatus(updaterStateFixture({ supported: false, phase: 'unsupported', unsupportedReason: '这是开发版本，不能在这里更新。' }))).toBe('这是开发版本，不能在这里更新。')
+    expect(
+      settingsStatus(updaterStateFixture({ supported: false, phase: 'unsupported', unsupportedReason: '这是开发版本，不能在这里更新。' })),
+    ).toBe('这是开发版本，不能在这里更新。')
     expect(settingsStatus(updaterStateFixture({ supported: false, phase: 'unsupported' }))).toBe('这份 MossStudio 不能在这里自动更新。')
   })
 
@@ -236,8 +300,13 @@ describe('restartFeedback', () => {
   })
 
   it('tells a busy rollback to wait, naming the work', () => {
-    expect(restartFeedback({ status: 'busy', busy: [JOB] }, 'rollback')).toEqual({ text: '2 个生成任务结束后，再回到上一个版本。', tone: 'info' })
-    expect(restartFeedback({ status: 'busy', busy: [{ kind: 'unknown', count: 1, label: 'x' }] }, 'rollback')!.text).toBe('暂时无法确认有没有任务在运行，请稍后再回到上一个版本。')
+    expect(restartFeedback({ status: 'busy', busy: [JOB] }, 'rollback')).toEqual({
+      text: '2 个生成任务结束后，再回到上一个版本。',
+      tone: 'info',
+    })
+    expect(restartFeedback({ status: 'busy', busy: [{ kind: 'unknown', count: 1, label: 'x' }] }, 'rollback')!.text).toBe(
+      '暂时无法确认有没有任务在运行，请稍后再回到上一个版本。',
+    )
   })
 
   it('explains nothing-pending, unsupported and a launcher that could not start', () => {
@@ -245,8 +314,8 @@ describe('restartFeedback', () => {
     expect(restartFeedback({ status: 'nothing-pending' }, 'rollback')).toEqual({ text: '没有可以回到的版本', tone: 'info' })
     expect(restartFeedback({ status: 'unsupported', reason: '开发版本' }, 'restart')).toEqual({ text: '开发版本', tone: 'error' })
     expect(restartFeedback({ status: 'failed', error: '启动程序没有响应' }, 'rollback')).toEqual({
-      text: '没能重启：启动程序没有响应。MossStudio 没有改动，可以稍后再试。', tone: 'error',
+      text: '没能重启：启动程序没有响应。MossStudio 没有改动，可以稍后再试。',
+      tone: 'error',
     })
   })
 })
-

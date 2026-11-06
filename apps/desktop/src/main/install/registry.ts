@@ -21,7 +21,7 @@ export type ExecFile = (file: string, args: string[]) => Promise<ExecResult>
 export const execFileNoShell: ExecFile = (file, args) =>
   new Promise((resolve) => {
     execFile(file, args, { windowsHide: true, shell: false, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
-      const code = error ? (typeof (error as { code?: unknown }).code === 'number' ? ((error as { code: number }).code) : 1) : 0
+      const code = error ? (typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : 1) : 0
       resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? error?.message ?? '') })
     })
   })

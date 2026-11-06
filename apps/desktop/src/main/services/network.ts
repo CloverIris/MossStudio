@@ -126,7 +126,8 @@ export async function probeNetwork(mode: Settings['networkMode'] = 'auto'): Prom
 
   const pick = (category: ProbeTarget['category']): string | null => {
     if (mode === 'direct') {
-      const direct = TARGETS.find((t) => t.category === category && t.id === 'github') ??
+      const direct =
+        TARGETS.find((t) => t.category === category && t.id === 'github') ??
         TARGETS.find((t) => t.category === category && t.id === 'pypi') ??
         TARGETS.find((t) => t.category === category && t.id === 'hf') ??
         TARGETS.find((t) => t.category === category && t.id === 'raw')
@@ -157,12 +158,7 @@ export function getLastNetwork(): NetworkReport | null {
 }
 
 /** Mirrors worth trying even when nothing is configured or the probe picked direct. */
-export const GITHUB_MIRRORS = [
-  'https://ghproxy.net/',
-  'https://cors.isteed.cc/',
-  'https://ghfile.geekertao.top/',
-  'https://gh-proxy.com/',
-]
+export const GITHUB_MIRRORS = ['https://ghproxy.net/', 'https://cors.isteed.cc/', 'https://ghfile.geekertao.top/', 'https://gh-proxy.com/']
 
 /**
  * Ordered mirror prefixes for a GitHub download. The probe only runs at startup, so a

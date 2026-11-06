@@ -80,7 +80,13 @@ export function removableProfileDir(target: UninstallTarget): string | null {
   if (!p.isAbsolute(target.profileDir)) throw codedError('E_UNSAFE_PROFILE', `应用配置文件夹（${target.profileDir}）不能整体删除。`)
   const profile = p.normalize(target.profileDir)
   if (isWithin(platform, target.dataRoot, profile)) return null
-  if (p.basename(profile) !== PRODUCT_NAME || !p.isAbsolute(profile) || isWithin(platform, profile, target.root) || isWithin(platform, target.root, profile) || isWithin(platform, profile, target.host.home)) {
+  if (
+    p.basename(profile) !== PRODUCT_NAME ||
+    !p.isAbsolute(profile) ||
+    isWithin(platform, profile, target.root) ||
+    isWithin(platform, target.root, profile) ||
+    isWithin(platform, profile, target.host.home)
+  ) {
     throw codedError('E_UNSAFE_PROFILE', `应用配置文件夹（${profile}）不能整体删除。`)
   }
   return profile
@@ -97,7 +103,9 @@ const SEMVER = String.raw`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
  */
 const APP_SUFFIX = String.raw`(?:\.partial|\.partial\.delta|\.update-partial|\.update-partial\.delta|\.replaced-[0-9a-z]+)?`
 const APP_DIR_ANY = new RegExp(`^app-${SEMVER}${APP_SUFFIX}$`)
-const MAC_LEFTOVER = new RegExp(`^\\.MossStudio-(?:${SEMVER}|old)\\.app(?:\\.previous|\\.partial|\\.partial\\.delta|\\.update-partial|\\.update-partial\\.delta)?$`)
+const MAC_LEFTOVER = new RegExp(
+  `^\\.MossStudio-(?:${SEMVER}|old)\\.app(?:\\.previous|\\.partial|\\.partial\\.delta|\\.update-partial|\\.update-partial\\.delta)?$`,
+)
 /** The Updater's download staging: R/.updates (Windows/Linux), <folder>/.MossStudio-updates (macOS). */
 const UPDATES_DIR = '.updates'
 const MAC_UPDATES = '.MossStudio-updates'
@@ -165,7 +173,11 @@ export function assertPlanContained(plan: UninstallPlan, extras: string[]): void
   const platform = plan.platform.startsWith('win32') ? 'win32' : plan.platform.startsWith('darwin') ? 'darwin' : 'linux'
   if (plan.profileDir) {
     if (!plan.removeData) throw codedError('E_UNSAFE_PLAN', '保留数据时不能删除应用配置文件夹。')
-    if (pathFor(platform).basename(plan.profileDir) !== PRODUCT_NAME || isWithin(platform, plan.profileDir, plan.root) || isWithin(platform, plan.root, plan.profileDir)) {
+    if (
+      pathFor(platform).basename(plan.profileDir) !== PRODUCT_NAME ||
+      isWithin(platform, plan.profileDir, plan.root) ||
+      isWithin(platform, plan.root, plan.profileDir)
+    ) {
       throw codedError('E_UNSAFE_PLAN', `卸载计划的应用配置文件夹不合规：${plan.profileDir}`)
     }
   }
@@ -173,8 +185,11 @@ export function assertPlanContained(plan: UninstallPlan, extras: string[]): void
     if (samePath(platform, path, plan.root)) throw codedError('E_UNSAFE_PLAN', `卸载计划不能整体删除安装目录：${path}`)
     // Keeping the data: nothing that is the data root or holds it.
     if (!plan.removeData && isWithin(platform, path, plan.dataRoot)) throw codedError('E_UNSAFE_PLAN', `卸载计划包含要保留的数据：${path}`)
-    const inside = (isWithin(platform, plan.root, path) && !samePath(platform, path, plan.root))
-      || (plan.removeData ? isWithin(platform, plan.dataRoot, path) : isWithin(platform, plan.dataRoot, path) && !samePath(platform, path, plan.dataRoot))
+    const inside =
+      (isWithin(platform, plan.root, path) && !samePath(platform, path, plan.root)) ||
+      (plan.removeData
+        ? isWithin(platform, plan.dataRoot, path)
+        : isWithin(platform, plan.dataRoot, path) && !samePath(platform, path, plan.dataRoot))
     if (!inside && !extras.some((extra) => samePath(platform, extra, path))) {
       throw codedError('E_UNSAFE_PLAN', `卸载计划包含安装目录以外的路径：${path}`)
     }
@@ -209,7 +224,11 @@ export interface FinishUninstallOptions extends Partial<FinishUninstallDeps> {
   silent?: boolean
 }
 
-export function startFinishUninstall(plan: UninstallPlan, launcher: string, options: FinishUninstallOptions = {}): { dir: string; plan: string; launcher: string } {
+export function startFinishUninstall(
+  plan: UninstallPlan,
+  launcher: string,
+  options: FinishUninstallOptions = {},
+): { dir: string; plan: string; launcher: string } {
   const spawnDetached = options.spawnDetached ?? spawnDetachedNoShell
   if (!existsSync(launcher) || !lstatSync(launcher).isFile()) {
     throw codedError('E_NO_LAUNCHER', '找不到 MossStudio 启动器，无法完成卸载。')
@@ -253,7 +272,13 @@ export interface MacUninstallDeps {
  * remove install.json. The locator always goes. The bundle itself is left to a helper that moves
  * it after the app has quit: this process and its Chromium helpers still run from it.
  */
-export async function uninstallMac(target: UninstallTarget, bundle: string, removeData: boolean, deps: MacUninstallDeps, names: string[] = listRoot(target.root)): Promise<string[]> {
+export async function uninstallMac(
+  target: UninstallTarget,
+  bundle: string,
+  removeData: boolean,
+  deps: MacUninstallDeps,
+  names: string[] = listRoot(target.root),
+): Promise<string[]> {
   if (removeData) assertDataRemovable(target)
   const trashed: string[] = []
   for (const item of ownedRootEntries('darwin', names).map((name) => join(target.root, name))) {

@@ -8,11 +8,20 @@ import { errorText } from './fields'
 import { validateHostForm, type HostForm, type HostFormErrors } from './hostForm'
 
 function FieldError({ message }: { message?: string }): React.JSX.Element | null {
-  return message ? <span role="alert" className="text-caption text-danger">{message}</span> : null
+  return message ? (
+    <span role="alert" className="text-caption text-danger">
+      {message}
+    </span>
+  ) : null
 }
 
 /** 添加 / 编辑 SSH 主机. Saving tests the connection right away (done by the caller). */
-export function HostDialog({ open, initial, onClose, onSave }: {
+export function HostDialog({
+  open,
+  initial,
+  onClose,
+  onSave,
+}: {
   open: boolean
   initial: HostForm
   onClose: () => void
@@ -26,7 +35,11 @@ export function HostDialog({ open, initial, onClose, onSave }: {
   // Start from `initial` each time the dialog opens; typing must not be reset by parent renders.
   const [openedWith, setOpenedWith] = useState<HostForm | null>(null)
   useEffect(() => {
-    if (open && openedWith === null) { setOpenedWith(initial); setForm(initial); setErrors({}) }
+    if (open && openedWith === null) {
+      setOpenedWith(initial)
+      setForm(initial)
+      setErrors({})
+    }
     if (!open && openedWith !== null) setOpenedWith(null)
   }, [open, initial, openedWith])
 
@@ -61,32 +74,53 @@ export function HostDialog({ open, initial, onClose, onSave }: {
       title={form.id ? '编辑 SSH 主机' : '添加 SSH 主机'}
       description="需要一台装有 NVIDIA 显卡的 Linux 电脑。保存后会马上测试连接；第一次连接会记住主机的指纹。"
       width="max-w-xl"
-      footer={(
+      footer={
         <>
-          <Button tone="ghost" size="md" onClick={onClose}>取消</Button>
+          <Button tone="ghost" size="md" onClick={onClose}>
+            取消
+          </Button>
           <Button tone="primary" size="md" onClick={() => void submit()} disabled={saving}>
             {saving ? <Spinner /> : null}保存并测试
           </Button>
         </>
-      )}
+      }
     >
       <form
         className="flex flex-col gap-4"
-        onSubmit={(event) => { event.preventDefault(); void submit() }}
+        onSubmit={(event) => {
+          event.preventDefault()
+          void submit()
+        }}
       >
         <div className="grid grid-cols-[1fr_96px] gap-3">
           <Field label="地址">
-            <Input data-dialog-initial-focus value={form.host} placeholder="192.168.1.20 或 gpu.example.com" aria-invalid={Boolean(errors.host) || undefined} onChange={(event) => set('host', event.target.value)} />
+            <Input
+              data-dialog-initial-focus
+              value={form.host}
+              placeholder="192.168.1.20 或 gpu.example.com"
+              aria-invalid={Boolean(errors.host) || undefined}
+              onChange={(event) => set('host', event.target.value)}
+            />
             <FieldError message={errors.host} />
           </Field>
           <Field label="端口">
-            <Input inputMode="numeric" value={form.port} aria-invalid={Boolean(errors.port) || undefined} onChange={(event) => set('port', event.target.value.replace(/[^0-9]/g, ''))} />
+            <Input
+              inputMode="numeric"
+              value={form.port}
+              aria-invalid={Boolean(errors.port) || undefined}
+              onChange={(event) => set('port', event.target.value.replace(/[^0-9]/g, ''))}
+            />
             <FieldError message={errors.port} />
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="用户名">
-            <Input value={form.user} placeholder="ubuntu" aria-invalid={Boolean(errors.user) || undefined} onChange={(event) => set('user', event.target.value)} />
+            <Input
+              value={form.user}
+              placeholder="ubuntu"
+              aria-invalid={Boolean(errors.user) || undefined}
+              onChange={(event) => set('user', event.target.value)}
+            />
             <FieldError message={errors.user} />
           </Field>
           <Field label="显示名称" hint="留空时使用地址">
@@ -109,8 +143,15 @@ export function HostDialog({ open, initial, onClose, onSave }: {
           {form.authMethod === 'identityFile' ? (
             <Field label="私钥文件" hint="留空时使用系统默认的密钥或 SSH agent。有密码的私钥请先加入 agent。">
               <div className="flex gap-2">
-                <Input className="min-w-0 flex-1 font-mono text-caption" value={form.identityFile} placeholder="~/.ssh/id_ed25519" onChange={(event) => set('identityFile', event.target.value)} />
-                <IconButton label="选择私钥文件" onClick={() => void pickKey()}><FolderOpen className="size-4" /></IconButton>
+                <Input
+                  className="min-w-0 flex-1 font-mono text-caption"
+                  value={form.identityFile}
+                  placeholder="~/.ssh/id_ed25519"
+                  onChange={(event) => set('identityFile', event.target.value)}
+                />
+                <IconButton label="选择私钥文件" onClick={() => void pickKey()}>
+                  <FolderOpen className="size-4" />
+                </IconButton>
               </div>
             </Field>
           ) : form.authMethod === 'password' ? (
@@ -133,25 +174,66 @@ export function HostDialog({ open, initial, onClose, onSave }: {
           <Advanced summary="远程目录、下载代理、HF 地址和令牌">
             <div className="flex flex-col gap-3 px-3.5 pb-3">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="引擎目录"><Input className="font-mono text-caption" value={form.engineRoot} onChange={(event) => set('engineRoot', event.target.value)} /></Field>
-                <Field label="模型目录"><Input className="font-mono text-caption" value={form.modelsRoot} onChange={(event) => set('modelsRoot', event.target.value)} /></Field>
-                <Field label="输出目录"><Input className="font-mono text-caption" value={form.outputRoot} onChange={(event) => set('outputRoot', event.target.value)} /></Field>
+                <Field label="引擎目录">
+                  <Input
+                    className="font-mono text-caption"
+                    value={form.engineRoot}
+                    onChange={(event) => set('engineRoot', event.target.value)}
+                  />
+                </Field>
+                <Field label="模型目录">
+                  <Input
+                    className="font-mono text-caption"
+                    value={form.modelsRoot}
+                    onChange={(event) => set('modelsRoot', event.target.value)}
+                  />
+                </Field>
+                <Field label="输出目录">
+                  <Input
+                    className="font-mono text-caption"
+                    value={form.outputRoot}
+                    onChange={(event) => set('outputRoot', event.target.value)}
+                  />
+                </Field>
                 <Field label="训练器目录">
-                  <Input className="font-mono text-caption" value={form.trainerRoot} aria-invalid={Boolean(errors.trainerRoot) || undefined} onChange={(event) => set('trainerRoot', event.target.value)} />
+                  <Input
+                    className="font-mono text-caption"
+                    value={form.trainerRoot}
+                    aria-invalid={Boolean(errors.trainerRoot) || undefined}
+                    onChange={(event) => set('trainerRoot', event.target.value)}
+                  />
                   <FieldError message={errors.trainerRoot} />
                 </Field>
               </div>
               <Field label="下载代理" hint="从远程主机访问的代理地址。留空时使用远程主机自己的网络设置。">
-                <Input className="font-mono text-caption" value={form.downloadProxy} placeholder="socks5h://127.0.0.1:7890" aria-invalid={Boolean(errors.downloadProxy) || undefined} onChange={(event) => set('downloadProxy', event.target.value)} />
+                <Input
+                  className="font-mono text-caption"
+                  value={form.downloadProxy}
+                  placeholder="socks5h://127.0.0.1:7890"
+                  aria-invalid={Boolean(errors.downloadProxy) || undefined}
+                  onChange={(event) => set('downloadProxy', event.target.value)}
+                />
                 <FieldError message={errors.downloadProxy} />
               </Field>
               <div className="grid grid-cols-[1fr_120px] gap-3">
                 <Field label="Hugging Face 地址" hint="留空时使用 网络 设置里的地址。">
-                  <Input className="font-mono text-caption" value={form.hfEndpoint} placeholder="https://hf-mirror.com" aria-invalid={Boolean(errors.hfEndpoint) || undefined} onChange={(event) => set('hfEndpoint', event.target.value)} />
+                  <Input
+                    className="font-mono text-caption"
+                    value={form.hfEndpoint}
+                    placeholder="https://hf-mirror.com"
+                    aria-invalid={Boolean(errors.hfEndpoint) || undefined}
+                    onChange={(event) => set('hfEndpoint', event.target.value)}
+                  />
                   <FieldError message={errors.hfEndpoint} />
                 </Field>
                 <Field label="同时下载数">
-                  <Input inputMode="numeric" value={form.downloadConcurrency} placeholder="默认" aria-invalid={Boolean(errors.downloadConcurrency) || undefined} onChange={(event) => set('downloadConcurrency', event.target.value.replace(/[^0-9]/g, ''))} />
+                  <Input
+                    inputMode="numeric"
+                    value={form.downloadConcurrency}
+                    placeholder="默认"
+                    aria-invalid={Boolean(errors.downloadConcurrency) || undefined}
+                    onChange={(event) => set('downloadConcurrency', event.target.value.replace(/[^0-9]/g, ''))}
+                  />
                   <FieldError message={errors.downloadConcurrency} />
                 </Field>
               </div>
@@ -168,7 +250,14 @@ export function HostDialog({ open, initial, onClose, onSave }: {
               {form.hasHfToken ? (
                 <label className="flex items-center justify-between gap-3 text-ui text-ink">
                   清除这台主机的令牌
-                  <Switch aria-label="清除这台主机的令牌" checked={form.clearHfToken} onCheckedChange={(value) => { set('clearHfToken', value); if (value) set('hfToken', '') }} />
+                  <Switch
+                    aria-label="清除这台主机的令牌"
+                    checked={form.clearHfToken}
+                    onCheckedChange={(value) => {
+                      set('clearHfToken', value)
+                      if (value) set('hfToken', '')
+                    }}
+                  />
                 </label>
               ) : null}
             </div>

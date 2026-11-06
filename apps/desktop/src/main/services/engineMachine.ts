@@ -88,8 +88,18 @@ function matchNvidia(nvidia: GpuInventoryDevice[], vulkan: VulkanDevice[]): Map<
     pool.splice(pool.indexOf(found), 1)
   }
   const ordered = [...nvidia].sort((a, b) => a.index - b.index)
-  for (const device of ordered) if (device.pciId) take(device, pool.find((candidate) => candidate.pciId === device.pciId))
-  for (const device of ordered) if (!matches.has(device.uuid)) take(device, pool.find((candidate) => candidate.name === device.name))
+  for (const device of ordered)
+    if (device.pciId)
+      take(
+        device,
+        pool.find((candidate) => candidate.pciId === device.pciId),
+      )
+  for (const device of ordered)
+    if (!matches.has(device.uuid))
+      take(
+        device,
+        pool.find((candidate) => candidate.name === device.name),
+      )
   for (const device of ordered) if (!matches.has(device.uuid)) take(device, pool[0])
   return matches
 }
@@ -108,7 +118,9 @@ async function probeVulkan(deps: MachineProbeDeps, notes: string[]): Promise<Vul
   }
   const result = await deps.run(binary, ['--list-devices'], 15_000)
   if (result.code !== 0) {
-    notes.push(`moss-infer-vulkan --list-devices 失败（${result.timedOut ? '超时' : `退出码 ${result.code}`}）：${result.stderr.trim().slice(0, 300)}`)
+    notes.push(
+      `moss-infer-vulkan --list-devices 失败（${result.timedOut ? '超时' : `退出码 ${result.code}`}）：${result.stderr.trim().slice(0, 300)}`,
+    )
     return null
   }
   return parseVulkanDeviceList(result.stdout)
@@ -121,7 +133,9 @@ async function probeHip(deps: MachineProbeDeps, rocmLibDir: string, notes: strin
   const env = rocmLibDir !== '/opt/rocm/lib' ? { LD_LIBRARY_PATH: rocmLibDir } : undefined
   const result = await deps.run(binary, ['--list-devices'], 15_000, env)
   if (result.code !== 0) {
-    notes.push(`moss-infer-hip --list-devices 失败（${result.timedOut ? '超时' : `退出码 ${result.code}`}）：${result.stderr.trim().slice(0, 300)}`)
+    notes.push(
+      `moss-infer-hip --list-devices 失败（${result.timedOut ? '超时' : `退出码 ${result.code}`}）：${result.stderr.trim().slice(0, 300)}`,
+    )
     return []
   }
   return parseHipDeviceList(result.stdout)
@@ -141,7 +155,8 @@ function readKfd(deps: MachineProbeDeps): KfdGpuNode[] {
 /** PCI ids of the display devices the kernel knows (`/sys/class/drm/card<n>/device`), in card order. */
 function readDrm(deps: MachineProbeDeps): string[] {
   const base = '/sys/class/drm'
-  return deps.readdir(base)
+  return deps
+    .readdir(base)
     .filter((name) => /^card\d+$/.test(name))
     .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)))
     .flatMap((name) => {
@@ -166,7 +181,13 @@ async function probeRocm(deps: MachineProbeDeps): Promise<string | undefined> {
     }
     break
   }
-  const roots = ['/opt/rocm', ...deps.readdir('/opt').filter((name) => /^rocm[-.\d]*$/.test(name)).map((name) => `/opt/${name}`)]
+  const roots = [
+    '/opt/rocm',
+    ...deps
+      .readdir('/opt')
+      .filter((name) => /^rocm[-.\d]*$/.test(name))
+      .map((name) => `/opt/${name}`),
+  ]
   for (const root of [...new Set(roots)]) {
     for (const lib of ['lib', 'lib64']) {
       const dir = `${root}/${lib}`
@@ -195,8 +216,11 @@ export async function probeEngineMachine(deps: MachineProbeDeps): Promise<Machin
   const rocmLibDir = os === 'linux' ? await probeRocm(deps) : undefined
 
   // ROCm needs read+write on /dev/kfd and a render node; without them (not in the render/video group) HIP cannot start.
-  const hipAccess = os === 'linux' && Boolean(rocmLibDir) && deps.readWrite('/dev/kfd')
-    && deps.readdir('/dev/dri').some((name) => /^renderD\d+$/.test(name) && deps.readWrite(`/dev/dri/${name}`))
+  const hipAccess =
+    os === 'linux' &&
+    Boolean(rocmLibDir) &&
+    deps.readWrite('/dev/kfd') &&
+    deps.readdir('/dev/dri').some((name) => /^renderD\d+$/.test(name) && deps.readWrite(`/dev/dri/${name}`))
   const hipListed = os === 'linux' && rocmLibDir ? await probeHip(deps, rocmLibDir, notes) : []
 
   const gpus: EngineMachineGpu[] = []
@@ -242,7 +266,13 @@ export async function probeEngineMachine(deps: MachineProbeDeps): Promise<Machin
   if (!vulkanList) {
     // No Vulkan probe: AMD GPUs from the KFD topology, other non-NVIDIA cards from DRM, usability unknown.
     for (const node of kfdPool.filter((candidate) => candidate.vendorId === AMD)) {
-      gpus.push({ id: nextId(node.pciId), name: `AMD 显卡（${node.gfxTarget}）`, vendor: 'amd', pciId: node.pciId, gfxTarget: node.gfxTarget })
+      gpus.push({
+        id: nextId(node.pciId),
+        name: `AMD 显卡（${node.gfxTarget}）`,
+        vendor: 'amd',
+        pciId: node.pciId,
+        gfxTarget: node.gfxTarget,
+      })
     }
     const known = new Set(gpus.map((gpu) => gpu.pciId))
     for (const pciId of os === 'linux' ? readDrm(deps) : []) {
@@ -338,8 +368,14 @@ export function withLiveNvidia(machine: EngineMachine, live: GpuInventoryDevice[
 
 /** Whether nvidia-smi now lists another set of NVIDIA GPUs than the stored probe saw (a card added or removed). */
 export function nvidiaSetChanged(machine: EngineMachine, live: GpuInventoryDevice[]): boolean {
-  const stored = machine.gpus.filter((gpu) => gpu.vendor === 'nvidia' && !gpu.id.startsWith('vk-')).map((gpu) => gpu.id).sort()
-  const now = live.filter((device) => (device.vendor ?? 'nvidia') === 'nvidia' && !device.uuid.startsWith('vk-')).map((device) => device.uuid).sort()
+  const stored = machine.gpus
+    .filter((gpu) => gpu.vendor === 'nvidia' && !gpu.id.startsWith('vk-'))
+    .map((gpu) => gpu.id)
+    .sort()
+  const now = live
+    .filter((device) => (device.vendor ?? 'nvidia') === 'nvidia' && !device.uuid.startsWith('vk-'))
+    .map((device) => device.uuid)
+    .sort()
   return stored.join('|') !== now.join('|')
 }
 
@@ -351,10 +387,18 @@ export function clearMachineProbeCache(): void {
 /** Real filesystem helpers for the default deps. */
 export const fsProbe = {
   readFile: (path: string): string | null => {
-    try { return readFileSync(path, 'utf8') } catch { return null }
+    try {
+      return readFileSync(path, 'utf8')
+    } catch {
+      return null
+    }
   },
   readdir: (path: string): string[] => {
-    try { return readdirSync(path) } catch { return [] }
+    try {
+      return readdirSync(path)
+    } catch {
+      return []
+    }
   },
   exists: (path: string): boolean => existsSync(path),
   readWrite: (path: string): boolean => {

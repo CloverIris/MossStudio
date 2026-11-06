@@ -69,6 +69,8 @@ jobs:
       - run: pnpm typecheck
       - name: Lint (ESLint; bug-finding rules, see eslint.config.mjs)
         run: pnpm lint
+      - name: Formatting (Prettier)
+        run: pnpm format:check
       - run: pnpm test:unit
       - name: Launcher tests (go test)
         working-directory: apps/launcher

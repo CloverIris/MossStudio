@@ -6,7 +6,11 @@ import { createImageCanvas } from './canvases'
 import { MAX_REFERENCES, setLink, type LinkRole } from './links'
 import type { StudioProject } from './useStudioProject'
 
-interface ImportedPicture { path: string; width: number; height: number }
+interface ImportedPicture {
+  path: string
+  width: number
+  height: number
+}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -52,26 +56,33 @@ export function useInputImport(options: {
     return created
   }, [])
 
-  const addFromFile = useCallback(async (targetId: string, role: LinkRole, kind?: string): Promise<void> => {
-    const { project, notify } = live.current
-    const target = project.canvasesRef.current.find((canvas) => canvas.id === targetId)
-    if (!target) return
-    let paths: string[]
-    try {
-      paths = await call<string[]>(Ipc.pickImages, { title: role === 'reference' ? '选择参考图' : role === 'control' ? '选择控制图' : '选择起始图' })
-    } catch (error) {
-      notify(message(error), 'error')
-      return
-    }
-    const room = role === 'reference' ? Math.max(0, MAX_REFERENCES - (target.inputs?.references?.links.length ?? 0)) : 1
-    if (!paths?.length || room === 0) return
-    if (paths.length > room) notify(`参考图最多 ${MAX_REFERENCES} 张，只放入了前 ${room} 张`, 'info')
-    const created = await importPaths(paths.slice(0, room), target)
-    if (!created.length) return
-    project.setCanvases((previous) => previous.map((canvas) => canvas.id === targetId
-      ? created.reduce((next, image) => setLink(next, role, { canvasId: image.id }, kind), canvas)
-      : canvas))
-  }, [importPaths])
+  const addFromFile = useCallback(
+    async (targetId: string, role: LinkRole, kind?: string): Promise<void> => {
+      const { project, notify } = live.current
+      const target = project.canvasesRef.current.find((canvas) => canvas.id === targetId)
+      if (!target) return
+      let paths: string[]
+      try {
+        paths = await call<string[]>(Ipc.pickImages, {
+          title: role === 'reference' ? '选择参考图' : role === 'control' ? '选择控制图' : '选择起始图',
+        })
+      } catch (error) {
+        notify(message(error), 'error')
+        return
+      }
+      const room = role === 'reference' ? Math.max(0, MAX_REFERENCES - (target.inputs?.references?.links.length ?? 0)) : 1
+      if (!paths?.length || room === 0) return
+      if (paths.length > room) notify(`参考图最多 ${MAX_REFERENCES} 张，只放入了前 ${room} 张`, 'info')
+      const created = await importPaths(paths.slice(0, room), target)
+      if (!created.length) return
+      project.setCanvases((previous) =>
+        previous.map((canvas) =>
+          canvas.id === targetId ? created.reduce((next, image) => setLink(next, role, { canvasId: image.id }, kind), canvas) : canvas,
+        ),
+      )
+    },
+    [importPaths],
+  )
 
   return useMemo(() => ({ importPaths, addFromFile }), [importPaths, addFromFile])
 }

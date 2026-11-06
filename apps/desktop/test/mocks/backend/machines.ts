@@ -35,51 +35,86 @@ export const RELEASE_220: EngineAssetList = {
 const vk = (index: number, discrete = true): EngineMachineGpu['vulkan'] => ({ index, usable: true, discrete, kernels: 'coop' })
 
 const RTX_4090: EngineMachineGpu = {
-  id: 'GPU-00000000-1111-2222-3333-444444444444', name: 'NVIDIA GeForce RTX 4090', vendor: 'nvidia', pciId: '10de:2684',
-  memoryBytes: 24 * GiB, computeCapability: { major: 8, minor: 9 }, driverVersion: '581.42', vulkan: vk(0),
+  id: 'GPU-00000000-1111-2222-3333-444444444444',
+  name: 'NVIDIA GeForce RTX 4090',
+  vendor: 'nvidia',
+  pciId: '10de:2684',
+  memoryBytes: 24 * GiB,
+  computeCapability: { major: 8, minor: 9 },
+  driverVersion: '581.42',
+  vulkan: vk(0),
 }
 const RTX_2080: EngineMachineGpu = {
-  id: 'GPU-20802080-aaaa-bbbb-cccc-dddddddddddd', name: 'NVIDIA GeForce RTX 2080 Ti', vendor: 'nvidia', pciId: '10de:1e07',
-  memoryBytes: 11 * GiB, computeCapability: { major: 7, minor: 5 }, driverVersion: '581.42', vulkan: vk(0),
+  id: 'GPU-20802080-aaaa-bbbb-cccc-dddddddddddd',
+  name: 'NVIDIA GeForce RTX 2080 Ti',
+  vendor: 'nvidia',
+  pciId: '10de:1e07',
+  memoryBytes: 11 * GiB,
+  computeCapability: { major: 7, minor: 5 },
+  driverVersion: '581.42',
+  vulkan: vk(0),
 }
 const V100: EngineMachineGpu = {
-  id: 'GPU-70707070-aaaa-bbbb-cccc-dddddddddddd', name: 'Tesla V100-PCIE-32GB', vendor: 'nvidia', pciId: '10de:1db6',
-  memoryBytes: 32 * GiB, computeCapability: { major: 7, minor: 0 }, driverVersion: '550.163.01', vulkan: vk(0),
+  id: 'GPU-70707070-aaaa-bbbb-cccc-dddddddddddd',
+  name: 'Tesla V100-PCIE-32GB',
+  vendor: 'nvidia',
+  pciId: '10de:1db6',
+  memoryBytes: 32 * GiB,
+  computeCapability: { major: 7, minor: 0 },
+  driverVersion: '550.163.01',
+  vulkan: vk(0),
 }
 const RX_7900: EngineMachineGpu = {
-  id: 'vk-1002-744c-0', name: 'AMD Radeon RX 7900 XTX', vendor: 'amd', pciId: '1002:744c', memoryBytes: 24 * GiB, gfxTarget: 'gfx1100', vulkan: vk(0),
+  id: 'vk-1002-744c-0',
+  name: 'AMD Radeon RX 7900 XTX',
+  vendor: 'amd',
+  pciId: '1002:744c',
+  memoryBytes: 24 * GiB,
+  gfxTarget: 'gfx1100',
+  vulkan: vk(0),
 }
 const ARC_A770: EngineMachineGpu = {
-  id: 'vk-8086-56a0-0', name: 'Intel(R) Arc(TM) A770 Graphics', vendor: 'intel', pciId: '8086:56a0', memoryBytes: 16 * GiB, vulkan: vk(0),
+  id: 'vk-8086-56a0-0',
+  name: 'Intel(R) Arc(TM) A770 Graphics',
+  vendor: 'intel',
+  pciId: '8086:56a0',
+  memoryBytes: 16 * GiB,
+  vulkan: vk(0),
 }
 
-export type MachineName =
-  | 'nvidia'
-  | 'nvidiaOldDriver'
-  | 'turing'
-  | 'volta'
-  | 'amdRocm'
-  | 'amd'
-  | 'intel'
-  | 'multiGpu'
-  | 'macos'
+export type MachineName = 'nvidia' | 'nvidiaOldDriver' | 'turing' | 'volta' | 'amdRocm' | 'amd' | 'intel' | 'multiGpu' | 'macos'
 
 /** The machines the spec asks for: NVIDIA new/old driver, Turing, Volta, AMD with/without ROCm, Intel, multi-GPU, macOS. */
 export function machineFixture(name: MachineName): EngineMachine {
   const base = { systemCuda: [], rocm7: false, vulkanProbed: true }
   switch (name) {
-    case 'nvidia': return { ...base, os: 'windows', gpus: [RTX_4090] }
-    case 'nvidiaOldDriver': return { ...base, os: 'windows', gpus: [{ ...RTX_4090, driverVersion: '560.94' }] }
-    case 'turing': return { ...base, os: 'windows', gpus: [RTX_2080] }
-    case 'volta': return { ...base, os: 'linux', gpus: [V100] }
-    case 'amdRocm': return { ...base, os: 'linux', rocm7: true, hipAccess: true, gpus: [RX_7900] }
-    case 'amd': return { ...base, os: 'linux', gpus: [RX_7900] }
-    case 'intel': return { ...base, os: 'windows', gpus: [ARC_A770] }
-    case 'multiGpu': return {
-      ...base, os: 'linux', rocm7: false,
-      gpus: [{ ...RTX_4090, driverVersion: '590.48.01' }, { ...RTX_2080, id: 'GPU-20802080-1', driverVersion: '590.48.01', vulkan: vk(1) }, { ...RX_7900, vulkan: vk(2) }],
-    }
-    case 'macos': return { ...base, os: 'macos', gpus: [], vulkanProbed: false }
+    case 'nvidia':
+      return { ...base, os: 'windows', gpus: [RTX_4090] }
+    case 'nvidiaOldDriver':
+      return { ...base, os: 'windows', gpus: [{ ...RTX_4090, driverVersion: '560.94' }] }
+    case 'turing':
+      return { ...base, os: 'windows', gpus: [RTX_2080] }
+    case 'volta':
+      return { ...base, os: 'linux', gpus: [V100] }
+    case 'amdRocm':
+      return { ...base, os: 'linux', rocm7: true, hipAccess: true, gpus: [RX_7900] }
+    case 'amd':
+      return { ...base, os: 'linux', gpus: [RX_7900] }
+    case 'intel':
+      return { ...base, os: 'windows', gpus: [ARC_A770] }
+    case 'multiGpu':
+      return {
+        ...base,
+        os: 'linux',
+        rocm7: false,
+        gpus: [
+          { ...RTX_4090, driverVersion: '590.48.01' },
+          { ...RTX_2080, id: 'GPU-20802080-1', driverVersion: '590.48.01', vulkan: vk(1) },
+          { ...RX_7900, vulkan: vk(2) },
+        ],
+      }
+    case 'macos':
+      return { ...base, os: 'macos', gpus: [], vulkanProbed: false }
   }
 }
 
@@ -107,10 +142,14 @@ export function enginePlanFor(
   versions: LocalEngineVersion[],
 ): EnginePlanView {
   const plan = chooseEnginePackages(machine, release, { overrides: settings.engineDeviceOverrides })
-  const installed = [...new Set(versions.flatMap((version) => {
-    const stamp = parseEngineStamp(version.name)
-    return stamp ? [stamp.packageId] : []
-  }))]
+  const installed = [
+    ...new Set(
+      versions.flatMap((version) => {
+        const stamp = parseEngineStamp(version.name)
+        return stamp ? [stamp.packageId] : []
+      }),
+    ),
+  ]
   // A version the app did not name (custom engine, older fixture) serves every GPU it is used for.
   const custom = versions.some((version) => version.current && !parseEngineStamp(version.name))
   return {

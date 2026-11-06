@@ -1,8 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import type { JobParams } from '@shared/types'
-import { buildCliArgs, classifyCliFailure, cliUnsupported, parseCliLine, parseHipDeviceList, pickHipIndex, sameCliDevice } from '@main/lib/cliProtocol'
+import {
+  buildCliArgs,
+  classifyCliFailure,
+  cliUnsupported,
+  parseCliLine,
+  parseHipDeviceList,
+  pickHipIndex,
+  sameCliDevice,
+} from '@main/lib/cliProtocol'
 
-const params: JobParams = { prompt: 'a red apple', negativePrompt: 'blurry', width: 512, height: 768, steps: 3, cfg: 3.5, seed: 7, profile: 'base' }
+const params: JobParams = {
+  prompt: 'a red apple',
+  negativePrompt: 'blurry',
+  width: 512,
+  height: 768,
+  steps: 3,
+  cfg: 3.5,
+  seed: 7,
+  profile: 'base',
+}
 
 /** stderr of a real `moss-infer-vulkan` 2.2.0 run (RTX 4090 Laptop, 512x512, 3 steps), verbatim. */
 const REAL_VULKAN_RUN = [
@@ -19,9 +36,24 @@ const REAL_VULKAN_RUN = [
 describe('buildCliArgs', () => {
   it('passes only what the CLI takes, in its spelling', () => {
     expect(buildCliArgs(params, { model: '/m/bundle', output: '/o/job-1.png' })).toEqual([
-      '--model', '/m/bundle', '--prompt', 'a red apple', '--negative', 'blurry',
-      '--width', '512', '--height', '768', '--steps', '3', '--cfg', '3.5', '--seed', '7',
-      '-o', '/o/job-1.png',
+      '--model',
+      '/m/bundle',
+      '--prompt',
+      'a red apple',
+      '--negative',
+      'blurry',
+      '--width',
+      '512',
+      '--height',
+      '768',
+      '--steps',
+      '3',
+      '--cfg',
+      '3.5',
+      '--seed',
+      '7',
+      '-o',
+      '/o/job-1.png',
     ])
   })
 
@@ -45,7 +77,9 @@ describe('buildCliArgs', () => {
 describe('cliUnsupported', () => {
   it('lets plain text to image through, including euler/moss and step cache off', () => {
     expect(cliUnsupported('vulkan', params)).toBeNull()
-    expect(cliUnsupported('vulkan', { ...params, adapters: [], sampling: { sampler: 'euler', scheduler: 'moss', stepCache: 'off', shift: 3 } })).toBeNull()
+    expect(
+      cliUnsupported('vulkan', { ...params, adapters: [], sampling: { sampler: 'euler', scheduler: 'moss', stepCache: 'off', shift: 3 } }),
+    ).toBeNull()
   })
 
   it.each([
@@ -64,8 +98,14 @@ describe('cliUnsupported', () => {
   })
 
   it('names every unsupported input at once, with the engine the device runs', () => {
-    expect(cliUnsupported('hip', { ...params, adapters: [{ path: '/l', strength: 1 }], initImage: { path: '/i.png', strength: 1 }, references: { paths: ['/r.png'] } }))
-      .toBe('AMD 原生引擎只能文生图，不支持LoRA、起始图、参考图，请移除后再生成')
+    expect(
+      cliUnsupported('hip', {
+        ...params,
+        adapters: [{ path: '/l', strength: 1 }],
+        initImage: { path: '/i.png', strength: 1 },
+        references: { paths: ['/r.png'] },
+      }),
+    ).toBe('AMD 原生引擎只能文生图，不支持LoRA、起始图、参考图，请移除后再生成')
   })
 })
 
@@ -84,24 +124,44 @@ describe('parseCliLine', () => {
   })
 
   it('reads the hip program’s device and summary lines (hip_moss_infer_hip.cpp)', () => {
-    expect(parseCliLine('hip', 'hip: device 1, AMD Radeon RX 7900 XTX (gfx1100); kernels: gfx1100, wmma'))
-      .toEqual({ kind: 'device', index: 1, name: 'AMD Radeon RX 7900 XTX', arch: 'gfx1100', kernels: 'gfx1100, wmma' })
-    expect(parseCliLine('hip', 'done: seed 4294967295; text encoder 3.1 s, DiT load 9.0 s (40 of 42 blocks on the device, 0.75 GiB free beside them), denoise 80.0 s (1.60 s/step), VAE 2.0 s'))
-      .toEqual({ kind: 'done', seed: 4294967295, timings: { textEncoderS: 3.1, ditLoadS: 9, denoiseS: 80, vaeS: 2 } })
+    expect(parseCliLine('hip', 'hip: device 1, AMD Radeon RX 7900 XTX (gfx1100); kernels: gfx1100, wmma')).toEqual({
+      kind: 'device',
+      index: 1,
+      name: 'AMD Radeon RX 7900 XTX',
+      arch: 'gfx1100',
+      kernels: 'gfx1100, wmma',
+    })
+    expect(
+      parseCliLine(
+        'hip',
+        'done: seed 4294967295; text encoder 3.1 s, DiT load 9.0 s (40 of 42 blocks on the device, 0.75 GiB free beside them), denoise 80.0 s (1.60 s/step), VAE 2.0 s',
+      ),
+    ).toEqual({ kind: 'done', seed: 4294967295, timings: { textEncoderS: 3.1, ditLoadS: 9, denoiseS: 80, vaeS: 2 } })
   })
 
   it('keeps the vulkan kernels note and Windows line endings', () => {
-    expect(parseCliLine('vulkan', 'vulkan: device 1, Intel(R) Arc(TM) A770 Graphics; kernels: plain (no coop: no VK_KHR_cooperative_matrix)\r'))
-      .toEqual({ kind: 'device', index: 1, name: 'Intel(R) Arc(TM) A770 Graphics', kernels: 'plain (no coop: no VK_KHR_cooperative_matrix)' })
+    expect(
+      parseCliLine('vulkan', 'vulkan: device 1, Intel(R) Arc(TM) A770 Graphics; kernels: plain (no coop: no VK_KHR_cooperative_matrix)\r'),
+    ).toEqual({
+      kind: 'device',
+      index: 1,
+      name: 'Intel(R) Arc(TM) A770 Graphics',
+      kernels: 'plain (no coop: no VK_KHR_cooperative_matrix)',
+    })
   })
 
   it('reads warnings and the program’s own error line', () => {
-    expect(parseCliLine('vulkan', 'warning: prompt truncated to 4096 of 4200 tokens (104 dropped; --max-seq 4096)'))
-      .toEqual({ kind: 'warning', message: 'prompt truncated to 4096 of 4200 tokens (104 dropped; --max-seq 4096)' })
-    expect(parseCliLine('vulkan', 'moss-infer-vulkan: tokenizer: cannot open /nonexistent/tokenizer/tokenizer.json'))
-      .toEqual({ kind: 'error', message: 'tokenizer: cannot open /nonexistent/tokenizer/tokenizer.json' })
-    expect(parseCliLine('hip', 'moss-infer-hip: hip: no usable device; device 0: this build’s kernels are for gfx1100, the device is gfx1030'))
-      .toEqual({ kind: 'error', message: 'hip: no usable device; device 0: this build’s kernels are for gfx1100, the device is gfx1030' })
+    expect(parseCliLine('vulkan', 'warning: prompt truncated to 4096 of 4200 tokens (104 dropped; --max-seq 4096)')).toEqual({
+      kind: 'warning',
+      message: 'prompt truncated to 4096 of 4200 tokens (104 dropped; --max-seq 4096)',
+    })
+    expect(parseCliLine('vulkan', 'moss-infer-vulkan: tokenizer: cannot open /nonexistent/tokenizer/tokenizer.json')).toEqual({
+      kind: 'error',
+      message: 'tokenizer: cannot open /nonexistent/tokenizer/tokenizer.json',
+    })
+    expect(
+      parseCliLine('hip', 'moss-infer-hip: hip: no usable device; device 0: this build’s kernels are for gfx1100, the device is gfx1030'),
+    ).toEqual({ kind: 'error', message: 'hip: no usable device; device 0: this build’s kernels are for gfx1100, the device is gfx1030' })
   })
 
   it('does not take one program’s lines for the other’s, and passes anything else through', () => {
@@ -114,20 +174,35 @@ describe('parseCliLine', () => {
 
 describe('classifyCliFailure', () => {
   it('exit 2 is a request the engine does not take, with its message', () => {
-    expect(classifyCliFailure('vulkan', 2, 'Height and width must be positive multiples of 16.'))
-      .toEqual({ code: 'E_NOT_SUPPORTED', message: '引擎不接受这次的设置：宽和高必须是 16 的倍数（Height and width must be positive multiples of 16.）' })
-    expect(classifyCliFailure('vulkan', 2, 'Image size must be at most 4.2 megapixels (e.g. 2048x2048); the model is meant for 0.25 to 4 megapixels.').message)
-      .toMatch(/^引擎不接受这次的设置：画面最大约 420 万像素/)
+    expect(classifyCliFailure('vulkan', 2, 'Height and width must be positive multiples of 16.')).toEqual({
+      code: 'E_NOT_SUPPORTED',
+      message: '引擎不接受这次的设置：宽和高必须是 16 的倍数（Height and width must be positive multiples of 16.）',
+    })
+    expect(
+      classifyCliFailure(
+        'vulkan',
+        2,
+        'Image size must be at most 4.2 megapixels (e.g. 2048x2048); the model is meant for 0.25 to 4 megapixels.',
+      ).message,
+    ).toMatch(/^引擎不接受这次的设置：画面最大约 420 万像素/)
     expect(classifyCliFailure('hip', 2, 'Steps must be at most 10000.').message).toMatch(/步数必须在 1 到 10000 之间/)
-    expect(classifyCliFailure('vulkan', 2, 'unknown or unsupported flag --sampler'))
-      .toEqual({ code: 'E_NOT_SUPPORTED', message: '引擎不接受这次的设置：unknown or unsupported flag --sampler' })
-    expect(classifyCliFailure('vulkan', 2, 'Intel Arc cannot run --kernels coop: no bf16 cooperative matrix'))
-      .toMatchObject({ code: 'E_NOT_SUPPORTED' })
+    expect(classifyCliFailure('vulkan', 2, 'unknown or unsupported flag --sampler')).toEqual({
+      code: 'E_NOT_SUPPORTED',
+      message: '引擎不接受这次的设置：unknown or unsupported flag --sampler',
+    })
+    expect(classifyCliFailure('vulkan', 2, 'Intel Arc cannot run --kernels coop: no bf16 cooperative matrix')).toMatchObject({
+      code: 'E_NOT_SUPPORTED',
+    })
   })
 
   it('a run the device memory cannot hold is E_OOM (generate.cpp’s refusals)', () => {
-    expect(classifyCliFailure('vulkan', 1, 'the DiT at 2048x2048 needs at least 9000 MiB of device memory (its activations, every block streamed); 4000 MiB are free'))
-      .toMatchObject({ code: 'E_OOM' })
+    expect(
+      classifyCliFailure(
+        'vulkan',
+        1,
+        'the DiT at 2048x2048 needs at least 9000 MiB of device memory (its activations, every block streamed); 4000 MiB are free',
+      ),
+    ).toMatchObject({ code: 'E_OOM' })
     expect(classifyCliFailure('vulkan', 1, 'vkAllocateMemory: VK_ERROR_OUT_OF_DEVICE_MEMORY')).toMatchObject({ code: 'E_OOM' })
   })
 
@@ -148,9 +223,15 @@ describe('classifyCliFailure', () => {
   })
 
   it('anything else is E_ENGINE with the message; a signal or a silent failure says what happened', () => {
-    expect(classifyCliFailure('vulkan', 1, 'vkQueueSubmit: VK_ERROR_DEVICE_LOST')).toEqual({ code: 'E_ENGINE', message: '生成失败：vkQueueSubmit: VK_ERROR_DEVICE_LOST' })
+    expect(classifyCliFailure('vulkan', 1, 'vkQueueSubmit: VK_ERROR_DEVICE_LOST')).toEqual({
+      code: 'E_ENGINE',
+      message: '生成失败：vkQueueSubmit: VK_ERROR_DEVICE_LOST',
+    })
     expect(classifyCliFailure('hip', 1, null)).toEqual({ code: 'E_ENGINE', message: 'moss-infer-hip 退出码 1' })
-    expect(classifyCliFailure('vulkan', null, null, 'SIGSEGV')).toEqual({ code: 'E_ENGINE', message: 'moss-infer-vulkan 意外退出（SIGSEGV）' })
+    expect(classifyCliFailure('vulkan', null, null, 'SIGSEGV')).toEqual({
+      code: 'E_ENGINE',
+      message: 'moss-infer-vulkan 意外退出（SIGSEGV）',
+    })
     expect(classifyCliFailure('vulkan', 0, null)).toMatchObject({ code: 'E_NO_RESULT' })
   })
 })
@@ -169,12 +250,21 @@ describe('parseHipDeviceList / pickHipIndex', () => {
 
   it('reads every device with its HIP index, arch, memory and whether this build runs on it', () => {
     expect(parseHipDeviceList(LIST)).toEqual([
-      { index: 0, name: 'AMD Radeon RX 6800', arch: 'gfx1030', totalGiB: 16, usable: false, reason: "this build's kernels are for gfx1100, the device is gfx1030" },
+      {
+        index: 0,
+        name: 'AMD Radeon RX 6800',
+        arch: 'gfx1030',
+        totalGiB: 16,
+        usable: false,
+        reason: "this build's kernels are for gfx1100, the device is gfx1030",
+      },
       { index: 1, name: 'AMD Radeon RX 7900 XTX', arch: 'gfx1100', totalGiB: 24, usable: true, kernels: 'gfx1100, wmma' },
       { index: 2, name: 'AMD Radeon RX 7900 XTX', arch: 'gfx1100', totalGiB: 24, usable: true, kernels: 'gfx1100, wmma' },
     ])
     expect(parseHipDeviceList('no HIP devices\n')).toEqual([])
-    expect(parseHipDeviceList('device 0: Card (gfx1201), 16.0 GiB\r\n  kernels: gfx1201, wmma\r\n')).toMatchObject([{ index: 0, arch: 'gfx1201', usable: true }])
+    expect(parseHipDeviceList('device 0: Card (gfx1201), 16.0 GiB\r\n  kernels: gfx1201, wmma\r\n')).toMatchObject([
+      { index: 0, arch: 'gfx1201', usable: true },
+    ])
   })
 
   it('picks the usable device of the gfx target, the n-th of identical cards, nothing without a target', () => {
@@ -196,12 +286,19 @@ describe('sameCliDevice', () => {
     // Mesa adds its driver in parentheses; Intel adds (R)/(TM).
     expect(sameCliDevice({ name: 'AMD Radeon RX 7900 XTX (RADV NAVI31)' }, { name: 'AMD Radeon RX 7900 XTX' })).toBe(true)
     expect(sameCliDevice({ name: 'Intel(R) Arc(TM) A770 Graphics' }, { name: 'Intel Arc A770 Graphics' })).toBe(true)
-    expect(sameCliDevice({ name: 'AMD Radeon RX 7900 XTX', arch: 'gfx1100' }, { name: 'AMD Radeon RX 7900 XTX (RADV NAVI31)', gfxTarget: 'gfx1100' })).toBe(true)
+    expect(
+      sameCliDevice(
+        { name: 'AMD Radeon RX 7900 XTX', arch: 'gfx1100' },
+        { name: 'AMD Radeon RX 7900 XTX (RADV NAVI31)', gfxTarget: 'gfx1100' },
+      ),
+    ).toBe(true)
   })
 
   it('refuses another card, or the same name on another gfx target', () => {
     expect(sameCliDevice({ name: 'Intel(R) UHD Graphics 770' }, { name: 'NVIDIA GeForce RTX 4090' })).toBe(false)
     expect(sameCliDevice({ name: 'AMD Radeon Graphics' }, { name: 'AMD Radeon RX 7900 XTX' })).toBe(false)
-    expect(sameCliDevice({ name: 'AMD Radeon RX 7900 XTX', arch: 'gfx1100' }, { name: 'AMD Radeon RX 7900 XTX', gfxTarget: 'gfx1201' })).toBe(false)
+    expect(
+      sameCliDevice({ name: 'AMD Radeon RX 7900 XTX', arch: 'gfx1100' }, { name: 'AMD Radeon RX 7900 XTX', gfxTarget: 'gfx1201' }),
+    ).toBe(false)
   })
 })

@@ -101,115 +101,137 @@ export function useStudioProject(options: {
     }
   }, [client])
 
-  const saveNow = useCallback((override?: { canvases: ProjectCanvas[]; selectedCanvasId: string | null }) => {
-    const queuedIn = token.current
-    const run = async (): Promise<ProjectDocument | null> => {
-      // Queued for a project that has since been closed or deleted.
-      if (token.current !== queuedIn) return null
-      const startedIn = token.current
-      const id = projectIdRef.current
-      const list = override?.canvases ?? canvasesRef.current
-      const selected = override ? override.selectedCanvasId : selectedRef.current
-      if (!id && list.length === 0) return null
-      const name = projectNameRef.current.trim() || UNTITLED_PROJECT
-      const sent = snapshotOf(projectNameRef.current, list, selected)
-      const editsIncluded = edits.current
-      setSaving((count) => count + 1)
-      try {
-        const saved = await client.saveProject({
-          id: id ?? undefined,
-          name,
-          canvases: list,
-          selectedCanvasId: selected ?? undefined,
-          seriesId: meta.current.seriesId,
-          page: meta.current.page,
-        })
-        if (token.current === startedIn) {
-          setProjectId(saved.id)
-          setSaveError(null)
-          lastSaved.current = sent
-          savedEdits.current = Math.max(savedEdits.current, editsIncluded)
-          knownUpdatedAt.current = saved.updatedAt ?? null
-          // The main process copies underlay images into the project folder;
-          // adopt those paths without discarding edits made during the save.
-          const savedPaths = new Map((saved.canvases ?? []).map((canvas) => [canvas.id, canvas.backgroundPath]))
-          const sentPaths = new Map(list.map((canvas) => [canvas.id, canvas.backgroundPath]))
-          setCanvases((previous) => {
-            let changed = false
-            const next = previous.map((canvas) => {
-              const persisted = savedPaths.get(canvas.id)
-              if (persisted === undefined || persisted === canvas.backgroundPath) return canvas
-              if (sentPaths.get(canvas.id) !== canvas.backgroundPath) return canvas
-              changed = true
-              return { ...canvas, backgroundPath: persisted }
-            })
-            return changed ? next : previous
+  const saveNow = useCallback(
+    (override?: { canvases: ProjectCanvas[]; selectedCanvasId: string | null }) => {
+      const queuedIn = token.current
+      const run = async (): Promise<ProjectDocument | null> => {
+        // Queued for a project that has since been closed or deleted.
+        if (token.current !== queuedIn) return null
+        const startedIn = token.current
+        const id = projectIdRef.current
+        const list = override?.canvases ?? canvasesRef.current
+        const selected = override ? override.selectedCanvasId : selectedRef.current
+        if (!id && list.length === 0) return null
+        const name = projectNameRef.current.trim() || UNTITLED_PROJECT
+        const sent = snapshotOf(projectNameRef.current, list, selected)
+        const editsIncluded = edits.current
+        setSaving((count) => count + 1)
+        try {
+          const saved = await client.saveProject({
+            id: id ?? undefined,
+            name,
+            canvases: list,
+            selectedCanvasId: selected ?? undefined,
+            seriesId: meta.current.seriesId,
+            page: meta.current.page,
           })
+          if (token.current === startedIn) {
+            setProjectId(saved.id)
+            setSaveError(null)
+            lastSaved.current = sent
+            savedEdits.current = Math.max(savedEdits.current, editsIncluded)
+            knownUpdatedAt.current = saved.updatedAt ?? null
+            // The main process copies underlay images into the project folder;
+            // adopt those paths without discarding edits made during the save.
+            const savedPaths = new Map((saved.canvases ?? []).map((canvas) => [canvas.id, canvas.backgroundPath]))
+            const sentPaths = new Map(list.map((canvas) => [canvas.id, canvas.backgroundPath]))
+            setCanvases((previous) => {
+              let changed = false
+              const next = previous.map((canvas) => {
+                const persisted = savedPaths.get(canvas.id)
+                if (persisted === undefined || persisted === canvas.backgroundPath) return canvas
+                if (sentPaths.get(canvas.id) !== canvas.backgroundPath) return canvas
+                changed = true
+                return { ...canvas, backgroundPath: persisted }
+              })
+              return changed ? next : previous
+            })
+          }
+          void refreshProjects()
+          return saved
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (token.current === startedIn) setSaveError(message)
+          onErrorRef.current(`项目没有保存成功：${message}`)
+          return null
+        } finally {
+          setSaving((count) => count - 1)
         }
-        void refreshProjects()
-        return saved
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        if (token.current === startedIn) setSaveError(message)
-        onErrorRef.current(`项目没有保存成功：${message}`)
-        return null
-      } finally {
-        setSaving((count) => count - 1)
       }
-    }
-    const result = chain.current.then(run, run)
-    chain.current = result.catch(() => undefined)
-    return result
-  }, [client, refreshProjects, setCanvases, setProjectId, canvasesRef, projectIdRef, projectNameRef, selectedRef])
+      const result = chain.current.then(run, run)
+      chain.current = result.catch(() => undefined)
+      return result
+    },
+    [client, refreshProjects, setCanvases, setProjectId, canvasesRef, projectIdRef, projectNameRef, selectedRef],
+  )
 
   /** Apply a loaded document (or a fresh one) as the open project. */
-  const adopt = useCallback((doc: { id: string | null; name: string; canvases: ProjectCanvas[]; selectedCanvasId?: string; seriesId?: string; page?: number; updatedAt?: string }, savedState: boolean) => {
-    token.current += 1
-    setSessionKey(token.current)
-    const list = doc.canvases
-    const selected = list.find((canvas) => canvas.id === doc.selectedCanvasId)
-      ?? list.find((canvas) => canvas.kind === 'layout')
-      ?? list[0]
-    meta.current = { seriesId: doc.seriesId, page: doc.page }
-    knownUpdatedAt.current = doc.updatedAt ?? null
-    // Loading is not an edit; a document that still needs writing (an empty
-    // project given its first canvas) counts as one.
-    savedEdits.current = savedState || !doc.id ? edits.current : edits.current - 1
-    setProjectId(doc.id)
-    setProjectName(doc.name)
-    setCanvases(list)
-    setSelected(selected?.id ?? null)
-    setSaveError(null)
-    // A fresh project counts as saved until the user changes something.
-    lastSaved.current = savedState || !doc.id ? snapshotOf(doc.name, list, selected?.id ?? null) : ''
-  }, [setCanvases, setProjectId, setProjectName, setSelected])
+  const adopt = useCallback(
+    (
+      doc: {
+        id: string | null
+        name: string
+        canvases: ProjectCanvas[]
+        selectedCanvasId?: string
+        seriesId?: string
+        page?: number
+        updatedAt?: string
+      },
+      savedState: boolean,
+    ) => {
+      token.current += 1
+      setSessionKey(token.current)
+      const list = doc.canvases
+      const selected =
+        list.find((canvas) => canvas.id === doc.selectedCanvasId) ?? list.find((canvas) => canvas.kind === 'layout') ?? list[0]
+      meta.current = { seriesId: doc.seriesId, page: doc.page }
+      knownUpdatedAt.current = doc.updatedAt ?? null
+      // Loading is not an edit; a document that still needs writing (an empty
+      // project given its first canvas) counts as one.
+      savedEdits.current = savedState || !doc.id ? edits.current : edits.current - 1
+      setProjectId(doc.id)
+      setProjectName(doc.name)
+      setCanvases(list)
+      setSelected(selected?.id ?? null)
+      setSaveError(null)
+      // A fresh project counts as saved until the user changes something.
+      lastSaved.current = savedState || !doc.id ? snapshotOf(doc.name, list, selected?.id ?? null) : ''
+    },
+    [setCanvases, setProjectId, setProjectName, setSelected],
+  )
 
-  const blankProject = useCallback((names: readonly string[]) => {
-    const current = canvasesRef.current.find((canvas) => canvas.id === selectedRef.current)
-    const first = createLayoutCanvas([], settingsFrom(current))
-    adopt({ id: null, name: nextProjectName(names), canvases: [first], selectedCanvasId: first.id }, true)
-  }, [adopt, canvasesRef, selectedRef])
+  const blankProject = useCallback(
+    (names: readonly string[]) => {
+      const current = canvasesRef.current.find((canvas) => canvas.id === selectedRef.current)
+      const first = createLayoutCanvas([], settingsFrom(current))
+      adopt({ id: null, name: nextProjectName(names), canvases: [first], selectedCanvasId: first.id }, true)
+    },
+    [adopt, canvasesRef, selectedRef],
+  )
 
-  const load = useCallback(async (id: string): Promise<boolean> => {
-    try {
-      const doc = await client.getProject(id)
-      if (!doc) {
-        onErrorRef.current('这个项目已经不存在了')
+  const load = useCallback(
+    async (id: string): Promise<boolean> => {
+      try {
+        const doc = await client.getProject(id)
+        if (!doc) {
+          onErrorRef.current('这个项目已经不存在了')
+          return false
+        }
+        const list = Array.isArray(doc.canvases) ? migrateCanvases(doc.canvases) : []
+        if (list.length === 0) {
+          const first = createLayoutCanvas([], settingsFrom(null))
+          adopt({ ...doc, canvases: [first], selectedCanvasId: first.id }, false)
+        } else {
+          adopt({ ...doc, canvases: list }, true)
+        }
+        return true
+      } catch (error) {
+        onErrorRef.current(error instanceof Error ? error.message : String(error))
         return false
       }
-      const list = Array.isArray(doc.canvases) ? migrateCanvases(doc.canvases) : []
-      if (list.length === 0) {
-        const first = createLayoutCanvas([], settingsFrom(null))
-        adopt({ ...doc, canvases: [first], selectedCanvasId: first.id }, false)
-      } else {
-        adopt({ ...doc, canvases: list }, true)
-      }
-      return true
-    } catch (error) {
-      onErrorRef.current(error instanceof Error ? error.message : String(error))
-      return false
-    }
-  }, [adopt, client])
+    },
+    [adopt, client],
+  )
 
   // Open the most recent project on first show, or start a new one.
   const started = useRef(false)
@@ -219,7 +241,7 @@ export function useStudioProject(options: {
     void (async () => {
       const list = await client.listProjects().catch(() => [] as ProjectSummary[])
       setProjects(list)
-      if (!(list[0] && await load(list[0].id))) blankProject(list.map((item) => item.name))
+      if (!(list[0] && (await load(list[0].id)))) blankProject(list.map((item) => item.name))
       setLoaded(true)
     })()
   }, [blankProject, client, load])
@@ -284,41 +306,58 @@ export function useStudioProject(options: {
   }, [options.jobs, setCanvases])
 
   /** setCanvases / select for callers: these are local edits. */
-  const editCanvases = useCallback((next: ProjectCanvas[] | ((previous: ProjectCanvas[]) => ProjectCanvas[])) => {
-    edits.current += 1
-    setCanvases(next)
-  }, [setCanvases])
-  const select = useCallback((id: string | null) => {
-    edits.current += 1
-    setSelected(id)
-  }, [setSelected])
+  const editCanvases = useCallback(
+    (next: ProjectCanvas[] | ((previous: ProjectCanvas[]) => ProjectCanvas[])) => {
+      edits.current += 1
+      setCanvases(next)
+    },
+    [setCanvases],
+  )
+  const select = useCallback(
+    (id: string | null) => {
+      edits.current += 1
+      setSelected(id)
+    },
+    [setSelected],
+  )
 
-  const updateCanvas = useCallback((id: string, patch: Partial<ProjectCanvas> | ((canvas: ProjectCanvas) => ProjectCanvas)) => {
-    editCanvases((previous) => previous.map((canvas) => {
-      if (canvas.id !== id) return canvas
-      return typeof patch === 'function' ? patch(canvas) : { ...canvas, ...patch }
-    }))
-  }, [editCanvases])
+  const updateCanvas = useCallback(
+    (id: string, patch: Partial<ProjectCanvas> | ((canvas: ProjectCanvas) => ProjectCanvas)) => {
+      editCanvases((previous) =>
+        previous.map((canvas) => {
+          if (canvas.id !== id) return canvas
+          return typeof patch === 'function' ? patch(canvas) : { ...canvas, ...patch }
+        }),
+      )
+    },
+    [editCanvases],
+  )
 
-  const addCanvas = useCallback((source?: ProjectCanvas) => {
-    const list = canvasesRef.current
-    const selectedCanvas = list.find((canvas) => canvas.id === selectedRef.current)
-    // A picture card has no generation settings; carry over the latest canvas's instead.
-    const current = selectedCanvas?.kind === 'image' ? [...list].reverse().find((canvas) => canvas.kind !== 'image') : selectedCanvas
-    const canvas = source ? copyAsLayout(source, list) : createLayoutCanvas(list, settingsFrom(current))
-    editCanvases([...list, canvas])
-    select(canvas.id)
-    return canvas
-  }, [canvasesRef, selectedRef, editCanvases, select])
+  const addCanvas = useCallback(
+    (source?: ProjectCanvas) => {
+      const list = canvasesRef.current
+      const selectedCanvas = list.find((canvas) => canvas.id === selectedRef.current)
+      // A picture card has no generation settings; carry over the latest canvas's instead.
+      const current = selectedCanvas?.kind === 'image' ? [...list].reverse().find((canvas) => canvas.kind !== 'image') : selectedCanvas
+      const canvas = source ? copyAsLayout(source, list) : createLayoutCanvas(list, settingsFrom(current))
+      editCanvases([...list, canvas])
+      select(canvas.id)
+      return canvas
+    },
+    [canvasesRef, selectedRef, editCanvases, select],
+  )
 
-  const removeCanvas = useCallback((id: string) => {
-    const { canvases: remaining, removedLinks } = removeCanvasFrom(canvasesRef.current, id)
-    editCanvases(remaining)
-    if (selectedRef.current === id) {
-      select((remaining.find((canvas) => canvas.kind === 'layout') ?? remaining[0])?.id ?? null)
-    }
-    return removedLinks
-  }, [canvasesRef, selectedRef, editCanvases, select])
+  const removeCanvas = useCallback(
+    (id: string) => {
+      const { canvases: remaining, removedLinks } = removeCanvasFrom(canvasesRef.current, id)
+      editCanvases(remaining)
+      if (selectedRef.current === id) {
+        select((remaining.find((canvas) => canvas.kind === 'layout') ?? remaining[0])?.id ?? null)
+      }
+      return removedLinks
+    },
+    [canvasesRef, selectedRef, editCanvases, select],
+  )
 
   /**
    * Before leaving the open project, write its pending edits. False when that
@@ -331,58 +370,67 @@ export function useStudioProject(options: {
     return false
   }, [saveNow])
 
-  const openProject = useCallback(async (id: string) => {
-    if (id === projectIdRef.current) return
-    if (!await saveBeforeLeaving()) return
-    await load(id)
-  }, [load, saveBeforeLeaving])
+  const openProject = useCallback(
+    async (id: string) => {
+      if (id === projectIdRef.current) return
+      if (!(await saveBeforeLeaving())) return
+      await load(id)
+    },
+    [load, saveBeforeLeaving],
+  )
 
   const newProject = useCallback(async () => {
-    if (!await saveBeforeLeaving()) return
+    if (!(await saveBeforeLeaving())) return
     const list = await client.listProjects().catch(() => projects)
     setProjects(list)
     blankProject(list.map((item) => item.name))
   }, [blankProject, client, projects, saveBeforeLeaving])
 
-  const rename = useCallback((name: string) => {
-    const trimmed = name.trim()
-    if (!trimmed) return
-    edits.current += 1
-    setProjectName(trimmed)
-  }, [setProjectName])
+  const rename = useCallback(
+    (name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      edits.current += 1
+      setProjectName(trimmed)
+    },
+    [setProjectName],
+  )
 
-  const deleteProject = useCallback(async (id: string) => {
-    const isOpen = id === projectIdRef.current
-    const previousSaved = lastSaved.current
-    const previousSavedEdits = savedEdits.current
-    if (isOpen) {
-      // Before anything is awaited: no pending or queued save may write the
-      // deleted project back (main would recreate it under a new id).
-      token.current += 1
-      if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
-      autosaveTimer.current = null
-      lastSaved.current = liveSnapshot()
-      savedEdits.current = edits.current
-      // A save already on its way finishes before the delete, so the delete wins.
-      await chain.current
-    }
-    try {
-      await client.deleteProject(id)
-    } catch (error) {
-      onErrorRef.current(error instanceof Error ? error.message : String(error))
+  const deleteProject = useCallback(
+    async (id: string) => {
+      const isOpen = id === projectIdRef.current
+      const previousSaved = lastSaved.current
+      const previousSavedEdits = savedEdits.current
       if (isOpen) {
-        // The project is still open: put back what was pending.
-        lastSaved.current = previousSaved
-        savedEdits.current = previousSavedEdits
-        if (isDirty()) void saveNow()
+        // Before anything is awaited: no pending or queued save may write the
+        // deleted project back (main would recreate it under a new id).
+        token.current += 1
+        if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+        autosaveTimer.current = null
+        lastSaved.current = liveSnapshot()
+        savedEdits.current = edits.current
+        // A save already on its way finishes before the delete, so the delete wins.
+        await chain.current
       }
-      return
-    }
-    const list = await client.listProjects().catch(() => projects.filter((item) => item.id !== id))
-    setProjects(list)
-    if (!isOpen) return
-    if (!(list[0] && await load(list[0].id))) blankProject(list.map((item) => item.name))
-  }, [blankProject, client, load, projects, saveNow])
+      try {
+        await client.deleteProject(id)
+      } catch (error) {
+        onErrorRef.current(error instanceof Error ? error.message : String(error))
+        if (isOpen) {
+          // The project is still open: put back what was pending.
+          lastSaved.current = previousSaved
+          savedEdits.current = previousSavedEdits
+          if (isDirty()) void saveNow()
+        }
+        return
+      }
+      const list = await client.listProjects().catch(() => projects.filter((item) => item.id !== id))
+      setProjects(list)
+      if (!isOpen) return
+      if (!(list[0] && (await load(list[0].id)))) blankProject(list.map((item) => item.name))
+    },
+    [blankProject, client, load, projects, saveNow],
+  )
 
   const selectedCanvas = canvases.find((canvas) => canvas.id === selectedCanvasId) ?? null
   const dirty = snapshot !== lastSaved.current && (projectId !== null || canvases.length > 0)

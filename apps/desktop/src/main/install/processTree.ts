@@ -78,7 +78,12 @@ export function isChromiumHelper(platform: NodeJS.Platform, exe: string | null, 
  * The Chromium helpers below `root` to kill: walk down from `root` through our own Chromium
  * processes only, never entering an excluded pid (one we spawned) or a foreign executable.
  */
-export function helpersToKill(root: number, table: ProcessEntry[], exclude: ReadonlySet<number>, isOurs: (entry: ProcessEntry) => boolean): number[] {
+export function helpersToKill(
+  root: number,
+  table: ProcessEntry[],
+  exclude: ReadonlySet<number>,
+  isOurs: (entry: ProcessEntry) => boolean,
+): number[] {
   const children = new Map<number, ProcessEntry[]>()
   for (const entry of table) {
     if (entry.pid === entry.ppid) continue
@@ -125,7 +130,8 @@ export function processTable(platform: NodeJS.Platform = process.platform): Proc
       }
       return out
     }
-    if (platform === 'darwin') return parsePsTable(execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,comm='], { encoding: 'utf8', timeout: 5000 }))
+    if (platform === 'darwin')
+      return parsePsTable(execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,comm='], { encoding: 'utf8', timeout: 5000 }))
   } catch {
     // no table: app.getAppMetrics() alone
   }

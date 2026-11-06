@@ -8,11 +8,19 @@ const KEY = 'mossstudio:training-host'
 export const TRAINING_HOST_EVENT = 'mossstudio:training-host-changed'
 
 export function getSelectedTrainingHost(): string {
-  try { return localStorage.getItem(KEY) || 'local' } catch { return 'local' }
+  try {
+    return localStorage.getItem(KEY) || 'local'
+  } catch {
+    return 'local'
+  }
 }
 
 export function setSelectedTrainingHost(id: string): void {
-  try { localStorage.setItem(KEY, id || 'local') } catch { /* storage unavailable */ }
+  try {
+    localStorage.setItem(KEY, id || 'local')
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export function announceTrainingHost(id: string): void {

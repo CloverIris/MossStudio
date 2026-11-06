@@ -47,45 +47,62 @@ const archive = Buffer.from('fake engine archive bytes')
 let payload: Buffer = archive
 const sha = (data: Buffer | string): string => createHash('sha256').update(data).digest('hex')
 
-const gpu: GpuInventoryDevice = { index: 0, uuid: 'GPU-a', name: 'RTX 4080', computeCapability: { major: 8, minor: 9 }, driverVersion: '581.15' }
+const gpu: GpuInventoryDevice = {
+  index: 0,
+  uuid: 'GPU-a',
+  name: 'RTX 4080',
+  computeCapability: { major: 8, minor: 9 },
+  driverVersion: '581.15',
+}
 const inventory = (devices: GpuInventoryDevice[], error?: string): GpuInventorySnapshot => ({ scannedAt: '', status: 'ok', devices, error })
 const hello = (patch: Record<string, unknown> = {}, device: Record<string, unknown> = {}): EngineHello =>
   decodeEngineHello({
-    protocol_version: 2, version: '2.1.1',
-    probe: { recommended_flavour: 'cu13', devices: [{ index: 0, name: 'RTX 4080', supported: true, compute_capability: '8.9', ...device }] },
+    protocol_version: 2,
+    version: '2.1.1',
+    probe: {
+      recommended_flavour: 'cu13',
+      devices: [{ index: 0, name: 'RTX 4080', supported: true, compute_capability: '8.9', ...device }],
+    },
     ...patch,
   })
 
 const CU13_SYSTEM: EnginePackage = { kind: 'cuda', flavour: 'cu13', arch: 'standard', runtime: 'system-cuda' }
 
-interface Asset { name: string; size: number; browser_download_url: string }
+interface Asset {
+  name: string
+  size: number
+  browser_download_url: string
+}
 const asset = (name: string, size = payload.length): Asset => ({ name, size, browser_download_url: `https://github.com/dl/${name}` })
 let release: { tag_name: string; assets: Asset[] }
 let sums = ''
 let requests: string[]
 
 function stubGithub(overrides: Record<string, () => Response> = {}): void {
-  vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
-    const url = String(input)
-    requests.push(`${init?.method ?? 'GET'} ${url}`)
-    if (overrides[url]) return overrides[url]!()
-    // A gh-proxy style mirror: <mirror>/<absolute GitHub URL>. It serves archives but would lie about hashes.
-    for (const mirror of mirrors.list) {
-      if (!url.startsWith(`${mirror}/`)) continue
-      const target = url.slice(mirror.length + 1)
-      if (target.endsWith('/SHA256SUMS')) return new Response(`${'f'.repeat(64)}  forged\n`)
-      const range = /bytes=(\d+)-(\d+)/.exec(new Headers(init?.headers).get('range') ?? '')
-      return range ? new Response(payload.subarray(Number(range[1]), Number(range[2]) + 1), { status: 206 }) : new Response(payload)
-    }
-    if (url === `${API}/releases/latest` || url === `${API}/releases/tags/${release.tag_name}`) return Response.json(release)
-    if (url.endsWith('/SHA256SUMS')) return new Response(sums)
-    if (url.startsWith('https://github.com/dl/')) {
-      const range = /bytes=(\d+)-(\d+)/.exec(new Headers(init?.headers).get('range') ?? '')
-      if (!range) return new Response(payload)
-      return new Response(payload.subarray(Number(range[1]), Number(range[2]) + 1), { status: 206 })
-    }
-    return new Response('not found', { status: 404 })
-  }))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = String(input)
+      requests.push(`${init?.method ?? 'GET'} ${url}`)
+      if (overrides[url]) return overrides[url]!()
+      // A gh-proxy style mirror: <mirror>/<absolute GitHub URL>. It serves archives but would lie about hashes.
+      for (const mirror of mirrors.list) {
+        if (!url.startsWith(`${mirror}/`)) continue
+        const target = url.slice(mirror.length + 1)
+        if (target.endsWith('/SHA256SUMS')) return new Response(`${'f'.repeat(64)}  forged\n`)
+        const range = /bytes=(\d+)-(\d+)/.exec(new Headers(init?.headers).get('range') ?? '')
+        return range ? new Response(payload.subarray(Number(range[1]), Number(range[2]) + 1), { status: 206 }) : new Response(payload)
+      }
+      if (url === `${API}/releases/latest` || url === `${API}/releases/tags/${release.tag_name}`) return Response.json(release)
+      if (url.endsWith('/SHA256SUMS')) return new Response(sums)
+      if (url.startsWith('https://github.com/dl/')) {
+        const range = /bytes=(\d+)-(\d+)/.exec(new Headers(init?.headers).get('range') ?? '')
+        if (!range) return new Response(payload)
+        return new Response(payload.subarray(Number(range[1]), Number(range[2]) + 1), { status: 206 })
+      }
+      return new Response('not found', { status: 404 })
+    }),
+  )
 }
 
 beforeEach(async () => {
@@ -118,7 +135,9 @@ beforeEach(async () => {
   settingsModule = await import('@main/services/settings')
   const { onEmit } = await import('@main/lib/events')
   emitted = []
-  onEmit((channel, payload) => { if (channel === Events.mossInferDownload) emitted.push(payload as MossInferDownloadState) })
+  onEmit((channel, payload) => {
+    if (channel === Events.mossInferDownload) emitted.push(payload as MossInferDownloadState)
+  })
 })
 
 describe('resolveGithubToken', () => {
@@ -134,7 +153,9 @@ describe('resolveGithubToken', () => {
     spawnSync.mockReturnValue({ status: 0, stdout: 'gho_cli\n' })
     expect(download.resolveGithubToken(base)).toBe('gho_cli')
     expect(spawnSync).toHaveBeenCalledWith('gh', ['auth', 'token'], expect.objectContaining({ timeout: 3000 }))
-    spawnSync.mockImplementation(() => { throw new Error('ENOENT') })
+    spawnSync.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
     expect(download.resolveGithubToken(base)).toBeNull()
   })
 })
@@ -142,11 +163,18 @@ describe('resolveGithubToken', () => {
 describe('listMossInferReleases', () => {
   it('lists published releases only, with asset names and sizes', async () => {
     stubGithub({
-      [`${API}/releases?per_page=20`]: () => Response.json([
-        { tag_name: 'v3', draft: true, assets: [] },
-        { tag_name: 'v2.2-rc', prerelease: true, assets: [] },
-        { tag_name: 'v2.1.1', name: '  ', published_at: '2026-01-01', body: 'notes', assets: [{ name: 'a.zip', size: 5, browser_download_url: 'x' }] },
-      ]),
+      [`${API}/releases?per_page=20`]: () =>
+        Response.json([
+          { tag_name: 'v3', draft: true, assets: [] },
+          { tag_name: 'v2.2-rc', prerelease: true, assets: [] },
+          {
+            tag_name: 'v2.1.1',
+            name: '  ',
+            published_at: '2026-01-01',
+            body: 'notes',
+            assets: [{ name: 'a.zip', size: 5, browser_download_url: 'x' }],
+          },
+        ]),
     })
     expect(await download.listMossInferReleases()).toEqual([
       { tag: 'v2.1.1', name: 'v2.1.1', publishedAt: '2026-01-01', body: 'notes', assets: [{ name: 'a.zip', size: 5 }] },
@@ -163,7 +191,12 @@ describe('listMossInferReleases', () => {
   })
 
   it('wraps network failures', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNRESET') }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('ECONNRESET')
+      }),
+    )
     await expect(download.listMossInferReleases()).rejects.toThrow(/GitHub API 网络请求失败.*ECONNRESET/)
   })
 })
@@ -172,7 +205,14 @@ describe('downloadMossInfer (stable)', () => {
   it('downloads, verifies, stages, probes, promotes and activates the release', async () => {
     const state = await download.downloadMossInfer({ channel: 'stable', packages: [CU13_SYSTEM] })
     const installDir = join(engineRoot(), 'stable-v2.1.1-cu13-system-cuda')
-    expect(state).toMatchObject({ phase: 'done', percent: 100, variant: 'system-cuda', architecture: 'standard', packages: ['cu13-system-cuda'], serverPath: join(installDir, 'bin', 'moss-server') })
+    expect(state).toMatchObject({
+      phase: 'done',
+      percent: 100,
+      variant: 'system-cuda',
+      architecture: 'standard',
+      packages: ['cu13-system-cuda'],
+      serverPath: join(installDir, 'bin', 'moss-server'),
+    })
     expect(probeEngine).toHaveBeenCalledWith(expect.stringContaining(join(engineRoot(), '.staging')))
     expect(readFileSync(join(installDir, 'bin', 'moss-server'), 'utf8')).toBe('#!')
     // No single pinned moss-server: each GPU runs the newest install of its own package.
@@ -253,7 +293,9 @@ describe('downloadMossInfer (stable)', () => {
   })
 
   it('notes when the engine recommends a different CUDA flavour', async () => {
-    probeEngine.mockResolvedValue(hello({ probe: { recommended_flavour: 'cu12', devices: [{ index: 0, name: 'RTX 4080', supported: true }] } }))
+    probeEngine.mockResolvedValue(
+      hello({ probe: { recommended_flavour: 'cu12', devices: [{ index: 0, name: 'RTX 4080', supported: true }] } }),
+    )
     const state = await download.downloadMossInfer({ channel: 'stable', packages: [CU13_SYSTEM] })
     expect(state).toMatchObject({ phase: 'done', recommendedFlavour: 'cu12' })
     expect(state.note).toContain('引擎建议 CUDA 12')
@@ -286,10 +328,18 @@ describe('downloadMossInfer (stable)', () => {
 
   it('returns the in-flight state to a second caller', async () => {
     let unblock: () => void = () => undefined
-    probeEngine.mockImplementation(() => new Promise((resolve) => { unblock = () => resolve(hello()) }))
+    probeEngine.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          unblock = () => resolve(hello())
+        }),
+    )
     const first = download.downloadMossInfer({ channel: 'stable', packages: [CU13_SYSTEM] })
     await vi.waitFor(() => expect(probeEngine).toHaveBeenCalled())
-    const second = await download.downloadMossInfer({ channel: 'stable', packages: [{ kind: 'cuda', flavour: 'cu12', arch: 'standard', runtime: 'bundled' }] })
+    const second = await download.downloadMossInfer({
+      channel: 'stable',
+      packages: [{ kind: 'cuda', flavour: 'cu12', arch: 'standard', runtime: 'bundled' }],
+    })
     expect(second.phase).not.toBe('done')
     unblock()
     expect((await first).phase).toBe('done')
@@ -298,10 +348,16 @@ describe('downloadMossInfer (stable)', () => {
 
   it('can be canceled while the release query is in flight', async () => {
     let called = false
-    vi.stubGlobal('fetch', vi.fn((_input: string | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-      called = true
-      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
-    })))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_input: string | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            called = true
+            init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+          }),
+      ),
+    )
     const pending = download.downloadMossInfer({ channel: 'stable', packages: [CU13_SYSTEM] })
     await vi.waitFor(() => expect(called).toBe(true))
     expect(download.cancelMossInferDownload()?.phase).toBe('canceled')
@@ -318,7 +374,12 @@ describe('downloadMossInfer: several packages side by side', () => {
   const vulkanName = 'mossinfer-2.1.1-linux-vulkan-x86_64.tar.gz'
   const hipName = 'mossinfer-2.1.1-linux-hip-x86_64.tar.gz'
   beforeEach(() => {
-    release.assets = [asset('mossinfer-2.1.1-linux-cu13-x86_64-system-cuda.tar.gz'), asset(vulkanName), asset(hipName), asset('SHA256SUMS', 100)]
+    release.assets = [
+      asset('mossinfer-2.1.1-linux-cu13-x86_64-system-cuda.tar.gz'),
+      asset(vulkanName),
+      asset(hipName),
+      asset('SHA256SUMS', 100),
+    ]
     sums = [
       `${sha(archive)}  mossinfer-2.1.1-linux-cu13-x86_64-system-cuda.tar.gz`,
       `${sha(archive)}  ${vulkanName}`,
@@ -333,7 +394,11 @@ describe('downloadMossInfer: several packages side by side', () => {
       }
       const archivePath = args[args.indexOf('-xf') + 1]!
       const dest = args[args.indexOf('-C') + 1]!
-      const program = archivePath.includes('-vulkan') ? 'moss-infer-vulkan' : archivePath.includes('-hip') ? 'moss-infer-hip' : 'moss-server'
+      const program = archivePath.includes('-vulkan')
+        ? 'moss-infer-vulkan'
+        : archivePath.includes('-hip')
+          ? 'moss-infer-hip'
+          : 'moss-server'
       mkdirSync(join(dest, 'mossinfer-2.1.1', 'bin'), { recursive: true })
       writeFileSync(join(dest, 'mossinfer-2.1.1', 'bin', program), '#!')
       return { code: 0, stdout: '', stderr: '', timedOut: false }
@@ -342,12 +407,20 @@ describe('downloadMossInfer: several packages side by side', () => {
 
   it('installs a CUDA and a Vulkan package next to each other in one operation', async () => {
     const state = await download.downloadMossInfer({ channel: 'stable', packages: [CU13_SYSTEM, { kind: 'vulkan' }] })
-    expect(state).toMatchObject({ phase: 'done', packages: ['cu13-system-cuda', 'vulkan'], serverPath: join(engineRoot(), 'stable-v2.1.1-cu13-system-cuda', 'bin', 'moss-server') })
+    expect(state).toMatchObject({
+      phase: 'done',
+      packages: ['cu13-system-cuda', 'vulkan'],
+      serverPath: join(engineRoot(), 'stable-v2.1.1-cu13-system-cuda', 'bin', 'moss-server'),
+    })
     expect(existsSync(join(engineRoot(), 'stable-v2.1.1-cu13-system-cuda', 'bin', 'moss-server'))).toBe(true)
     expect(existsSync(join(engineRoot(), 'stable-v2.1.1-vulkan', 'bin', 'moss-infer-vulkan'))).toBe(true)
     // The Vulkan CLI is checked with --version, not the moss-server protocol.
     expect(probeEngine).toHaveBeenCalledTimes(1)
-    expect(run).toHaveBeenCalledWith(expect.stringContaining('moss-infer-vulkan'), ['--version'], expect.objectContaining({ timeoutMs: 20_000 }))
+    expect(run).toHaveBeenCalledWith(
+      expect.stringContaining('moss-infer-vulkan'),
+      ['--version'],
+      expect.objectContaining({ timeoutMs: 20_000 }),
+    )
     expect(emitted.filter((e) => e.step).map((e) => e.step!.packageId)).toEqual(expect.arrayContaining(['cu13-system-cuda', 'vulkan']))
   })
 
@@ -408,16 +481,32 @@ describe('downloadMossInfer: several packages side by side', () => {
       writeFileSync(join(dest, 'mossinfer-2.1.1', 'bin', 'moss-infer-hip'), '#!')
       return { code: 0, stdout: '', stderr: '', timedOut: false }
     })
-    const state = await download.downloadMossInfer({ channel: 'stable', packages: [{ kind: 'hip' }], env: { hip: { LD_LIBRARY_PATH: '/opt/rocm-7.0.2/lib' } } })
+    const state = await download.downloadMossInfer({
+      channel: 'stable',
+      packages: [{ kind: 'hip' }],
+      env: { hip: { LD_LIBRARY_PATH: '/opt/rocm-7.0.2/lib' } },
+    })
     expect(state).toMatchObject({ phase: 'done', packages: ['hip'] })
     expect(cmdArgs(run)).toContainEqual(['--version'])
   })
 
   it('verifies a CUDA package against the GPU it is meant for', async () => {
-    const other: GpuInventoryDevice = { index: 1, uuid: 'GPU-b', name: 'Tesla V100', computeCapability: { major: 7, minor: 0 }, driverVersion: '550.1' }
+    const other: GpuInventoryDevice = {
+      index: 1,
+      uuid: 'GPU-b',
+      name: 'Tesla V100',
+      computeCapability: { major: 7, minor: 0 },
+      driverVersion: '550.1',
+    }
     refreshGpuInventory.mockResolvedValue(inventory([gpu, other]))
-    probeEngine.mockResolvedValue(hello({}, { index: 1, name: 'Tesla V100', supported: false, unsupported_reason: 'compute capability 7.0 is below the required 8.0' }))
-    const state = await download.downloadMossInfer({ channel: 'stable', packages: [CU13_SYSTEM], targets: { 'cu13-system-cuda': ['GPU-b'] } })
+    probeEngine.mockResolvedValue(
+      hello({}, { index: 1, name: 'Tesla V100', supported: false, unsupported_reason: 'compute capability 7.0 is below the required 8.0' }),
+    )
+    const state = await download.downloadMossInfer({
+      channel: 'stable',
+      packages: [CU13_SYSTEM],
+      targets: { 'cu13-system-cuda': ['GPU-b'] },
+    })
     expect(state.phase).toBe('error')
     expect(state.error).toContain('Tesla V100')
   })
@@ -431,7 +520,10 @@ describe('downloadMossInfer: several packages side by side', () => {
   })
 
   it('refuses a package the release does not publish for this OS', async () => {
-    const state = await download.downloadMossInfer({ channel: 'stable', packages: [{ kind: 'cuda', flavour: 'cu13', arch: 'sm75', runtime: 'bundled' }] })
+    const state = await download.downloadMossInfer({
+      channel: 'stable',
+      packages: [{ kind: 'cuda', flavour: 'cu13', arch: 'sm75', runtime: 'bundled' }],
+    })
     expect(state.error).toContain('上游没有 Linux 版的 CUDA 13 · SM75')
   })
 })
@@ -472,7 +564,9 @@ describe('downloadMossInfer: where hashes come from', () => {
 describe('ensureVulkanProbe', () => {
   const name = 'mossinfer-2.1.1-linux-vulkan-x86_64.tar.gz'
   const engineRelease = () => ({
-    tag: 'v2.1.1', version: '2.1.1', sums: `${sha(archive)}  ${name}\n`,
+    tag: 'v2.1.1',
+    version: '2.1.1',
+    sums: `${sha(archive)}  ${name}\n`,
     assets: [{ name, size: archive.length, url: `https://github.com/dl/${name}` }],
   })
   beforeEach(() => {
@@ -495,12 +589,16 @@ describe('ensureVulkanProbe', () => {
   })
 
   it('rejects a probe package whose hash does not match', async () => {
-    await expect(download.ensureVulkanProbe({ ...engineRelease(), sums: `${'0'.repeat(64)}  ${name}\n` })).rejects.toThrow(/sha256 校验失败/)
+    await expect(download.ensureVulkanProbe({ ...engineRelease(), sums: `${'0'.repeat(64)}  ${name}\n` })).rejects.toThrow(
+      /sha256 校验失败/,
+    )
     expect(existsSync(join(engineRoot(), '.probe', 'v2.1.1'))).toBe(false)
   })
 
   it('needs the release to list the Vulkan package', async () => {
-    await expect(download.ensureVulkanProbe({ ...engineRelease(), assets: [] })).rejects.toThrow(/没有 mossinfer-2.1.1-linux-vulkan-x86_64.tar.gz/)
+    await expect(download.ensureVulkanProbe({ ...engineRelease(), assets: [] })).rejects.toThrow(
+      /没有 mossinfer-2.1.1-linux-vulkan-x86_64.tar.gz/,
+    )
   })
 })
 
@@ -514,11 +612,20 @@ function storedZip(files: Record<string, string>): Buffer {
     const fileName = Buffer.from(name)
     const crc = crc32(data)
     const local = Buffer.alloc(30)
-    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14)
-    local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(fileName.length, 26)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(data.length, 22)
+    local.writeUInt16LE(fileName.length, 26)
     const central = Buffer.alloc(46)
-    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt32LE(crc, 16)
-    central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(fileName.length, 28)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(20, 4)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(data.length, 20)
+    central.writeUInt32LE(data.length, 24)
+    central.writeUInt16LE(fileName.length, 28)
     central.writeUInt32LE(offset, 42)
     locals.push(local, fileName, data)
     centrals.push(central, fileName)
@@ -526,8 +633,11 @@ function storedZip(files: Record<string, string>): Buffer {
   }
   const directory = Buffer.concat(centrals)
   const end = Buffer.alloc(22)
-  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(Object.keys(files).length, 8); end.writeUInt16LE(Object.keys(files).length, 10)
-  end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(Object.keys(files).length, 8)
+  end.writeUInt16LE(Object.keys(files).length, 10)
+  end.writeUInt32LE(directory.length, 12)
+  end.writeUInt32LE(offset, 16)
   return Buffer.concat([...locals, directory, end])
 }
 

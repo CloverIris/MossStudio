@@ -18,14 +18,22 @@ import {
   type EnginePackage,
 } from '@shared/enginePackages'
 
-const cuda = (flavour: 'cu12' | 'cu13', arch: 'standard' | 'sm75' | 'sm70', runtime: 'system-cuda' | 'bundled'): EnginePackage =>
-  ({ kind: 'cuda', flavour, arch, runtime })
+const cuda = (flavour: 'cu12' | 'cu13', arch: 'standard' | 'sm75' | 'sm70', runtime: 'system-cuda' | 'bundled'): EnginePackage => ({
+  kind: 'cuda',
+  flavour,
+  arch,
+  runtime,
+})
 
 describe('package ids', () => {
   const all: EnginePackage[] = [
-    { kind: 'vulkan' }, { kind: 'hip' },
-    ...(['cu12', 'cu13'] as const).flatMap((flavour) => (['standard', 'sm75', 'sm70'] as const).flatMap((arch) =>
-      (['system-cuda', 'bundled'] as const).map((runtime) => cuda(flavour, arch, runtime)))),
+    { kind: 'vulkan' },
+    { kind: 'hip' },
+    ...(['cu12', 'cu13'] as const).flatMap((flavour) =>
+      (['standard', 'sm75', 'sm70'] as const).flatMap((arch) =>
+        (['system-cuda', 'bundled'] as const).map((runtime) => cuda(flavour, arch, runtime)),
+      ),
+    ),
   ]
   it('round-trips every package', () => {
     for (const pkg of all) expect(parseEnginePackageId(enginePackageId(pkg))).toEqual(pkg)
@@ -47,9 +55,13 @@ describe('package ids', () => {
 
 describe('release asset names (the v2.2.0 contract)', () => {
   it('builds every published name', () => {
-    expect(engineAssetName('2.2.0', 'windows', cuda('cu13', 'sm75', 'system-cuda'))).toBe('mossinfer-2.2.0-windows-cu13-x86_64-sm75-system-cuda.zip')
+    expect(engineAssetName('2.2.0', 'windows', cuda('cu13', 'sm75', 'system-cuda'))).toBe(
+      'mossinfer-2.2.0-windows-cu13-x86_64-sm75-system-cuda.zip',
+    )
     expect(engineAssetName('v2.2.0', 'linux', cuda('cu12', 'sm70', 'bundled'))).toBe('mossinfer-2.2.0-linux-cu12-x86_64-sm70.tar.gz')
-    expect(engineAssetName('2.2.0', 'linux', cuda('cu13', 'standard', 'system-cuda'))).toBe('mossinfer-2.2.0-linux-cu13-x86_64-system-cuda.tar.gz')
+    expect(engineAssetName('2.2.0', 'linux', cuda('cu13', 'standard', 'system-cuda'))).toBe(
+      'mossinfer-2.2.0-linux-cu13-x86_64-system-cuda.tar.gz',
+    )
     expect(engineAssetName('2.2.0', 'linux', { kind: 'hip' })).toBe('mossinfer-2.2.0-linux-hip-x86_64.tar.gz')
     expect(engineAssetName('2.2.0', 'windows', { kind: 'vulkan' })).toBe('mossinfer-2.2.0-windows-vulkan-x86_64.zip')
   })
@@ -105,7 +117,18 @@ describe('NVIDIA drivers', () => {
 
 describe('archRunsOn', () => {
   it('standard builds: 8.x and 12.x+, not Hopper or data-centre Blackwell', () => {
-    for (const [major, minor, expected] of [[8, 0, true], [8, 6, true], [8, 9, true], [12, 0, true], [12, 1, true], [9, 0, false], [10, 0, false], [11, 0, false], [7, 5, false], [7, 0, false]] as const) {
+    for (const [major, minor, expected] of [
+      [8, 0, true],
+      [8, 6, true],
+      [8, 9, true],
+      [12, 0, true],
+      [12, 1, true],
+      [9, 0, false],
+      [10, 0, false],
+      [11, 0, false],
+      [7, 5, false],
+      [7, 0, false],
+    ] as const) {
       expect(archRunsOn('standard', 'cu13', { major, minor })).toBe(expected)
     }
   })

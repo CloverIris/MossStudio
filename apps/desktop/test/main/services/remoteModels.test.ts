@@ -11,7 +11,10 @@ const startRemoteDownload = vi.fn(async (..._args: unknown[]) => ({ id: 'task' }
 vi.mock('@main/services/ssh', () => ({
   posixQuote: (value: string) => `'${value}'`,
   remoteAbsolute: async (_host: unknown, path: string) => path.replace(/^~\//, '/home/moss/'),
-  sshExec: async (_host: unknown, command: string) => { state.commands.push(command); return { code: 0, stdout: state.files.join('\n'), stderr: '', timedOut: false } },
+  sshExec: async (_host: unknown, command: string) => {
+    state.commands.push(command)
+    return { code: 0, stdout: state.files.join('\n'), stderr: '', timedOut: false }
+  },
 }))
 vi.mock('@main/services/remoteDownloads', () => ({ startRemoteDownload: (...args: unknown[]) => startRemoteDownload(...args) }))
 
@@ -20,9 +23,18 @@ const host = sshHostFixture({ modelsRoot: '/models' })
 const catalog = catalogFixture()
 const snapshot = '/models/hf/hub/models--OpenMOSS-Team--MOSS-Image-SFT/snapshots/aaa'
 const remoteFiles = [
-  'transformer/config.json', 'transformer/model-00001-of-00002.safetensors', 'transformer/model-00002-of-00002.safetensors',
-  'text_encoder/config.json', 'text_encoder/model.safetensors', 'tokenizer/tokenizer_config.json', 'tokenizer/tokenizer.json',
-  'vae/config.json', 'vae/model.safetensors', 'model_index.json', 'pipeline_moss_image.py', 'scheduler/scheduler_config.json',
+  'transformer/config.json',
+  'transformer/model-00001-of-00002.safetensors',
+  'transformer/model-00002-of-00002.safetensors',
+  'text_encoder/config.json',
+  'text_encoder/model.safetensors',
+  'tokenizer/tokenizer_config.json',
+  'tokenizer/tokenizer.json',
+  'vae/config.json',
+  'vae/model.safetensors',
+  'model_index.json',
+  'pipeline_moss_image.py',
+  'scheduler/scheduler_config.json',
 ].map((path) => `${snapshot}/${path}`)
 const installed = async (files: string[]) => {
   state.files = files
@@ -53,7 +65,9 @@ describe('scanRemoteModels', () => {
   })
 
   it('accepts a vocab/merges tokenizer and requires the component config and scheduler', async () => {
-    const vocab = remoteFiles.filter((path) => !path.endsWith('tokenizer/tokenizer.json')).concat(`${snapshot}/tokenizer/vocab.json`, `${snapshot}/tokenizer/merges.txt`)
+    const vocab = remoteFiles
+      .filter((path) => !path.endsWith('tokenizer/tokenizer.json'))
+      .concat(`${snapshot}/tokenizer/vocab.json`, `${snapshot}/tokenizer/merges.txt`)
     expect((await installed(vocab))('qwen35-encoder')).toBe(true)
     expect((await installed(remoteFiles.filter((path) => !path.endsWith('vae/config.json'))))('flux2-vae-small')).toBe(false)
     expect((await installed(remoteFiles.filter((path) => !path.endsWith('scheduler_config.json'))))('moss-pipeline')).toBe(false)
@@ -81,7 +95,11 @@ describe('scanRemoteModels', () => {
     // One file of a multi-file adapter is an unfinished download, not an installed adapter.
     state.files = [`${snapshot}/${adapter.files[0]}`]
     if (adapter.files.length > 1) {
-      expect((await scanRemoteModels(host, catalog)).adapters.find((entry) => entry.id === adapter.id)).toEqual({ id: adapter.id, installed: false, path: undefined })
+      expect((await scanRemoteModels(host, catalog)).adapters.find((entry) => entry.id === adapter.id)).toEqual({
+        id: adapter.id,
+        installed: false,
+        path: undefined,
+      })
     }
     state.files = adapter.files.map((file) => `${snapshot}/${file}`)
     const inventory = await scanRemoteModels(host, catalog)
@@ -100,6 +118,13 @@ describe('prepareRemoteModel', () => {
 
   it('prepares the default SFT snapshot as a whole-repo download', async () => {
     await prepareRemoteDefaultModel(host)
-    expect(startRemoteDownload).toHaveBeenCalledWith(host, { id: 'default-sft', name: '默认 MOSS-Image SFT', repo: 'OpenMOSS-Team/MOSS-Image-SFT', revision: 'main', files: [], sizeBytes: 0 })
+    expect(startRemoteDownload).toHaveBeenCalledWith(host, {
+      id: 'default-sft',
+      name: '默认 MOSS-Image SFT',
+      repo: 'OpenMOSS-Team/MOSS-Image-SFT',
+      revision: 'main',
+      files: [],
+      sizeBytes: 0,
+    })
   })
 })

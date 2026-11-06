@@ -31,13 +31,19 @@ export function TrainingRuns({ hostId }: { hostId: string }): React.JSX.Element 
               title={run.name}
               description={
                 <span className="flex flex-col gap-1.5">
-                  <span className="tabular">{run.algo} · {run.progressLabel} 步 · {relative(run.startedAt)}</span>
+                  <span className="tabular">
+                    {run.algo} · {run.progressLabel} 步 · {relative(run.startedAt)}
+                  </span>
                   {run.active ? <ProgressBar value={run.percent} label={`${run.name} 训练进度`} className="max-w-[320px]" /> : null}
                 </span>
               }
             >
-              <Pill tone={run.tone} className="tabular">{run.stateLabel}</Pill>
-              <Button tone="ghost" onClick={() => openActivity('jobs', run.id)}>查看日志</Button>
+              <Pill tone={run.tone} className="tabular">
+                {run.stateLabel}
+              </Pill>
+              <Button tone="ghost" onClick={() => openActivity('jobs', run.id)}>
+                查看日志
+              </Button>
             </Row>
           ))}
         </Group>

@@ -69,7 +69,10 @@ export type Handler = (payload: unknown, context: HandlerContext) => unknown
 
 /** Throw from a handler to answer `{ ok: false, error }`. */
 export class MockIpcError extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
     super(message)
   }
 }
@@ -126,23 +129,55 @@ function onboardingStatus(state: MockBackendState, hostId: string): OnboardingSt
   const partial = count > 0 || modelIds.some((id) => state.catalog.models.find((model) => model.id === id)?.installState === 'partial')
   const modelReady = modelIds.length > 0 && count === modelIds.length
   const steps: OnboardingStep[] = [
-    { id: 'device', status: deviceReady ? 'ok' : 'missing', title: '推理设备', detail: gpu?.name ?? '需要可用的 NVIDIA GPU；也可以添加 Linux NVIDIA SSH 主机', action: 'devices' },
-    { id: 'engine', status: engineReady ? 'ok' : 'missing', title: 'MossInfer 引擎', detail: engineReady ? 'MossInfer 已就绪' : '尚未准备 MossInfer 引擎；请下载或选择自定义引擎目录', action: 'engines' },
     {
-      id: 'model', title: '模型', action: 'models', modelIds,
+      id: 'device',
+      status: deviceReady ? 'ok' : 'missing',
+      title: '推理设备',
+      detail: gpu?.name ?? '需要可用的 NVIDIA GPU；也可以添加 Linux NVIDIA SSH 主机',
+      action: 'devices',
+    },
+    {
+      id: 'engine',
+      status: engineReady ? 'ok' : 'missing',
+      title: 'MossInfer 引擎',
+      detail: engineReady ? 'MossInfer 已就绪' : '尚未准备 MossInfer 引擎；请下载或选择自定义引擎目录',
+      action: 'engines',
+    },
+    {
+      id: 'model',
+      title: '模型',
+      action: 'models',
+      modelIds,
       status: modelReady ? 'ok' : partial ? 'partial' : 'missing',
-      detail: modelReady ? `${bundle?.name} 已就绪` : `${bundle?.name ?? 'MOSS-Image'} · ${count}/${modelIds.length || 4} 个组件已就绪，需准备主模型、文本编码器、VAE 与配置`,
-      sizeBytes: state.catalog.models.filter((model) => modelIds.includes(model.id) && !installed.has(model.id)).reduce((sum, model) => sum + model.sizeBytes, 0),
+      detail: modelReady
+        ? `${bundle?.name} 已就绪`
+        : `${bundle?.name ?? 'MOSS-Image'} · ${count}/${modelIds.length || 4} 个组件已就绪，需准备主模型、文本编码器、VAE 与配置`,
+      sizeBytes: state.catalog.models
+        .filter((model) => modelIds.includes(model.id) && !installed.has(model.id))
+        .reduce((sum, model) => sum + model.sizeBytes, 0),
     },
   ]
-  return { hostId, bundleId: bundle?.id, bundleName: bundle?.name, ready: steps.every((step) => step.status === 'ok'), steps, checkedAt: FIXTURE_NOW }
+  return {
+    hostId,
+    bundleId: bundle?.id,
+    bundleName: bundle?.name,
+    ready: steps.every((step) => step.status === 'ok'),
+    steps,
+    checkedAt: FIXTURE_NOW,
+  }
 }
 
 function projectSummary(project: ProjectDocument): ProjectSummary {
   const canvas = project.canvases.find((item) => item.id === project.selectedCanvasId) ?? project.canvases[0]
   return {
-    id: project.id, name: project.name, width: canvas?.width ?? 1024, height: canvas?.height ?? 1024,
-    layerCount: canvas?.layers.length ?? 0, seriesId: project.seriesId, page: project.page, updatedAt: project.updatedAt,
+    id: project.id,
+    name: project.name,
+    width: canvas?.width ?? 1024,
+    height: canvas?.height ?? 1024,
+    layerCount: canvas?.layers.length ?? 0,
+    seriesId: project.seriesId,
+    page: project.page,
+    updatedAt: project.updatedAt,
   }
 }
 
@@ -152,9 +187,22 @@ function defaultHandlers(): Map<string, Handler> {
   const p = <T>(payload: unknown) => (payload ?? {}) as T
 
   h.set(Ipc.appInfo, () => ({
-    name: 'MossStudio', version: '1.0.3', electron: '44.9.0', chrome: '140', node: '24', platform: 'win32', arch: 'x64',
-    dataPath: '/fixture/data', modelsPath: '/fixture/data/models',
-    modelDirectories: { dit: '/fixture/data/models/moss', textEncoder: '/fixture/data/models/text-encoder', vae: '/fixture/data/models/vae', support: '/fixture/data/models/support', adapters: '/fixture/data/models/adapters' },
+    name: 'MossStudio',
+    version: '1.0.3',
+    electron: '44.9.0',
+    chrome: '140',
+    node: '24',
+    platform: 'win32',
+    arch: 'x64',
+    dataPath: '/fixture/data',
+    modelsPath: '/fixture/data/models',
+    modelDirectories: {
+      dit: '/fixture/data/models/moss',
+      textEncoder: '/fixture/data/models/text-encoder',
+      vae: '/fixture/data/models/vae',
+      support: '/fixture/data/models/support',
+      adapters: '/fixture/data/models/adapters',
+    },
     acrylic: false,
   }))
   h.set(Ipc.backendInfo, () => ({ ready: true, url: 'http://studio-fixture', token: 'fixture' }))
@@ -202,9 +250,15 @@ function defaultHandlers(): Map<string, Handler> {
   h.set(Ipc.updateDownload, (_, context) => {
     const available = context.state.update.available
     if (!available) throw new MockIpcError('E_UPDATE', '没有可以下载的新版本')
-    return pushUpdate(context, { phase: 'downloading', error: null, progress: { bytes: 0, totalBytes: available.downloadSize, speedBps: 0, percent: 0 } })
+    return pushUpdate(context, {
+      phase: 'downloading',
+      error: null,
+      progress: { bytes: 0, totalBytes: available.downloadSize, speedBps: 0, percent: 0 },
+    })
   })
-  h.set(Ipc.updateCancel, (_, context) => pushUpdate(context, { phase: context.state.update.available ? 'available' : 'idle', progress: null }))
+  h.set(Ipc.updateCancel, (_, context) =>
+    pushUpdate(context, { phase: context.state.update.available ? 'available' : 'idle', progress: null }),
+  )
   const restartInto = (context: HandlerContext): UpdateRestartResult => {
     const busy = updateBusy(context.state)
     if (busy.length) {
@@ -223,9 +277,12 @@ function defaultHandlers(): Map<string, Handler> {
   h.set(Ipc.updateRestartWhenIdle, (payload, context) => {
     const { enabled } = p<{ enabled: boolean }>(payload)
     // Like main: no pending needed; a running download is waited for, then idle.
-    return pushUpdate(context, enabled
-      ? { restartWhenIdle: true, phase: 'waiting-idle', busy: updateBusy(context.state) }
-      : { restartWhenIdle: false, phase: 'ready', busy: [] })
+    return pushUpdate(
+      context,
+      enabled
+        ? { restartWhenIdle: true, phase: 'waiting-idle', busy: updateBusy(context.state) }
+        : { restartWhenIdle: false, phase: 'ready', busy: [] },
+    )
   })
   h.set(Ipc.updateRollback, (_, context) => {
     const update = context.state.update
@@ -233,7 +290,9 @@ function defaultHandlers(): Map<string, Handler> {
     if (!update.canRollback || !update.previous) return { status: 'nothing-pending' } satisfies UpdateRestartResult
     return restartInto(context)
   })
-  h.set(Ipc.updateSetChannel, (payload, context) => pushUpdate(context, { channel: p<{ channel: UpdaterState['channel'] }>(payload).channel }))
+  h.set(Ipc.updateSetChannel, (payload, context) =>
+    pushUpdate(context, { channel: p<{ channel: UpdaterState['channel'] }>(payload).channel }),
+  )
   h.set(Ipc.updateSetAutoDownload, (payload, context) => pushUpdate(context, { autoDownload: p<{ enabled: boolean }>(payload).enabled }))
   h.set(Ipc.updateUnskip, (_, context) => {
     context.state.settings = { ...context.state.settings, skippedUpdateVersion: null }
@@ -245,7 +304,11 @@ function defaultHandlers(): Map<string, Handler> {
     if (!version) return context.state.update
     const available = updateAvailableFixture(version).available!
     return pushUpdate(context, {
-      failedVersion: null, failedNotice: false, available, phase: 'downloading', error: null,
+      failedVersion: null,
+      failedNotice: false,
+      available,
+      phase: 'downloading',
+      error: null,
       progress: { bytes: 0, totalBytes: available.downloadSize, speedBps: 0, percent: 0 },
     })
   })
@@ -268,19 +331,36 @@ function defaultHandlers(): Map<string, Handler> {
     const ids = new Set(bundle ? [...Object.values(bundle.components), bundle.support] : [])
     state.catalog = {
       ...state.catalog,
-      models: state.catalog.models.map((model) => (ids.has(model.id)
-        ? { ...model, installed: true, installState: 'ready' as const, installedBytes: model.sizeBytes, localPath: folder.path, tags: [...model.tags, 'local-folder'] }
-        : model)),
+      models: state.catalog.models.map((model) =>
+        ids.has(model.id)
+          ? {
+              ...model,
+              installed: true,
+              installState: 'ready' as const,
+              installedBytes: model.sizeBytes,
+              localPath: folder.path,
+              tags: [...model.tags, 'local-folder'],
+            }
+          : model,
+      ),
     }
     return { canceled: false, added: 1, duplicates: 0, folders: [folder.name] }
   })
   h.set(Ipc.downloadsList, (_, { state }) => state.downloads)
   const beginDownload = (state: MockBackendState, kind: 'model' | 'adapter', id: string): DownloadTask => {
-    const entry = kind === 'model' ? state.catalog.models.find((item) => item.id === id) : state.catalog.adapters.find((item) => item.id === id)
+    const entry =
+      kind === 'model' ? state.catalog.models.find((item) => item.id === id) : state.catalog.adapters.find((item) => item.id === id)
     if (!entry) throw new MockIpcError('E_NOT_FOUND', `未知${kind === 'model' ? '模型' : '适配器'} ${id}`)
     const existing = state.downloads.find((task) => task.id === `${kind}:${id}`)
     if (existing && !['done', 'error', 'canceled'].includes(existing.state)) return existing
-    const task = downloadFixture({ id: `${kind}:${id}`, kind, targetId: id, label: entry.name, totalBytes: entry.sizeBytes, filesTotal: entry.files?.length ?? 1 })
+    const task = downloadFixture({
+      id: `${kind}:${id}`,
+      kind,
+      targetId: id,
+      label: entry.name,
+      totalBytes: entry.sizeBytes,
+      filesTotal: entry.files?.length ?? 1,
+    })
     state.downloads = [...state.downloads.filter((item) => item.id !== task.id), task]
     return task
   }
@@ -303,7 +383,7 @@ function defaultHandlers(): Map<string, Handler> {
   })
   h.set(Ipc.modelPause, (payload, { state }) => {
     const { taskId } = p<{ taskId: string }>(payload)
-    state.downloads = state.downloads.map((task) => task.id === taskId ? { ...task, state: 'paused', speedBps: 0 } : task)
+    state.downloads = state.downloads.map((task) => (task.id === taskId ? { ...task, state: 'paused', speedBps: 0 } : task))
     return null
   })
   h.set(Ipc.modelCancel, (payload, { state }) => {
@@ -313,13 +393,28 @@ function defaultHandlers(): Map<string, Handler> {
   })
   h.set(Ipc.modelDelete, (payload, { state }) => {
     const { kind, id } = p<{ kind: 'model' | 'adapter'; id: string }>(payload)
-    if (kind === 'model') state.catalog = { ...state.catalog, models: state.catalog.models.map((model) => model.id === id ? { ...model, installed: false, installState: 'missing', installedBytes: 0 } : model) }
-    else state.catalog = { ...state.catalog, adapters: state.catalog.adapters.map((adapter) => adapter.id === id ? { ...adapter, installed: false, installedBytes: 0 } : adapter) }
+    if (kind === 'model')
+      state.catalog = {
+        ...state.catalog,
+        models: state.catalog.models.map((model) =>
+          model.id === id ? { ...model, installed: false, installState: 'missing', installedBytes: 0 } : model,
+        ),
+      }
+    else
+      state.catalog = {
+        ...state.catalog,
+        adapters: state.catalog.adapters.map((adapter) =>
+          adapter.id === id ? { ...adapter, installed: false, installedBytes: 0 } : adapter,
+        ),
+      }
     return null
   })
   h.set(Ipc.modelsImportAdapter, () => ({ canceled: true, adapters: [] }))
   h.set(Ipc.modelsRemoteInventory, () => ({ root: '/fixture/models', files: 0, models: [], adapters: [] }))
-  h.set(Ipc.modelsRemoteDelete, (payload) => ({ removed: p<{ ids: string[] }>(payload).ids.map((id) => `/fixture/models/${id}`), kept: [] }))
+  h.set(Ipc.modelsRemoteDelete, (payload) => ({
+    removed: p<{ ids: string[] }>(payload).ids.map((id) => `/fixture/models/${id}`),
+    kept: [],
+  }))
 
   // Jobs
   h.set(Ipc.jobList, (_, { state }) => state.jobs)
@@ -329,7 +424,7 @@ function defaultHandlers(): Map<string, Handler> {
     const job = state.jobs.find((item) => item.id === id)
     if (!job) return null
     const canceled: JobRecord = { ...job, state: 'canceled', endedAt: FIXTURE_NOW }
-    state.jobs = state.jobs.map((item) => item.id === id ? canceled : item)
+    state.jobs = state.jobs.map((item) => (item.id === id ? canceled : item))
     return canceled
   })
   h.set(Ipc.jobInput, () => null)
@@ -341,7 +436,10 @@ function defaultHandlers(): Map<string, Handler> {
     state.diagnostics = state.diagnostics.filter((item) => item.id !== p<{ id: string }>(payload).id)
     return null
   })
-  h.set(Ipc.diagnosticsClear, (_, { state }) => { state.diagnostics = []; return null })
+  h.set(Ipc.diagnosticsClear, (_, { state }) => {
+    state.diagnostics = []
+    return null
+  })
 
   // Devices, GPU, launch queue
   h.set(Ipc.devicesList, (_, { state }) => state.devices)
@@ -382,7 +480,16 @@ function defaultHandlers(): Map<string, Handler> {
     const plan = enginePlanFor(state.engineMachine, state.engineAssets, state.settings, state.engineVersions)
     if (!input.packages && plan.blocked) throw new MockIpcError('E_ENGINE_UNSUPPORTED', plan.blocked)
     const packages = input.packages ?? plan.missing
-    state.engineDownload = { channel: input.channel ?? 'stable', phase: 'querying', bytes: 0, totalBytes: 0, percent: 0, speedBps: 0, packages, updatedAt: FIXTURE_NOW }
+    state.engineDownload = {
+      channel: input.channel ?? 'stable',
+      phase: 'querying',
+      bytes: 0,
+      totalBytes: 0,
+      percent: 0,
+      speedBps: 0,
+      packages,
+      updatedAt: FIXTURE_NOW,
+    }
     return state.engineDownload
   })
   h.set(Ipc.enginePlan, (_, { state }) => enginePlanFor(state.engineMachine, state.engineAssets, state.settings, state.engineVersions))
@@ -390,8 +497,21 @@ function defaultHandlers(): Map<string, Handler> {
     if (state.engineDownload) state.engineDownload = { ...state.engineDownload, phase: 'canceled' }
     return state.engineDownload
   })
-  h.set(Ipc.engineRemoteStatus, () => ({ online: true, available: false, path: '/fixture/engine/bin/moss-server', root: '/fixture/engine', gpu: 'Fixture GPU', checkedAt: '' }))
-  h.set(Ipc.engineSystemCuda, () => ({ supported: false, gpu: 'Fixture GPU', cublasLt: [], preferredFlavour: 'cu13', error: 'Fixture missing CUDA' }))
+  h.set(Ipc.engineRemoteStatus, () => ({
+    online: true,
+    available: false,
+    path: '/fixture/engine/bin/moss-server',
+    root: '/fixture/engine',
+    gpu: 'Fixture GPU',
+    checkedAt: '',
+  }))
+  h.set(Ipc.engineSystemCuda, () => ({
+    supported: false,
+    gpu: 'Fixture GPU',
+    cublasLt: [],
+    preferredFlavour: 'cu13',
+    error: 'Fixture missing CUDA',
+  }))
 
   h.set(Ipc.mossInferReleases, (_, { state }) => state.engineReleases)
   // Same shape as main's probeLocalEngine(): the hello plus one GPU verdict per inventory device.
@@ -403,15 +523,23 @@ function defaultHandlers(): Map<string, Handler> {
       enginePath: state.engineReadiness.path ?? ENGINE_PATH,
       engineVersion: version,
       checkedAt: FIXTURE_NOW,
-      devices: state.gpuInventory.devices.map((device) => ({ uuid: device.uuid, index: device.index, name: device.name, status: 'supported', freeMemoryBytes: device.memoryFreeBytes })),
+      devices: state.gpuInventory.devices.map((device) => ({
+        uuid: device.uuid,
+        index: device.index,
+        name: device.name,
+        status: 'supported',
+        freeMemoryBytes: device.memoryFreeBytes,
+      })),
     }
     return { hello, gpuCompatibility }
   })
 
   // LAN web access follows the feature switch.
-  h.set(Ipc.webAccessInfo, (_, { state }): WebAccessInfo => state.settings.lanWebEnabled
-    ? { ready: true, urls: ['http://192.168.1.20:7860/?token=fixture'], token: 'fixture', port: 7860, instanceId: 'fixture' }
-    : { ready: false, urls: [], token: null, port: null, instanceId: null })
+  h.set(Ipc.webAccessInfo, (_, { state }): WebAccessInfo =>
+    state.settings.lanWebEnabled
+      ? { ready: true, urls: ['http://192.168.1.20:7860/?token=fixture'], token: 'fixture', port: 7860, instanceId: 'fixture' }
+      : { ready: false, urls: [], token: null, port: null, instanceId: null },
+  )
 
   // Trainer: the local host always, SSH hosts only while remote hosts are enabled.
   h.set(Ipc.trainerHosts, (_, { state }): TrainingHost[] => [
@@ -426,7 +554,14 @@ function defaultHandlers(): Map<string, Handler> {
   h.set(Ipc.hostsList, (_, { state }) => state.hosts)
   h.set(Ipc.hostsSave, (payload, { state, emit }) => {
     const { password, ...config } = p<Partial<ManagedHost> & { password?: string }>(payload)
-    const host = { status: 'unchecked', devices: [], ...config, id: config.id ?? 'fixture-ssh', kind: 'ssh', hasPassword: config.authMethod === 'password' && Boolean(password) } as ManagedHost
+    const host = {
+      status: 'unchecked',
+      devices: [],
+      ...config,
+      id: config.id ?? 'fixture-ssh',
+      kind: 'ssh',
+      hasPassword: config.authMethod === 'password' && Boolean(password),
+    } as ManagedHost
     state.hosts = [...state.hosts.filter((item) => item.id !== host.id), host]
     emit(Events.hostsChanged, state.hosts)
     return host
@@ -445,12 +580,20 @@ function defaultHandlers(): Map<string, Handler> {
 
   // Gallery
   h.set(Ipc.galleryList, (payload, { state }) => {
-    const { cursor, limit = 60, query, projectId, since } = p<{ cursor?: string | null; limit?: number; query?: string; projectId?: string; since?: number }>(payload)
+    const {
+      cursor,
+      limit = 60,
+      query,
+      projectId,
+      since,
+    } = p<{ cursor?: string | null; limit?: number; query?: string; projectId?: string; since?: number }>(payload)
     const needle = query?.trim().toLowerCase()
-    const matching = state.gallery.filter((item) =>
-      (!projectId || item.projectId === projectId) &&
-      (since === undefined || item.mtime >= since) &&
-      (!needle || item.name.toLowerCase().includes(needle) || Boolean(item.prompt?.toLowerCase().includes(needle))))
+    const matching = state.gallery.filter(
+      (item) =>
+        (!projectId || item.projectId === projectId) &&
+        (since === undefined || item.mtime >= since) &&
+        (!needle || item.name.toLowerCase().includes(needle) || Boolean(item.prompt?.toLowerCase().includes(needle))),
+    )
     const start = cursor ? Number(cursor) : 0
     const items = matching.slice(start, start + limit)
     const next = start + items.length
@@ -477,7 +620,7 @@ function defaultHandlers(): Map<string, Handler> {
   h.set(Ipc.studioImportImage, (payload) => {
     const { projectId, path, bytes, name: given } = p<{ projectId: string; path?: string; bytes?: Uint8Array; name?: string }>(payload)
     if (!path && !bytes) throw new MockIpcError('BAD_REQUEST', '需要图片路径或图片内容（二选一）')
-    const name = path ? path.split(/[\\/]/).pop() ?? 'image.png' : given ?? 'pasted.png'
+    const name = path ? (path.split(/[\\/]/).pop() ?? 'image.png') : (given ?? 'pasted.png')
     return { path: `/fixture/projects/${projectId}/assets/${name}`, width: 1024, height: 1024 }
   })
   h.set(Ipc.studioSaveMask, (payload) => {
@@ -518,8 +661,11 @@ function defaultHandlers(): Map<string, Handler> {
     const input = payload as Omit<ProjectDocument, 'schemaVersion' | 'id' | 'createdAt' | 'updatedAt'> & { id?: string }
     const existing = state.projects.find((project) => project.id === input.id)
     const project: ProjectDocument = {
-      ...input, schemaVersion: 3, id: input.id ?? `project-${state.projects.length + 1}`,
-      createdAt: existing?.createdAt ?? FIXTURE_NOW, updatedAt: FIXTURE_NOW,
+      ...input,
+      schemaVersion: 3,
+      id: input.id ?? `project-${state.projects.length + 1}`,
+      createdAt: existing?.createdAt ?? FIXTURE_NOW,
+      updatedAt: FIXTURE_NOW,
     }
     state.projects = [project, ...state.projects.filter((item) => item.id !== project.id)]
     return project
@@ -541,8 +687,12 @@ function defaultHandlers(): Map<string, Handler> {
       { id: `reply-${Date.now()}`, role: 'assistant', content: 'Fixture reply', createdAt: FIXTURE_NOW },
     ]
     const conversation: AiConversationInfo = {
-      id: previous?.id ?? 'fixture-chat', title: previous?.title ?? 'Fixture chat', providerId: input.providerId,
-      messages, createdAt: previous?.createdAt ?? FIXTURE_NOW, updatedAt: FIXTURE_NOW,
+      id: previous?.id ?? 'fixture-chat',
+      title: previous?.title ?? 'Fixture chat',
+      providerId: input.providerId,
+      messages,
+      createdAt: previous?.createdAt ?? FIXTURE_NOW,
+      updatedAt: FIXTURE_NOW,
     }
     state.conversations = [conversation, ...state.conversations.filter((item) => item.id !== conversation.id)]
     return { reply: 'Fixture reply', conversation }
@@ -552,14 +702,14 @@ function defaultHandlers(): Map<string, Handler> {
   // Shell integrations: accepted and recorded via `calls`.
   for (const channel of [Ipc.windowOpen, Ipc.openPath, Ipc.openExternal, Ipc.copyText, Ipc.galleryReveal]) h.set(channel, () => null)
   h.set(Ipc.pickDialog, () => null)
-  addInstallHandlers((channel, handler) => h.set(channel, handler), (code, message) => new MockIpcError(code, message))
+  addInstallHandlers(
+    (channel, handler) => h.set(channel, handler),
+    (code, message) => new MockIpcError(code, message),
+  )
   return h
 }
 
-export function createMockBackend(
-  initial: ScenarioName | MockBackendState = 'ready',
-  options: MockBackendOptions = {},
-): MockBackend {
+export function createMockBackend(initial: ScenarioName | MockBackendState = 'ready', options: MockBackendOptions = {}): MockBackend {
   let handlers = defaultHandlers()
   const overrides = new Map<string, Handler>()
   const failures = new Map<string, { error: IpcError; times: number }>()
@@ -582,7 +732,9 @@ export function createMockBackend(
         const set = listeners.get(channel) ?? new Set()
         set.add(callback)
         listeners.set(channel, set)
-        return () => { set.delete(callback) }
+        return () => {
+          set.delete(callback)
+        }
       },
       async invoke<T>(channel: string, payload?: unknown): Promise<T> {
         calls.push({ channel, payload: payload === undefined ? undefined : deepClone(payload) })
@@ -632,8 +784,12 @@ export function createMockBackend(
     hold(channel) {
       let arrive!: () => void
       let open!: (value: { data?: unknown; error?: IpcError; useHandler: boolean }) => void
-      const called = new Promise<void>((resolve) => { arrive = resolve })
-      const gate = new Promise<{ data?: unknown; error?: IpcError; useHandler: boolean }>((resolve) => { open = resolve })
+      const called = new Promise<void>((resolve) => {
+        arrive = resolve
+      })
+      const gate = new Promise<{ data?: unknown; error?: IpcError; useHandler: boolean }>((resolve) => {
+        open = resolve
+      })
       const queue = holds.get(channel) ?? []
       queue.push({ arrive, gate })
       holds.set(channel, queue)
@@ -643,7 +799,9 @@ export function createMockBackend(
       }
       return {
         channel,
-        get payload() { return calls.filter((item) => item.channel === channel).at(-1)?.payload },
+        get payload() {
+          return calls.filter((item) => item.channel === channel).at(-1)?.payload
+        },
         called,
         async release(...args: [unknown?]) {
           open(args.length ? { data: args[0], useHandler: false } : { useHandler: true })
@@ -680,13 +838,26 @@ export function createMockBackend(
       if (!playOptions.error) sequence.push({ ...task, state: 'done', bytes: task.totalBytes, filesDone: task.filesTotal, speedBps: 0 })
       for (const step of sequence) {
         backend.state.downloads = backend.state.downloads.some((item) => item.id === step.id)
-          ? backend.state.downloads.map((item) => item.id === step.id ? step : item)
+          ? backend.state.downloads.map((item) => (item.id === step.id ? step : item))
           : [...backend.state.downloads, step]
         if (step.state === 'done') {
           const catalog = backend.state.catalog
-          backend.state.catalog = step.kind === 'model'
-            ? { ...catalog, models: catalog.models.map((model) => model.id === step.targetId ? { ...model, installed: true, installState: 'ready', installedBytes: model.sizeBytes } : model) }
-            : { ...catalog, adapters: catalog.adapters.map((adapter) => adapter.id === step.targetId ? { ...adapter, installed: true, installedBytes: adapter.sizeBytes } : adapter) }
+          backend.state.catalog =
+            step.kind === 'model'
+              ? {
+                  ...catalog,
+                  models: catalog.models.map((model) =>
+                    model.id === step.targetId
+                      ? { ...model, installed: true, installState: 'ready', installedBytes: model.sizeBytes }
+                      : model,
+                  ),
+                }
+              : {
+                  ...catalog,
+                  adapters: catalog.adapters.map((adapter) =>
+                    adapter.id === step.targetId ? { ...adapter, installed: true, installedBytes: adapter.sizeBytes } : adapter,
+                  ),
+                }
         }
         backend.emit(Events.download, step)
       }
@@ -695,7 +866,9 @@ export function createMockBackend(
     install(target = globalThis.window as unknown as { clover?: CloverBridge }) {
       const previous = target.clover
       target.clover = backend.bridge
-      return () => { target.clover = previous }
+      return () => {
+        target.clover = previous
+      }
     },
     reset(next = 'ready') {
       backend.state = typeof next === 'string' ? scenario(next) : next

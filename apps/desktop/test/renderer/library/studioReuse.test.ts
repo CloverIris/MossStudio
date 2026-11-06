@@ -7,8 +7,19 @@ const now = new Date('2026-11-04T06:00:00.000Z')
 
 function detail(patch: Partial<GalleryDetail> = {}): GalleryDetail {
   return {
-    id: 'a', path: '/out/a.png', name: 'a.png', dir: '/out', root: '/out', size: 1, mtime: 0, ext: '.png',
-    width: 1024, height: 1024, prompt: '  spring street ', seed: 7, ...patch,
+    id: 'a',
+    path: '/out/a.png',
+    name: 'a.png',
+    dir: '/out',
+    root: '/out',
+    size: 1,
+    mtime: 0,
+    ext: '.png',
+    width: 1024,
+    height: 1024,
+    prompt: '  spring street ',
+    seed: 7,
+    ...patch,
   }
 }
 
@@ -19,16 +30,34 @@ describe('buildReuseRequest', () => {
         negativePrompt: 'blurry',
         projectId: 'from-item',
         generation: {
-          width: 768, height: 1024, seed: 42, steps: 20, cfg: 3, modelBundleId: 'moss-sft', modelName: 'MOSS-Image SFT',
-          adapters: [{ path: '/l.safetensors', strength: 0.8 }], projectId: 'poster',
+          width: 768,
+          height: 1024,
+          seed: 42,
+          steps: 20,
+          cfg: 3,
+          modelBundleId: 'moss-sft',
+          modelName: 'MOSS-Image SFT',
+          adapters: [{ path: '/l.safetensors', strength: 0.8 }],
+          projectId: 'poster',
         },
       }),
       { id: 'r1', now },
     )
     expect(request).toEqual({
-      id: 'r1', createdAt: now.toISOString(), sourcePath: '/out/a.png', prompt: 'spring street', negativePrompt: 'blurry',
-      width: 768, height: 1024, seed: 42, steps: 20, cfg: 3, modelBundleId: 'moss-sft', modelName: 'MOSS-Image SFT',
-      adapters: [{ path: '/l.safetensors', strength: 0.8 }], projectId: 'poster',
+      id: 'r1',
+      createdAt: now.toISOString(),
+      sourcePath: '/out/a.png',
+      prompt: 'spring street',
+      negativePrompt: 'blurry',
+      width: 768,
+      height: 1024,
+      seed: 42,
+      steps: 20,
+      cfg: 3,
+      modelBundleId: 'moss-sft',
+      modelName: 'MOSS-Image SFT',
+      adapters: [{ path: '/l.safetensors', strength: 0.8 }],
+      projectId: 'poster',
     })
     expect(isStudioReuseRequest(request)).toBe(true)
   })
@@ -40,7 +69,10 @@ describe('buildReuseRequest', () => {
   })
 
   it('reuses the recorded description, not a compiled layout prompt', () => {
-    const request = buildReuseRequest(detail({ prompt: '{"summary":{"caption":"x"}}', generation: { description: '春日街景', regions: 2 } }), { id: 'r4', now })
+    const request = buildReuseRequest(
+      detail({ prompt: '{"summary":{"caption":"x"}}', generation: { description: '春日街景', regions: 2 } }),
+      { id: 'r4', now },
+    )
     expect(request.prompt).toBe('春日街景')
   })
 

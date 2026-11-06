@@ -14,16 +14,37 @@ import { RegionLayer, type BoardTool } from './RegionLayer'
 import { StartPicture } from './StartPicture'
 
 /** Result picture with a readable fallback when the file on disk is gone. */
-export function OutputImage({ path, alt, className, compact }: { path: string; alt: string; className?: string; compact?: boolean }): React.JSX.Element {
+export function OutputImage({
+  path,
+  alt,
+  className,
+  compact,
+}: {
+  path: string
+  alt: string
+  className?: string
+  compact?: boolean
+}): React.JSX.Element {
   const [broken, setBroken] = useState(false)
   if (broken) {
     return (
-      <span title={`图片文件找不到了：${path}`} className="flex size-full items-center justify-center px-3 text-center text-caption text-ink-2">
+      <span
+        title={`图片文件找不到了：${path}`}
+        className="flex size-full items-center justify-center px-3 text-center text-caption text-ink-2"
+      >
         {compact ? <ImageOff className="size-4 text-ink-3" aria-label="图片文件找不到了" /> : '图片文件找不到了'}
       </span>
     )
   }
-  return <img src={cloverUrl(path)} alt={alt} draggable={false} onError={() => setBroken(true)} className={cn('size-full object-cover', className)} />
+  return (
+    <img
+      src={cloverUrl(path)}
+      alt={alt}
+      draggable={false}
+      onError={() => setBroken(true)}
+      className={cn('size-full object-cover', className)}
+    />
+  )
 }
 
 export interface CardMask {
@@ -96,7 +117,15 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
       aria-current={selected ? 'true' : undefined}
       onClick={props.onSelect}
       // In pick mode a click anywhere on the card picks it; nothing inside reacts.
-      onClickCapture={props.pick ? (event) => { event.stopPropagation(); event.preventDefault(); if (props.pick === 'ok') props.onSelect() } : undefined}
+      onClickCapture={
+        props.pick
+          ? (event) => {
+              event.stopPropagation()
+              event.preventDefault()
+              if (props.pick === 'ok') props.onSelect()
+            }
+          : undefined
+      }
       data-pick={props.pick}
       className={cn(
         'group/card absolute flex flex-col',
@@ -107,26 +136,40 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
       style={{ left: canvas.x, top: canvas.y, width }}
     >
       <header
-        onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('button')) props.onDragStart(event) }}
+        onPointerDown={(event) => {
+          if (!(event.target as HTMLElement).closest('button')) props.onDragStart(event)
+        }}
         className={cn('flex touch-none select-none items-center gap-2 text-caption', props.dragging ? 'cursor-grabbing' : 'cursor-grab')}
         style={{ height: CARD_HEADER }}
       >
         <button
           type="button"
-          onClick={(event) => { event.stopPropagation(); props.onSelect() }}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onSelect()
+          }}
           className="min-w-0 truncate text-left font-semibold text-ink"
         >
           {canvas.title}
         </button>
-        <span className={cn('tabular min-w-0 flex-1 truncate text-right', view.state === 'failed' ? 'text-danger' : 'text-ink-2')}>{isImage ? '' : view.label}</span>
+        <span className={cn('tabular min-w-0 flex-1 truncate text-right', view.state === 'failed' ? 'text-danger' : 'text-ink-2')}>
+          {isImage ? '' : view.label}
+        </span>
         <Popover
           align="end"
           label={`${canvas.title} 操作`}
           trigger={(menu) => (
             <IconButton
               label={`${canvas.title} 更多操作`}
-              className={cn('-mr-1.5 size-6', !selected && 'opacity-0 focus-visible:opacity-100 [article:hover_&]:opacity-100', menu.open && 'opacity-100')}
-              onClick={(event) => { event.stopPropagation(); menu.toggle() }}
+              className={cn(
+                '-mr-1.5 size-6',
+                !selected && 'opacity-0 focus-visible:opacity-100 [article:hover_&]:opacity-100',
+                menu.open && 'opacity-100',
+              )}
+              onClick={(event) => {
+                event.stopPropagation()
+                menu.toggle()
+              }}
               aria-expanded={menu['aria-expanded']}
               aria-haspopup="menu"
             >
@@ -136,9 +179,33 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
         >
           {(close) => (
             <>
-              <MenuItem onSelect={() => { close(); props.onCopy() }}>{isImage ? '复制' : '复制为新画面'}</MenuItem>
-              {canvas.jobId && !isImage ? <MenuItem onSelect={() => { close(); props.onShowActivity() }}>在活动中查看</MenuItem> : null}
-              <MenuItem tone="danger" onSelect={() => { close(); props.onDelete() }}>{isImage ? '删除' : '删除画面'}</MenuItem>
+              <MenuItem
+                onSelect={() => {
+                  close()
+                  props.onCopy()
+                }}
+              >
+                {isImage ? '复制' : '复制为新画面'}
+              </MenuItem>
+              {canvas.jobId && !isImage ? (
+                <MenuItem
+                  onSelect={() => {
+                    close()
+                    props.onShowActivity()
+                  }}
+                >
+                  在活动中查看
+                </MenuItem>
+              ) : null}
+              <MenuItem
+                tone="danger"
+                onSelect={() => {
+                  close()
+                  props.onDelete()
+                }}
+              >
+                {isImage ? '删除' : '删除画面'}
+              </MenuItem>
             </>
           )}
         </Popover>
@@ -215,10 +282,16 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
         ) : null}
 
         {props.pick === 'ok' ? (
-          <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[4] opacity-0 transition-opacity [article:hover_&]:bg-accent-soft [article:hover_&]:opacity-100" />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-[4] opacity-0 transition-opacity [article:hover_&]:bg-accent-soft [article:hover_&]:opacity-100"
+          />
         ) : null}
         {props.dropTarget ? (
-          <div aria-hidden="true" className={cn('pointer-events-none absolute inset-0 z-[4]', props.dropTarget === 'ok' ? 'bg-accent-soft' : 'bg-well')} />
+          <div
+            aria-hidden="true"
+            className={cn('pointer-events-none absolute inset-0 z-[4]', props.dropTarget === 'ok' ? 'bg-accent-soft' : 'bg-well')}
+          />
         ) : null}
       </div>
 
@@ -229,7 +302,10 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           data-output-port={canvas.id}
           aria-label={`从 ${canvas.title} 拉出连线`}
           title="拖到另一个画面上，把这张图接进去"
-          onPointerDown={(event) => { event.stopPropagation(); props.onPortDown(event) }}
+          onPointerDown={(event) => {
+            event.stopPropagation()
+            props.onPortDown(event)
+          }}
           onClick={(event) => event.stopPropagation()}
           className={cn(
             'absolute z-[5] flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none items-center justify-center rounded-full transition-opacity',
@@ -246,10 +322,30 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           <span className="text-caption text-ink-2">图片</span>
         ) : view.active ? (
           <div className="tabular flex min-w-0 flex-1 items-center gap-2 text-caption">
-            <span data-card-progress className="min-w-0 flex-1 truncate text-ink">{view.detail}</span>
-            <button type="button" onClick={(event) => { event.stopPropagation(); props.onShowActivity() }} className="shrink-0 text-ink-2 underline-offset-2 hover:text-ink hover:underline">详情</button>
+            <span data-card-progress className="min-w-0 flex-1 truncate text-ink">
+              {view.detail}
+            </span>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                props.onShowActivity()
+              }}
+              className="shrink-0 text-ink-2 underline-offset-2 hover:text-ink hover:underline"
+            >
+              详情
+            </button>
             {canvas.jobId ? (
-              <button type="button" onClick={(event) => { event.stopPropagation(); props.onCancel() }} className="shrink-0 text-ink underline underline-offset-2">取消</button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.onCancel()
+                }}
+                className="shrink-0 text-ink underline underline-offset-2"
+              >
+                取消
+              </button>
             ) : null}
           </div>
         ) : outputs.length > 0 ? (
@@ -261,14 +357,27 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
                 aria-label={`第 ${index + 1} 张`}
                 onMouseEnter={() => setShown(index)}
                 onFocus={() => setShown(index)}
-                onClick={(event) => { event.stopPropagation(); props.onOpenViewer(index) }}
-                className={cn('size-8 shrink-0 overflow-hidden rounded-[4px] bg-well-strong', index === shown && outputs.length > 1 && 'ring-2 ring-ink ring-offset-2 ring-offset-board')}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.onOpenViewer(index)
+                }}
+                className={cn(
+                  'size-8 shrink-0 overflow-hidden rounded-[4px] bg-well-strong',
+                  index === shown && outputs.length > 1 && 'ring-2 ring-ink ring-offset-2 ring-offset-board',
+                )}
               >
                 <OutputImage path={output.path} alt="" compact />
               </button>
             ))}
             {outputs.length > maxThumbs ? (
-              <button type="button" onClick={(event) => { event.stopPropagation(); props.onOpenViewer(maxThumbs) }} className="tabular shrink-0 px-1 text-caption text-ink-2 hover:text-ink">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.onOpenViewer(maxThumbs)
+                }}
+                className="tabular shrink-0 px-1 text-caption text-ink-2 hover:text-ink"
+              >
                 +{outputs.length - maxThumbs}
               </button>
             ) : null}
@@ -279,7 +388,10 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
               className="h-7 px-2.5"
               disabled={!props.rerun.ok}
               title={props.rerun.reason}
-              onClick={(event) => { event.stopPropagation(); props.onRerun('new') }}
+              onClick={(event) => {
+                event.stopPropagation()
+                props.onRerun('new')
+              }}
             >
               换个种子
             </Button>
@@ -288,7 +400,10 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
               className="size-7"
               disabled={!props.rerun.ok}
               title={props.rerun.reason ?? '用同样的参数和种子再生成一次'}
-              onClick={(event) => { event.stopPropagation(); props.onRerun('same') }}
+              onClick={(event) => {
+                event.stopPropagation()
+                props.onRerun('same')
+              }}
             >
               <RotateCcw className="size-3.5" />
             </IconButton>
@@ -302,12 +417,25 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
               aria-label={`重试 ${canvas.title}`}
               disabled={!props.rerun.ok}
               title={props.rerun.reason}
-              onClick={(event) => { event.stopPropagation(); props.onRerun('same') }}
+              onClick={(event) => {
+                event.stopPropagation()
+                props.onRerun('same')
+              }}
             >
               重试
             </Button>
             {canvas.jobId ? (
-              <Button tone="ghost" size="sm" className="h-7 px-2.5" onClick={(event) => { event.stopPropagation(); props.onShowActivity() }}>查看原因</Button>
+              <Button
+                tone="ghost"
+                size="sm"
+                className="h-7 px-2.5"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.onShowActivity()
+                }}
+              >
+                查看原因
+              </Button>
             ) : null}
           </>
         ) : view.state === 'canceled' || view.state === 'lost' || view.state === 'succeeded' ? (
@@ -318,7 +446,10 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             aria-label={`重新生成 ${canvas.title}`}
             disabled={!props.rerun.ok}
             title={props.rerun.reason}
-            onClick={(event) => { event.stopPropagation(); props.onRerun('same') }}
+            onClick={(event) => {
+              event.stopPropagation()
+              props.onRerun('same')
+            }}
           >
             重新生成
           </Button>

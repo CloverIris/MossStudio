@@ -110,7 +110,10 @@ export function useModelLocation(host: ManagedHost | null): ModelLocation {
   }, [hostId, host?.modelsRoot, rescan])
 
   // A finished remote download changes what the host has.
-  const doneKey = tasks.filter((task) => task.state === 'done').map((task) => task.id).join(',')
+  const doneKey = tasks
+    .filter((task) => task.state === 'done')
+    .map((task) => task.id)
+    .join(',')
   useEffect(() => {
     if (hostId && doneKey) rescan()
   }, [doneKey, hostId, rescan])
@@ -199,10 +202,7 @@ export function useModelLocation(host: ManagedHost | null): ModelLocation {
     [deleteModel, hostId, rescan],
   )
 
-  const remove = useCallback(
-    (kind: 'model' | 'adapter', id: string) => removeMany(kind, [id]),
-    [removeMany],
-  )
+  const remove = useCallback((kind: 'model' | 'adapter', id: string) => removeMany(kind, [id]), [removeMany])
 
   return {
     kind: hostId ? 'remote' : 'local',

@@ -23,8 +23,12 @@
 
 @keyframes studio-card-breathe {
   0%,
-  100% { opacity: 1; }
-  50% { opacity: 0.86; }
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.86;
+  }
 }
 
 /* Progress before the engine reports steps. */
@@ -33,8 +37,12 @@
 }
 
 @keyframes studio-progress-slide {
-  from { transform: translateX(-110%); }
-  to { transform: translateX(320%); }
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(320%);
+  }
 }
 
 /* A wire into a card that is generating: the dash flows toward the consumer. */
@@ -44,15 +52,17 @@
 }
 
 @keyframes studio-wire-flow {
-  to { stroke-dashoffset: -11; }
+  to {
+    stroke-dashoffset: -11;
+  }
 }
 
-html[data-ui-animation="off"] :is(.studio-card-running, .studio-progress-indeterminate, .studio-wire-flow) {
+html[data-ui-animation='off'] :is(.studio-card-running, .studio-progress-indeterminate, .studio-wire-flow) {
   animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html:not([data-ui-animation="on"]) :is(.studio-card-running, .studio-progress-indeterminate, .studio-wire-flow) {
+  html:not([data-ui-animation='on']) :is(.studio-card-running, .studio-progress-indeterminate, .studio-wire-flow) {
     animation: none;
   }
 }

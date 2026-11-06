@@ -71,7 +71,8 @@ describe('STUDIO_TOOLS', () => {
     const labels = tool('studio_add_layer').properties!.label!.enum
     for (const kind of labels ?? []) {
       expect(
-        schemas.projectLayer.safeParse({ id: 'l', kind, caption: '', bbox: [0, 0, 1, 1], visible: true, locked: false, opacity: 1 }).success,
+        schemas.projectLayer.safeParse({ id: 'l', kind, caption: '', bbox: [0, 0, 1, 1], visible: true, locked: false, opacity: 1 })
+          .success,
       ).toBe(true)
     }
     expect(labels).toEqual(['object', 'character', 'text'])

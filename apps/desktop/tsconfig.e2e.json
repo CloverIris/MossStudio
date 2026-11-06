@@ -12,10 +12,5 @@
       "@test/*": ["test/*"]
     }
   },
-  "include": [
-    "e2e/**/*.ts",
-    "e2e/**/*.tsx",
-    "e2e/**/*.mts",
-    "src/renderer/src/env.d.ts"
-  ]
+  "include": ["e2e/**/*.ts", "e2e/**/*.tsx", "e2e/**/*.mts", "src/renderer/src/env.d.ts"]
 }

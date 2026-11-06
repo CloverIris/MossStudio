@@ -116,8 +116,6 @@ export function rewriteJobInputPaths(params: JobParams, rewrite: (path: string) 
     ...(params.control
       ? { control: { ...params.control, images: params.control.images.map((image) => ({ ...image, path: rewrite(image.path) })) } }
       : {}),
-    ...(params.references
-      ? { references: { ...params.references, paths: params.references.paths.map(rewrite) } }
-      : {}),
+    ...(params.references ? { references: { ...params.references, paths: params.references.paths.map(rewrite) } } : {}),
   }
 }

@@ -150,12 +150,16 @@ export function detailFacts(detail: GalleryDetail, options: { projectName?: stri
   const seed = generation.seed ?? (typeof detail.seed === 'number' ? detail.seed : undefined)
   if (seed !== undefined) facts.push({ label: '种子', value: String(seed) })
   if (generation.adapters?.length) {
-    facts.push({ label: 'LoRA', value: generation.adapters.map((item) => `${baseName(item.path)} · ${formatNumber(item.strength)}`).join('，') })
+    facts.push({
+      label: 'LoRA',
+      value: generation.adapters.map((item) => `${baseName(item.path)} · ${formatNumber(item.strength)}`).join('，'),
+    })
   }
   if (options.projectName) facts.push({ label: '项目', value: options.projectName })
   const created = generation.createdAt ? Date.parse(generation.createdAt) : detail.mtime
   const when = Number.isFinite(created) ? timeLabel(created, options.now) : null
-  if (when) facts.push({ label: generation.createdAt ? '生成于' : '修改于', value: generation.where ? `${when} · ${generation.where}` : when })
+  if (when)
+    facts.push({ label: generation.createdAt ? '生成于' : '修改于', value: generation.where ? `${when} · ${generation.where}` : when })
   return facts
 }
 

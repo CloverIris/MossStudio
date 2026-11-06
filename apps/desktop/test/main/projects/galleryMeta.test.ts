@@ -70,7 +70,11 @@ describe('generationFromJob', () => {
   })
 
   it('records the description and region count of a region layout', () => {
-    const layout = JSON.stringify({ summary: { caption: '春日街景', canvas: 'single' }, items: [{ label: 'person' }, { label: 'text' }], bbox_coord_space: 'abs_centralized' })
+    const layout = JSON.stringify({
+      summary: { caption: '春日街景', canvas: 'single' },
+      items: [{ label: 'person' }, { label: 'text' }],
+      bbox_coord_space: 'abs_centralized',
+    })
     expect(generationFromJob(job({ params: { ...job().params, prompt: layout } }))).toMatchObject({ description: '春日街景', regions: 2 })
   })
 
@@ -80,7 +84,9 @@ describe('generationFromJob', () => {
   })
 
   it('falls back to job params and ignores a snapshot without a bundle id', () => {
-    const result = generationFromJob(job({ modelSnapshot: 'weird', params: { ...job().params, adapters: [{ path: '/l.safetensors', strength: 0.8 }] } }))
+    const result = generationFromJob(
+      job({ modelSnapshot: 'weird', params: { ...job().params, adapters: [{ path: '/l.safetensors', strength: 0.8 }] } }),
+    )
     expect(result).toMatchObject({ width: 1024, height: 768, seed: 7, adapters: [{ path: '/l.safetensors', strength: 0.8 }] })
     expect(result.modelBundleId).toBeUndefined()
   })
@@ -196,9 +202,27 @@ describe('sidecarsToTrash', () => {
 
   it('never trashes an unrelated JSON that only shares the name', () => {
     const files = new Set([image, join(root, 'a.json')])
-    expect(sidecarsToTrash(image, (path) => files.has(path), () => ({ nodes: [], links: [] }))).toEqual([])
-    expect(sidecarsToTrash(image, (path) => files.has(path), () => undefined)).toEqual([])
-    expect(sidecarsToTrash(image, (path) => files.has(path), () => ({ job_id: 'j' }))).toEqual([join(root, 'a.json')])
+    expect(
+      sidecarsToTrash(
+        image,
+        (path) => files.has(path),
+        () => ({ nodes: [], links: [] }),
+      ),
+    ).toEqual([])
+    expect(
+      sidecarsToTrash(
+        image,
+        (path) => files.has(path),
+        () => undefined,
+      ),
+    ).toEqual([])
+    expect(
+      sidecarsToTrash(
+        image,
+        (path) => files.has(path),
+        () => ({ job_id: 'j' }),
+      ),
+    ).toEqual([join(root, 'a.json')])
   })
 
   it('keeps the stem sidecar when another image with the same name remains', () => {
@@ -237,9 +261,17 @@ describe('describePrompt / parseA1111', () => {
   })
 
   it('strips the A1111 settings tail', () => {
-    const text = 'a red bike,\nat dusk\nNegative prompt: blurry, lowres\nSteps: 20, Sampler: Euler a, CFG scale: 7.5, Seed: 123, Size: 512x768, Model: sdxl, Lora hashes: "a: 1, b: 2"'
+    const text =
+      'a red bike,\nat dusk\nNegative prompt: blurry, lowres\nSteps: 20, Sampler: Euler a, CFG scale: 7.5, Seed: 123, Size: 512x768, Model: sdxl, Lora hashes: "a: 1, b: 2"'
     expect(parseA1111(text)).toEqual({
-      prompt: 'a red bike,\nat dusk', negativePrompt: 'blurry, lowres', steps: 20, cfg: 7.5, seed: 123, width: 512, height: 768, modelName: 'sdxl',
+      prompt: 'a red bike,\nat dusk',
+      negativePrompt: 'blurry, lowres',
+      steps: 20,
+      cfg: 7.5,
+      seed: 123,
+      width: 512,
+      height: 768,
+      modelName: 'sdxl',
     })
     expect(describePrompt(text).description).toBe('a red bike,\nat dusk')
     expect(parseA1111('Steps: 4, Seed: 1')).toMatchObject({ prompt: '', steps: 4, seed: 1 })

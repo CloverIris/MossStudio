@@ -23,7 +23,9 @@ import { useGallery } from './useGallery'
 function useProjects(): ProjectSummary[] {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const load = useCallback(() => {
-    call<ProjectSummary[]>(Ipc.projectsList).then(setProjects).catch(() => undefined)
+    call<ProjectSummary[]>(Ipc.projectsList)
+      .then(setProjects)
+      .catch(() => undefined)
   }, [])
   useEffect(() => {
     load()
@@ -156,7 +158,11 @@ export function LibraryPage(): React.JSX.Element {
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <label className="relative block">
               <span className="sr-only">搜索作品</span>
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-2" strokeWidth={1.6} aria-hidden="true" />
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-2"
+                strokeWidth={1.6}
+                aria-hidden="true"
+              />
               <Input
                 type="search"
                 value={search}
@@ -193,8 +199,12 @@ export function LibraryPage(): React.JSX.Element {
               description={`${error}。检查图片文件夹是否还在，然后重试。`}
               action={
                 <div className="flex gap-2">
-                  <Button tone="primary" onClick={reload}>重试</Button>
-                  <Button tone="secondary" onClick={() => navigate('/settings/storage')}>查看图片文件夹</Button>
+                  <Button tone="primary" onClick={reload}>
+                    重试
+                  </Button>
+                  <Button tone="secondary" onClick={() => navigate('/settings/storage')}>
+                    查看图片文件夹
+                  </Button>
                 </div>
               }
             />
@@ -208,7 +218,11 @@ export function LibraryPage(): React.JSX.Element {
                 icon={<Search className="size-8" strokeWidth={1.6} />}
                 title="没有符合条件的作品"
                 description="换个关键词，或者放宽项目和时间筛选。"
-                action={<Button tone="secondary" onClick={clearFilters}><X className="size-4" strokeWidth={1.6} /> 清除筛选</Button>}
+                action={
+                  <Button tone="secondary" onClick={clearFilters}>
+                    <X className="size-4" strokeWidth={1.6} /> 清除筛选
+                  </Button>
+                }
               />
             ) : (
               <EmptyState
@@ -217,8 +231,12 @@ export function LibraryPage(): React.JSX.Element {
                 description="在创作中生成的图片会出现在这里。也可以添加电脑上已有的图片文件夹。"
                 action={
                   <div className="flex gap-2">
-                    <Button tone="primary" onClick={() => navigate('/studio')}>去创作</Button>
-                    <Button tone="secondary" onClick={() => navigate('/settings/storage')}>添加图片文件夹</Button>
+                    <Button tone="primary" onClick={() => navigate('/studio')}>
+                      去创作
+                    </Button>
+                    <Button tone="secondary" onClick={() => navigate('/settings/storage')}>
+                      添加图片文件夹
+                    </Button>
                   </div>
                 }
               />
@@ -255,7 +273,9 @@ export function LibraryPage(): React.JSX.Element {
           <div ref={sentinel} className="flex h-14 items-center justify-center">
             {items.length > 0 && loading ? <Spinner className="text-ink-2" /> : null}
             {items.length > 0 && !loading && error ? (
-              <Button tone="ghost" onClick={() => void loadMore()}>没能加载更多，重试</Button>
+              <Button tone="ghost" onClick={() => void loadMore()}>
+                没能加载更多，重试
+              </Button>
             ) : null}
           </div>
 

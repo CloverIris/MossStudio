@@ -25,15 +25,16 @@ async function remoteSource(settings: Settings, version: TrainerVersion, runName
   const host = getTrainingHost(settings, version.hostId)
   if (!host || host.kind !== 'ssh') return null
   const base = await remoteAbsolute(host, version.path)
-  const candidates = [
-    `${base}/exports/${runName}.safetensors`,
-    `${base}/runs/moss/${runName}/export/${runName}.safetensors`,
-  ]
+  const candidates = [`${base}/exports/${runName}.safetensors`, `${base}/runs/moss/${runName}/export/${runName}.safetensors`]
   for (const candidate of candidates) {
     const check = await sshExec(host, `test -f ${JSON.stringify(candidate)}`, 20_000)
     if (check.code === 0) return candidate
   }
-  const found = await sshExec(host, `find ${JSON.stringify(`${base}/runs/moss/${runName}/export`)} -maxdepth 1 -name '*.safetensors' -print 2>/dev/null | head -1`, 20_000)
+  const found = await sshExec(
+    host,
+    `find ${JSON.stringify(`${base}/runs/moss/${runName}/export`)} -maxdepth 1 -name '*.safetensors' -print 2>/dev/null | head -1`,
+    20_000,
+  )
   return found.stdout.trim() || null
 }
 

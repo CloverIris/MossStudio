@@ -91,7 +91,13 @@ describe('lib/settingsDraft commitText', () => {
 
   it('validates the raw text before parsing', () => {
     let parsed = false
-    const result = commitText('abc', 1, { validate: integerInRange(1, 9), parse: (text) => { parsed = true; return Number(text) } })
+    const result = commitText('abc', 1, {
+      validate: integerInRange(1, 9),
+      parse: (text) => {
+        parsed = true
+        return Number(text)
+      },
+    })
     expect(result).toEqual({ kind: 'invalid', message: '只能填写整数' })
     expect(parsed).toBe(false)
   })
@@ -99,7 +105,11 @@ describe('lib/settingsDraft commitText', () => {
   it('uses the parser and compares structurally', () => {
     expect(commitText(' 8 ', 4, { parse: Number })).toEqual({ kind: 'save', value: 8 })
     expect(commitText('4', 4, { parse: Number })).toEqual({ kind: 'unchanged' })
-    const parse = (text: string) => text.split(',').map((item) => item.trim()).filter(Boolean)
+    const parse = (text: string) =>
+      text
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
     expect(commitText('a, b', ['a', 'b'], { parse })).toEqual({ kind: 'unchanged' })
     expect(commitText('b, a', ['a', 'b'], { parse })).toEqual({ kind: 'save', value: ['b', 'a'] })
   })
@@ -110,7 +120,14 @@ describe('lib/settingsDraft commitText', () => {
 })
 
 describe('lib/settingsDraft textOf', () => {
-  it.each([[null, ''], [undefined, ''], ['', ''], ['a', 'a'], [0, '0'], [7890, '7890']])('textOf(%j) = %j', (value, expected) => {
+  it.each([
+    [null, ''],
+    [undefined, ''],
+    ['', ''],
+    ['a', 'a'],
+    [0, '0'],
+    [7890, '7890'],
+  ])('textOf(%j) = %j', (value, expected) => {
     expect(textOf(value)).toBe(expected)
   })
 })

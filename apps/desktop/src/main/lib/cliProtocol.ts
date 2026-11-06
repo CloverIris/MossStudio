@@ -39,14 +39,22 @@ export interface CliArgsOptions {
  */
 export function buildCliArgs(params: JobParams, options: CliArgsOptions): string[] {
   const args = [
-    '--model', options.model,
-    '--prompt', params.prompt,
-    '--negative', params.negativePrompt ?? '',
-    '--width', String(params.width),
-    '--height', String(params.height),
-    '--steps', String(params.steps),
-    '--cfg', String(params.cfg),
-    '--seed', String(params.seed),
+    '--model',
+    options.model,
+    '--prompt',
+    params.prompt,
+    '--negative',
+    params.negativePrompt ?? '',
+    '--width',
+    String(params.width),
+    '--height',
+    String(params.height),
+    '--steps',
+    String(params.steps),
+    '--cfg',
+    String(params.cfg),
+    '--seed',
+    String(params.seed),
   ]
   if (params.sampling?.shift !== undefined) args.push('--shift', String(params.sampling.shift))
   if (options.device !== undefined && options.device >= 0) args.push('--device', String(options.device))
@@ -162,7 +170,12 @@ export interface CliFailure {
  * The job error of a run that exited with `exitCode` (null = killed by a
  * signal), from the program's own message when it printed one.
  */
-export function classifyCliFailure(kind: CliEngineKind, exitCode: number | null, message: string | null, signal?: string | null): CliFailure {
+export function classifyCliFailure(
+  kind: CliEngineKind,
+  exitCode: number | null,
+  message: string | null,
+  signal?: string | null,
+): CliFailure {
   const raw = message?.trim() ?? ''
   const detail = raw ? `：${raw}` : ''
   if (exitCode === null) {
@@ -175,7 +188,11 @@ export function classifyCliFailure(kind: CliEngineKind, exitCode: number | null,
   if (/MiB of device memory|out of (?:device |host )?memory|OUT_OF_(?:DEVICE|HOST)_MEMORY|hipErrorOutOfMemory/i.test(raw)) {
     return { code: 'E_OOM', message: `显存不够这次生成，请把画面调小一些再试${detail}` }
   }
-  if (/no (?:usable )?Vulkan device|Vulkan device \d+ .*cannot be used|no HIP devices?|hip: no (?:usable )?device|hip: device \d+:|libamdhip64|vulkan-1|libvulkan/i.test(raw)) {
+  if (
+    /no (?:usable )?Vulkan device|Vulkan device \d+ .*cannot be used|no HIP devices?|hip: no (?:usable )?device|hip: device \d+:|libamdhip64|vulkan-1|libvulkan/i.test(
+      raw,
+    )
+  ) {
     return { code: 'E_DEVICE', message: `引擎用不了这张显卡${detail}` }
   }
   if (/tokenizer: cannot open|cannot open|No such file|expected BF16|unexpected dtype/i.test(raw)) {
@@ -260,10 +277,7 @@ function gpuNameKey(name: string): string {
  * suffix (Vulkan on Mesa says "AMD Radeon RX 7900 XTX (RADV NAVI31)", HIP
  * says "AMD Radeon RX 7900 XTX"), and the same gfx target when both are known.
  */
-export function sameCliDevice(
-  printed: { name: string; arch?: string },
-  expected: { name: string; gfxTarget?: string },
-): boolean {
+export function sameCliDevice(printed: { name: string; arch?: string }, expected: { name: string; gfxTarget?: string }): boolean {
   if (printed.arch && expected.gfxTarget && printed.arch !== expected.gfxTarget) return false
   const a = gpuNameKey(printed.name)
   const b = gpuNameKey(expected.name)

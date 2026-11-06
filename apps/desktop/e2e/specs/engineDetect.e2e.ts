@@ -16,7 +16,9 @@ describe('engine detection', () => {
     const gpus = page.getByRole('list', { name: '检测到的显卡' })
     await expect.poll(() => gpus.getByText('NVIDIA GeForce RTX 4090').isVisible()).toBe(true)
     await expect.poll(() => gpus.getByText('CUDA 13 引擎 · 352 MB').isVisible()).toBe(true)
-    await expect.poll(() => app.calls<{ refresh?: boolean }>('engine:plan').then((calls) => calls.some((call) => call?.refresh === true))).toBe(true)
+    await expect
+      .poll(() => app.calls<{ refresh?: boolean }>('engine:plan').then((calls) => calls.some((call) => call?.refresh === true)))
+      .toBe(true)
     await page.getByRole('button', { name: '开始准备' }).click()
     // Main installs whatever the plan says this computer needs.
     await expect.poll(() => app.calls<Record<string, unknown>>('mossinfer:download')).toEqual([{ channel: 'stable' }])
@@ -57,11 +59,13 @@ describe('engine detection', () => {
     const page = await app.open({ scenario: 'machineMultiGpu', route: '/setup', theme: 'light' })
     const lines = page.getByRole('list', { name: '检测到的显卡' }).getByRole('listitem')
     await expect.poll(() => lines.count()).toBe(3)
-    await expect.poll(() => lines.allInnerTexts()).toEqual([
-      expect.stringContaining('CUDA 13 引擎 · 368 MB'),
-      expect.stringContaining('CUDA 12 引擎 · 530 MB'),
-      expect.stringContaining('兼容模式 · 1.2 MB'),
-    ])
+    await expect
+      .poll(() => lines.allInnerTexts())
+      .toEqual([
+        expect.stringContaining('CUDA 13 引擎 · 368 MB'),
+        expect.stringContaining('CUDA 12 引擎 · 530 MB'),
+        expect.stringContaining('兼容模式 · 1.2 MB'),
+      ])
     await expect.poll(() => page.getByText(/3 个引擎包，共/).isVisible()).toBe(true)
     await app.screenshot('setup-multi-gpu-light')
   })
@@ -93,18 +97,39 @@ describe('engine detection', () => {
     })
     await app.start()
     await expect.poll(() => page.getByText(/引擎：兼容模式 · 只能文生图/).isVisible()).toBe(true)
-    await expect.poll(() => page.getByText(/引擎：CUDA 13/).first().isVisible()).toBe(true)
+    await expect
+      .poll(() =>
+        page
+          .getByText(/引擎：CUDA 13/)
+          .first()
+          .isVisible(),
+      )
+      .toBe(true)
     await page.getByRole('button', { name: /高级/ }).first().click()
     const picker = page.getByRole('combobox', { name: 'NVIDIA GeForce RTX 4090 使用的引擎' })
     // Only packages that run on this GPU are offered.
-    await expect.poll(() => picker.locator('option').allInnerTexts()).toEqual(['自动', 'CUDA 13 · 自带运行库', 'CUDA 13 · 系统运行库', 'CUDA 12 · 自带运行库', 'CUDA 12 · 系统运行库', '兼容模式（Vulkan）'])
+    await expect
+      .poll(() => picker.locator('option').allInnerTexts())
+      .toEqual([
+        '自动',
+        'CUDA 13 · 自带运行库',
+        'CUDA 13 · 系统运行库',
+        'CUDA 12 · 自带运行库',
+        'CUDA 12 · 系统运行库',
+        '兼容模式（Vulkan）',
+      ])
     // The Vulkan GPU has no memory mode / tier pickers, only a quiet line; the CUDA GPUs keep theirs.
     await expect.poll(() => page.getByText('兼容模式引擎使用固定设置').isVisible()).toBe(true)
     expect(await page.getByRole('combobox', { name: 'AMD Radeon RX 7900 XTX 显存模式' }).count()).toBe(0)
     expect(await page.getByRole('combobox', { name: 'AMD Radeon RX 7900 XTX 性能档位' }).count()).toBe(0)
     expect(await page.getByRole('combobox', { name: 'NVIDIA GeForce RTX 4090 显存模式' }).count()).toBe(1)
     await picker.selectOption({ label: '兼容模式（Vulkan）' })
-    await expect.poll(() => app.calls<{ engineDeviceOverrides?: Record<string, string> }>('settings:update').then((calls) => calls.at(-1)?.engineDeviceOverrides))
+    await expect
+      .poll(() =>
+        app
+          .calls<{ engineDeviceOverrides?: Record<string, string> }>('settings:update')
+          .then((calls) => calls.at(-1)?.engineDeviceOverrides),
+      )
       .toEqual({ 'GPU-00000000-1111-2222-3333-444444444444': 'vulkan' })
     await app.screenshot('settings-devices-engines-light')
   })

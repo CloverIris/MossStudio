@@ -49,11 +49,7 @@ async function cloneMirror(source: string, settings: Settings, mirror: string): 
 }
 
 async function fetchMirror(mirror: string) {
-  return run(
-    gitBinary(),
-    ['-C', mirror, 'fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'],
-    { timeoutMs: 180_000 },
-  )
+  return run(gitBinary(), ['-C', mirror, 'fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { timeoutMs: 180_000 })
 }
 
 async function assertHealthy(mirror: string): Promise<void> {
@@ -113,11 +109,9 @@ export async function ensureMirror(settings: Settings, source = DEFAULT_SOURCE):
 
 export async function listBranches(source = DEFAULT_SOURCE): Promise<BranchInfo[]> {
   const mirror = mirrorFor(source)
-  const result = await run(
-    gitBinary(),
-    ['-C', mirror, 'for-each-ref', '--format=%(refname:short)|%(objectname)|%(HEAD)', 'refs/heads'],
-    { timeoutMs: 10_000 },
-  )
+  const result = await run(gitBinary(), ['-C', mirror, 'for-each-ref', '--format=%(refname:short)|%(objectname)|%(HEAD)', 'refs/heads'], {
+    timeoutMs: 10_000,
+  })
   if (result.code !== 0) {
     throw new Error(`读取分支失败：${tail(result.stderr) || firstLine(result.stdout) || 'git 退出异常'}`)
   }
@@ -142,24 +136,11 @@ export async function listBranches(source = DEFAULT_SOURCE): Promise<BranchInfo[
     .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name))
 }
 
-export async function listCommits(
-  branch: string,
-  limit = 60,
-  source = DEFAULT_SOURCE,
-): Promise<CommitInfo[]> {
+export async function listCommits(branch: string, limit = 60, source = DEFAULT_SOURCE): Promise<CommitInfo[]> {
   const safe = branch.replace(/[^A-Za-z0-9._/-]/g, '')
-  const result = await run(
-    gitBinary(),
-    [
-      '-C',
-      mirrorFor(source),
-      'log',
-      `-n${limit}`,
-      '--format=%H%x1f%h%x1f%ct%x1f%s%x1f%an',
-      safe,
-    ],
-    { timeoutMs: 15_000 },
-  )
+  const result = await run(gitBinary(), ['-C', mirrorFor(source), 'log', `-n${limit}`, '--format=%H%x1f%h%x1f%ct%x1f%s%x1f%an', safe], {
+    timeoutMs: 15_000,
+  })
   if (result.code !== 0) {
     throw new Error(`读取提交失败：${tail(result.stderr) || firstLine(result.stdout) || 'git 退出异常'}`)
   }
@@ -181,33 +162,17 @@ export async function listCommits(
 }
 
 export async function commitExists(sha: string, source = DEFAULT_SOURCE): Promise<boolean> {
-  const result = await run(
-    gitBinary(),
-    ['-C', mirrorFor(source), 'cat-file', '-e', `${sha}^{commit}`],
-    { timeoutMs: 5000 },
-  )
+  const result = await run(gitBinary(), ['-C', mirrorFor(source), 'cat-file', '-e', `${sha}^{commit}`], { timeoutMs: 5000 })
   return result.code === 0
 }
 
-export async function createWorktree(
-  sha: string,
-  destination: string,
-  source = DEFAULT_SOURCE,
-): Promise<void> {
-  const result = await run(
-    gitBinary(),
-    ['-C', mirrorFor(source), 'worktree', 'add', '--detach', destination, sha],
-    { timeoutMs: 90_000 },
-  )
+export async function createWorktree(sha: string, destination: string, source = DEFAULT_SOURCE): Promise<void> {
+  const result = await run(gitBinary(), ['-C', mirrorFor(source), 'worktree', 'add', '--detach', destination, sha], { timeoutMs: 90_000 })
   if (result.code !== 0) throw new Error(`创建实例失败：${tail(result.stderr)}`)
 }
 
 export async function removeWorktree(destination: string, source = DEFAULT_SOURCE): Promise<void> {
-  await run(
-    gitBinary(),
-    ['-C', mirrorFor(source), 'worktree', 'remove', '--force', destination],
-    { timeoutMs: 30_000 },
-  )
+  await run(gitBinary(), ['-C', mirrorFor(source), 'worktree', 'remove', '--force', destination], { timeoutMs: 30_000 })
   await rm(destination, { recursive: true, force: true })
   await run(gitBinary(), ['-C', mirrorFor(source), 'worktree', 'prune'], { timeoutMs: 10_000 })
 }
@@ -227,10 +192,6 @@ export async function isDirty(destination: string): Promise<boolean> {
 }
 
 export async function branchStableSha(source = DEFAULT_SOURCE): Promise<string | null> {
-  const result = await run(
-    gitBinary(),
-    ['-C', mirrorFor(source), 'rev-parse', '--verify', 'refs/heads/main'],
-    { timeoutMs: 5000 },
-  )
+  const result = await run(gitBinary(), ['-C', mirrorFor(source), 'rev-parse', '--verify', 'refs/heads/main'], { timeoutMs: 5000 })
   return result.code === 0 ? firstLine(result.stdout) || null : null
 }

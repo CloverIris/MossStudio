@@ -23,11 +23,12 @@ describe('safeParts', () => {
     expect(safeParts('Contents/MacOS/MossStudio', 'darwin')).toEqual(['Contents', 'MacOS', 'MossStudio'])
   })
 
-  it.each([
-    ['../evil'], ['a/../../evil'], ['/etc/passwd'], ['C:/Windows/x'], ['a\\b'], ['a//b'], ['./a'], ['a/./b'], [''], ['a\0b'],
-  ])('refuses %j', (path) => {
-    expect(() => safeParts(path, 'linux')).toThrow('不安全的路径')
-  })
+  it.each([['../evil'], ['a/../../evil'], ['/etc/passwd'], ['C:/Windows/x'], ['a\\b'], ['a//b'], ['./a'], ['a/./b'], [''], ['a\0b']])(
+    'refuses %j',
+    (path) => {
+      expect(() => safeParts(path, 'linux')).toThrow('不安全的路径')
+    },
+  )
 
   it('refuses Windows device names and streams on Windows', () => {
     expect(() => safeParts('a/CON', 'win32')).toThrow()
@@ -49,8 +50,15 @@ describe('assertSafeLinkTarget', () => {
 
 describe('extractZip', () => {
   it('unpacks files into nested folders', async () => {
-    const { dest, result } = await extract([{ name: 'resources/', dir: true }, { name: 'resources/app.asar', data: 'asar' }, { name: '中文 目录/文件.txt', data: '你好' }])
-    expect(await result).toEqual([{ path: 'resources/app.asar', type: 'file' }, { path: '中文 目录/文件.txt', type: 'file' }])
+    const { dest, result } = await extract([
+      { name: 'resources/', dir: true },
+      { name: 'resources/app.asar', data: 'asar' },
+      { name: '中文 目录/文件.txt', data: '你好' },
+    ])
+    expect(await result).toEqual([
+      { path: 'resources/app.asar', type: 'file' },
+      { path: '中文 目录/文件.txt', type: 'file' },
+    ])
     expect(readFileSync(join(dest, 'resources', 'app.asar'), 'utf8')).toBe('asar')
     expect(readFileSync(join(dest, '中文 目录', '文件.txt'), 'utf8')).toBe('你好')
   })
@@ -67,12 +75,15 @@ describe('extractZip', () => {
     expect(readlinkSync(join(dest, 'A.framework/Versions/Current'))).toBe('A')
   })
 
-  it.each([['../evil.txt'], ['nested/../../evil.txt'], ['/abs/evil.txt']])('refuses the traversal entry %j and writes nothing outside', async (name) => {
-    const { result } = await extract([{ name, data: 'pwned' }])
-    await expect(result).rejects.toThrow()
-    expect(existsSync(join(temp(), 'evil.txt'))).toBe(false)
-    expect(existsSync(join(temp(), 'out', 'evil.txt'))).toBe(false)
-  })
+  it.each([['../evil.txt'], ['nested/../../evil.txt'], ['/abs/evil.txt']])(
+    'refuses the traversal entry %j and writes nothing outside',
+    async (name) => {
+      const { result } = await extract([{ name, data: 'pwned' }])
+      await expect(result).rejects.toThrow()
+      expect(existsSync(join(temp(), 'evil.txt'))).toBe(false)
+      expect(existsSync(join(temp(), 'out', 'evil.txt'))).toBe(false)
+    },
+  )
 
   it('refuses a symlink that escapes the folder', async () => {
     const { result } = await extract([{ name: 'link', symlink: '../../../etc' }])
@@ -87,13 +98,19 @@ describe('extractZip', () => {
   it.runIf(unix)('never writes a file through a symlinked folder', async () => {
     // A link "dir" → "../outside" (refused anyway) followed by "dir/x": "dir" is created as a real
     // folder first because links are deferred, so the link then collides instead of redirecting.
-    const { dest, result } = await extract([{ name: 'dir', symlink: 'sub' }, { name: 'dir/x', data: 'x' }])
+    const { dest, result } = await extract([
+      { name: 'dir', symlink: 'sub' },
+      { name: 'dir/x', data: 'x' },
+    ])
     await expect(result).rejects.toThrow()
     expect(lstatSync(join(dest, 'dir')).isDirectory()).toBe(true)
   })
 
   it('refuses duplicate entries', async () => {
-    const { result } = await extract([{ name: 'a.txt', data: '1' }, { name: 'a.txt', data: '2' }])
+    const { result } = await extract([
+      { name: 'a.txt', data: '1' },
+      { name: 'a.txt', data: '2' },
+    ])
     await expect(result).rejects.toThrow()
   })
 

@@ -7,14 +7,23 @@ import type { StoredMachineProbe } from '@main/services/engineMachine'
 import { useTempDataRoot } from '@test/helpers/tempDir'
 import { setPlatform, usePlatform } from '@test/helpers/platform'
 
-const downloadMossInfer = vi.hoisted(() => vi.fn(async (_request: unknown): Promise<MossInferDownloadState> => ({
-  channel: 'stable', phase: 'done', bytes: 0, totalBytes: 0, percent: 100, speedBps: 0, updatedAt: '',
-})))
+const downloadMossInfer = vi.hoisted(() =>
+  vi.fn(async (_request: unknown): Promise<MossInferDownloadState> => ({
+    channel: 'stable',
+    phase: 'done',
+    bytes: 0,
+    totalBytes: 0,
+    percent: 100,
+    speedBps: 0,
+    updatedAt: '',
+  })),
+)
 const fetchEngineRelease = vi.hoisted(() => vi.fn<(tag?: string) => Promise<EngineRelease>>())
 vi.mock('@main/services/mossInferDownload', () => ({ downloadMossInfer, fetchEngineRelease, ensureVulkanProbe: vi.fn() }))
 const live = vi.hoisted(() => ({ devices: null as Array<{ uuid: string; index: number; name: string }> | null }))
 vi.mock('@main/services/devices', () => ({
-  scanNvidiaGpus: vi.fn(), refreshGpuInventory: vi.fn(async () => undefined),
+  scanNvidiaGpus: vi.fn(),
+  refreshGpuInventory: vi.fn(async () => undefined),
   cachedGpuInventory: () => (live.devices ? { scannedAt: '', status: 'ok', devices: live.devices } : null),
 }))
 const releaseStaleMossInferRuntimes = vi.hoisted(() => vi.fn(async () => [] as string[]))
@@ -27,21 +36,45 @@ let machineModule: typeof import('@main/services/engineMachine')
 let settingsModule: typeof import('@main/services/settings')
 
 const release = (tag = 'v2.2.0'): EngineRelease => ({
-  tag, version: tag.slice(1), sums: '',
+  tag,
+  version: tag.slice(1),
+  sums: '',
   assets: ['cu13', 'cu13-system-cuda', 'cu12-sm70', 'vulkan', 'hip'].map((id) => {
-    const name = id === 'vulkan' || id === 'hip'
-      ? `mossinfer-${tag.slice(1)}-linux-${id}-x86_64.tar.gz`
-      : `mossinfer-${tag.slice(1)}-linux-${id.replace(/^(cu1\d)(-sm70)?(-system-cuda)?$/, '$1-x86_64$2$3')}.tar.gz`
+    const name =
+      id === 'vulkan' || id === 'hip'
+        ? `mossinfer-${tag.slice(1)}-linux-${id}-x86_64.tar.gz`
+        : `mossinfer-${tag.slice(1)}-linux-${id.replace(/^(cu1\d)(-sm70)?(-system-cuda)?$/, '$1-x86_64$2$3')}.tar.gz`
     return { name, size: 1000, url: `https://github.com/dl/${name}` }
   }),
 })
 
-function probe(gpus: StoredMachineProbe['machine']['gpus'], patch: Partial<StoredMachineProbe['machine']> = {}): StoredMachineProbe['machine'] {
+function probe(
+  gpus: StoredMachineProbe['machine']['gpus'],
+  patch: Partial<StoredMachineProbe['machine']> = {},
+): StoredMachineProbe['machine'] {
   return { os: 'linux', gpus, systemCuda: [], rocm7: false, hipAccess: true, vulkanProbed: true, ...patch }
 }
-const rtx = { id: 'GPU-rtx', name: 'RTX 4090', vendor: 'nvidia' as const, computeCapability: { major: 8, minor: 9 }, driverVersion: '590.48.01' }
-const v100 = { id: 'GPU-v100', name: 'V100', vendor: 'nvidia' as const, computeCapability: { major: 7, minor: 0 }, driverVersion: '590.48.01' }
-const amd = { id: 'vk-1002-744c-0', name: 'RX 7900 XTX', vendor: 'amd' as const, gfxTarget: 'gfx1100', vulkan: { index: 0, usable: true, discrete: true } }
+const rtx = {
+  id: 'GPU-rtx',
+  name: 'RTX 4090',
+  vendor: 'nvidia' as const,
+  computeCapability: { major: 8, minor: 9 },
+  driverVersion: '590.48.01',
+}
+const v100 = {
+  id: 'GPU-v100',
+  name: 'V100',
+  vendor: 'nvidia' as const,
+  computeCapability: { major: 7, minor: 0 },
+  driverVersion: '590.48.01',
+}
+const amd = {
+  id: 'vk-1002-744c-0',
+  name: 'RX 7900 XTX',
+  vendor: 'amd' as const,
+  gfxTarget: 'gfx1100',
+  vulkan: { index: 0, usable: true, discrete: true },
+}
 
 function installed(name: string, program = 'moss-server'): void {
   mkdirSync(join(dataRoot(), 'mossinfer', name, 'bin'), { recursive: true })
@@ -61,7 +94,12 @@ beforeEach(async () => {
 })
 
 function store(machine: StoredMachineProbe['machine'], rocmLibDir?: string): void {
-  machineModule.storeMachineProbe(join(dataRoot(), 'mossinfer'), { machine, vulkanDevices: [], notes: [], ...(rocmLibDir ? { rocmLibDir } : {}) })
+  machineModule.storeMachineProbe(join(dataRoot(), 'mossinfer'), {
+    machine,
+    vulkanDevices: [],
+    notes: [],
+    ...(rocmLibDir ? { rocmLibDir } : {}),
+  })
 }
 
 describe('getEnginePlan', () => {
@@ -69,7 +107,11 @@ describe('getEnginePlan', () => {
     store(probe([rtx, v100, amd], { rocm7: true }))
     installed('stable-v2.2.0-cu13')
     const view = await plan.getEnginePlan()
-    expect(view.choices.map((choice) => [choice.gpuId, choice.packageId])).toEqual([['GPU-rtx', 'cu13'], ['GPU-v100', 'cu12-sm70'], ['vk-1002-744c-0', 'hip']])
+    expect(view.choices.map((choice) => [choice.gpuId, choice.packageId])).toEqual([
+      ['GPU-rtx', 'cu13'],
+      ['GPU-v100', 'cu12-sm70'],
+      ['vk-1002-744c-0', 'hip'],
+    ])
     expect(view).toMatchObject({ releaseTag: 'v2.2.0', channel: 'stable', installed: ['cu13'], missing: ['cu12-sm70', 'hip'] })
   })
 
@@ -141,9 +183,15 @@ describe('detectEngineMachine', () => {
   it('reuses a fresh probe and probes again when asked', async () => {
     store(probe([rtx]))
     const deps = {
-      platform: 'linux' as const, run: vi.fn(async () => ({ code: 0, stdout: 'no Vulkan devices\n', stderr: '', timedOut: false })),
-      readFile: () => null, readdir: () => [], exists: () => false, readWrite: () => false,
-      nvidia: vi.fn(async () => []), systemCuda: async () => [], vulkanBinary: async () => '/vk',
+      platform: 'linux' as const,
+      run: vi.fn(async () => ({ code: 0, stdout: 'no Vulkan devices\n', stderr: '', timedOut: false })),
+      readFile: () => null,
+      readdir: () => [],
+      exists: () => false,
+      readWrite: () => false,
+      nvidia: vi.fn(async () => []),
+      systemCuda: async () => [],
+      vulkanBinary: async () => '/vk',
     }
     const cached = await plan.detectEngineMachine({ deps })
     expect(cached.machine.gpus.map((gpu) => gpu.id)).toEqual(['GPU-rtx'])
@@ -156,9 +204,15 @@ describe('detectEngineMachine', () => {
 
 describe('detectEngineMachine: when to probe again', () => {
   const deps = () => ({
-    platform: 'linux' as const, run: vi.fn(async () => ({ code: 0, stdout: 'no Vulkan devices\n', stderr: '', timedOut: false })),
-    readFile: () => null, readdir: () => [], exists: () => false, readWrite: () => false,
-    nvidia: vi.fn(async () => []), systemCuda: async () => [], vulkanBinary: async () => null,
+    platform: 'linux' as const,
+    run: vi.fn(async () => ({ code: 0, stdout: 'no Vulkan devices\n', stderr: '', timedOut: false })),
+    readFile: () => null,
+    readdir: () => [],
+    exists: () => false,
+    readWrite: () => false,
+    nvidia: vi.fn(async () => []),
+    systemCuda: async () => [],
+    vulkanBinary: async () => null,
   })
 
   it('offline, headless or on macOS a probe without Vulkan is not redone on every call', async () => {
@@ -181,7 +235,13 @@ describe('detectEngineMachine: when to probe again', () => {
     const d = deps()
     await plan.detectEngineMachine({ deps: d, liveNvidia: [{ uuid: 'GPU-rtx', index: 0, name: 'RTX 4090' }] })
     expect(d.nvidia).not.toHaveBeenCalled()
-    await plan.detectEngineMachine({ deps: d, liveNvidia: [{ uuid: 'GPU-rtx', index: 0, name: 'RTX 4090' }, { uuid: 'GPU-new', index: 1, name: 'RTX 3060' }] })
+    await plan.detectEngineMachine({
+      deps: d,
+      liveNvidia: [
+        { uuid: 'GPU-rtx', index: 0, name: 'RTX 4090' },
+        { uuid: 'GPU-new', index: 1, name: 'RTX 3060' },
+      ],
+    })
     expect(d.nvidia).toHaveBeenCalledTimes(1)
   })
 
@@ -220,4 +280,3 @@ describe('applyLegacyBundledChoice', () => {
     expect(settingsModule.getSettings().engineDeviceOverrides).toEqual({ 'GPU-rtx': 'vulkan' })
   })
 })
-

@@ -72,22 +72,27 @@ export function useInstall(): SetupController {
   const autoStarted = useRef(false)
   const autoLaunched = useRef(false)
 
-  const legacy = pickedLegacy === undefined ? state?.legacy ?? null : pickedLegacy
+  const legacy = pickedLegacy === undefined ? (state?.legacy ?? null) : pickedLegacy
 
   // Main pushes the whole state when it changes on its own (e.g. the old data was measured),
   // progress while installing, and the outcome.
   useEffect(() => {
     const offState = onEvent<SetupState>(Events.installState, setState)
     const offProgress = onEvent<SetupProgress>(Events.installProgress, (progress) => {
-      setState((previous) => previous ? { ...previous, phase: 'installing', progress, error: null } : previous)
+      setState((previous) => (previous ? { ...previous, phase: 'installing', progress, error: null } : previous))
     })
     const offDone = onEvent<SetupResult>(Events.installDone, (result) => {
-      setState((previous) => previous ? { ...previous, phase: 'done', result, error: null } : previous)
+      setState((previous) => (previous ? { ...previous, phase: 'done', result, error: null } : previous))
     })
     const offFailed = onEvent<{ code: string; message: string }>(Events.installFailed, (error) => {
-      setState((previous) => previous ? { ...previous, phase: 'failed', error } : previous)
+      setState((previous) => (previous ? { ...previous, phase: 'failed', error } : previous))
     })
-    return () => { offState(); offProgress(); offDone(); offFailed() }
+    return () => {
+      offState()
+      offProgress()
+      offDone()
+      offFailed()
+    }
   }, [])
 
   const start = useCallback(async (input: SetupStartInput): Promise<void> => {
@@ -95,7 +100,7 @@ export function useInstall(): SetupController {
     try {
       setState(await call<SetupState>(Ipc.installStart, input))
     } catch (error) {
-      setState((previous) => previous ? { ...previous, phase: 'failed', error: { code: 'E_START', message: message(error) } } : previous)
+      setState((previous) => (previous ? { ...previous, phase: 'failed', error: { code: 'E_START', message: message(error) } } : previous))
     } finally {
       setStarting(false)
     }
@@ -103,20 +108,24 @@ export function useInstall(): SetupController {
 
   useEffect(() => {
     let canceled = false
-    void call<SetupState>(Ipc.installState).then((next) => {
-      if (canceled) return
-      setState(next)
-      setLocation(next.location)
-      setDataLocation(next.dataLocation)
-      // An update or a repair asks nothing: install into the located root right away.
-      if ((next.kind === 'update' || next.kind === 'repair') && next.phase === 'idle' && !autoStarted.current) {
-        autoStarted.current = true
-        void start({ root: next.installed?.root ?? next.location.path })
-      }
-    }).catch((error: unknown) => {
-      if (!canceled) setLoadError(`安装程序没能读取安装信息：${message(error)}`)
-    })
-    return () => { canceled = true }
+    void call<SetupState>(Ipc.installState)
+      .then((next) => {
+        if (canceled) return
+        setState(next)
+        setLocation(next.location)
+        setDataLocation(next.dataLocation)
+        // An update or a repair asks nothing: install into the located root right away.
+        if ((next.kind === 'update' || next.kind === 'repair') && next.phase === 'idle' && !autoStarted.current) {
+          autoStarted.current = true
+          void start({ root: next.installed?.root ?? next.location.path })
+        }
+      })
+      .catch((error: unknown) => {
+        if (!canceled) setLoadError(`安装程序没能读取安装信息：${message(error)}`)
+      })
+    return () => {
+      canceled = true
+    }
   }, [start])
 
   const launch = useCallback(async (withEject: boolean): Promise<void> => {
@@ -125,7 +134,11 @@ export function useInstall(): SetupController {
       await call(Ipc.installLaunch, withEject ? { eject: true } : {})
     } catch (error) {
       setLaunching(false)
-      setState((previous) => previous ? { ...previous, phase: 'failed', error: { code: 'E_LAUNCH', message: `MossStudio 已经装好，但没能打开：${message(error)}` } } : previous)
+      setState((previous) =>
+        previous
+          ? { ...previous, phase: 'failed', error: { code: 'E_LAUNCH', message: `MossStudio 已经装好，但没能打开：${message(error)}` } }
+          : previous,
+      )
     }
   }, [])
 
@@ -139,50 +152,61 @@ export function useInstall(): SetupController {
     return () => window.clearTimeout(timer)
   }, [state?.phase, state?.canEject, launch])
 
-  const validate = useCallback(async (purpose: 'install' | 'data', path: string): Promise<void> => {
-    const seq = ++checkSeq.current
-    setChecking(true)
-    try {
-      const result = await call<SetupLocationCheck>(Ipc.installValidate, { path, purpose })
-      if (seq !== checkSeq.current) return
-      if (purpose === 'install') setLocation(result)
-      else setDataLocation(result)
-    } catch (error) {
-      if (seq !== checkSeq.current) return
-      const failed: SetupLocationCheck = {
-        path, ok: false, kind: 'occupied', suggestion: null, freeBytes: null, requiredBytes: state?.requiredBytes ?? 0,
-        problem: { code: 'E_NOT_DIRECTORY', message: `没能检查这个位置：${message(error)}` },
+  const validate = useCallback(
+    async (purpose: 'install' | 'data', path: string): Promise<void> => {
+      const seq = ++checkSeq.current
+      setChecking(true)
+      try {
+        const result = await call<SetupLocationCheck>(Ipc.installValidate, { path, purpose })
+        if (seq !== checkSeq.current) return
+        if (purpose === 'install') setLocation(result)
+        else setDataLocation(result)
+      } catch (error) {
+        if (seq !== checkSeq.current) return
+        const failed: SetupLocationCheck = {
+          path,
+          ok: false,
+          kind: 'occupied',
+          suggestion: null,
+          freeBytes: null,
+          requiredBytes: state?.requiredBytes ?? 0,
+          problem: { code: 'E_NOT_DIRECTORY', message: `没能检查这个位置：${message(error)}` },
+        }
+        if (purpose === 'install') setLocation(failed)
+        else setDataLocation(failed)
+      } finally {
+        if (seq === checkSeq.current) setChecking(false)
       }
-      if (purpose === 'install') setLocation(failed)
-      else setDataLocation(failed)
-    } finally {
-      if (seq === checkSeq.current) setChecking(false)
-    }
-  }, [state?.requiredBytes])
+    },
+    [state?.requiredBytes],
+  )
 
-  const choose = useCallback(async (purpose: 'install' | 'data' | 'legacy'): Promise<void> => {
-    const defaultPath = purpose === 'install' ? location?.path : purpose === 'data' ? dataLocation?.path : undefined
-    let choice: SetupFolderChoice
-    try {
-      choice = await call<SetupFolderChoice>(Ipc.installChooseFolder, defaultPath ? { purpose, defaultPath } : { purpose })
-    } catch {
-      return
-    }
-    if (choice.canceled || !choice.path) return
-    if (purpose === 'legacy') {
-      setPickedLegacy(choice.legacy)
-      setLegacyNotFound(!choice.legacy)
-      if (choice.legacy) setLegacyMode('reuse')
-      return
-    }
-    checkSeq.current += 1
-    if (choice.check) {
-      if (purpose === 'install') setLocation(choice.check)
-      else setDataLocation(choice.check)
-    } else {
-      void validate(purpose, choice.path)
-    }
-  }, [location?.path, dataLocation?.path, validate])
+  const choose = useCallback(
+    async (purpose: 'install' | 'data' | 'legacy'): Promise<void> => {
+      const defaultPath = purpose === 'install' ? location?.path : purpose === 'data' ? dataLocation?.path : undefined
+      let choice: SetupFolderChoice
+      try {
+        choice = await call<SetupFolderChoice>(Ipc.installChooseFolder, defaultPath ? { purpose, defaultPath } : { purpose })
+      } catch {
+        return
+      }
+      if (choice.canceled || !choice.path) return
+      if (purpose === 'legacy') {
+        setPickedLegacy(choice.legacy)
+        setLegacyNotFound(!choice.legacy)
+        if (choice.legacy) setLegacyMode('reuse')
+        return
+      }
+      checkSeq.current += 1
+      if (choice.check) {
+        if (purpose === 'install') setLocation(choice.check)
+        else setDataLocation(choice.check)
+      } else {
+        void validate(purpose, choice.path)
+      }
+    },
+    [location?.path, dataLocation?.path, validate],
+  )
 
   const request = (allowDowngrade: boolean): SetupStartInput => ({
     root: location?.path ?? state?.location.path ?? '',
@@ -201,9 +225,15 @@ export function useInstall(): SetupController {
     legacyMode,
     setLegacyMode,
     chooseLocation: () => void choose('install'),
-    selectLocation: (path) => { setLocation(null); void validate('install', path) },
+    selectLocation: (path) => {
+      setLocation(null)
+      void validate('install', path)
+    },
     chooseDataLocation: () => void choose('data'),
-    selectDataLocation: (path) => { setDataLocation(null); void validate('data', path) },
+    selectDataLocation: (path) => {
+      setDataLocation(null)
+      void validate('data', path)
+    },
     chooseLegacy: () => void choose('legacy'),
     legacyNotFound,
     downgradeAccepted,

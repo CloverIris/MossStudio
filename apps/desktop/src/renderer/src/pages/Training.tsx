@@ -27,10 +27,7 @@ export function TrainingPage(): React.JSX.Element {
                 className="w-[200px]"
                 value={hostId}
                 onValueChange={setHostId}
-                options={[
-                  { value: 'local', label: '本机' },
-                  ...sshHosts.map((item) => ({ value: item.id, label: item.name })),
-                ]}
+                options={[{ value: 'local', label: '本机' }, ...sshHosts.map((item) => ({ value: item.id, label: item.name }))]}
               />
             ) : null}
             <Button tone="primary" size="md" onClick={() => openWindow('trainer')}>
@@ -45,7 +42,9 @@ export function TrainingPage(): React.JSX.Element {
         <p role="status" className="rounded-lg bg-warn-soft px-3.5 py-2.5 text-ui text-warn">
           这台电脑没有检测到 NVIDIA 显卡，训练需要 NVIDIA 显卡才能运行。
           {remoteHostsEnabled
-            ? sshHosts.length ? '可以在右上角把训练位置换成一台远程主机。' : '可以在 设置 › 设备与引擎 添加一台带 NVIDIA 显卡的远程主机。'
+            ? sshHosts.length
+              ? '可以在右上角把训练位置换成一台远程主机。'
+              : '可以在 设置 › 设备与引擎 添加一台带 NVIDIA 显卡的远程主机。'
             : ''}
         </p>
       ) : null}

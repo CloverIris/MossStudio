@@ -67,7 +67,9 @@ export function PerfMonitor(): React.JSX.Element {
   const utilization = gpu?.utilizationPercent
   const summary = gpu
     ? `GPU ${utilization ?? '—'}%，显存 ${gib(gpu.memoryUsedBytes)} / ${gib(gpu.memoryTotalBytes)} GB，${tasks} 个任务`
-    : telemetry?.status === 'unavailable' ? '未检测到 NVIDIA GPU' : '正在读取 GPU 状态'
+    : telemetry?.status === 'unavailable'
+      ? '未检测到 NVIDIA GPU'
+      : '正在读取 GPU 状态'
 
   return (
     <div ref={root} className="no-drag relative">
@@ -85,22 +87,45 @@ export function PerfMonitor(): React.JSX.Element {
       >
         {gpu ? (
           <>
-            <span className="flex items-center gap-1.5"><span className="text-ink-2">GPU</span><Meter value={utilization ?? 0} /><span className="w-8 text-right">{utilization ?? '—'}%</span></span>
-            <span className="flex items-center gap-1.5"><span className="text-ink-2">显存</span><Meter value={ratio(gpu.memoryUsedBytes, gpu.memoryTotalBytes)} /><span>{gib(gpu.memoryUsedBytes)} / {gib(gpu.memoryTotalBytes)} GB</span></span>
+            <span className="flex items-center gap-1.5">
+              <span className="text-ink-2">GPU</span>
+              <Meter value={utilization ?? 0} />
+              <span className="w-8 text-right">{utilization ?? '—'}%</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="text-ink-2">显存</span>
+              <Meter value={ratio(gpu.memoryUsedBytes, gpu.memoryTotalBytes)} />
+              <span>
+                {gib(gpu.memoryUsedBytes)} / {gib(gpu.memoryTotalBytes)} GB
+              </span>
+            </span>
           </>
         ) : (
           <span className="text-ink-2">{summary}</span>
         )}
-        <span className="flex items-center gap-1.5"><span className="text-ink-2">任务</span><span>{tasks}</span></span>
+        <span className="flex items-center gap-1.5">
+          <span className="text-ink-2">任务</span>
+          <span>{tasks}</span>
+        </span>
       </button>
 
       {open ? (
-        <div role="dialog" aria-label="GPU 状态" className="absolute right-0 top-[calc(100%+6px)] z-50 w-[360px] rounded-xl bg-raised p-2 shadow-float">
+        <div
+          role="dialog"
+          aria-label="GPU 状态"
+          className="absolute right-0 top-[calc(100%+6px)] z-50 w-[360px] rounded-xl bg-raised p-2 shadow-float"
+        >
           <div className="flex items-baseline justify-between px-2 pb-2 pt-1">
             <span className="text-ui font-semibold">GPU</span>
-            <span className="text-caption text-ink-2">{telemetry ? `更新于 ${new Date(telemetry.sampledAt).toLocaleTimeString('zh-CN', { hour12: false })}` : '等待检测'}</span>
+            <span className="text-caption text-ink-2">
+              {telemetry ? `更新于 ${new Date(telemetry.sampledAt).toLocaleTimeString('zh-CN', { hour12: false })}` : '等待检测'}
+            </span>
           </div>
-          {telemetry?.error ? <p role="status" className="px-2 pb-2 text-caption text-warn">{telemetry.error}</p> : null}
+          {telemetry?.error ? (
+            <p role="status" className="px-2 pb-2 text-caption text-warn">
+              {telemetry.error}
+            </p>
+          ) : null}
           <div className="flex flex-col gap-0.5">
             {(telemetry?.devices ?? []).map((device) => (
               <div key={device.uuid} className={cn('flex flex-col gap-2 rounded-lg px-2.5 py-2.5', device.uuid === gpu?.uuid && 'bg-well')}>
@@ -110,13 +135,24 @@ export function PerfMonitor(): React.JSX.Element {
                 </div>
                 <div className="tabular grid grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 text-caption">
                   <span className="text-ink-2">负载</span>
-                  <span className="h-1 overflow-hidden rounded-full bg-well-strong"><span className="block h-full rounded-full bg-ink" style={{ width: `${device.utilizationPercent ?? 0}%` }} /></span>
+                  <span className="h-1 overflow-hidden rounded-full bg-well-strong">
+                    <span className="block h-full rounded-full bg-ink" style={{ width: `${device.utilizationPercent ?? 0}%` }} />
+                  </span>
                   <span className="text-right">{device.utilizationPercent ?? '—'}%</span>
                   <span className="text-ink-2">显存</span>
-                  <span className="h-1 overflow-hidden rounded-full bg-well-strong"><span className="block h-full rounded-full bg-ink" style={{ width: `${ratio(device.memoryUsedBytes, device.memoryTotalBytes)}%` }} /></span>
-                  <span className="text-right">{gib(device.memoryUsedBytes)} / {gib(device.memoryTotalBytes)} GB</span>
+                  <span className="h-1 overflow-hidden rounded-full bg-well-strong">
+                    <span
+                      className="block h-full rounded-full bg-ink"
+                      style={{ width: `${ratio(device.memoryUsedBytes, device.memoryTotalBytes)}%` }}
+                    />
+                  </span>
+                  <span className="text-right">
+                    {gib(device.memoryUsedBytes)} / {gib(device.memoryTotalBytes)} GB
+                  </span>
                 </div>
-                <span className="text-caption text-ink-2">{device.runningTasks} 个运行中 · {device.queuedTasks} 个排队</span>
+                <span className="text-caption text-ink-2">
+                  {device.runningTasks} 个运行中 · {device.queuedTasks} 个排队
+                </span>
               </div>
             ))}
             {telemetry && telemetry.devices.length === 0 ? (
@@ -170,7 +206,9 @@ export function TitlebarPortal({ children }: { children: ReactNode }): React.JSX
   if (!slot) return null
   return createPortal(
     <>
-      <span aria-hidden="true" className="px-1 text-ui text-ink-3">/</span>
+      <span aria-hidden="true" className="px-1 text-ui text-ink-3">
+        /
+      </span>
       {children}
     </>,
     slot,

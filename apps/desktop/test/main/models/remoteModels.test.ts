@@ -19,14 +19,37 @@ const snap = (repo: string, sha = 'a'.repeat(40)): string => `${ROOT}/hf/hub/mod
 
 function model(patch: Partial<ModelEntry>): ModelEntry {
   return {
-    id: 'm', name: 'm', provider: 'hf', repo: 'org/m', revision: 'main', role: 'dit', format: 'diffusers',
-    precision: 'bf16', sizeBytes: 0, license: 'x', tags: [], installed: false, installedBytes: 0, ...patch,
+    id: 'm',
+    name: 'm',
+    provider: 'hf',
+    repo: 'org/m',
+    revision: 'main',
+    role: 'dit',
+    format: 'diffusers',
+    precision: 'bf16',
+    sizeBytes: 0,
+    license: 'x',
+    tags: [],
+    installed: false,
+    installedBytes: 0,
+    ...patch,
   }
 }
 function adapter(patch: Partial<AdapterEntry>): AdapterEntry {
   return {
-    id: 'a', name: 'a', provider: 'hf', repo: 'org/lora', revision: 'main', kind: 'lora', license: 'x',
-    files: ['a.safetensors'], sizeBytes: 0, tags: [], installed: false, installedBytes: 0, ...patch,
+    id: 'a',
+    name: 'a',
+    provider: 'hf',
+    repo: 'org/lora',
+    revision: 'main',
+    kind: 'lora',
+    license: 'x',
+    files: ['a.safetensors'],
+    sizeBytes: 0,
+    tags: [],
+    installed: false,
+    installedBytes: 0,
+    ...patch,
   }
 }
 function catalog(models: ModelEntry[], adapters: AdapterEntry[] = []): Catalog {
@@ -67,7 +90,11 @@ describe('scanRemoteModels', () => {
     const s = snap('org/dit')
     remoteFiles([`${s}/transformer/config.json`, `${s}/transformer/m-00001-of-00002.safetensors`])
     expect((await scanRemoteModels(host, catalog([dit]))).models).toEqual([{ id: 'dit', installed: false, path: undefined }])
-    remoteFiles([`${s}/transformer/config.json`, `${s}/transformer/m-00001-of-00002.safetensors`, `${s}/transformer/m-00002-of-00002.safetensors`])
+    remoteFiles([
+      `${s}/transformer/config.json`,
+      `${s}/transformer/m-00001-of-00002.safetensors`,
+      `${s}/transformer/m-00002-of-00002.safetensors`,
+    ])
     expect((await scanRemoteModels(host, catalog([dit]))).models).toEqual([{ id: 'dit', installed: true, path: s }])
     remoteFiles([`${s}/transformer/m.safetensors`])
     expect((await scanRemoteModels(host, catalog([dit]))).models[0]!.installed).toBe(false)
@@ -84,7 +111,13 @@ describe('scanRemoteModels', () => {
   })
 
   it('a text encoder needs a tokenizer config and tokenizer.json or vocab+merges', async () => {
-    const te = model({ id: 'te', repo: 'org/te', role: 'text_encoder', subfolder: 'text_encoder', files: ['text_encoder/*', 'tokenizer/*'] })
+    const te = model({
+      id: 'te',
+      repo: 'org/te',
+      role: 'text_encoder',
+      subfolder: 'text_encoder',
+      files: ['text_encoder/*', 'tokenizer/*'],
+    })
     const s = snap('org/te')
     const base = [`${s}/text_encoder/config.json`, `${s}/text_encoder/model.safetensors`, `${s}/tokenizer/tokenizer_config.json`]
     remoteFiles(base)
@@ -110,7 +143,8 @@ describe('scanRemoteModels', () => {
     remoteFiles([`${snap('org/s')}/model_index.json`, `${snap('org/f')}/transformer/config.json`])
     expect((await scanRemoteModels(host, catalog([support, full]))).models.map((m) => m.installed)).toEqual([false, false])
     remoteFiles([
-      `${snap('org/s')}/model_index.json`, `${snap('org/s')}/scheduler/scheduler_config.json`,
+      `${snap('org/s')}/model_index.json`,
+      `${snap('org/s')}/scheduler/scheduler_config.json`,
       `${snap('org/f')}/model_index.json`,
     ])
     expect((await scanRemoteModels(host, catalog([support, full]))).models.map((m) => m.installed)).toEqual([true, true])
@@ -146,7 +180,12 @@ describe('prepareRemote*', () => {
   it('queues the default SFT model with a stable id', async () => {
     await prepareRemoteDefaultModel(host)
     expect(startRemoteDownload).toHaveBeenCalledWith(host, {
-      id: 'default-sft', name: '默认 MOSS-Image SFT', repo: 'OpenMOSS-Team/MOSS-Image-SFT', revision: 'main', files: [], sizeBytes: 0,
+      id: 'default-sft',
+      name: '默认 MOSS-Image SFT',
+      repo: 'OpenMOSS-Team/MOSS-Image-SFT',
+      revision: 'main',
+      files: [],
+      sizeBytes: 0,
     })
   })
 
@@ -179,8 +218,10 @@ describe('deleteRemoteModels', () => {
   const dit = model({ id: 'dit', repo: 'OpenMOSS-Team/MOSS-Image-SFT', subfolder: 'transformer', files: ['transformer/*'] })
   const vae = model({ id: 'vae', role: 'vae', repo: 'OpenMOSS-Team/MOSS-Image-SFT', subfolder: 'vae', files: ['vae/*'] })
   const files = [
-    `${sft}/transformer/config.json`, `${sft}/transformer/diffusion_pytorch_model.safetensors`,
-    `${sft}/vae/config.json`, `${sft}/vae/diffusion_pytorch_model.safetensors`,
+    `${sft}/transformer/config.json`,
+    `${sft}/transformer/diffusion_pytorch_model.safetensors`,
+    `${sft}/vae/config.json`,
+    `${sft}/vae/diffusion_pytorch_model.safetensors`,
   ]
 
   it('deletes only the removed part of a shared snapshot', async () => {

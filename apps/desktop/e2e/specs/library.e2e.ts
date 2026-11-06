@@ -14,11 +14,13 @@ describe('library', () => {
     const page = await app.open({ scenario: 'ready', route: '/library', theme: 'light', defer: true })
     await page.evaluate(() => {
       const { galleryItemFixture } = window.__mock.fixtures
-      window.__mock.state.gallery = [0, 1, 2, 3].map((index) => galleryItemFixture(index, {
-        prompt: ['海边的灯塔', '雨夜街道', '森林小径', '雪山湖泊'][index],
-        seed: 1000 + index,
-        projectId: index < 2 ? 'project-1' : undefined,
-      }))
+      window.__mock.state.gallery = [0, 1, 2, 3].map((index) =>
+        galleryItemFixture(index, {
+          prompt: ['海边的灯塔', '雨夜街道', '森林小径', '雪山湖泊'][index],
+          seed: 1000 + index,
+          projectId: index < 2 ? 'project-1' : undefined,
+        }),
+      )
       window.__mock.state.projects = [window.__mock.fixtures.projectFixture({ id: 'project-1', name: '风景' })]
     })
     await app.start()

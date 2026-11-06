@@ -41,8 +41,7 @@ export interface StudioReuseRequest {
 
 const positiveInt = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined
-const finite = (value: unknown): number | undefined =>
-  typeof value === 'number' && Number.isFinite(value) ? value : undefined
+const finite = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined)
 const text = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() ? value : undefined)
 
 function compact<T extends object>(value: T): T {
@@ -50,10 +49,7 @@ function compact<T extends object>(value: T): T {
 }
 
 /** Builds the handoff for one image. Generation details win over loose metadata. */
-export function buildReuseRequest(
-  detail: GalleryDetail,
-  options: { id?: string; now?: Date; useAs?: 'start' } = {},
-): StudioReuseRequest {
+export function buildReuseRequest(detail: GalleryDetail, options: { id?: string; now?: Date; useAs?: 'start' } = {}): StudioReuseRequest {
   const generation: GalleryGeneration & { baseWidth?: number; baseHeight?: number } = detail.generation ?? {}
   const seed = generation.seed ?? (typeof detail.seed === 'number' ? detail.seed : undefined)
   // A 高清修复 picture records its output size as width/height and the first pass as base*.
@@ -84,10 +80,7 @@ export function buildReuseRequest(
  * (a start picture is meant to be varied), the description is; the canvas is
  * the picture's own size, without another 高清修复 pass on top.
  */
-export function buildStartPictureRequest(
-  detail: GalleryDetail,
-  options: { id?: string; now?: Date } = {},
-): StudioReuseRequest {
+export function buildStartPictureRequest(detail: GalleryDetail, options: { id?: string; now?: Date } = {}): StudioReuseRequest {
   const full = buildReuseRequest(detail, { ...options, useAs: 'start' })
   delete full.seed
   const width = positiveInt(detail.generation?.width ?? detail.width)
@@ -116,7 +109,11 @@ export function isStudioReuseRequest(value: unknown): value is StudioReuseReques
   if (typeof request['sourcePath'] !== 'string') return false
   if (typeof request['prompt'] !== 'string') return false
   if (request['useAs'] !== undefined && request['useAs'] !== 'start') return false
-  if (request['sampling'] !== undefined && (!request['sampling'] || typeof request['sampling'] !== 'object' || Array.isArray(request['sampling']))) return false
+  if (
+    request['sampling'] !== undefined &&
+    (!request['sampling'] || typeof request['sampling'] !== 'object' || Array.isArray(request['sampling']))
+  )
+    return false
   for (const key of ['width', 'height', 'seed', 'steps', 'cfg'] as const) {
     if (request[key] !== undefined && finite(request[key]) === undefined) return false
   }

@@ -99,7 +99,10 @@ describe('downloadFile', () => {
 
   it('a complete partial file is verified without a request', async () => {
     let count = 0
-    serve((_, res) => { count++; send(res, payload) })
+    serve((_, res) => {
+      count++
+      send(res, payload)
+    })
     await writeFile(join(tempDir(), 'blob.part'), payload)
     await downloadFile(base, join(tempDir(), 'blob'), file, signal(), noop)
     expect(await readFile(join(tempDir(), 'blob'))).toEqual(payload)
@@ -121,20 +124,29 @@ describe('downloadFile', () => {
 
   it('an already verified destination is reported done without touching the network', async () => {
     let count = 0
-    serve((_, res) => { count++; send(res, payload) })
+    serve((_, res) => {
+      count++
+      send(res, payload)
+    })
     const target = join(tempDir(), 'blob')
     await writeFile(target, payload)
     const events: Array<[number, boolean]> = []
     await downloadFile(base, target, file, signal(), (bytes, verifying) => events.push([bytes, verifying]))
     expect(count).toBe(0)
-    expect(events).toEqual([[payload.length, true], [payload.length, false]])
+    expect(events).toEqual([
+      [payload.length, true],
+      [payload.length, false],
+    ])
   })
 
   it('corrupt same-size blob is repaired; shared writers download only once', async () => {
     const target = join(tempDir(), 'blob')
     await writeFile(target, Buffer.alloc(payload.length))
     let count = 0
-    serve((_, res) => { count++; send(res, payload) })
+    serve((_, res) => {
+      count++
+      send(res, payload)
+    })
     await Promise.all([1, 2, 3].map(() => downloadFile(base, target, file, signal(), noop)))
     expect(count).toBe(1)
     expect(await readFile(target)).toEqual(payload)
@@ -149,9 +161,7 @@ describe('downloadFile', () => {
 
   it('incorrect Content-Range is rejected', async () => {
     await writeFile(join(tempDir(), 'blob.part'), payload.subarray(0, 8))
-    serve((_, res) =>
-      send(res, payload.subarray(8), 206, { 'content-range': `bytes 0-${payload.length - 1}/${payload.length}` }),
-    )
+    serve((_, res) => send(res, payload.subarray(8), 206, { 'content-range': `bytes 0-${payload.length - 1}/${payload.length}` }))
     await expect(downloadFile(base, join(tempDir(), 'blob'), file, signal(), noop)).rejects.toThrow(/续传范围/)
   })
 
@@ -210,7 +220,10 @@ describe('downloadFile', () => {
 
   it('an already-aborted signal fails before any request', async () => {
     let count = 0
-    serve((_, res) => { count++; send(res, payload) })
+    serve((_, res) => {
+      count++
+      send(res, payload)
+    })
     const controller = new AbortController()
     controller.abort()
     await expect(downloadFile(base, join(tempDir(), 'blob'), file, controller.signal, noop)).rejects.toThrow()
@@ -259,8 +272,7 @@ describe('resolveFiles', () => {
     serve((req, res) => {
       paths.push(req.url!)
       if (req.url!.includes('/revision/')) return send(res, JSON.stringify({ sha }))
-      if (req.url === '/page2')
-        return send(res, JSON.stringify([{ type: 'file', path: 'two.bin', size: 2, oid: '2'.repeat(40) }]))
+      if (req.url === '/page2') return send(res, JSON.stringify([{ type: 'file', path: 'two.bin', size: 2, oid: '2'.repeat(40) }]))
       send(
         res,
         JSON.stringify([
@@ -335,9 +347,7 @@ describe('resolveFiles', () => {
   })
 
   it('rejects a pagination loop', async () => {
-    const transport = tree([], (url) =>
-      url.includes('/tree/') ? new Response('[]', { headers: { link: `<${url}>; rel="next"` } }) : null,
-    )
+    const transport = tree([], (url) => (url.includes('/tree/') ? new Response('[]', { headers: { link: `<${url}>; rel="next"` } }) : null))
     await expect(resolveFiles('https://hf.example', 'a/b', 'main', undefined, transport)).rejects.toThrow(/分页无效/)
   })
 })

@@ -91,7 +91,8 @@ async function enrich(items: readonly GalleryItem[]): Promise<void> {
         enriched.add(item)
         if (!sidecar) return
         const generation = generationFromSidecar(sidecar)
-        const prompt = generation?.description ?? (typeof sidecar['prompt'] === 'string' ? describePrompt(sidecar['prompt']).description : '')
+        const prompt =
+          generation?.description ?? (typeof sidecar['prompt'] === 'string' ? describePrompt(sidecar['prompt']).description : '')
         if (prompt && !item.prompt) item.prompt = prompt
         if (generation?.projectId && !item.projectId) item.projectId = generation.projectId
         if (generation?.jobId && !item.jobId) item.jobId = generation.jobId
@@ -122,13 +123,7 @@ function idFor(path: string): string {
   return createHash('sha1').update(path).digest('hex').slice(0, 16)
 }
 
-async function walk(
-  root: string,
-  dir: string,
-  depth: number,
-  out: GalleryItem[],
-  jobs: Map<string, JobOutput>,
-): Promise<void> {
+async function walk(root: string, dir: string, depth: number, out: GalleryItem[], jobs: Map<string, JobOutput>): Promise<void> {
   if (depth > 5) return
   let entries
   try {
@@ -427,12 +422,7 @@ export async function readGalleryFile(file: string): Promise<{ base64: string; m
   if (!roots.some((root) => isInside(root, file))) throw new Error('文件不在画廊目录中')
   const info = await stat(file)
   if (info.size > 32 * 1024 * 1024) throw new Error('图片超过 32 MB')
-  const mime =
-    extname(file).toLowerCase() === '.png'
-      ? 'image/png'
-      : extname(file).toLowerCase() === '.webp'
-        ? 'image/webp'
-        : 'image/jpeg'
+  const mime = extname(file).toLowerCase() === '.png' ? 'image/png' : extname(file).toLowerCase() === '.webp' ? 'image/webp' : 'image/jpeg'
   return { base64: (await readFile(file)).toString('base64'), mime }
 }
 

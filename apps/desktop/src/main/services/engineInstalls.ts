@@ -1,12 +1,6 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import {
-  chooseEnginePackages,
-  engineOsOf,
-  installedAsRelease,
-  type EngineMachine,
-  type EngineMachineGpu,
-} from '@shared/engineChoice'
+import { chooseEnginePackages, engineOsOf, installedAsRelease, type EngineMachine, type EngineMachineGpu } from '@shared/engineChoice'
 import { compareEngineTags, parseEngineStamp } from '@shared/engineUpdate'
 import { allEnginePackages, enginePackageId, isCliEngine, type EnginePackage, type EnginePackageKind } from '@shared/enginePackages'
 import type { GpuInventoryDevice, Settings } from '@shared/types'
@@ -69,8 +63,23 @@ export function listInstalledEnginePackages(root = paths.mossinfer()): Installed
     const binaryPath = engineBinaryPath(installDir, stamp.package.kind)
     if (!existsSync(binaryPath)) return []
     let installedAt = 0
-    try { installedAt = statSync(installDir).mtimeMs } catch { /* just listed */ }
-    return [{ id: name, packageId: stamp.packageId, package: stamp.package, channel: stamp.channel, tag: stamp.tag, installDir, binaryPath, installedAt }]
+    try {
+      installedAt = statSync(installDir).mtimeMs
+    } catch {
+      /* just listed */
+    }
+    return [
+      {
+        id: name,
+        packageId: stamp.packageId,
+        package: stamp.package,
+        channel: stamp.channel,
+        tag: stamp.tag,
+        installDir,
+        binaryPath,
+        installedAt,
+      },
+    ]
   })
   return installed.sort(newerFirst)
 }
@@ -146,12 +155,12 @@ export function resolveDeviceEngineFrom(deviceUuid: string, input: ResolveInput)
   const newest = newestPerPackage(input.installed)
   const pinned = input.settings.mossInferServerPath
   if (pinned && exists(pinned) && gpu.vendor === 'nvidia') {
-    const managed = isInside(input.root, pinned)
-      ? input.installed.find((item) => resolve(item.binaryPath) === resolve(pinned))
-      : undefined
+    const managed = isInside(input.root, pinned) ? input.installed.find((item) => resolve(item.binaryPath) === resolve(pinned)) : undefined
     const pinnedPackage = managed?.package
-    const runs = !pinnedPackage || chooseEnginePackages(input.machine, installedAsRelease(os, [pinnedPackage]))
-      .choices.find((choice) => choice.gpuId === gpu.id)?.package
+    const runs =
+      !pinnedPackage ||
+      chooseEnginePackages(input.machine, installedAsRelease(os, [pinnedPackage])).choices.find((choice) => choice.gpuId === gpu.id)
+        ?.package
     if (runs) {
       return {
         deviceUuid,
@@ -207,11 +216,12 @@ export function currentEngineMachine(): { machine: EngineMachine; rocmLibDir?: s
   const inventory = cachedGpuInventory()?.devices ?? []
   if (!stored) return { machine: machineFromInventory(process.platform, inventory) }
   // The live driver and compute capability win over the stored probe; NVIDIA GPUs plugged in after it still count.
-  const live = withLiveNvidia(stored.machine, inventory.filter((device) => (device.vendor ?? 'nvidia') === 'nvidia'))
+  const live = withLiveNvidia(
+    stored.machine,
+    inventory.filter((device) => (device.vendor ?? 'nvidia') === 'nvidia'),
+  )
   const missing = inventory.filter((device) => (device.vendor ?? 'nvidia') === 'nvidia' && !live.gpus.some((gpu) => gpu.id === device.uuid))
-  const machine = missing.length
-    ? { ...live, gpus: [...live.gpus, ...machineFromInventory(process.platform, missing).gpus] }
-    : live
+  const machine = missing.length ? { ...live, gpus: [...live.gpus, ...machineFromInventory(process.platform, missing).gpus] } : live
   return { machine, ...(stored.rocmLibDir ? { rocmLibDir: stored.rocmLibDir } : {}) }
 }
 
@@ -274,7 +284,9 @@ export function localEngineKinds(): EnginePackageKind[] {
   if (resolved.length) return [...new Set(resolved)]
   const { machine } = currentEngineMachine()
   if (machine.os === 'macos' || machine.gpus.length === 0) return []
-  const plan = chooseEnginePackages(machine, installedAsRelease(machine.os, allEnginePackages(machine.os)), { overrides: getSettings().engineDeviceOverrides })
+  const plan = chooseEnginePackages(machine, installedAsRelease(machine.os, allEnginePackages(machine.os)), {
+    overrides: getSettings().engineDeviceOverrides,
+  })
   return [...new Set(plan.packages.map((item) => item.package.kind))]
 }
 
@@ -288,8 +300,10 @@ export function engineChoiceChanged(
   after: Pick<Settings, 'engineDeviceOverrides' | 'mossInferServerPath'>,
 ): boolean {
   const overrides = (value: Record<string, string> | undefined) => JSON.stringify(Object.entries(value ?? {}).sort())
-  return overrides(before.engineDeviceOverrides) !== overrides(after.engineDeviceOverrides)
-    || (before.mossInferServerPath ?? null) !== (after.mossInferServerPath ?? null)
+  return (
+    overrides(before.engineDeviceOverrides) !== overrides(after.engineDeviceOverrides) ||
+    (before.mossInferServerPath ?? null) !== (after.mossInferServerPath ?? null)
+  )
 }
 
 /** After a settings update: free the moss-servers of GPUs whose engine choice just changed. True when it did. */
@@ -301,4 +315,3 @@ export function releaseAfterSettingsChange(
   void releaseStaleMossInferRuntimes().catch(() => undefined)
   return true
 }
-

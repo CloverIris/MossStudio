@@ -129,7 +129,13 @@ export function feedFixture(patch: Partial<UpdateFeed> & { version: string }): U
 }
 
 export const thisPlatform = (): PlatformKey =>
-  process.platform === 'win32' ? 'win32-x64' : process.platform === 'darwin' ? (process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64') : 'linux-x64'
+  process.platform === 'win32'
+    ? 'win32-x64'
+    : process.platform === 'darwin'
+      ? process.arch === 'arm64'
+        ? 'darwin-arm64'
+        : 'darwin-x64'
+      : 'linux-x64'
 
 export interface Hit {
   path: string
@@ -197,10 +203,11 @@ export async function startFileServer(routes: Record<string, Route> = {}): Promi
     url: (path) => `http://127.0.0.1:${port}${path}`,
     routes: table,
     hits,
-    close: () => new Promise<void>((resolve) => {
-      server.closeAllConnections()
-      server.close(() => resolve())
-    }),
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections()
+        server.close(() => resolve())
+      }),
   }
 }
 
@@ -212,7 +219,9 @@ export function fakeSpawn(options: { error?: Error } = {}) {
     calls.push({ command, args, options: spawnOptions })
     const child = Object.assign(new EventEmitter(), {
       unrefCalled: false,
-      unref(this: { unrefCalled: boolean }) { this.unrefCalled = true },
+      unref(this: { unrefCalled: boolean }) {
+        this.unrefCalled = true
+      },
     })
     children.push(child)
     setImmediate(() => (options.error ? child.emit('error', options.error) : child.emit('spawn')))

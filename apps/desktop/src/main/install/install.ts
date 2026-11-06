@@ -219,7 +219,8 @@ async function installWindowsLinux(request: InstallRequest, deps: InstallDeps): 
   const recordPath = join(root, RECORD_FILE)
   const existing = readInstallRecord(recordPath)
   if (isPortableRoot(root)) throw codedError('E_PORTABLE_ROOT', '这是便携版 MossStudio 的文件夹，不能把安装版装进去。')
-  if (!existing && existsSync(recordPath)) throw codedError('E_NOT_EMPTY', `${recordPath} 不是 MossStudio 的安装记录，不会覆盖它。请换一个位置。`)
+  if (!existing && existsSync(recordPath))
+    throw codedError('E_NOT_EMPTY', `${recordPath} 不是 MossStudio 的安装记录，不会覆盖它。请换一个位置。`)
   const entries = await listTree(appSource)
   const totalBytes = treeBytes(entries)
 
@@ -234,9 +235,20 @@ async function installWindowsLinux(request: InstallRequest, deps: InstallDeps): 
     }
 
     await fsp.rm(partial, { recursive: true, force: true })
-    await copyTree(appSource, partial, (copy) => {
-      deps.progress({ phase: 'copy', percent: 2 + Math.floor((copy.copiedBytes / Math.max(1, totalBytes)) * 88), copiedBytes: copy.copiedBytes, totalBytes, file: copy.file })
-    }, entries)
+    await copyTree(
+      appSource,
+      partial,
+      (copy) => {
+        deps.progress({
+          phase: 'copy',
+          percent: 2 + Math.floor((copy.copiedBytes / Math.max(1, totalBytes)) * 88),
+          copiedBytes: copy.copiedBytes,
+          totalBytes,
+          file: copy.file,
+        })
+      },
+      entries,
+    )
     const replaced = `${appTarget}.replaced-${tag}`
     swapIn(partial, appTarget, replaced)
     await fsp.rm(replaced, { recursive: true, force: true, maxRetries: 2 }).catch(() => deps.log(`could not remove ${replaced}`))
@@ -280,7 +292,17 @@ async function installWindowsLinux(request: InstallRequest, deps: InstallDeps): 
     }
     for (const warning of warnings) deps.log(`warning: ${warning}`)
     deps.progress({ phase: 'done', percent: 100, copiedBytes: totalBytes, totalBytes })
-    return { root, dataRoot, version, previous: record.previous ?? null, launcher, appPath: appTarget, recordPath, locatorPath: locator, warnings }
+    return {
+      root,
+      dataRoot,
+      version,
+      previous: record.previous ?? null,
+      launcher,
+      appPath: appTarget,
+      recordPath,
+      locatorPath: locator,
+      warnings,
+    }
   } catch (error) {
     staged?.restore()
     await fsp.rm(partial, { recursive: true, force: true }).catch(() => undefined)
@@ -315,7 +337,12 @@ async function installMac(request: InstallRequest, deps: InstallDeps): Promise<I
     // in a loop.
     const code = await deps.spawnLines('/usr/bin/ditto', ['-V', '--noqtn', source, partial], () => {
       lines += 1
-      deps.progress({ phase: 'copy', percent: Math.min(90, 2 + Math.floor((lines / Math.max(1, entries.length)) * 88)), copiedBytes: 0, totalBytes })
+      deps.progress({
+        phase: 'copy',
+        percent: Math.min(90, 2 + Math.floor((lines / Math.max(1, entries.length)) * 88)),
+        copiedBytes: 0,
+        totalBytes,
+      })
     })
     if (code !== 0 || !existsSync(partial)) {
       await fsp.rm(partial, { recursive: true, force: true }).catch(() => undefined)
@@ -344,7 +371,17 @@ async function installMac(request: InstallRequest, deps: InstallDeps): Promise<I
   writeLocator(locator, locatorOf(record))
   deps.log(`wrote ${recordPath} (current=${record.current}) and ${locator}`)
   deps.progress({ phase: 'done', percent: 100, copiedBytes: 0, totalBytes: 0 })
-  return { root: folder, dataRoot, version, previous: record.previous ?? null, launcher: null, appPath: target, recordPath, locatorPath: locator, warnings: [] }
+  return {
+    root: folder,
+    dataRoot,
+    version,
+    previous: record.previous ?? null,
+    launcher: null,
+    appPath: target,
+    recordPath,
+    locatorPath: locator,
+    warnings: [],
+  }
 }
 
 /**

@@ -4,7 +4,11 @@ import { compareSemver } from '@shared/update'
 import { activeAnnouncements, channelsToRead, minimumVersionOf, selectUpdate } from '@main/update/select'
 import { feedFixture } from './helpers'
 
-const asset = (name: string, size: number): FeedAsset => ({ url: `https://github.com/CloverIris/MossStudio/releases/download/x/${name}`, sha256: 'b'.repeat(64), size })
+const asset = (name: string, size: number): FeedAsset => ({
+  url: `https://github.com/CloverIris/MossStudio/releases/download/x/${name}`,
+  sha256: 'b'.repeat(64),
+  size,
+})
 
 function feed(version: string, patch: Partial<UpdateFeed> = {}, deltas: Array<FeedAsset & { from: string }> = []): UpdateFeed {
   return feedFixture({
@@ -16,10 +20,20 @@ function feed(version: string, patch: Partial<UpdateFeed> = {}, deltas: Array<Fe
 
 describe('compareSemver', () => {
   it.each([
-    ['1.0.3', '1.0.2', 1], ['1.0.3', '1.0.3', 0], ['1.0.3', '1.1.0', -1], ['2.0.0', '1.99.99', 1], ['1.10.0', '1.9.0', 1],
-    ['1.1.0-beta.1', '1.1.0', -1], ['1.1.0', '1.1.0-rc.1', 1], ['1.1.0-beta.2', '1.1.0-beta.10', -1],
-    ['1.1.0-alpha', '1.1.0-beta', -1], ['1.1.0-beta', '1.1.0-beta.1', -1], ['1.1.0-1', '1.1.0-alpha', -1],
-    ['1.1.0-beta.1', '1.0.9', 1], ['v1.2.0', '1.2.0', 0], ['1.2.0+build.5', '1.2.0', 0],
+    ['1.0.3', '1.0.2', 1],
+    ['1.0.3', '1.0.3', 0],
+    ['1.0.3', '1.1.0', -1],
+    ['2.0.0', '1.99.99', 1],
+    ['1.10.0', '1.9.0', 1],
+    ['1.1.0-beta.1', '1.1.0', -1],
+    ['1.1.0', '1.1.0-rc.1', 1],
+    ['1.1.0-beta.2', '1.1.0-beta.10', -1],
+    ['1.1.0-alpha', '1.1.0-beta', -1],
+    ['1.1.0-beta', '1.1.0-beta.1', -1],
+    ['1.1.0-1', '1.1.0-alpha', -1],
+    ['1.1.0-beta.1', '1.0.9', 1],
+    ['v1.2.0', '1.2.0', 0],
+    ['1.2.0+build.5', '1.2.0', 0],
   ])('%s vs %s → %i', (a, b, expected) => {
     expect(Math.sign(compareSemver(a, b))).toBe(expected)
     expect(Math.sign(compareSemver(b, a))).toBe(expected === 0 ? 0 : -expected)
@@ -70,7 +84,12 @@ describe('selectUpdate', () => {
   })
 
   it('prefers a smaller delta from the running version', () => {
-    const selection = pick([feed('1.1.0', {}, [{ ...asset('d-old.zip', 50), from: '1.0.2' }, { ...asset('d.zip', 200), from: '1.0.3' }])])
+    const selection = pick([
+      feed('1.1.0', {}, [
+        { ...asset('d-old.zip', 50), from: '1.0.2' },
+        { ...asset('d.zip', 200), from: '1.0.3' },
+      ]),
+    ])
     expect(selection?.download).toMatchObject({ kind: 'delta', from: '1.0.3', asset: { size: 200 } })
     expect(selection?.files.size).toBe(10)
   })

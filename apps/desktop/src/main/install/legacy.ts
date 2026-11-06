@@ -11,7 +11,18 @@
  * with everything put back; the staging folder is deleted once the install succeeded.
  */
 // original-fs: the old program folder holds resources/app.asar, a file, not a folder.
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, promises as fsp, readdirSync, renameSync, rmSync, rmdirSync } from 'original-fs'
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  promises as fsp,
+  readdirSync,
+  renameSync,
+  rmSync,
+  rmdirSync,
+} from 'original-fs'
 import { join } from 'node:path'
 import { codedError } from '../lib/codedError'
 import { PORTABLE_FILE, RECORD_FILE, defaultInstallRoot, type HostInfo, type OsPlatform } from './layout'
@@ -48,11 +59,34 @@ export function isLegacyRoot(_platform: OsPlatform, dir: string): boolean {
  * 28–44), plus the old Setup. No globs: a user's own foo.dll or LICENSE.txt stays.
  */
 const FILE_NAMES = new Set([
-  'mossstudio.exe', 'mossstudio', 'mossstudio-setup.exe', 'version', 'license', 'licenses.chromium.html',
-  'chrome_100_percent.pak', 'chrome_200_percent.pak', 'resources.pak', 'icudtl.dat', 'snapshot_blob.bin', 'v8_context_snapshot.bin',
-  'd3dcompiler_47.dll', 'dxcompiler.dll', 'dxil.dll', 'ffmpeg.dll', 'libegl.dll', 'libglesv2.dll', 'vk_swiftshader.dll', 'vulkan-1.dll',
+  'mossstudio.exe',
+  'mossstudio',
+  'mossstudio-setup.exe',
+  'version',
+  'license',
+  'licenses.chromium.html',
+  'chrome_100_percent.pak',
+  'chrome_200_percent.pak',
+  'resources.pak',
+  'icudtl.dat',
+  'snapshot_blob.bin',
+  'v8_context_snapshot.bin',
+  'd3dcompiler_47.dll',
+  'dxcompiler.dll',
+  'dxil.dll',
+  'ffmpeg.dll',
+  'libegl.dll',
+  'libglesv2.dll',
+  'vk_swiftshader.dll',
+  'vulkan-1.dll',
   'vk_swiftshader_icd.json',
-  'chrome-sandbox', 'chrome_crashpad_handler', 'libegl.so', 'libglesv2.so', 'libffmpeg.so', 'libvk_swiftshader.so', 'libvulkan.so.1',
+  'chrome-sandbox',
+  'chrome_crashpad_handler',
+  'libegl.so',
+  'libglesv2.so',
+  'libffmpeg.so',
+  'libvk_swiftshader.so',
+  'libvulkan.so.1',
 ])
 const DIR_NAMES = new Set(['locales', 'resources', 'swiftshader'])
 /** Never touched by conversion, whatever their type. */
@@ -166,14 +200,16 @@ export async function directorySize(dir: string): Promise<number> {
     } catch {
       continue
     }
-    const stats = await Promise.all(names.map(async (name) => {
-      const path = join(current, name)
-      try {
-        return { path, stats: await fsp.lstat(path) }
-      } catch {
-        return null
-      }
-    }))
+    const stats = await Promise.all(
+      names.map(async (name) => {
+        const path = join(current, name)
+        try {
+          return { path, stats: await fsp.lstat(path) }
+        } catch {
+          return null
+        }
+      }),
+    )
     for (const item of stats) {
       if (!item) continue
       if (item.stats.isDirectory()) pending.push(item.path)

@@ -18,11 +18,7 @@ export async function checkBareMirror(mirror: string): Promise<MirrorHealth> {
   if (!existsSync(join(mirror, 'HEAD'))) {
     return { healthy: false, branches: 0, detail: '镜像缺少 HEAD' }
   }
-  const refs = await run(
-    gitBinary(),
-    ['-C', mirror, 'for-each-ref', '--format=%(refname)', 'refs/heads'],
-    { timeoutMs: 5000 },
-  )
+  const refs = await run(gitBinary(), ['-C', mirror, 'for-each-ref', '--format=%(refname)', 'refs/heads'], { timeoutMs: 5000 })
   if (refs.code !== 0) {
     return {
       healthy: false,
@@ -35,11 +31,7 @@ export async function checkBareMirror(mirror: string): Promise<MirrorHealth> {
     .map((line) => line.trim())
     .filter(Boolean)
   for (const branch of branches) {
-    const resolved = await run(
-      gitBinary(),
-      ['-C', mirror, 'rev-parse', '--verify', `${branch}^{commit}`],
-      { timeoutMs: 5000 },
-    )
+    const resolved = await run(gitBinary(), ['-C', mirror, 'rev-parse', '--verify', `${branch}^{commit}`], { timeoutMs: 5000 })
     if (resolved.code === 0 && firstLine(resolved.stdout)) {
       return { healthy: true, branches: branches.length }
     }

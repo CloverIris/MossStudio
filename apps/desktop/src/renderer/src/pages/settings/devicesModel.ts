@@ -1,4 +1,11 @@
-import { enginePackageId, enginePackageOptionLabel, enginePackageSummary, enginePackageTitle, isCliEngine, parseEnginePackageId } from '@shared/enginePackages'
+import {
+  enginePackageId,
+  enginePackageOptionLabel,
+  enginePackageSummary,
+  enginePackageTitle,
+  isCliEngine,
+  parseEnginePackageId,
+} from '@shared/enginePackages'
 import type {
   EnginePlanView,
   EngineReadiness,
@@ -43,14 +50,17 @@ export interface GpuEngineInfo {
 }
 
 export function gpuEngineInfo(readiness: EngineReadiness | null, plan: EnginePlanView | null): GpuEngineInfo[] {
-  const ids = new Set([...(readiness?.devices ?? []).map((device) => device.deviceUuid), ...(plan?.choices ?? []).map((choice) => choice.gpuId)])
+  const ids = new Set([
+    ...(readiness?.devices ?? []).map((device) => device.deviceUuid),
+    ...(plan?.choices ?? []).map((choice) => choice.gpuId),
+  ])
   return [...ids].map((deviceUuid) => {
     const used = readiness?.devices?.find((device) => device.deviceUuid === deviceUuid)
     const choice = plan?.choices.find((item) => item.gpuId === deviceUuid)
     return {
       deviceUuid,
       packageId: used?.packageId ?? null,
-      plannedId: choice ? choice.packageId : used?.packageId ?? null,
+      plannedId: choice ? choice.packageId : (used?.packageId ?? null),
       ...(choice && !choice.package ? { reason: choice.reason } : {}),
       ...(choice?.integratedSkipped ? { skipped: true } : {}),
       ...(choice?.tip ? { tip: choice.tip } : {}),
@@ -80,15 +90,21 @@ export function fixedEngineSettingsNote(readiness: EngineReadiness | null, devic
 }
 
 /** Options for one GPU's engine picker in 高级: 自动 plus every package of the release that runs on it. */
-export function engineOverrideOptions(plan: EnginePlanView | null, deviceUuid: string): Array<{ value: string; label: string; description?: string }> {
+export function engineOverrideOptions(
+  plan: EnginePlanView | null,
+  deviceUuid: string,
+): Array<{ value: string; label: string; description?: string }> {
   const choice = plan?.choices.find((item) => item.gpuId === deviceUuid)
   const auto = { value: 'auto', label: '自动' }
   if (!choice) return [auto]
-  return [auto, ...choice.compatible.map((pkg) => ({
-    value: enginePackageId(pkg),
-    label: enginePackageOptionLabel(pkg),
-    ...(isCliEngine(pkg) ? { description: enginePackageSummary(pkg) } : {}),
-  }))]
+  return [
+    auto,
+    ...choice.compatible.map((pkg) => ({
+      value: enginePackageId(pkg),
+      label: enginePackageOptionLabel(pkg),
+      ...(isCliEngine(pkg) ? { description: enginePackageSummary(pkg) } : {}),
+    })),
+  ]
 }
 
 /** Set or clear one GPU's engine choice ('auto' clears it). */
@@ -129,16 +145,14 @@ export function gpuRows(
       : engine?.skipped && !engine.packageId
         ? { status: 'skipped' as const, reason: '已有独立显卡运行引擎，默认不使用这块集成显卡' }
         : engine && engine.plannedId === null && engine.reason
-        ? { status: 'unsupported' as const, reason: engine.reason }
-        : probe?.devices.find((candidate) => candidate.uuid === device.uuid)
+          ? { status: 'unsupported' as const, reason: engine.reason }
+          : probe?.devices.find((candidate) => candidate.uuid === device.uuid)
     const live = telemetry?.devices.find((candidate) => candidate.uuid === device.uuid)
     const isDefault = device.uuid === preferred
     const parts = [gpuMemoryLabel(device)]
     if (isDefault) parts.push(automatic ? '默认（自动选择）' : '默认')
     if (live && (live.runningTasks > 0 || live.queuedTasks > 0)) parts.push(`${live.runningTasks} 个任务进行中`)
-    const status: CheckStatus = compatibility?.status === 'supported'
-      ? 'ok'
-      : compatibility?.status === 'unsupported' ? 'error' : 'unknown'
+    const status: CheckStatus = compatibility?.status === 'supported' ? 'ok' : compatibility?.status === 'unsupported' ? 'error' : 'unknown'
     return {
       uuid: device.uuid,
       name: device.name,
@@ -162,7 +176,9 @@ export function gpuEmptyMessage(inventory: GpuInventorySnapshot | null): string 
 
 /** A saved default GPU that is no longer connected. */
 export function savedGpuMissing(inventory: GpuInventorySnapshot | null, selection: GpuSelection | undefined): boolean {
-  return Boolean(selection && typeof selection === 'object' && inventory && !inventory.devices.some((device) => device.uuid === selection.uuid))
+  return Boolean(
+    selection && typeof selection === 'object' && inventory && !inventory.devices.some((device) => device.uuid === selection.uuid),
+  )
 }
 
 export interface HostSummary {

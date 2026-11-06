@@ -138,10 +138,7 @@ export function ModelDirectoriesCard(): React.JSX.Element {
     setBusy('clean')
     try {
       const result = await call<{ removed: string[] }>(Ipc.modelsCleanupEmpty)
-      toast.push(
-        result.removed.length ? `已清理 ${result.removed.length} 个空目录` : '没有需要清理的空目录',
-        'success',
-      )
+      toast.push(result.removed.length ? `已清理 ${result.removed.length} 个空目录` : '没有需要清理的空目录', 'success')
     } catch (cause) {
       toast.push(cause instanceof Error ? cause.message : String(cause), 'error')
     } finally {
@@ -175,13 +172,9 @@ export function ModelDirectoriesCard(): React.JSX.Element {
     }
     setBusy('scan')
     try {
-      const result = await call<{ added: number; updated: number; missing: string[] }>(
-        Ipc.modelsRegisterScan,
-        { items },
-      )
+      const result = await call<{ added: number; updated: number; missing: string[] }>(Ipc.modelsRegisterScan, { items })
       toast.push(
-        `已登记 ${result.added + result.updated} 个模型` +
-          (result.missing.length ? `，${result.missing.length} 个文件已不存在` : ''),
+        `已登记 ${result.added + result.updated} 个模型` + (result.missing.length ? `，${result.missing.length} 个文件已不存在` : ''),
         result.missing.length ? 'info' : 'success',
       )
       setScan(null)
@@ -199,7 +192,9 @@ export function ModelDirectoriesCard(): React.JSX.Element {
     <>
       <Group data-model-directories>
         <Row title="模型根目录" description={root || '应用数据目录中的 models 文件夹'}>
-          <Button tone="secondary" disabled={busy !== null} onClick={() => void chooseRoot()}>更改</Button>
+          <Button tone="secondary" disabled={busy !== null} onClick={() => void chooseRoot()}>
+            更改
+          </Button>
         </Row>
         <Row title="使用已有的模型文件" description="选择一个文件夹（例如 ComfyUI 的 models），只读取、不复制，选好的文件会登记到模型库。">
           <Button tone="secondary" disabled={busy !== null} onClick={() => void runScan()} data-scan-models>
@@ -211,8 +206,14 @@ export function ModelDirectoriesCard(): React.JSX.Element {
           const path = settings?.modelDirectories?.[role.key] ?? ''
           return (
             <Row key={role.key} title={`${role.label}目录`} description={path || role.hint}>
-              {path ? <Button tone="ghost" disabled={busy !== null} onClick={() => void clearRole(role.key)}>恢复默认</Button> : null}
-              <Button tone="secondary" disabled={busy !== null} onClick={() => void chooseRole(role.key)}>更改</Button>
+              {path ? (
+                <Button tone="ghost" disabled={busy !== null} onClick={() => void clearRole(role.key)}>
+                  恢复默认
+                </Button>
+              ) : null}
+              <Button tone="secondary" disabled={busy !== null} onClick={() => void chooseRole(role.key)}>
+                更改
+              </Button>
             </Row>
           )
         })}
@@ -235,7 +236,9 @@ export function ModelDirectoriesCard(): React.JSX.Element {
             <span className="tabular mr-auto text-caption text-ink-2">
               已选 {selected.size} / {scan?.candidates.length ?? 0}
             </span>
-            <Button tone="ghost" size="md" onClick={() => setScan(null)}>取消</Button>
+            <Button tone="ghost" size="md" onClick={() => setScan(null)}>
+              取消
+            </Button>
             <Button tone="primary" size="md" disabled={busy !== null || selected.size === 0} onClick={() => void register()}>
               登记到模型库
             </Button>
@@ -278,14 +281,10 @@ export function ModelDirectoriesCard(): React.JSX.Element {
                 )
               })}
               {!scan.candidates.length ? (
-                <p className="py-6 text-center text-ui text-ink-2">
-                  没有找到能识别的模型文件。确认文件夹里是 .safetensors 或 .gguf 权重。
-                </p>
+                <p className="py-6 text-center text-ui text-ink-2">没有找到能识别的模型文件。确认文件夹里是 .safetensors 或 .gguf 权重。</p>
               ) : null}
             </div>
-            <p className="text-caption text-ink-2">
-              LoRA 请在「LoRA」里导入。登记不会改动原文件，删除登记也不会删除文件。
-            </p>
+            <p className="text-caption text-ink-2">LoRA 请在「LoRA」里导入。登记不会改动原文件，删除登记也不会删除文件。</p>
           </div>
         ) : null}
       </Modal>

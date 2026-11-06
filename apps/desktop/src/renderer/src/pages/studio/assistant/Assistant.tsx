@@ -46,9 +46,13 @@ const SUGGESTIONS = [
 function ToolLine({ status, name, detail }: { status: ToolTrace['status']; name: string; detail?: string }): React.JSX.Element {
   return (
     <div className="flex items-start gap-1.5 text-caption">
-      {status === 'running' ? <Spinner className="mt-0.5 size-3.5 shrink-0" />
-        : status === 'ok' ? <Check className="mt-0.5 size-3.5 shrink-0 text-ok" aria-hidden="true" />
-          : <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-danger" aria-hidden="true" />}
+      {status === 'running' ? (
+        <Spinner className="mt-0.5 size-3.5 shrink-0" />
+      ) : status === 'ok' ? (
+        <Check className="mt-0.5 size-3.5 shrink-0 text-ok" aria-hidden="true" />
+      ) : (
+        <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-danger" aria-hidden="true" />
+      )}
       <span className="min-w-0 [overflow-wrap:anywhere]">
         <span className="text-ink">{toolLabel(name)}</span>
         {detail ? <span className="text-ink-2"> · {detail}</span> : null}
@@ -92,14 +96,16 @@ export function Assistant(): React.JSX.Element {
         call<AiConversationInfo[]>(Ipc.aiConversations),
       ])
       setProviders(nextProviders)
-      setProviderId((current) => nextProviders.some((provider) => provider.id === current) ? current : nextProviders[0]?.id || '')
+      setProviderId((current) => (nextProviders.some((provider) => provider.id === current) ? current : nextProviders[0]?.id || ''))
       setConversations(nextConversations)
     } catch {
       // Keep what is on screen.
     }
   }
 
-  useEffect(() => { void refresh() }, [])
+  useEffect(() => {
+    void refresh()
+  }, [])
 
   // Reopen the conversation the user was in before this panel last unmounted.
   useEffect(() => {
@@ -112,33 +118,43 @@ export function Assistant(): React.JSX.Element {
     if (next.providerId) setProviderId(next.providerId)
   }, [conversations, conversation])
 
-  useEffect(() => { if (conversation?.id) writeStored(conversation.id) }, [conversation?.id])
+  useEffect(() => {
+    if (conversation?.id) writeStored(conversation.id)
+  }, [conversation?.id])
 
-  useEffect(() => onEvent<AiStreamEvent>(Events.aiStream, (event) => {
-    if (event.type === 'start') {
-      setStreaming(true)
-      setStreamText('')
-      setStreamTools([])
-    } else if (event.type === 'delta') {
-      setStreamText((current) => current + event.text)
-    } else if (event.type === 'tool') {
-      setStreamTools((current) => [...current, { id: event.call.id, name: event.call.name, status: 'running', detail: '' }])
-    } else if (event.type === 'tool-result') {
-      setStreamTools((current) => current.map((trace) => trace.id === event.callId
-        ? { ...trace, status: event.result.ok ? 'ok' : 'error', detail: toolDetail(event.result.content) }
-        : trace))
-    } else if (event.type === 'done') {
-      setConversation(event.conversation)
-      setMessages(event.conversation.messages)
-      setStreaming(false)
-      setStreamText('')
-      setStreamTools([])
-      void refresh()
-    } else if (event.type === 'error') {
-      setStreaming(false)
-      toast.push(event.message, 'error')
-    }
-  }), [toast])
+  useEffect(
+    () =>
+      onEvent<AiStreamEvent>(Events.aiStream, (event) => {
+        if (event.type === 'start') {
+          setStreaming(true)
+          setStreamText('')
+          setStreamTools([])
+        } else if (event.type === 'delta') {
+          setStreamText((current) => current + event.text)
+        } else if (event.type === 'tool') {
+          setStreamTools((current) => [...current, { id: event.call.id, name: event.call.name, status: 'running', detail: '' }])
+        } else if (event.type === 'tool-result') {
+          setStreamTools((current) =>
+            current.map((trace) =>
+              trace.id === event.callId
+                ? { ...trace, status: event.result.ok ? 'ok' : 'error', detail: toolDetail(event.result.content) }
+                : trace,
+            ),
+          )
+        } else if (event.type === 'done') {
+          setConversation(event.conversation)
+          setMessages(event.conversation.messages)
+          setStreaming(false)
+          setStreamText('')
+          setStreamTools([])
+          void refresh()
+        } else if (event.type === 'error') {
+          setStreaming(false)
+          toast.push(event.message, 'error')
+        }
+      }),
+    [toast],
+  )
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'nearest', behavior: animate ? 'smooth' : 'instant' })
@@ -251,7 +267,14 @@ export function Assistant(): React.JSX.Element {
       <div className="flex flex-col gap-1 rounded-lg bg-well px-2.5 py-2">
         {calls.map((item) => {
           const result = toolResults.get(item.id)
-          return <ToolLine key={item.id} name={item.name} status={!result ? 'running' : result.error ? 'error' : 'ok'} detail={result ? toolDetail(result.content) : undefined} />
+          return (
+            <ToolLine
+              key={item.id}
+              name={item.name}
+              status={!result ? 'running' : result.error ? 'error' : 'ok'}
+              detail={result ? toolDetail(result.content) : undefined}
+            />
+          )
         })}
       </div>
     )
@@ -268,19 +291,29 @@ export function Assistant(): React.JSX.Element {
           className="h-8 min-w-0 flex-1 text-ui"
         >
           {providers.length === 0 ? <option value="">还没有连接语言模型</option> : null}
-          {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name} · {provider.model}</option>)}
+          {providers.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.name} · {provider.model}
+            </option>
+          ))}
         </Select>
-        <IconButton label="新对话" disabled={busy} onClick={newChat}><Plus className="size-4" /></IconButton>
-        <IconButton label="历史对话" onClick={() => setHistoryOpen(true)}><History className="size-4" /></IconButton>
-        <IconButton label="连接设置" onClick={() => setSettingsOpen(true)}><Settings2 className="size-4" /></IconButton>
+        <IconButton label="新对话" disabled={busy} onClick={newChat}>
+          <Plus className="size-4" />
+        </IconButton>
+        <IconButton label="历史对话" onClick={() => setHistoryOpen(true)}>
+          <History className="size-4" />
+        </IconButton>
+        <IconButton label="连接设置" onClick={() => setSettingsOpen(true)}>
+          <Settings2 className="size-4" />
+        </IconButton>
       </div>
 
       {providers.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
-          <p className="text-ui text-ink-2">
-            连接一个语言模型服务后，助手可以帮你写描述、把画面拆成区域、调整参数并开始生成。
-          </p>
-          <Button tone="primary" size="md" onClick={() => setSettingsOpen(true)}>连接语言模型</Button>
+          <p className="text-ui text-ink-2">连接一个语言模型服务后，助手可以帮你写描述、把画面拆成区域、调整参数并开始生成。</p>
+          <Button tone="primary" size="md" onClick={() => setSettingsOpen(true)}>
+            连接语言模型
+          </Button>
           <p className="text-caption text-ink-2">支持 OpenAI、DeepSeek、Anthropic、Gemini 和本地 Ollama。</p>
         </div>
       ) : (
@@ -295,38 +328,69 @@ export function Assistant(): React.JSX.Element {
           ) : null}
 
           <div className="flex flex-col gap-4">
-            {messages.filter((message) => message.role !== 'tool').map((message) => message.role === 'user' ? (
-              <div key={message.id} className="ml-6 self-end rounded-lg bg-well px-3 py-2 text-ui text-ink">
-                <div className="selectable whitespace-pre-wrap break-words">{message.content}</div>
-              </div>
-            ) : (
-              <div key={message.id} className="flex flex-col gap-2">
-                {message.content ? <MarkdownBody>{message.content}</MarkdownBody> : null}
-                {message.toolCalls?.length ? renderToolCalls(message.toolCalls) : null}
-                {message.role === 'assistant' && message.content ? (
-                  <div className="-ml-2 flex items-center gap-0.5">
-                    <Button tone="ghost" size="sm" className="h-7 px-2 text-caption" onClick={() => proposeDescription(message.content)}>用作描述</Button>
-                    <Button tone="ghost" size="sm" className="h-7 px-2 text-caption" onClick={() => void copyText(message.content)}>复制</Button>
-                    {message.id === lastAssistantId ? (
-                      <Button tone="ghost" size="sm" className="h-7 px-2 text-caption" disabled={busy} onClick={() => void regenerate()}>重新回答</Button>
+            {messages
+              .filter((message) => message.role !== 'tool')
+              .map((message) =>
+                message.role === 'user' ? (
+                  <div key={message.id} className="ml-6 self-end rounded-lg bg-well px-3 py-2 text-ui text-ink">
+                    <div className="selectable whitespace-pre-wrap break-words">{message.content}</div>
+                  </div>
+                ) : (
+                  <div key={message.id} className="flex flex-col gap-2">
+                    {message.content ? <MarkdownBody>{message.content}</MarkdownBody> : null}
+                    {message.toolCalls?.length ? renderToolCalls(message.toolCalls) : null}
+                    {message.role === 'assistant' && message.content ? (
+                      <div className="-ml-2 flex items-center gap-0.5">
+                        <Button
+                          tone="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-caption"
+                          onClick={() => proposeDescription(message.content)}
+                        >
+                          用作描述
+                        </Button>
+                        <Button tone="ghost" size="sm" className="h-7 px-2 text-caption" onClick={() => void copyText(message.content)}>
+                          复制
+                        </Button>
+                        {message.id === lastAssistantId ? (
+                          <Button
+                            tone="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-caption"
+                            disabled={busy}
+                            onClick={() => void regenerate()}
+                          >
+                            重新回答
+                          </Button>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
-                ) : null}
-              </div>
-            ))}
+                ),
+              )}
 
             {streaming ? (
               <div className="flex flex-col gap-2">
                 {streamText ? <MarkdownBody>{streamText}</MarkdownBody> : null}
                 {streamTools.length ? (
                   <div className="flex flex-col gap-1 rounded-lg bg-well px-2.5 py-2">
-                    {streamTools.map((trace) => <ToolLine key={trace.id} name={trace.name} status={trace.status} detail={trace.detail} />)}
+                    {streamTools.map((trace) => (
+                      <ToolLine key={trace.id} name={trace.name} status={trace.status} detail={trace.detail} />
+                    ))}
                   </div>
                 ) : null}
-                {!streamText && !streamTools.length ? <span className="inline-flex items-center gap-2 text-caption text-ink-2"><Spinner className="size-3.5" />思考中…</span> : null}
+                {!streamText && !streamTools.length ? (
+                  <span className="inline-flex items-center gap-2 text-caption text-ink-2">
+                    <Spinner className="size-3.5" />
+                    思考中…
+                  </span>
+                ) : null}
               </div>
             ) : busy ? (
-              <span className="inline-flex items-center gap-2 text-caption text-ink-2"><Spinner className="size-3.5" />思考中…</span>
+              <span className="inline-flex items-center gap-2 text-caption text-ink-2">
+                <Spinner className="size-3.5" />
+                思考中…
+              </span>
             ) : null}
           </div>
           <div ref={endRef} />
@@ -337,13 +401,33 @@ export function Assistant(): React.JSX.Element {
         {failedText ? (
           <div className="flex items-center gap-2 rounded-lg bg-danger-soft px-3 py-1.5 text-caption">
             <span className="min-w-0 flex-1 truncate text-danger">上一条没有发出去</span>
-            <Button tone="ghost" size="sm" className="h-6 px-2" onClick={() => { const text = failedText; setFailedText(null); void sendText(text) }}>重试</Button>
+            <Button
+              tone="ghost"
+              size="sm"
+              className="h-6 px-2"
+              onClick={() => {
+                const text = failedText
+                setFailedText(null)
+                void sendText(text)
+              }}
+            >
+              重试
+            </Button>
           </div>
         ) : null}
         {providers.length ? (
           <div className="flex flex-wrap gap-1">
             {SUGGESTIONS.map((item) => (
-              <Button key={item.label} tone="secondary" size="sm" className="h-7 px-2.5 text-caption" disabled={busy} onClick={() => void sendText(item.text)}>{item.label}</Button>
+              <Button
+                key={item.label}
+                tone="secondary"
+                size="sm"
+                className="h-7 px-2.5 text-caption"
+                disabled={busy}
+                onClick={() => void sendText(item.text)}
+              >
+                {item.label}
+              </Button>
             ))}
           </div>
         ) : null}
@@ -368,7 +452,9 @@ export function Assistant(): React.JSX.Element {
             aria-busy={busy}
             disabled={busy || !input.trim()}
             onClick={() => void sendText(input, true)}
-            className={cn('absolute bottom-2 right-2 size-7 bg-ink text-on-ink enabled:hover:bg-ink enabled:hover:text-on-ink enabled:hover:opacity-90')}
+            className={cn(
+              'absolute bottom-2 right-2 size-7 bg-ink text-on-ink enabled:hover:bg-ink enabled:hover:text-on-ink enabled:hover:opacity-90',
+            )}
           >
             {busy ? <Spinner className="size-3.5" /> : <ArrowUp className="size-4" />}
           </IconButton>
@@ -376,11 +462,20 @@ export function Assistant(): React.JSX.Element {
         <p className="text-micro text-ink-2">Enter 发送，Shift+Enter 换行</p>
       </div>
 
-      <Modal open={historyOpen} onClose={() => setHistoryOpen(false)} title="历史对话" description="点击打开，双击标题可以重命名。" width="max-w-xl">
+      <Modal
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        title="历史对话"
+        description="点击打开，双击标题可以重命名。"
+        width="max-w-xl"
+      >
         <div className="flex max-h-[60vh] flex-col gap-0.5 overflow-y-auto">
           {conversations.length === 0 ? <p className="py-6 text-center text-caption text-ink-2">还没有对话</p> : null}
           {conversations.map((item) => (
-            <div key={item.id} className={cn('flex items-center gap-2 rounded-lg py-1 pl-3 pr-1 hover:bg-well', item.id === conversation?.id && 'bg-well')}>
+            <div
+              key={item.id}
+              className={cn('flex items-center gap-2 rounded-lg py-1 pl-3 pr-1 hover:bg-well', item.id === conversation?.id && 'bg-well')}
+            >
               {renamingId === item.id ? (
                 <Input
                   autoFocus
@@ -388,8 +483,14 @@ export function Assistant(): React.JSX.Element {
                   onChange={(event) => setRenameDraft(event.target.value)}
                   onBlur={() => void renameConversation(item.id, renameDraft)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') { event.preventDefault(); void renameConversation(item.id, renameDraft) }
-                    if (event.key === 'Escape') { event.preventDefault(); setRenamingId(null) }
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      void renameConversation(item.id, renameDraft)
+                    }
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      setRenamingId(null)
+                    }
                   }}
                   className="h-8"
                 />
@@ -404,13 +505,20 @@ export function Assistant(): React.JSX.Element {
                     if (item.providerId) setProviderId(item.providerId)
                     setHistoryOpen(false)
                   }}
-                  onDoubleClick={() => { setRenamingId(item.id); setRenameDraft(item.title) }}
+                  onDoubleClick={() => {
+                    setRenamingId(item.id)
+                    setRenameDraft(item.title)
+                  }}
                 >
                   <span className="block truncate text-ui text-ink">{item.title}</span>
-                  <span className="block text-caption text-ink-2">{relative(item.updatedAt)} · {item.messages.length} 条</span>
+                  <span className="block text-caption text-ink-2">
+                    {relative(item.updatedAt)} · {item.messages.length} 条
+                  </span>
                 </button>
               )}
-              <IconButton label={`删除对话 ${item.title}`} onClick={() => void removeConversation(item.id)}><X className="size-4" /></IconButton>
+              <IconButton label={`删除对话 ${item.title}`} onClick={() => void removeConversation(item.id)}>
+                <X className="size-4" />
+              </IconButton>
             </div>
           ))}
         </div>
@@ -424,9 +532,11 @@ export function Assistant(): React.JSX.Element {
         title="替换描述？"
         description="把助手的这段回答写进当前画面的描述。"
         width="max-w-2xl"
-        footer={(
+        footer={
           <>
-            <Button tone="ghost" size="md" onClick={() => setProposal(null)}>取消</Button>
+            <Button tone="ghost" size="md" onClick={() => setProposal(null)}>
+              取消
+            </Button>
             <Button
               tone="primary"
               size="md"
@@ -439,17 +549,21 @@ export function Assistant(): React.JSX.Element {
               替换描述
             </Button>
           </>
-        )}
+        }
       >
         {proposal ? (
           <div className="grid gap-4 md:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <div className="text-caption font-medium text-ink-2">现在</div>
-              <p className="selectable max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-panel p-3 text-ui text-ink-2">{proposal.current || '（空）'}</p>
+              <p className="selectable max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-panel p-3 text-ui text-ink-2">
+                {proposal.current || '（空）'}
+              </p>
             </div>
             <div className="flex flex-col gap-1.5">
               <div className="text-caption font-medium text-ink-2">替换为</div>
-              <p className="selectable max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-panel p-3 text-ui text-ink">{proposal.next}</p>
+              <p className="selectable max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-panel p-3 text-ui text-ink">
+                {proposal.next}
+              </p>
             </div>
           </div>
         ) : null}

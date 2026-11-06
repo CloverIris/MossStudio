@@ -42,12 +42,19 @@ describe('folderProblemMessage', () => {
 
   it('explains no write access and missing space with both sizes', () => {
     expect(folderProblemMessage(check('E_NOT_WRITABLE'))!.text).toBe('没有权限写入这个文件夹。请换一个位置，例如你自己的用户文件夹。')
-    expect(folderProblemMessage(check('E_NO_SPACE', { freeBytes: 300 * MB }))!.text).toBe('这个磁盘的空间不够：需要 820 MB，只剩 300 MB。请清理一些空间，或换一个磁盘。')
-    expect(folderProblemMessage(check('E_NO_SPACE', { freeBytes: null }))!.text).toBe('这个磁盘的空间不够：需要 820 MB。请清理一些空间，或换一个磁盘。')
+    expect(folderProblemMessage(check('E_NO_SPACE', { freeBytes: 300 * MB }))!.text).toBe(
+      '这个磁盘的空间不够：需要 820 MB，只剩 300 MB。请清理一些空间，或换一个磁盘。',
+    )
+    expect(folderProblemMessage(check('E_NO_SPACE', { freeBytes: null }))!.text).toBe(
+      '这个磁盘的空间不够：需要 820 MB。请清理一些空间，或换一个磁盘。',
+    )
   })
 
   it('refuses system folders and drive roots, with a suggestion when main has one', () => {
-    expect(folderProblemMessage(check('E_SYSTEM_DIR'))).toEqual({ text: '不能装在系统文件夹或磁盘根目录，请换一个位置。', suggestion: undefined })
+    expect(folderProblemMessage(check('E_SYSTEM_DIR'))).toEqual({
+      text: '不能装在系统文件夹或磁盘根目录，请换一个位置。',
+      suggestion: undefined,
+    })
     expect(folderProblemMessage(check('E_DRIVE_ROOT', { suggestion: 'D:\\MossStudio' }))).toEqual({
       text: '不能装在系统文件夹或磁盘根目录。',
       suggestion: { path: 'D:\\MossStudio', label: '改用 D:\\MossStudio' },
@@ -92,8 +99,11 @@ describe('space and progress', () => {
 })
 
 describe('setupScreen', () => {
-  const screen = (kind: Parameters<typeof setupScreen>[0]['kind'], phase: Parameters<typeof setupScreen>[0]['phase'] = 'idle', downgradeAccepted = false) =>
-    setupScreen({ kind, phase, downgradeAccepted })
+  const screen = (
+    kind: Parameters<typeof setupScreen>[0]['kind'],
+    phase: Parameters<typeof setupScreen>[0]['phase'] = 'idle',
+    downgradeAccepted = false,
+  ) => setupScreen({ kind, phase, downgradeAccepted })
 
   it('asks where on a first install', () => {
     expect(screen(null, null)).toBe('loading')
@@ -128,7 +138,9 @@ describe('runView', () => {
 
 describe('old install and downgrade wording', () => {
   it('describes the old install with its size when known', () => {
-    expect(oldInstallText({ root: 'C:\\Users\\小明\\AppData\\Local\\Programs\\MossStudio', dataBytes: 8.5 * GB, version: '1.0.3' })).toEqual({
+    expect(
+      oldInstallText({ root: 'C:\\Users\\小明\\AppData\\Local\\Programs\\MossStudio', dataBytes: 8.5 * GB, version: '1.0.3' }),
+    ).toEqual({
       title: '发现旧版 MossStudio 1.0.3',
       description: '位于 C:\\Users\\小明\\AppData\\Local\\Programs\\MossStudio，里面有你的作品、模型和设置，共 8.5 GB。',
     })
@@ -139,11 +151,15 @@ describe('old install and downgrade wording', () => {
   })
 
   it('describes data a keep-data uninstall left behind', () => {
-    expect(oldInstallText({ root: 'C:\\MossStudio', dataDir: 'C:\\MossStudio\\data', dataBytes: 12 * GB, version: '1.9.0', source: 'kept' })).toEqual({
+    expect(
+      oldInstallText({ root: 'C:\\MossStudio', dataDir: 'C:\\MossStudio\\data', dataBytes: 12 * GB, version: '1.9.0', source: 'kept' }),
+    ).toEqual({
       title: '发现上次保留的数据',
       description: '卸载 MossStudio 1.9.0 时留下的作品、模型和设置，位于 C:\\MossStudio\\data，共 12 GB。',
     })
-    expect(oldInstallText({ root: '/r', dataDir: '/r/data', dataBytes: null, version: null, source: 'kept' }).description).toBe('卸载 MossStudio 时留下的作品、模型和设置，位于 /r/data。')
+    expect(oldInstallText({ root: '/r', dataDir: '/r/data', dataBytes: null, version: null, source: 'kept' }).description).toBe(
+      '卸载 MossStudio 时留下的作品、模型和设置，位于 /r/data。',
+    )
   })
 
   it('notes a location whose kept data the install will use', () => {

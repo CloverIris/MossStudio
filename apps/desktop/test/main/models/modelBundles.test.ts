@@ -23,12 +23,23 @@ const releaseDir = (): string => join(dataRoot(), 'release')
 const SHA = 'f'.repeat(40)
 
 const components = {
-  dit: { model: rawModel({ id: 'dit-a', repo: 'org/dit', role: 'dit', subfolder: 'transformer' }), files: { 'transformer/config.json': '{"d":1}', 'transformer/model.safetensors': 'dit-weights' } },
+  dit: {
+    model: rawModel({ id: 'dit-a', repo: 'org/dit', role: 'dit', subfolder: 'transformer' }),
+    files: { 'transformer/config.json': '{"d":1}', 'transformer/model.safetensors': 'dit-weights' },
+  },
   te: {
     model: rawModel({ id: 'te-a', repo: 'org/te', role: 'text_encoder', subfolder: 'text_encoder' }),
-    files: { 'text_encoder/config.json': '{}', 'text_encoder/model.safetensors': 'te', 'tokenizer/tokenizer_config.json': '{}', 'tokenizer/tokenizer.json': '{}' },
+    files: {
+      'text_encoder/config.json': '{}',
+      'text_encoder/model.safetensors': 'te',
+      'tokenizer/tokenizer_config.json': '{}',
+      'tokenizer/tokenizer.json': '{}',
+    },
   },
-  vae: { model: rawModel({ id: 'vae-a', repo: 'org/vae', role: 'vae', subfolder: 'vae' }), files: { 'vae/config.json': '{}', 'vae/model.safetensors': 'vae' } },
+  vae: {
+    model: rawModel({ id: 'vae-a', repo: 'org/vae', role: 'vae', subfolder: 'vae' }),
+    files: { 'vae/config.json': '{}', 'vae/model.safetensors': 'vae' },
+  },
   support: {
     model: rawModel({ id: 'support-a', repo: 'org/support', role: 'support' }),
     files: { 'model_index.json': '{}', 'pipeline_moss_image.py': '#', 'scheduler/scheduler_config.json': '{}' },
@@ -36,7 +47,13 @@ const components = {
 }
 const comfyDit = rawModel({ id: 'dit-comfy', repo: 'org/comfy', role: 'dit', format: 'comfyui' })
 const otherFamily = rawModel({ id: 'dit-other', repo: 'org/other', role: 'dit', subfolder: 'transformer', family: 'flux' })
-const bundle = { id: 'b1', name: 'B1', description: '', support: 'support-a', components: { dit: 'dit-a', textEncoder: 'te-a', vae: 'vae-a' } }
+const bundle = {
+  id: 'b1',
+  name: 'B1',
+  description: '',
+  support: 'support-a',
+  components: { dit: 'dit-a', textEncoder: 'te-a', vae: 'vae-a' },
+}
 const binding: ModelBinding = { bundleId: 'b1', dit: 'dit-a', textEncoder: 'te-a', vae: 'vae-a' }
 
 function installAll(): void {
@@ -129,24 +146,29 @@ describe('prepareModelBundle', () => {
     installAll()
     const target = await bundles.prepareModelBundle(binding, settings)
     const files = (readdirSync(target, { recursive: true }) as string[]).filter((f) => statSync(join(target, f)).isFile()).sort()
-    expect(files).toEqual([
-      'clover_model.json',
-      'model_index.json',
-      'pipeline_moss_image.py',
-      join('scheduler', 'scheduler_config.json'),
-      join('text_encoder', 'config.json'),
-      join('text_encoder', 'model.safetensors'),
-      join('tokenizer', 'tokenizer.json'),
-      join('tokenizer', 'tokenizer_config.json'),
-      join('transformer', 'config.json'),
-      join('transformer', 'model.safetensors'),
-      join('vae', 'config.json'),
-      join('vae', 'model.safetensors'),
-    ].sort())
+    expect(files).toEqual(
+      [
+        'clover_model.json',
+        'model_index.json',
+        'pipeline_moss_image.py',
+        join('scheduler', 'scheduler_config.json'),
+        join('text_encoder', 'config.json'),
+        join('text_encoder', 'model.safetensors'),
+        join('tokenizer', 'tokenizer.json'),
+        join('tokenizer', 'tokenizer_config.json'),
+        join('transformer', 'config.json'),
+        join('transformer', 'model.safetensors'),
+        join('vae', 'config.json'),
+        join('vae', 'model.safetensors'),
+      ].sort(),
+    )
     const manifest = JSON.parse(readFileSync(join(target, 'clover_model.json'), 'utf8'))
     expect(manifest).toMatchObject({ version: 1, bundleId: 'b1' })
     expect(manifest.components.map((c: { id: string; revision: string }) => [c.id, c.revision])).toEqual([
-      ['dit-a', SHA], ['te-a', SHA], ['vae-a', SHA], ['support-a', SHA],
+      ['dit-a', SHA],
+      ['te-a', SHA],
+      ['vae-a', SHA],
+      ['support-a', SHA],
     ])
     // Hard links: no extra copy of the weights.
     const blob = statSync(join(cacheDirFor(modelsRoot(), 'dit', 'org/dit'), 'snapshots', SHA, 'transformer', 'model.safetensors'))

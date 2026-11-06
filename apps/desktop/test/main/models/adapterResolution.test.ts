@@ -10,7 +10,9 @@ import { AdapterResolutionError, resolveCanvasAdapters } from '@main/services/ad
 const settings = { modelsRoot: '/models' } as Settings
 
 beforeEach(() => {
-  resolveAdapterFile.mockReset().mockImplementation(async (_s, id) => (id.startsWith('missing') ? null : `/models/adapters/${id}/w.safetensors`))
+  resolveAdapterFile
+    .mockReset()
+    .mockImplementation(async (_s, id) => (id.startsWith('missing') ? null : `/models/adapters/${id}/w.safetensors`))
   findAdapterName.mockReset().mockImplementation(async (_s, id) => `Name of ${id}`)
 })
 

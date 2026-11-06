@@ -27,19 +27,20 @@ export function resolveGpuProfile(
 ): ResolvedGpuProfile {
   const override: GpuProfileOverride | undefined = settings.gpuProfileOverrides[device.uuid]
   const recommendedMode = settings.gpuProfileMode === 'auto' ? recommendGpuMemoryMode(device) : null
-  const memoryMode = override?.memoryMode ?? (
-    recommendedMode ?? settings.mossInferMemoryMode
-  )
+  const memoryMode = override?.memoryMode ?? recommendedMode ?? settings.mossInferMemoryMode
   const requestedTier = override?.tier ?? settings.mossInferTier
   const bf16Only = gpuRequiresBf16Tier(device)
   return {
     memoryMode,
     tier: bf16Only ? 'reference' : requestedTier,
-    source: bf16Only && requestedTier !== 'reference'
-      ? 'hardware-compatibility'
-      : override?.memoryMode !== undefined || override?.tier !== undefined
-        ? 'gpu-override'
-        : recommendedMode ? 'recommended' : 'global',
+    source:
+      bf16Only && requestedTier !== 'reference'
+        ? 'hardware-compatibility'
+        : override?.memoryMode !== undefined || override?.tier !== undefined
+          ? 'gpu-override'
+          : recommendedMode
+            ? 'recommended'
+            : 'global',
   }
 }
 

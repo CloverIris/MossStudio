@@ -13,7 +13,13 @@ export function Popover({
   label,
 }: {
   /** Renders the trigger; spread `props` onto the button that opens the panel. */
-  trigger: (props: { open: boolean; toggle: () => void; 'aria-expanded': boolean; 'aria-controls': string; 'aria-haspopup': 'menu' | 'dialog' }) => ReactNode
+  trigger: (props: {
+    open: boolean
+    toggle: () => void
+    'aria-expanded': boolean
+    'aria-controls': string
+    'aria-haspopup': 'menu' | 'dialog'
+  }) => ReactNode
   children: (close: () => void) => ReactNode
   align?: 'start' | 'center' | 'end'
   className?: string

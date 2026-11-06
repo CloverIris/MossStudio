@@ -71,7 +71,7 @@ export function digitsOnly(value: string): string {
 
 /** Turn whatever was stored into a usable form; anything malformed falls back to its default. */
 export function sanitizeTrainingForm(raw: unknown): TrainingForm {
-  const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const form = { ...DEFAULT_TRAINING_FORM }
   for (const key of Object.keys(DEFAULT_TRAINING_FORM) as Array<keyof TrainingForm>) {
     const value = source[key]
@@ -107,7 +107,11 @@ export function saveTrainingForm(form: TrainingForm, storage: Pick<Storage, 'set
 }
 
 function safeStorage(): Storage | null {
-  try { return typeof localStorage === 'undefined' ? null : localStorage } catch { return null }
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage
+  } catch {
+    return null
+  }
 }
 
 function needsDataset(action: TrainerAction): boolean {

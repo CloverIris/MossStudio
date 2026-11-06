@@ -1,16 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
-import type {
-  EngineGpuProbeSnapshot,
-  LocalEngineVersion,
-  RemoteEngineInfo,
-} from '@shared/types'
+import type { EngineGpuProbeSnapshot, LocalEngineVersion, RemoteEngineInfo } from '@shared/types'
 import { mapEngineGpuProbe } from '@shared/gpuCompatibility'
-import {
-  judgeEngineSupport,
-  protocolCompatible,
-  type EngineHello,
-} from '@shared/engineProtocol'
+import { judgeEngineSupport, protocolCompatible, type EngineHello } from '@shared/engineProtocol'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { isInside, paths } from '../lib/paths'
@@ -48,10 +40,12 @@ function readExternal(): ExternalEngineEntry[] {
     return raw.flatMap((item): ExternalEngineEntry[] => {
       if (!item || typeof item !== 'object' || typeof (item as { path?: unknown }).path !== 'string') return []
       const entry = item as Partial<ExternalEngineEntry> & { path: string }
-      return [{
-        path: entry.path,
-        name: typeof entry.name === 'string' ? entry.name : basename(entry.path),
-      }]
+      return [
+        {
+          path: entry.path,
+          name: typeof entry.name === 'string' ? entry.name : basename(entry.path),
+        },
+      ]
     })
   } catch {
     return []
@@ -133,7 +127,9 @@ export async function probeLocalEngineGpuCompatibility(force = false): Promise<L
     if (path && existsSync(path)) pathFor.set(device.uuid, resolve(path))
   }
   const fallback = localServerPath()
-  const binaries = [...new Set([...pathFor.values(), ...(pathFor.size === 0 && fallback && existsSync(fallback) ? [resolve(fallback)] : [])])]
+  const binaries = [
+    ...new Set([...pathFor.values(), ...(pathFor.size === 0 && fallback && existsSync(fallback) ? [resolve(fallback)] : [])]),
+  ]
   if (binaries.length === 0) throw new Error('未找到 moss-server')
   const hellos = new Map<string, EngineHello>()
   for (const path of binaries) hellos.set(path, await helloOf(path, force))
@@ -142,8 +138,9 @@ export async function probeLocalEngineGpuCompatibility(force = false): Promise<L
     const path = pathFor.get(device.uuid) ?? (pathFor.size === 0 ? binaries[0]! : undefined)
     const hello = path ? hellos.get(path) : undefined
     if (!hello || !path) return []
-    return mapEngineGpuProbe(inventory, hello.probe?.devices ?? [], path, hello.version, checkedAt).devices
-      .filter((item) => item.uuid === device.uuid)
+    return mapEngineGpuProbe(inventory, hello.probe?.devices ?? [], path, hello.version, checkedAt).devices.filter(
+      (item) => item.uuid === device.uuid,
+    )
   })
   const selection = getSettings().gpuSelection
   const preferred = typeof selection === 'object' ? pathFor.get(selection.uuid) : undefined
@@ -154,7 +151,7 @@ export async function probeLocalEngineGpuCompatibility(force = false): Promise<L
     hello: main,
     helloFor: (deviceUuid) => {
       const path = pathFor.get(deviceUuid) ?? (pathFor.size === 0 ? binaries[0] : undefined)
-      return path ? hellos.get(path) ?? null : null
+      return path ? (hellos.get(path) ?? null) : null
     },
   }
 }
@@ -165,17 +162,23 @@ export function localEngineVersions(): LocalEngineVersion[] {
   const root = paths.mossinfer()
   const managed: LocalEngineVersion[] = existsSync(root)
     ? readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && isManagedEngineDirectory(entry.name))
-      .map((entry): LocalEngineVersion | null => {
-        const path = managedBinaryIn(join(root, entry.name), entry.name)
-        if (!path) return null
-        return { id: entry.name, name: entry.name, path, current: isCurrent(path), source: 'managed' }
-      })
-      .filter((item): item is LocalEngineVersion => item !== null)
+        .filter((entry) => entry.isDirectory() && isManagedEngineDirectory(entry.name))
+        .map((entry): LocalEngineVersion | null => {
+          const path = managedBinaryIn(join(root, entry.name), entry.name)
+          if (!path) return null
+          return { id: entry.name, name: entry.name, path, current: isCurrent(path), source: 'managed' }
+        })
+        .filter((item): item is LocalEngineVersion => item !== null)
     : []
   const external: LocalEngineVersion[] = readExternal()
     .filter((item) => existsSync(item.path))
-    .map((item) => ({ id: `external:${item.path}`, name: `${item.name} · 外部`, path: item.path, current: isCurrent(item.path), source: 'external' as const }))
+    .map((item) => ({
+      id: `external:${item.path}`,
+      name: `${item.name} · 外部`,
+      path: item.path,
+      current: isCurrent(item.path),
+      source: 'external' as const,
+    }))
   return [...managed, ...external].sort((a, b) => b.name.localeCompare(a.name))
 }
 
@@ -222,9 +225,10 @@ export async function selectLocalEngineVersion(id: string): Promise<void> {
   const settings = getSettings()
   const inventory = await getGpuInventory()
   const selected = resolveGpuSelection(inventory.devices, settings.gpuSelection)
-  const targetGpu = selected && (selected.vendor ?? 'nvidia') === 'nvidia'
-    ? selected
-    : inventory.devices.find((device) => (device.vendor ?? 'nvidia') === 'nvidia') ?? null
+  const targetGpu =
+    selected && (selected.vendor ?? 'nvidia') === 'nvidia'
+      ? selected
+      : (inventory.devices.find((device) => (device.vendor ?? 'nvidia') === 'nvidia') ?? null)
   if (targetGpu) await probeVersionCompatibility(version, targetGpu)
   return activateLocalEngineVersion(version)
 }
