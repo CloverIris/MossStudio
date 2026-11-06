@@ -5,7 +5,7 @@ import type { BranchInfo, CommitInfo, Settings, TrainerVersion } from '@shared/t
 import { call } from '../../lib/api'
 import { dateTime } from '../../lib/format'
 import { useApp } from '../../store'
-import { Button, ConfirmDialog, IconButton, Pill, Row, Select, Spinner, useToast } from '../../components/ui'
+import { Button, ConfirmDialog, FieldLabel, IconButton, Pill, Row, Select, Spinner, useToast } from '../../components/ui'
 import { TextSetting } from './TextSetting'
 import { RUNTIME_LABEL, defaultBranch, optionalUrlError, versionsAt } from './trainerSetup'
 
@@ -166,12 +166,14 @@ export function TrainerAdvanced({
           </Button>
         ) : null}
         <Button onClick={() => void pickTrainerRoot()}>
-          <FolderOpen className="size-4" aria-hidden="true" />
+          <FolderOpen className="size-4" strokeWidth={1.6} aria-hidden="true" />
           选择
         </Button>
       </Row>
 
-      <div className="px-3.5 pb-1 pt-3 text-caption font-medium text-ink-2">{local ? '本机的版本' : '这台主机上的版本'}</div>
+      <FieldLabel as="h3" className="px-3.5 pb-1 pt-3">
+        {local ? '本机的版本' : '这台主机上的版本'}
+      </FieldLabel>
       {here.length === 0 ? (
         <p className="px-3.5 pb-2 text-caption text-ink-2">还没有版本。</p>
       ) : (
@@ -189,7 +191,7 @@ export function TrainerAdvanced({
               disabled={busy || working !== null}
               onClick={() => setRemoveTarget(version)}
             >
-              {working === version.id ? <Spinner /> : <Trash2 className="size-4" />}
+              {working === version.id ? <Spinner /> : <Trash2 className="size-4" strokeWidth={1.6} />}
             </IconButton>
           </Row>
         ))

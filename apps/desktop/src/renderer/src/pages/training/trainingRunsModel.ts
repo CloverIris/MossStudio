@@ -1,3 +1,4 @@
+import { algoLabel } from './trainingForm'
 import type { JobRecord, JobState } from '@shared/types'
 
 export type RunTone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger'
@@ -60,7 +61,7 @@ export function trainingRuns(jobs: readonly JobRecord[], hostId: string): Traini
       return {
         id: job.id,
         name: job.trainerRunName || job.instanceName || '未命名训练',
-        algo: (job.trainerAlgo || '').toUpperCase() || '—',
+        algo: algoLabel(job.trainerAlgo),
         step,
         total,
         progressLabel: total ? `${number.format(step)} / ${number.format(total)}` : '—',

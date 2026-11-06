@@ -1,7 +1,9 @@
 import { Plus } from 'lucide-react'
 import { openWindow } from '../lib/windows'
 import { useApp } from '../store'
+import { Notice } from '../components/common/Notice'
 import { Button, PageHeader, PageScroll, Select } from '../components/ui'
+import { currentVersion } from './training/trainerSetup'
 import { TrainerSection } from './training/TrainerSection'
 import { TrainingRuns } from './training/TrainingRuns'
 import { useTrainerData } from './training/useTrainerData'
@@ -13,9 +15,11 @@ export function TrainingPage(): React.JSX.Element {
   const { hosts, sshHosts, versions, loading, hostId, setHostId, refresh } = useTrainerData()
   const host = hosts.find((item) => item.id === hostId)
   const noLocalGpu = hostId === 'local' && env !== null && env.gpu.kind !== 'nvidia'
+  const ready = currentVersion(versions, hostId)?.runtimeState === 'ready'
+  const runs = <TrainingRuns hostId={hostId} />
 
   return (
-    <PageScroll width="max-w-[880px]">
+    <PageScroll>
       <PageHeader
         title="训练"
         description="用自己的图片训练 LoRA。训练好的 LoRA 会出现在创作里。"
@@ -31,7 +35,7 @@ export function TrainingPage(): React.JSX.Element {
               />
             ) : null}
             <Button tone="primary" size="md" onClick={() => openWindow('trainer')}>
-              <Plus className="size-4" aria-hidden="true" />
+              <Plus className="size-4" strokeWidth={1.6} aria-hidden="true" />
               新建训练
             </Button>
           </>
@@ -39,18 +43,20 @@ export function TrainingPage(): React.JSX.Element {
       />
 
       {noLocalGpu ? (
-        <p role="status" className="rounded-lg bg-warn-soft px-3.5 py-2.5 text-ui text-warn">
+        <Notice tone="warn" role="status">
           这台电脑没有检测到 NVIDIA 显卡，训练需要 NVIDIA 显卡才能运行。
           {remoteHostsEnabled
             ? sshHosts.length
               ? '可以在右上角把训练位置换成一台远程主机。'
               : '可以在 设置 › 设备与引擎 添加一台带 NVIDIA 显卡的远程主机。'
             : ''}
-        </p>
+        </Notice>
       ) : null}
 
+      {/* Once the trainer is ready, the work (训练记录) comes first and its setup moves below. */}
+      {ready ? runs : null}
       <TrainerSection hostId={hostId} host={host} versions={versions} loading={loading} onChanged={refresh} />
-      <TrainingRuns hostId={hostId} />
+      {ready ? null : runs}
     </PageScroll>
   )
 }

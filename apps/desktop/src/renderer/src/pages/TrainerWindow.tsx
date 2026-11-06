@@ -10,9 +10,9 @@ import {
   Card,
   EmptyState,
   Field,
+  FieldLabel,
   IconButton,
   Input,
-  Modal,
   PageHeader,
   Pill,
   ProgressBar,
@@ -23,9 +23,11 @@ import {
   useCopyText,
   useToast,
 } from '../components/ui'
+import { DoctorDialog } from './training/DoctorDialog'
 import { RUNTIME_LABEL, currentVersion, versionsAt } from './training/trainerSetup'
 import {
   ALGOS,
+  algoLabel,
   buildTrainingCommand,
   digitsOnly,
   firstTrainingFormError,
@@ -215,7 +217,7 @@ export function TrainerWindow(): React.JSX.Element {
                   />
                   {!remote ? (
                     <IconButton label="选择训练图片文件夹" onClick={() => void pick('dataset')}>
-                      <FolderOpen className="size-4" />
+                      <FolderOpen className="size-4" strokeWidth={1.6} />
                     </IconButton>
                   ) : null}
                 </div>
@@ -231,7 +233,7 @@ export function TrainerWindow(): React.JSX.Element {
                   />
                   {!remote ? (
                     <IconButton label="选择底模权重文件夹" onClick={() => void pick('weights')}>
-                      <FolderOpen className="size-4" />
+                      <FolderOpen className="size-4" strokeWidth={1.6} />
                     </IconButton>
                   ) : null}
                 </div>
@@ -248,7 +250,7 @@ export function TrainerWindow(): React.JSX.Element {
                 <Select
                   value={form.algo}
                   onValueChange={(algo) => update({ algo })}
-                  options={ALGOS.map((algo) => ({ value: algo, label: algo.toUpperCase() }))}
+                  options={ALGOS.map((algo) => ({ value: algo, label: algoLabel(algo) }))}
                 />
               </Field>
             </div>
@@ -299,19 +301,23 @@ export function TrainerWindow(): React.JSX.Element {
                   />
                 </Field>
                 <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-caption font-medium text-ink-2">将要运行的命令</span>
-                    <Button tone="ghost" onClick={() => void copyText(command, '命令已复制')}>
-                      <Copy className="size-4" aria-hidden="true" />
-                      复制
-                    </Button>
-                  </div>
+                  <FieldLabel
+                    as="h3"
+                    className="min-h-7"
+                    value={
+                      <IconButton label="复制命令" className="-my-1 size-7" onClick={() => void copyText(command, '已复制命令')}>
+                        <Copy className="size-3.5" strokeWidth={1.6} />
+                      </IconButton>
+                    }
+                  >
+                    将要运行的命令
+                  </FieldLabel>
                   <pre className="selectable max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-well p-3 font-mono text-caption text-ink-2">
                     {command}
                   </pre>
                 </div>
+                <FieldLabel as="h3">数据预处理</FieldLabel>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-caption text-ink-2">数据预处理：</span>
                   {(['inspect_data', 'cache_text', 'cache_latents'] as const).map((action) => (
                     <Button key={action} onClick={() => void run(action)} disabled={starting !== null}>
                       {starting === action ? <Spinner /> : null}
@@ -328,7 +334,7 @@ export function TrainerWindow(): React.JSX.Element {
 
             <div className="flex items-center justify-end gap-2">
               <Button tone="primary" size="md" onClick={() => void run('train')} disabled={starting !== null || !version}>
-                {starting === 'train' ? <Spinner /> : <Play className="size-4" aria-hidden="true" />}
+                {starting === 'train' ? <Spinner /> : <Play className="size-4" strokeWidth={1.6} aria-hidden="true" />}
                 开始训练
               </Button>
             </div>
@@ -353,22 +359,7 @@ export function TrainerWindow(): React.JSX.Element {
         </>
       )}
 
-      <Modal
-        open={Boolean(doctor)}
-        onClose={() => setDoctor(null)}
-        title="环境体检"
-        description={doctor?.ok ? '没有发现问题。' : '发现了问题，详情见下方输出。'}
-        width="max-w-3xl"
-        footer={
-          <Button tone="secondary" size="md" onClick={() => setDoctor(null)}>
-            关闭
-          </Button>
-        }
-      >
-        <pre className="selectable max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg bg-well p-3 font-mono text-caption text-ink-2">
-          {doctor?.output || '没有输出'}
-        </pre>
-      </Modal>
+      <DoctorDialog result={doctor} onClose={() => setDoctor(null)} />
     </div>
   )
 }

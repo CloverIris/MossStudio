@@ -13,7 +13,6 @@ import {
   mergeNewest,
   sinceFor,
   stepIndex,
-  timeLabel,
 } from '@renderer/pages/library/logic'
 
 // Local times, so the assertions hold in any time zone.
@@ -49,11 +48,6 @@ describe('day labels', () => {
   it('handles yesterday across a month boundary', () => {
     const first = new Date(2026, 2, 1, 9).getTime()
     expect(dayLabel(new Date(2026, 1, 28, 22).getTime(), first)).toBe('昨天')
-  })
-
-  it('adds a zero-padded clock', () => {
-    expect(timeLabel(new Date(2026, 10, 4, 9, 5).getTime(), now)).toBe('今天 09:05')
-    expect(timeLabel(new Date(2026, 10, 1, 14, 32).getTime(), now)).toBe('11 月 1 日 14:32')
   })
 })
 
@@ -159,14 +153,14 @@ describe('detailFacts', () => {
       { label: '种子', value: '42' },
       { label: 'LoRA', value: 'beauty · 0.8' },
       { label: '项目', value: '春季海报' },
-      { label: '生成于', value: '今天 14:32 · 本机 · RTX 4090' },
+      { label: '生成于', value: '2026 年 11 月 4 日 14:32 · 本机 · RTX 4090' },
     ])
   })
 
   it('falls back to file facts when there is no generation record', () => {
     expect(detailFacts(detail({ seed: null }), { now })).toEqual([
       { label: '尺寸', value: '1024 × 1024' },
-      { label: '修改于', value: '今天 14:00' },
+      { label: '修改于', value: '2026 年 11 月 4 日 14:00' },
     ])
   })
 

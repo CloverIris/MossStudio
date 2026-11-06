@@ -22,6 +22,24 @@ export type TrainingFormErrors = Partial<Record<keyof TrainingForm, string>>
 
 export const ALGOS = ['lora', 'locon', 'loha', 'lokr', 'dora', 'oft', 'boft', 'ia3', 'full'] as const
 
+const ALGO_NAMES: Record<string, string> = {
+  lora: 'LoRA',
+  locon: 'LoCon',
+  loha: 'LoHa',
+  lokr: 'LoKr',
+  dora: 'DoRA',
+  oft: 'OFT',
+  boft: 'BOFT',
+  ia3: 'IA3',
+  full: '全量微调',
+}
+
+/** How an algorithm is written for people: "LoRA", as everywhere else in the app, not "LORA". */
+export function algoLabel(algo: string | null | undefined): string {
+  if (!algo) return '—'
+  return ALGO_NAMES[algo.toLowerCase()] ?? algo
+}
+
 export const DEFAULT_TRAINING_FORM: TrainingForm = {
   hostId: 'local',
   versionId: '',
