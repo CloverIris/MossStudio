@@ -211,6 +211,39 @@ const statusColor: Record<CheckStatus, string> = {
   unknown: 'bg-ink-3',
 }
 
+/**
+ * The label of a field or block (ui-rules: caption, medium, ink-2), with an optional value on the
+ * right. `as="h3"` when it heads a block of content (a list of parameters, a group of inputs).
+ */
+export function FieldLabel({
+  children,
+  value,
+  htmlFor,
+  as = 'span',
+  className,
+}: {
+  children: ReactNode
+  value?: ReactNode
+  htmlFor?: string
+  as?: 'span' | 'h3'
+  className?: string
+}): React.JSX.Element {
+  const label = 'text-caption font-medium text-ink-2'
+  const Heading = as
+  return (
+    <div className={cn('flex items-center justify-between gap-2', className)}>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className={label}>
+          {children}
+        </label>
+      ) : (
+        <Heading className={label}>{children}</Heading>
+      )}
+      {value !== undefined ? <span className="tabular flex items-center text-caption text-ink-2">{value}</span> : null}
+    </div>
+  )
+}
+
 export function StatusDot({ status, className }: { status: CheckStatus; className?: string }): React.JSX.Element {
   return <span aria-hidden="true" className={cn('inline-block size-2 shrink-0 rounded-full', statusColor[status], className)} />
 }

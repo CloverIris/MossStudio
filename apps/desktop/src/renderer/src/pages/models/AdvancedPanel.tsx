@@ -254,7 +254,7 @@ function ImportFolderRow(): React.JSX.Element {
   return (
     <Group>
       <Row
-        title="在原位置使用这个模型文件夹"
+        title="添加整个模型文件夹"
         description="选一个完整的模型文件夹（例如从别的电脑拷来的 MOSS-Image），添加到模型库。文件留在原处，不复制、不移动。"
       >
         <Button tone="secondary" disabled={busy} onClick={() => void importFolder()}>
@@ -275,10 +275,11 @@ export function AdvancedPanel({ catalog, location }: { catalog: Catalog; locatio
       </Section>
       {location.kind === 'local' ? (
         <>
+          {/* Both ways to use model files already on this computer sit together, as a pair. */}
           <Section title="文件夹">
             <ModelDirectoriesCard />
+            <ImportFolderRow />
           </Section>
-          <ImportFolderRow />
         </>
       ) : (
         <Section title={`${location.host?.name ?? '远程主机'} 上的文件夹`}>

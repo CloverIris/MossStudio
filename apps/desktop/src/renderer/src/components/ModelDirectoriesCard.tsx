@@ -1,4 +1,4 @@
-import { FolderSearch, Sparkles } from 'lucide-react'
+import { FolderPlus, FolderSearch, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { ModelDirectories, ModelDirectoryId, ModelScanResult, ScannedModel, Settings } from '@shared/types'
@@ -198,11 +198,11 @@ export function ModelDirectoriesCard(): React.JSX.Element {
       ) : null}
       <Group data-model-directories>
         <Row
-          title="使用已有的模型文件"
+          title="添加文件夹里的模型文件"
           description="选择一个文件夹（例如 ComfyUI 的 models），挑出里面的模型文件添加到模型库。文件留在原处，不复制、不移动。"
         >
           <Button tone="secondary" disabled={busy !== null} onClick={() => void runScan()} data-scan-models>
-            {busy === 'scan' ? <Spinner /> : <FolderSearch className="size-4" strokeWidth={1.6} />}
+            {busy === 'scan' ? <Spinner /> : <FolderPlus className="size-4" strokeWidth={1.6} />}
             选择文件夹
           </Button>
         </Row>

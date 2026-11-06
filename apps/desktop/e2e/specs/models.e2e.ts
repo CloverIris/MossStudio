@@ -102,7 +102,7 @@ describe('models', () => {
     await page.getByRole('button', { name: /高级/ }).click()
     // The action says what it does: nothing is copied.
     expect(await page.getByText('复制模型文件夹到模型库').count()).toBe(0)
-    const row = page.getByText('在原位置使用这个模型文件夹', { exact: true })
+    const row = page.getByText('添加整个模型文件夹', { exact: true })
     await row.scrollIntoViewIfNeeded()
     await expect.poll(() => row.isVisible()).toBe(true)
     await page.getByRole('button', { name: '选择文件夹' }).last().click()

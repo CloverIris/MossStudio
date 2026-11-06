@@ -5,7 +5,8 @@ import { Ipc, Events } from '@shared/channels'
 import type { GalleryItem, JobRecord, ProjectSummary } from '@shared/types'
 import { call, onEvent } from '../../lib/api'
 import { cloverUrl } from '../../lib/clover'
-import { Button, EmptyState, IconButton, Input, Select, Spinner, cn } from '../../components/ui'
+import { Notice } from '../../components/common/Notice'
+import { Button, EmptyState, IconButton, Input, LoadingRow, PageHeader, Select, cn } from '../../components/ui'
 import { DetailPanel } from './DetailPanel'
 import {
   EMPTY_FILTERS,
@@ -150,48 +151,50 @@ export function LibraryPage(): React.JSX.Element {
   return (
     <div ref={root} className="flex h-full bg-surface">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 px-8 pb-4 pt-6">
-          <div className="flex min-w-0 items-baseline gap-3">
-            <h1 className="text-title font-semibold text-ink">作品</h1>
-            {loaded && !error ? <span className="tabular text-ui text-ink-2">{countLabel(total)}</span> : null}
-          </div>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <label className="relative block">
-              <span className="sr-only">搜索作品</span>
-              <Search
-                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-2"
-                strokeWidth={1.6}
-                aria-hidden="true"
+        {/* PageHeader with the same insets as PageScroll, so the title sits where every page puts it. */}
+        <PageHeader
+          className="shrink-0 px-10 pb-4 pt-8"
+          title="作品"
+          description={loaded && !error ? countLabel(total) : undefined}
+          actions={
+            <>
+              <label className="relative block">
+                <span className="sr-only">搜索作品</span>
+                <Search
+                  className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-2"
+                  strokeWidth={1.6}
+                  aria-hidden="true"
+                />
+                <Input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="搜索提示词或文件名"
+                  className="w-60 pl-8"
+                />
+              </label>
+              <Select
+                aria-label="按项目筛选"
+                value={filters.projectId}
+                onValueChange={(projectId) => setFilters((current) => ({ ...current, projectId }))}
+                className="w-40"
+                options={[{ value: '', label: '全部项目' }, ...projects.map((project) => ({ value: project.id, label: project.name }))]}
               />
-              <Input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="搜索提示词或文件名"
-                className="w-60 pl-8"
+              <Select
+                aria-label="按时间筛选"
+                value={filters.time}
+                onValueChange={(time) => setFilters((current) => ({ ...current, time: time as TimeFilter }))}
+                className="w-32"
+                options={TIME_FILTERS}
               />
-            </label>
-            <Select
-              aria-label="按项目筛选"
-              value={filters.projectId}
-              onValueChange={(projectId) => setFilters((current) => ({ ...current, projectId }))}
-              className="w-40"
-              options={[{ value: '', label: '全部项目' }, ...projects.map((project) => ({ value: project.id, label: project.name }))]}
-            />
-            <Select
-              aria-label="按时间筛选"
-              value={filters.time}
-              onValueChange={(time) => setFilters((current) => ({ ...current, time: time as TimeFilter }))}
-              className="w-32"
-              options={TIME_FILTERS}
-            />
-            <IconButton label="刷新" disabled={loading} onClick={reload}>
-              <RefreshCw className={cn('size-4', loading && 'animate-spin')} strokeWidth={1.6} />
-            </IconButton>
-          </div>
-        </header>
+              <IconButton label="刷新" disabled={loading} onClick={reload}>
+                <RefreshCw className={cn('size-4', loading && 'animate-spin')} strokeWidth={1.6} />
+              </IconButton>
+            </>
+          }
+        />
 
-        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-8 pb-10">
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
           {error && items.length === 0 ? (
             <EmptyState
               icon={<Images className="size-8" strokeWidth={1.6} />}
@@ -209,9 +212,7 @@ export function LibraryPage(): React.JSX.Element {
               }
             />
           ) : !loaded ? (
-            <div className="flex justify-center py-20">
-              <Spinner />
-            </div>
+            <LoadingRow className="justify-center py-20" />
           ) : items.length === 0 ? (
             filtered ? (
               <EmptyState
@@ -271,11 +272,18 @@ export function LibraryPage(): React.JSX.Element {
           )}
 
           <div ref={sentinel} className="flex h-14 items-center justify-center">
-            {items.length > 0 && loading ? <Spinner className="text-ink-2" /> : null}
+            {items.length > 0 && loading ? <LoadingRow label="正在读取更多…" /> : null}
             {items.length > 0 && !loading && error ? (
-              <Button tone="ghost" onClick={() => void loadMore()}>
-                没能加载更多，重试
-              </Button>
+              <Notice
+                tone="danger"
+                action={
+                  <Button size="xs" onClick={() => void loadMore()}>
+                    重试
+                  </Button>
+                }
+              >
+                没能读取更多图片
+              </Notice>
             ) : null}
           </div>
 
@@ -283,9 +291,9 @@ export function LibraryPage(): React.JSX.Element {
           {items.length > 0 ? (
             <p className="text-center text-caption text-ink-2">
               图片来自输出目录和你添加的文件夹。
-              <button type="button" className="text-ink underline-offset-2 hover:underline" onClick={() => navigate('/settings/storage')}>
+              <Button tone="ghost" size="xs" onClick={() => navigate('/settings/storage')}>
                 在 设置 › 存储 中管理
-              </button>
+              </Button>
             </p>
           ) : null}
         </div>

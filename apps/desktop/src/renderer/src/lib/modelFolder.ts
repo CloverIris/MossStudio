@@ -1,4 +1,4 @@
-/** What `models:import-folder` (在原位置使用这个模型文件夹) answers. */
+/** What `models:import-folder` (添加整个模型文件夹) answers. */
 export interface ImportFolderResult {
   canceled: boolean
   added: number

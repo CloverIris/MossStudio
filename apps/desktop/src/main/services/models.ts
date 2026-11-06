@@ -810,7 +810,7 @@ export async function startDownload(kind: 'model' | 'adapter', id: string, setti
 }
 
 /**
- * 在原位置使用这个模型文件夹: a diffusers folder (or several inside the one
+ * 添加整个模型文件夹: a diffusers folder (or several inside the one
  * picked) is registered in place as one model each, nothing copied or hashed.
  * A folder of loose weight files keeps the old per-file import.
  */

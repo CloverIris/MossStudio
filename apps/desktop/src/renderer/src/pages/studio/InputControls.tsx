@@ -4,21 +4,7 @@ import { IconButton, Input, cn } from '../../components/ui'
 
 /** Small building blocks shared by the 生成设置 panel: 输入, 模型, 高级 and sampling. */
 
-/** The label of a field or block (ui-rules: caption, medium, ink-2), with an optional value on the right. */
-export function FieldLabel({ children, value, htmlFor }: { children: ReactNode; value?: ReactNode; htmlFor?: string }): React.JSX.Element {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      {htmlFor ? (
-        <label htmlFor={htmlFor} className="text-caption font-medium text-ink-2">
-          {children}
-        </label>
-      ) : (
-        <span className="text-caption font-medium text-ink-2">{children}</span>
-      )}
-      {value !== undefined ? <span className="tabular flex items-center text-caption text-ink-2">{value}</span> : null}
-    </div>
-  )
-}
+export { FieldLabel } from '../../components/ui'
 
 /**
  * One slot of 输入 or 模型 (起始图, 控制, 参考图, LoRA): its name, a short hint
