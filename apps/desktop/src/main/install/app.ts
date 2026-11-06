@@ -6,7 +6,7 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { spawn } from 'node:child_process'
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ZodError, type ZodType } from 'zod'
@@ -19,6 +19,7 @@ import { getSettings } from '../services/settings'
 import { SetupController } from './controller'
 import { confirmHealthFor } from './health'
 import { trashBundleAfterExit } from './macTrash'
+import { resolveMissingData } from './missingData'
 import { chromiumHelpers, rememberSpawned, spawnedPids } from './processTree'
 import { focusOnSecondInstance, otherInstanceRunning, releaseAppLock } from './singleInstance'
 import { recordedDataRoot } from './dataRoot'
@@ -423,6 +424,24 @@ async function runUninstall(context: RunContext): Promise<void> {
  */
 export async function runInstallMode(context: RunContext = getRunContext()): Promise<boolean> {
   if (context.mode === 'setup') {
+    const missing = context.setup?.missingDataRoot
+    if (missing) {
+      // macOS: the installed bundle whose data drive is not connected. Never set it up again
+      // (rewriting the locator) unless the user chooses to.
+      log(`data root ${missing} of this install is missing`)
+      const choice = context.silent
+        ? 'quit'
+        : await resolveMissingData(missing, {
+            exists: existsSync,
+            ask: async (options) => (await dialog.showMessageBox(options)).response,
+          })
+      log(`missing data root: ${choice}`)
+      if (choice === 'relaunch') app.relaunch()
+      if (choice !== 'setup') {
+        app.exit(context.silent ? 1 : 0)
+        return true
+      }
+    }
     try {
       await runSetup(context)
     } catch (error) {

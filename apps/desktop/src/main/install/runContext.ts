@@ -56,6 +56,11 @@ export interface SetupRequest {
   origin: SetupOrigin
   /** macOS: the mounted DMG volume (/Volumes/<name>) the bundle runs from. */
   volume: string | null
+  /**
+   * macOS: the locator names this bundle but its data root is missing (a drive not connected).
+   * The user is asked before anything (see missingData.ts); Setup never decides on its own.
+   */
+  missingDataRoot: string | null
 }
 
 export interface RunContext {
@@ -171,6 +176,7 @@ export function detectRunContext(input: DetectInput): RunContext {
     installTo,
     origin,
     volume,
+    missingDataRoot: null,
   })
   const none = { root: null, launcher: null, recordPath: null, record: null, portable: false }
 
@@ -200,7 +206,11 @@ export function detectRunContext(input: DetectInput): RunContext {
       }
     }
     const { origin, volume } = macOrigin(bundle)
-    return { ...base, ...none, mode: 'setup', appPath, locator, setup: setupRequest(origin, volume) }
+    // This is the installed bundle, but its data (and install.json) cannot be found right now.
+    const missingDataRoot = setupArg === null && locator?.appPath && samePath('darwin', locator.appPath, bundle) && !input.exists(locator.dataRoot)
+      ? locator.dataRoot
+      : null
+    return { ...base, ...none, mode: 'setup', appPath, locator, setup: { ...setupRequest(origin, volume), missingDataRoot } }
   }
 
   const appPath = p.dirname(input.execPath)

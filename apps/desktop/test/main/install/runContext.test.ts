@@ -48,7 +48,7 @@ describe('detectRunContext on Windows', () => {
       files: { [winLocator]: JSON.stringify(locator) },
     }))
     expect(context.mode).toBe('setup')
-    expect(context.setup).toEqual({ payloadDir: 'C:\\Temp\\moss-payload 1', silent: false, installTo: null, origin: 'stub', volume: null })
+    expect(context.setup).toEqual({ payloadDir: 'C:\\Temp\\moss-payload 1', silent: false, installTo: null, origin: 'stub', volume: null, missingDataRoot: null })
     expect(context.locator).toEqual(locator)
     expect(detectRunContext(input({ packaged: false, argv: ['x', '--moss-setup=C:\\p'] })).mode).toBe('setup')
   })
@@ -214,6 +214,21 @@ describe('detectRunContext on macOS', () => {
     expect(context.root).toBe('/Applications')
     expect(context.recordPath).toBe(P.join(support, 'install.json'))
     expect(context.launcher).toBeNull()
+  })
+
+  it('names a missing data root when the locator points at this bundle but its data folder is gone (drive not connected)', () => {
+    const external = '/Volumes/作品盘/MossStudio'
+    const locator = JSON.stringify({ ...installed, dataRoot: external })
+    const bin = '/Applications/MossStudio.app/Contents/MacOS/MossStudio'
+    const context = mac(bin, { [locatorFile]: locator })
+    expect(context).toMatchObject({ mode: 'setup', setup: { origin: 'unlocated', missingDataRoot: external } })
+    // The folder is there (only install.json is not): an ordinary setup, as before.
+    expect(mac(bin, { [locatorFile]: locator, [external]: null }).setup?.missingDataRoot).toBeNull()
+    // Another bundle, or an explicit --moss-setup: not this install's question.
+    expect(mac(`${home}/Downloads/MossStudio.app/Contents/MacOS/MossStudio`, { [locatorFile]: locator }).setup?.missingDataRoot).toBeNull()
+    expect(mac(bin, { [locatorFile]: locator }, ['MossStudio', '--moss-setup=/tmp/x']).setup?.missingDataRoot).toBeNull()
+    // Connected again: installed as usual.
+    expect(mac(bin, { [locatorFile]: locator, [external]: null, [P.join(external, 'install.json')]: JSON.stringify(record({ platform: 'darwin-arm64', root: '/Applications', appPath: '/Applications/MossStudio.app', dataRoot: external })) }).mode).toBe('installed')
   })
 
   it('is a (silent) uninstall with --moss-uninstall, even with --moss-silent', () => {
