@@ -32,14 +32,19 @@ type Info struct {
 	Exe string
 }
 
-// ExecRunner starts the MossStudio (Electron) app with os/exec. It is only ever given the
-// app's executable, so it may add the Chromium switches the app needs on this machine
-// (see sandboxArgs).
-type ExecRunner struct{}
+// ExecRunner starts real processes with os/exec.
+type ExecRunner struct {
+	// Chromium: exe is the MossStudio (Electron) app, so add the Chromium switches it needs
+	// on this machine (see sandboxArgs).
+	Chromium bool
+}
 
 // Start implements Runner.
-func (ExecRunner) Start(exe string, args, env []string) (Process, error) {
-	cmd := exec.Command(exe, append(sandboxArgs(exe), args...)...)
+func (r ExecRunner) Start(exe string, args, env []string) (Process, error) {
+	if r.Chromium {
+		args = append(sandboxArgs(exe), args...)
+	}
+	cmd := exec.Command(exe, args...)
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, os.Stdout, os.Stderr
 	configureChild(cmd)

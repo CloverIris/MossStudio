@@ -51,3 +51,31 @@ func TestSandboxArgs(t *testing.T) {
 		})
 	}
 }
+
+// Only a Chromium runner adds the switch; plain processes get exactly their arguments.
+func TestExecRunnerAddsSandboxSwitchOnlyForChromium(t *testing.T) {
+	saved := sandboxRoot
+	t.Cleanup(func() { sandboxRoot = saved })
+	sandboxRoot = fakeSysctl(t, map[string]string{"kernel/apparmor_restrict_unprivileged_userns": "1"})
+	out := filepath.Join(t.TempDir(), "args")
+	script := filepath.Join(t.TempDir(), "echo-args")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$OUT\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		runner ExecRunner
+		want   string
+	}{{ExecRunner{}, "a\n"}, {ExecRunner{Chromium: true}, "--no-sandbox\na\n"}} {
+		p, err := c.runner.Start(script, []string{"a"}, append(os.Environ(), "OUT="+out))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code := Wait(p); code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+		got, _ := os.ReadFile(out)
+		if string(got) != c.want {
+			t.Fatalf("Chromium=%v: args %q, want %q", c.runner.Chromium, got, c.want)
+		}
+	}
+}

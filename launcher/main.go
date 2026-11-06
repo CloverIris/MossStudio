@@ -99,7 +99,7 @@ func run(args []string) int {
 	log := newLogger()
 	env := &launch.Env{
 		Root: filepath.Dir(self), Launcher: self, Platform: platformKey(),
-		Runner: proc.ExecRunner{}, Clock: launch.RealClock{}, Running: proc.RunningUnder, Logf: log.printf,
+		Runner: proc.ExecRunner{Chromium: true}, Clock: launch.RealClock{}, Running: proc.RunningUnder, Logf: log.printf,
 	}
 	if rec, err := record.Read(record.Path(env.Root)); err == nil {
 		log.setFile(filepath.Join(rec.DataRoot, "logs", "launcher.log"))
@@ -228,7 +228,7 @@ func runStub(self string, args []string) int {
 	if !silent {
 		splash = ui.ShowSplash()
 	}
-	code, err := stub.Run(stub.Options{Self: self, Args: args, Splash: splash, Runner: proc.ExecRunner{},
+	code, err := stub.Run(stub.Options{Self: self, Args: args, Splash: splash, Runner: proc.ExecRunner{Chromium: true},
 		Logf: func(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...) }})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "MossStudio setup:", err)

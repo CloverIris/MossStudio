@@ -30,8 +30,14 @@ func buildLauncher(t *testing.T, dir string) string {
 	return out
 }
 
+// writeApp writes a fake app. Like Chromium, it consumes the --no-sandbox the launcher adds
+// on machines without a usable sandbox (CI runners among them), so scripts see only the
+// arguments meant for MossStudio.
 func writeApp(t *testing.T, root, version, script string) {
 	t.Helper()
+	if rest, ok := strings.CutPrefix(script, "#!/bin/sh\n"); ok {
+		script = "#!/bin/sh\n[ \"${1:-}\" = --no-sandbox ] && shift\n" + rest
+	}
 	dir := filepath.Join(root, "app-"+version)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
