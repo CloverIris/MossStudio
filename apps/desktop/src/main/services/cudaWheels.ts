@@ -97,7 +97,10 @@ function extractLibs(buffer: Buffer, dest: string): Promise<string[]> {
   })
 }
 
-export async function installCudaWheels(installDir: string, flavour: 'cu12' | 'cu13'): Promise<{ installed: string[]; packages: string[] }> {
+export async function installCudaWheels(
+  installDir: string,
+  flavour: 'cu12' | 'cu13',
+): Promise<{ installed: string[]; packages: string[] }> {
   const dest = join(installDir, process.platform === 'win32' ? 'bin' : 'lib')
   mkdirSync(dest, { recursive: true })
   const installed: string[] = []

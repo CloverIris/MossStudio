@@ -24,7 +24,12 @@ describe('activity panel', () => {
     })
     await app.start()
     await page.evaluate(() => {
-      const job = window.__mock.fixtures.jobFixture({ id: 'job-run', state: 'running', stage: 'denoise', progress: { stage: 'denoise', current: 10, total: 28, percent: 36 } })
+      const job = window.__mock.fixtures.jobFixture({
+        id: 'job-run',
+        state: 'running',
+        stage: 'denoise',
+        progress: { stage: 'denoise', current: 10, total: 28, percent: 36 },
+      })
       window.__mock.state.jobs = [job, ...window.__mock.state.jobs]
       window.__mock.emit(window.__mock.Events.job, job)
     })
@@ -36,7 +41,15 @@ describe('activity panel', () => {
     await panel(page).locator('[data-job-row="job-run"] button[aria-expanded]').click()
     await expect.poll(() => app.calls<{ id: string }>('jobs:logs').then((calls) => calls.some((call) => call.id === 'job-run'))).toBe(true)
     await expect.poll(() => panel(page).locator('[data-job-log]').textContent()).toContain('line 2')
-    await page.evaluate(() => window.__mock.emit(window.__mock.Events.jobLog, { jobId: 'job-run', seq: 3, at: '2026-11-01T00:00:00.000Z', stream: 'stdout', text: 'step 11/28' }))
+    await page.evaluate(() =>
+      window.__mock.emit(window.__mock.Events.jobLog, {
+        jobId: 'job-run',
+        seq: 3,
+        at: '2026-11-01T00:00:00.000Z',
+        stream: 'stdout',
+        text: 'step 11/28',
+      }),
+    )
     await expect.poll(() => panel(page).locator('[data-job-log]').textContent()).toContain('step 11/28')
     await app.screenshot('activity-jobs-dark')
 
@@ -69,14 +82,16 @@ describe('activity panel', () => {
     const page = await app.open({ scenario: 'jobFailure', route: '/studio', theme: 'light', defer: true })
     await page.evaluate(() => {
       const { diagnosticFixture, jobLogFixture } = window.__mock.fixtures
-      window.__mock.state.diagnostics = [diagnosticFixture({
-        jobId: 'job-failed',
-        solutions: [
-          { label: '查看日志', action: 'open_job_log' },
-          { label: '检查引擎', action: 'repair_runtime' },
-          { label: '自动重试', action: 'retry' },
-        ],
-      })]
+      window.__mock.state.diagnostics = [
+        diagnosticFixture({
+          jobId: 'job-failed',
+          solutions: [
+            { label: '查看日志', action: 'open_job_log' },
+            { label: '检查引擎', action: 'repair_runtime' },
+            { label: '自动重试', action: 'retry' },
+          ],
+        }),
+      ]
       window.__mock.state.jobLogs = { 'job-failed': jobLogFixture('job-failed', 4) }
     })
     await app.start()
@@ -103,7 +118,12 @@ describe('activity panel', () => {
   })
 
   it('redirects legacy routes', async () => {
-    for (const [from, to] of [['/gallery', '/library'], ['/engines', '/settings/devices'], ['/devices', '/settings/devices'], ['/instances', '/settings/devices']] as const) {
+    for (const [from, to] of [
+      ['/gallery', '/library'],
+      ['/engines', '/settings/devices'],
+      ['/devices', '/settings/devices'],
+      ['/instances', '/settings/devices'],
+    ] as const) {
       const page = await app.open({ route: from })
       await expect.poll(() => hash(page)).toBe(`#${to}`)
     }
@@ -119,17 +139,20 @@ describe('title bar', () => {
 
   it('shows live GPU load, VRAM and tasks, with every GPU one click away', async () => {
     const page = await app.open({ scenario: 'ready', route: '/studio', theme: 'dark' })
-    await page.evaluate(([gib]) => {
-      const { fixtures, Events } = window.__mock
-      const devices = [fixtures.gpuDeviceFixture(), fixtures.GPU_RTX_3060()]
-      const snapshot = fixtures.gpuTelemetryFixture(devices)
-      snapshot.devices[0] = { ...snapshot.devices[0]!, utilizationPercent: 57, memoryUsedBytes: 9.5 * gib, runningTasks: 1 }
-      snapshot.devices[1] = { ...snapshot.devices[1]!, utilizationPercent: 4, memoryUsedBytes: 1 * gib }
-      window.__mock.emit(Events.gpuTelemetry, snapshot)
-      const job = fixtures.jobFixture({ id: 'job-live', state: 'running', stage: 'denoise' })
-      window.__mock.state.jobs = [job]
-      window.__mock.emit(Events.job, job)
-    }, [GiB] as const)
+    await page.evaluate(
+      ([gib]) => {
+        const { fixtures, Events } = window.__mock
+        const devices = [fixtures.gpuDeviceFixture(), fixtures.GPU_RTX_3060()]
+        const snapshot = fixtures.gpuTelemetryFixture(devices)
+        snapshot.devices[0] = { ...snapshot.devices[0]!, utilizationPercent: 57, memoryUsedBytes: 9.5 * gib, runningTasks: 1 }
+        snapshot.devices[1] = { ...snapshot.devices[1]!, utilizationPercent: 4, memoryUsedBytes: 1 * gib }
+        window.__mock.emit(Events.gpuTelemetry, snapshot)
+        const job = fixtures.jobFixture({ id: 'job-live', state: 'running', stage: 'denoise' })
+        window.__mock.state.jobs = [job]
+        window.__mock.emit(Events.job, job)
+      },
+      [GiB] as const,
+    )
     const monitor = page.locator('[data-perf-monitor]')
     await expect.poll(() => monitor.getAttribute('aria-label')).toBe('性能：GPU 57%，显存 9.5 / 24.0 GB，1 个任务。点击查看每块 GPU')
     await expect.poll(() => monitor.textContent()).toContain('57%')
@@ -171,8 +194,28 @@ describe('training', () => {
     await page.evaluate(() => {
       const { jobFixture } = window.__mock.fixtures
       window.__mock.state.jobs = [
-        jobFixture({ id: 'train-1', kind: 'training', trainerRunName: '猫咪 LoRA', trainerAlgo: 'lora', state: 'running', stage: 'denoise', progress: { stage: 'denoise', current: 1200, total: 2000, percent: 60 }, metrics: { step: 1200, loss: 0.0812 }, startedAt: '2026-11-01T02:00:00.000Z' }),
-        jobFixture({ id: 'train-0', kind: 'training', trainerRunName: '风格 LoRA', trainerAlgo: 'lora', state: 'succeeded', stage: 'ready', progress: { stage: 'ready', current: 1000, total: 1000, percent: 100 }, startedAt: '2026-11-01T01:00:00.000Z', endedAt: '2026-11-01T01:30:00.000Z' }),
+        jobFixture({
+          id: 'train-1',
+          kind: 'training',
+          trainerRunName: '猫咪 LoRA',
+          trainerAlgo: 'lora',
+          state: 'running',
+          stage: 'denoise',
+          progress: { stage: 'denoise', current: 1200, total: 2000, percent: 60 },
+          metrics: { step: 1200, loss: 0.0812 },
+          startedAt: '2026-11-01T02:00:00.000Z',
+        }),
+        jobFixture({
+          id: 'train-0',
+          kind: 'training',
+          trainerRunName: '风格 LoRA',
+          trainerAlgo: 'lora',
+          state: 'succeeded',
+          stage: 'ready',
+          progress: { stage: 'ready', current: 1000, total: 1000, percent: 100 },
+          startedAt: '2026-11-01T01:00:00.000Z',
+          endedAt: '2026-11-01T01:30:00.000Z',
+        }),
         jobFixture({ id: 'gen-1', state: 'succeeded' }),
       ]
     })

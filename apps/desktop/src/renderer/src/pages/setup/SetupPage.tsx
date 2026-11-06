@@ -12,9 +12,18 @@ import { useSetup } from './useSetup'
 
 function StepMark({ step, index }: { step: SetupStep; index: number }): React.JSX.Element {
   const base = 'flex size-6 items-center justify-center rounded-full text-caption font-semibold'
-  if (step.state === 'done') return <span className={cn(base, 'bg-ok text-on-ink')}><Check className="size-3.5" strokeWidth={2.4} aria-hidden="true" /></span>
+  if (step.state === 'done')
+    return (
+      <span className={cn(base, 'bg-ok text-on-ink')}>
+        <Check className="size-3.5" strokeWidth={2.4} aria-hidden="true" />
+      </span>
+    )
   if (step.state === 'error' || (step.state === 'blocked' && step.id === 'gpu')) {
-    return <span className={cn(base, 'bg-danger-soft text-danger')}><AlertCircle className="size-3.5" aria-hidden="true" /></span>
+    return (
+      <span className={cn(base, 'bg-danger-soft text-danger')}>
+        <AlertCircle className="size-3.5" aria-hidden="true" />
+      </span>
+    )
   }
   if (step.state === 'running') return <span className={cn(base, 'bg-accent text-on-accent')}>{index + 1}</span>
   return <span className={cn(base, 'bg-well-strong text-ink-2')}>{index + 1}</span>
@@ -38,9 +47,12 @@ function StepRow({ step, index }: { step: SetupStep; index: number }): React.JSX
       <StepMark step={step} index={index} />
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="text-control font-semibold text-ink">
-          {step.title}<span className="sr-only">：{STATE_LABEL[step.state]}</span>
+          {step.title}
+          <span className="sr-only">：{STATE_LABEL[step.state]}</span>
         </span>
-        <span className={cn('tabular text-ui [overflow-wrap:anywhere]', step.state === 'error' ? 'text-danger' : 'text-ink-2')}>{step.detail}</span>
+        <span className={cn('tabular text-ui [overflow-wrap:anywhere]', step.state === 'error' ? 'text-danger' : 'text-ink-2')}>
+          {step.detail}
+        </span>
         {current ? (
           <ProgressBar
             className="mt-2"
@@ -129,7 +141,9 @@ export function SetupPage(): React.JSX.Element {
         </div>
 
         <ol className="flex flex-col gap-1" aria-label="准备步骤">
-          {view.steps.map((step, index) => <StepRow key={step.id} step={step} index={index} />)}
+          {view.steps.map((step, index) => (
+            <StepRow key={step.id} step={step} index={index} />
+          ))}
         </ol>
 
         {done ? null : <PlanLines lines={view.lines} />}
@@ -166,33 +180,45 @@ export function SetupPage(): React.JSX.Element {
               {usingFolder ? <Spinner /> : null}已有模型文件？使用本地文件夹
             </Button>
           ) : info?.modelsPath && !done ? (
-            <span className="min-w-0 truncate text-ui text-ink-2" title={info.modelsPath}>模型保存到 {info.modelsPath}</span>
+            <span className="min-w-0 truncate text-ui text-ink-2" title={info.modelsPath}>
+              模型保存到 {info.modelsPath}
+            </span>
           ) : null}
           <span className="flex-1" />
           {done ? (
-            <Button tone="primary" size="lg" disabled={leaving} onClick={() => void leave('completed', '/studio')}>开始创作</Button>
+            <Button tone="primary" size="lg" disabled={leaving} onClick={() => void leave('completed', '/studio')}>
+              开始创作
+            </Button>
           ) : running ? (
             <>
-              <Button size="lg" tone="secondary" disabled={leaving} onClick={() => void leave('active', '/studio')}>在后台继续</Button>
+              <Button size="lg" tone="secondary" disabled={leaving} onClick={() => void leave('active', '/studio')}>
+                在后台继续
+              </Button>
               {pending.length > 0 ? (
                 // E.g. after a restart mid-install: the engine is still downloading but the model never started.
                 <Button tone="primary" size="lg" disabled={starting} onClick={() => void start()}>
-                  {starting ? <Spinner /> : null}{pending.includes('model') ? '同时下载模型' : '继续准备'}
+                  {starting ? <Spinner /> : null}
+                  {pending.includes('model') ? '同时下载模型' : '继续准备'}
                 </Button>
               ) : (
-                <Button tone="primary" size="lg" disabled>开始创作</Button>
+                <Button tone="primary" size="lg" disabled>
+                  开始创作
+                </Button>
               )}
             </>
           ) : (
             <>
-              <Button tone="ghost" size="lg" disabled={leaving} onClick={() => void leave('dismissed', '/studio')}>跳过</Button>
+              <Button tone="ghost" size="lg" disabled={leaving} onClick={() => void leave('dismissed', '/studio')}>
+                跳过
+              </Button>
               <Button
                 tone="primary"
                 size="lg"
                 disabled={starting || view.phase === 'checking' || view.phase === 'blocked'}
                 onClick={() => void start()}
               >
-                {starting ? <Spinner /> : null}{view.phase === 'error' ? '重试' : '开始准备'}
+                {starting ? <Spinner /> : null}
+                {view.phase === 'error' ? '重试' : '开始准备'}
               </Button>
             </>
           )}

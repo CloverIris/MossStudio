@@ -23,17 +23,40 @@ describe('launch queue', () => {
   })
 
   it('migrates legacy rows, drops invalid ones and rewrites retired fields', async () => {
-    writeFileSync(file(), JSON.stringify([
-      { id: 'r1', instanceId: 'inst', backend: 'gradio', port: 7860, extraArgs: '--x', state: 'queued', profile: 'dmd8', queuedAt: '2026-01-01T00:00:00Z' },
-      { id: 'r2', instanceId: 'inst', state: 'weird', workspace: 'official', queuedAt: '2026-01-02T00:00:00Z', caseName: '' },
-      { id: 'missing-instance' },
-      { instanceId: 'missing-id' },
-    ]))
+    writeFileSync(
+      file(),
+      JSON.stringify([
+        {
+          id: 'r1',
+          instanceId: 'inst',
+          backend: 'gradio',
+          port: 7860,
+          extraArgs: '--x',
+          state: 'queued',
+          profile: 'dmd8',
+          queuedAt: '2026-01-01T00:00:00Z',
+        },
+        { id: 'r2', instanceId: 'inst', state: 'weird', workspace: 'official', queuedAt: '2026-01-02T00:00:00Z', caseName: '' },
+        { id: 'missing-instance' },
+        { instanceId: 'missing-id' },
+      ]),
+    )
     const rows = (await load()).listLaunchRows()
     expect(rows.map((row) => row.id)).toEqual(['r2', 'r1'])
     expect(rows.find((row) => row.id === 'r1')).toEqual({
-      id: 'r1', caseId: undefined, caseName: 'inst', instanceId: 'inst', instanceName: 'inst', workspace: 'clover', deviceId: 'mps',
-      profile: 'dmd8', jobId: undefined, state: 'queued', queuedAt: '2026-01-01T00:00:00Z', startedAt: undefined, error: undefined,
+      id: 'r1',
+      caseId: undefined,
+      caseName: 'inst',
+      instanceId: 'inst',
+      instanceName: 'inst',
+      workspace: 'clover',
+      deviceId: 'mps',
+      profile: 'dmd8',
+      jobId: undefined,
+      state: 'queued',
+      queuedAt: '2026-01-01T00:00:00Z',
+      startedAt: undefined,
+      error: undefined,
     })
     expect(rows.find((row) => row.id === 'r2')).toMatchObject({ state: 'failed', profile: 'base', workspace: 'clover', caseName: 'inst' })
     const rewritten = stored()
@@ -42,11 +65,14 @@ describe('launch queue', () => {
   })
 
   it('marks rows interrupted by a restart as failed and persists that', async () => {
-    writeFileSync(file(), JSON.stringify([
-      launchRowFixture({ id: 'a', state: 'running' }),
-      launchRowFixture({ id: 'b', state: 'starting' }),
-      launchRowFixture({ id: 'c', state: 'queued' }),
-    ]))
+    writeFileSync(
+      file(),
+      JSON.stringify([
+        launchRowFixture({ id: 'a', state: 'running' }),
+        launchRowFixture({ id: 'b', state: 'starting' }),
+        launchRowFixture({ id: 'c', state: 'queued' }),
+      ]),
+    )
     const rows = (await load()).listLaunchRows()
     expect(Object.fromEntries(rows.map((row) => [row.id, row.state]))).toEqual({ a: 'failed', b: 'failed', c: 'queued' })
     expect(rows.find((row) => row.id === 'a')!.error).toBe('应用重启，任务已中断')

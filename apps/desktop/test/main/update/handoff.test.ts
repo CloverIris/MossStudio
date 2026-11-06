@@ -16,7 +16,11 @@ describe('launcher handoff', () => {
     const launcher = 'C:\\Users\\张 三\\AppData\\Local\\Programs\\MossStudio\\MossStudio.exe'
     await spawnLauncherRestart(launcher, 4242, fake.spawn)
     expect(launcherRestartArgs(4242)).toEqual(['--restart=4242'])
-    expect(fake.calls[0]).toMatchObject({ command: launcher, args: ['--restart=4242'], options: { detached: true, stdio: 'ignore', windowsHide: true } })
+    expect(fake.calls[0]).toMatchObject({
+      command: launcher,
+      args: ['--restart=4242'],
+      options: { detached: true, stdio: 'ignore', windowsHide: true },
+    })
     expect(fake.calls[0]!.options).not.toHaveProperty('shell')
     expect(fake.children[0]!.unrefCalled).toBe(true)
   })
@@ -27,20 +31,41 @@ describe('launcher handoff', () => {
   })
 
   it('really waits for a real child process', async () => {
-    await expect(spawnLauncherRestart(process.execPath, 1, (command, _args, options) => nodeSpawn(command, ['-e', ''], options))).resolves.toBeUndefined()
+    await expect(
+      spawnLauncherRestart(process.execPath, 1, (command, _args, options) => nodeSpawn(command, ['-e', ''], options)),
+    ).resolves.toBeUndefined()
     await expect(spawnLauncherRestart(join(temp(), 'missing-launcher'), 1)).rejects.toThrow('无法启动 MossStudio 启动器')
   })
 })
 
 describe('macOS swap helper: static script, arguments only', () => {
   const args: MacSwapArgs = {
-    pid: 77, bundle: '/Users/张 三/Applications/MossStudio.app', incoming: '/x/.MossStudio-1.1.0.app', outgoing: '/x/.MossStudio-1.0.3.app.previous',
-    record: '/Users/张 三/Library/Application Support/MossStudio/install.json', timeoutSeconds: 60, marker: '/m/.update-failed', version: '1.1.0',
-    from: '1.0.3', clean: '/m/.update-clean-exit',
+    pid: 77,
+    bundle: '/Users/张 三/Applications/MossStudio.app',
+    incoming: '/x/.MossStudio-1.1.0.app',
+    outgoing: '/x/.MossStudio-1.0.3.app.previous',
+    record: '/Users/张 三/Library/Application Support/MossStudio/install.json',
+    timeoutSeconds: 60,
+    marker: '/m/.update-failed',
+    version: '1.1.0',
+    from: '1.0.3',
+    clean: '/m/.update-clean-exit',
   }
 
   it('orders the positional arguments as the script reads them', () => {
-    expect(macSwapArgs(args)).toEqual(['77', args.bundle, args.incoming, args.outgoing, args.record, '60', args.marker, '1.1.0', '/usr/bin/open', '1.0.3', args.clean])
+    expect(macSwapArgs(args)).toEqual([
+      '77',
+      args.bundle,
+      args.incoming,
+      args.outgoing,
+      args.record,
+      '60',
+      args.marker,
+      '1.1.0',
+      '/usr/bin/open',
+      '1.0.3',
+      args.clean,
+    ])
   })
 
   it('reads every value from $1…$11 and never contains a value', () => {
@@ -61,7 +86,11 @@ describe('macOS swap helper: static script, arguments only', () => {
     const file = await spawnMacSwap(args, { spawn: fake.spawn, tempDir: temp() })
     expect(readFileSync(file, 'utf8')).toBe(MAC_SWAP_HELPER)
     if (unix) expect(statSync(file).mode & 0o777).toBe(0o700)
-    expect(fake.calls[0]).toMatchObject({ command: '/bin/sh', args: [file, ...macSwapArgs(args)], options: { detached: true, stdio: 'ignore' } })
+    expect(fake.calls[0]).toMatchObject({
+      command: '/bin/sh',
+      args: [file, ...macSwapArgs(args)],
+      options: { detached: true, stdio: 'ignore' },
+    })
     expect(fake.children[0]!.unrefCalled).toBe(true)
   })
 
@@ -104,7 +133,8 @@ describe.runIf(unix)('macOS swap helper under /bin/sh', () => {
     writeFileSync(join(path, 'Contents', 'label'), label)
   }
 
-  const record = (current: string, confirmed: boolean): string => `${JSON.stringify({ schema: 1, current, confirmed, failed: [] }, null, 2)}\n`
+  const record = (current: string, confirmed: boolean): string =>
+    `${JSON.stringify({ schema: 1, current, confirmed, failed: [] }, null, 2)}\n`
 
   type Mode = 'confirm' | 'crash' | 'hang' | 'none' | 'clean' | 'moveon'
 
@@ -127,26 +157,34 @@ describe.runIf(unix)('macOS swap helper under /bin/sh', () => {
     writeFileSync(paths.record, record(options.recordCurrent ?? '1.0.3', true))
     const opener = join(temp(), 'fake open')
     // $2 is the bundle `open -n` gets. The fake app reconciles install.json like the real one.
-    writeFileSync(opener, [
-      '#!/bin/sh',
-      'printf \'%s|\' "$@" >> "$FAKE_OPEN_LOG"',
-      'printf \'\\n\' >> "$FAKE_OPEN_LOG"',
-      '[ -f "$FAKE_OPENED" ] && exit 0',
-      ': > "$FAKE_OPENED"',
-      'exe="$2/Contents/MacOS/MossStudio"',
-      'w() { printf \'{\\n  "schema": 1,\\n  "current": "%s",\\n  "confirmed": %s\\n}\\n\' "$1" "$2" > "$FAKE_RECORD.tmp" && mv "$FAKE_RECORD.tmp" "$FAKE_RECORD"; }',
-      'case "$FAKE_MODE" in',
-      '  confirm) "$exe" 30 & (sleep 0.3; w 1.1.0 false; sleep 0.3; w 1.1.0 true) & ;;',
-      '  crash) w 1.1.0 false; "$exe" 0.3 & ;;',
-      '  hang) w 1.1.0 false; "$exe" 30 & ;;',
-      '  clean) w 1.1.0 false; printf \'1.1.0\\n\' > "$FAKE_CLEAN"; "$exe" 0.3 & ;;',
-      '  moveon) "$exe" 30 & (w 1.1.0 false; sleep 0.4; w 1.2.0 false) & ;;',
-      '  none) ;;',
-      'esac',
-      '',
-    ].join('\n'), { mode: 0o755 })
+    writeFileSync(
+      opener,
+      [
+        '#!/bin/sh',
+        'printf \'%s|\' "$@" >> "$FAKE_OPEN_LOG"',
+        'printf \'\\n\' >> "$FAKE_OPEN_LOG"',
+        '[ -f "$FAKE_OPENED" ] && exit 0',
+        ': > "$FAKE_OPENED"',
+        'exe="$2/Contents/MacOS/MossStudio"',
+        'w() { printf \'{\\n  "schema": 1,\\n  "current": "%s",\\n  "confirmed": %s\\n}\\n\' "$1" "$2" > "$FAKE_RECORD.tmp" && mv "$FAKE_RECORD.tmp" "$FAKE_RECORD"; }',
+        'case "$FAKE_MODE" in',
+        '  confirm) "$exe" 30 & (sleep 0.3; w 1.1.0 false; sleep 0.3; w 1.1.0 true) & ;;',
+        '  crash) w 1.1.0 false; "$exe" 0.3 & ;;',
+        '  hang) w 1.1.0 false; "$exe" 30 & ;;',
+        '  clean) w 1.1.0 false; printf \'1.1.0\\n\' > "$FAKE_CLEAN"; "$exe" 0.3 & ;;',
+        '  moveon) "$exe" 30 & (w 1.1.0 false; sleep 0.4; w 1.2.0 false) & ;;',
+        '  none) ;;',
+        'esac',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    )
     const env = {
-      ...process.env, FAKE_OPEN_LOG: paths.log, FAKE_MODE: mode, FAKE_RECORD: paths.record, FAKE_CLEAN: paths.clean,
+      ...process.env,
+      FAKE_OPEN_LOG: paths.log,
+      FAKE_MODE: mode,
+      FAKE_RECORD: paths.record,
+      FAKE_CLEAN: paths.clean,
       FAKE_OPENED: join(temp(), 'opened-once'),
     }
     return { paths, opener, env }
@@ -157,7 +195,9 @@ describe.runIf(unix)('macOS swap helper under /bin/sh', () => {
     writeFileSync(script, MAC_SWAP_HELPER, { mode: 0o700 })
     const child = nodeSpawn('/bin/sh', [script, ...argv], { env, stdio: ['ignore', 'ignore', 'pipe'] })
     let stderr = ''
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
     const code = await new Promise<number | null>((resolve) => child.on('exit', resolve))
     return { code, script, stderr }
   }

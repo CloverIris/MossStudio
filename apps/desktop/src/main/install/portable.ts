@@ -11,7 +11,8 @@ import { readInstallRecord, readJsonObject, writeInstallRecord } from './record'
 import type { RunContext } from './runContext'
 
 export function ensureMacPortableRecord(context: RunContext, version: string, now: Date = new Date()): InstallRecord | null {
-  if (context.platform !== 'darwin' || context.mode !== 'portable' || !context.root || !context.recordPath || !context.platformKey) return null
+  if (context.platform !== 'darwin' || context.mode !== 'portable' || !context.root || !context.recordPath || !context.platformKey)
+    return null
   const root = context.root
   const existing = readInstallRecord(context.recordPath)
   if (existing && samePath('darwin', existing.root, root)) return existing

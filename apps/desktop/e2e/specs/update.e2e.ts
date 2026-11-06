@@ -14,12 +14,15 @@ const popover = (page: Page) => page.getByRole('dialog', { name: '更新' })
 
 /** Push an update state the way main does (Events.updateState), keeping the mock's state in step. */
 async function push(page: Page, build: string, ...args: unknown[]): Promise<void> {
-  await page.evaluate(([name, rest]) => {
-    const fixtures = window.__mock.fixtures as unknown as Record<string, (...a: unknown[]) => UpdaterState>
-    const state = fixtures[name as string]!(...(rest as unknown[]))
-    window.__mock.state.update = state
-    window.__mock.emit(window.__mock.Events.updateState, state)
-  }, [build, args] as const)
+  await page.evaluate(
+    ([name, rest]) => {
+      const fixtures = window.__mock.fixtures as unknown as Record<string, (...a: unknown[]) => UpdaterState>
+      const state = fixtures[name as string]!(...(rest as unknown[]))
+      window.__mock.state.update = state
+      window.__mock.emit(window.__mock.Events.updateState, state)
+    },
+    [build, args] as const,
+  )
 }
 
 async function openWith(app: E2eApp, seed: (page: Page) => Promise<void>, options: { theme?: Theme; route?: string } = {}): Promise<Page> {
@@ -53,7 +56,11 @@ describe('update chip', () => {
     await expect.poll(() => chip(page).textContent()).toBe('正在下载更新')
     await push(page, 'updateDownloadingFixture', '1.1.0', 60)
     await expect.poll(() => chip(page).getAttribute('aria-label')).toBe('正在下载 MossStudio 1.1.0 更新，60%')
-    expect(await chip(page).locator('[aria-hidden="true"] > span').evaluate((bar) => (bar as HTMLElement).style.width)).toBe('60%')
+    expect(
+      await chip(page)
+        .locator('[aria-hidden="true"] > span')
+        .evaluate((bar) => (bar as HTMLElement).style.width),
+    ).toBe('60%')
     await expect.poll(() => panel.getByRole('progressbar', { name: '更新进度' }).getAttribute('aria-valuenow')).toBe('60')
     await panel.getByRole('button', { name: '取消下载' }).click()
     await expect.poll(() => app.calls('update:cancel').then((calls) => calls.length)).toBe(1)
@@ -66,7 +73,9 @@ describe('update chip', () => {
 
   it('ready → 重启以更新 restarts right away when nothing is running', async () => {
     const page = await openWith(app, async (p) => {
-      await p.evaluate(() => { window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0') })
+      await p.evaluate(() => {
+        window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0')
+      })
     })
     await chip(page).click()
     await popover(page).getByRole('button', { name: '重启以更新' }).click()
@@ -84,19 +93,27 @@ describe('update chip', () => {
     })
     await chip(page).click()
     await popover(page).getByRole('button', { name: '重启以更新' }).click()
-    await expect.poll(() => page.getByRole('status').filter({ hasText: '没能重启：启动程序没有响应。MossStudio 没有改动，可以稍后再试。' }).isVisible()).toBe(true)
+    await expect
+      .poll(() =>
+        page.getByRole('status').filter({ hasText: '没能重启：启动程序没有响应。MossStudio 没有改动，可以稍后再试。' }).isVisible(),
+      )
+      .toBe(true)
     expect(await chip(page).textContent()).toBe('重启以更新')
   })
 
   for (const theme of ['light', 'dark'] as const) {
     it(`busy: says what is running, then 空闲后自动重启 waits (${theme})`, async () => {
-      const page = await openWith(app, async (p) => {
-        await p.evaluate(() => {
-          const { updateReadyFixture, jobFixture } = window.__mock.fixtures
-          window.__mock.state.update = updateReadyFixture('1.1.0')
-          window.__mock.state.jobs = [jobFixture({ id: 'job-live', state: 'running', stage: 'denoise' })]
-        })
-      }, { theme })
+      const page = await openWith(
+        app,
+        async (p) => {
+          await p.evaluate(() => {
+            const { updateReadyFixture, jobFixture } = window.__mock.fixtures
+            window.__mock.state.update = updateReadyFixture('1.1.0')
+            window.__mock.state.jobs = [jobFixture({ id: 'job-live', state: 'running', stage: 'denoise' })]
+          })
+        },
+        { theme },
+      )
       await chip(page).click()
       await popover(page).getByRole('button', { name: '重启以更新' }).click()
       const panel = popover(page)
@@ -116,9 +133,15 @@ describe('update chip', () => {
 
   for (const theme of ['light', 'dark'] as const) {
     it(`after an automatic rollback: says so once, and 再试一次 downloads that version again (${theme})`, async () => {
-      const page = await openWith(app, async (p) => {
-        await p.evaluate(() => { window.__mock.state.update = window.__mock.fixtures.updateFailedFixture('1.1.0') })
-      }, { theme })
+      const page = await openWith(
+        app,
+        async (p) => {
+          await p.evaluate(() => {
+            window.__mock.state.update = window.__mock.fixtures.updateFailedFixture('1.1.0')
+          })
+        },
+        { theme },
+      )
       await expect.poll(() => chip(page).textContent()).toBe('新版本没能启动')
       expect(await chip(page).getAttribute('data-tone')).toBe('warn')
       // Opened on its own, once.
@@ -136,7 +159,9 @@ describe('update chip', () => {
 
   it('知道了 hides the rollback notice', async () => {
     const page = await openWith(app, async (p) => {
-      await p.evaluate(() => { window.__mock.state.update = window.__mock.fixtures.updateFailedFixture('1.1.0') })
+      await p.evaluate(() => {
+        window.__mock.state.update = window.__mock.fixtures.updateFailedFixture('1.1.0')
+      })
     })
     await popover(page).getByRole('button', { name: '知道了' }).click()
     await expect.poll(() => app.calls('update:dismiss-failed').then((calls) => calls.length)).toBe(1)
@@ -165,15 +190,28 @@ describe('update chip', () => {
 
   for (const theme of ['light', 'dark'] as const) {
     it(`required: 必须更新 as a warning, with the reason in the popover (${theme})`, async () => {
-      const page = await openWith(app, async (p) => {
-        await p.evaluate(() => {
-          window.__mock.state.update = window.__mock.fixtures.updateDownloadingFixture('1.1.0', 35, { required: true, minimumVersion: '1.1.0' })
-        })
-      }, { theme })
+      const page = await openWith(
+        app,
+        async (p) => {
+          await p.evaluate(() => {
+            window.__mock.state.update = window.__mock.fixtures.updateDownloadingFixture('1.1.0', 35, {
+              required: true,
+              minimumVersion: '1.1.0',
+            })
+          })
+        },
+        { theme },
+      )
       await expect.poll(() => chip(page).textContent()).toBe('必须更新')
       expect(await chip(page).getAttribute('data-tone')).toBe('warn')
       await chip(page).click()
-      await expect.poll(() => popover(page).getByText(/这个版本已停止支持生成/).isVisible()).toBe(true)
+      await expect
+        .poll(() =>
+          popover(page)
+            .getByText(/这个版本已停止支持生成/)
+            .isVisible(),
+        )
+        .toBe(true)
       await app.screenshot(`update-popover-required-${theme}`)
       await expectVisualRules(page, `update popover required (${theme})`)
       // The activity panel got the required-update notice too.
@@ -192,7 +230,13 @@ describe('update chip', () => {
     expect(await page.getByRole('button', { name: /^生成/ }).isDisabled()).toBe(true)
     expect(await popover(page).count()).toBe(0)
     await blocker.getByRole('button', { name: '更新' }).click()
-    await expect.poll(() => popover(page).getByText(/这个版本已停止支持生成/).isVisible()).toBe(true)
+    await expect
+      .poll(() =>
+        popover(page)
+          .getByText(/这个版本已停止支持生成/)
+          .isVisible(),
+      )
+      .toBe(true)
     // Once updated (no longer required) the blocker goes away.
     await push(page, 'updaterStateFixture')
     await expect.poll(() => blocker.count()).toBe(0)
@@ -205,15 +249,37 @@ describe('update chip', () => {
         const outputs = [{ path: '/fixture/outputs/run-0.png', width: 1024, height: 1024, seed: 40 }]
         const source = canvasFixture({ id: 'c1', title: '画面 1', prompt: '阳光明媚的客厅', seed: 40 })
         const result = canvasFixture({
-          id: 'c2', kind: 'result', title: '画面 1 · 结果', x: 1120, y: 0, prompt: '阳光明媚的客厅', seed: 40,
-          jobId: 'job-done', jobState: 'succeeded', outputs, sourceCanvasId: 'c1',
+          id: 'c2',
+          kind: 'result',
+          title: '画面 1 · 结果',
+          x: 1120,
+          y: 0,
+          prompt: '阳光明媚的客厅',
+          seed: 40,
+          jobId: 'job-done',
+          jobState: 'succeeded',
+          outputs,
+          sourceCanvasId: 'c1',
         } as never)
         window.__mock.state.projects = [projectFixture({ id: 'p1', name: '海报', canvases: [source, result], selectedCanvasId: 'c1' })]
-        window.__mock.state.jobs = [jobFixture({ id: 'job-done', state: 'succeeded', stage: 'ready', canvasId: 'c2', projectId: 'p1', outputs, endedAt: '2026-11-01T00:00:20.000Z' })]
+        window.__mock.state.jobs = [
+          jobFixture({
+            id: 'job-done',
+            state: 'succeeded',
+            stage: 'ready',
+            canvasId: 'c2',
+            projectId: 'p1',
+            outputs,
+            endedAt: '2026-11-01T00:00:20.000Z',
+          }),
+        ]
         window.__mock.state.update = updateAvailableFixture('1.2.0', { required: true, minimumVersion: '1.2.0' })
       })
     })
-    const rerun = page.locator('article[data-canvas-card="c2"]').getByRole('button', { name: /^重新生成/ }).first()
+    const rerun = page
+      .locator('article[data-canvas-card="c2"]')
+      .getByRole('button', { name: /^重新生成/ })
+      .first()
     await expect.poll(() => rerun.isDisabled()).toBe(true)
     expect(await rerun.getAttribute('title')).toBe('必须更新到 1.2.0 才能继续生成')
     await push(page, 'updaterStateFixture')
@@ -223,9 +289,15 @@ describe('update chip', () => {
 
   it('popover screenshots: ready (light, dark)', async () => {
     for (const theme of ['light', 'dark'] as const) {
-      const page = await openWith(app, async (p) => {
-        await p.evaluate(() => { window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0') })
-      }, { theme })
+      const page = await openWith(
+        app,
+        async (p) => {
+          await p.evaluate(() => {
+            window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0')
+          })
+        },
+        { theme },
+      )
       await chip(page).click()
       await expect.poll(() => popover(page).getByRole('button', { name: '重启以更新' }).isVisible()).toBe(true)
       await app.screenshot(`update-popover-${theme}`)
@@ -328,11 +400,15 @@ describe('设置 › 通知与更新', () => {
     const page = await app.open({ scenario: 'ready', route: '/settings/updates', theme: 'light', defer: true })
     await page.evaluate(() => {
       window.__mock.state.update = window.__mock.fixtures.updaterStateFixture({
-        supported: false, phase: 'unsupported', unsupportedReason: '这是便携版，但缺少启动程序，不能在这里自动更新。请到发布页下载新版本。',
+        supported: false,
+        phase: 'unsupported',
+        unsupportedReason: '这是便携版，但缺少启动程序，不能在这里自动更新。请到发布页下载新版本。',
       })
     })
     await app.start()
-    await expect.poll(() => page.locator('[data-update-status]').textContent()).toBe('这是便携版，但缺少启动程序，不能在这里自动更新。请到发布页下载新版本。')
+    await expect
+      .poll(() => page.locator('[data-update-status]').textContent())
+      .toBe('这是便携版，但缺少启动程序，不能在这里自动更新。请到发布页下载新版本。')
     for (const name of ['检查更新', '重启以更新']) expect(await page.getByRole('button', { name }).count()).toBe(0)
     expect(await page.getByRole('switch', { name: '自动下载更新' }).count()).toBe(0)
     expect(await page.getByRole('group', { name: '更新渠道' }).count()).toBe(0)

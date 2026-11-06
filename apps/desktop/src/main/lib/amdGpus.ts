@@ -40,14 +40,16 @@ export function pciIdOf(vendorId: number, deviceId: number): string {
 
 /** GPU nodes of the KFD topology (CPU nodes have gfx_target_version 0). */
 export function kfdGpuNodes(nodes: Array<{ node: number; properties: string }>): KfdGpuNode[] {
-  return nodes.flatMap(({ node, properties }) => {
-    const values = parseKfdProperties(properties)
-    const gfxTarget = gfxTargetName(values.get('gfx_target_version') ?? 0)
-    if (!gfxTarget) return []
-    const vendorId = values.get('vendor_id') ?? 0
-    const deviceId = values.get('device_id') ?? 0
-    return [{ node, gfxTarget, vendorId, deviceId, pciId: pciIdOf(vendorId, deviceId) }]
-  }).sort((a, b) => a.node - b.node)
+  return nodes
+    .flatMap(({ node, properties }) => {
+      const values = parseKfdProperties(properties)
+      const gfxTarget = gfxTargetName(values.get('gfx_target_version') ?? 0)
+      if (!gfxTarget) return []
+      const vendorId = values.get('vendor_id') ?? 0
+      const deviceId = values.get('device_id') ?? 0
+      return [{ node, gfxTarget, vendorId, deviceId, pciId: pciIdOf(vendorId, deviceId) }]
+    })
+    .sort((a, b) => a.node - b.node)
 }
 
 /** `0x1002` / `0x744c` from sysfs → `1002:744c`; null when either is not a hex id. */

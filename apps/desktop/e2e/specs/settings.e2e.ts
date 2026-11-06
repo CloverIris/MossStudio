@@ -30,7 +30,11 @@ describe('settings', () => {
       expect(await current.textContent()).toBe(label)
       expect(await page.getByRole('button', { name: /^保存$/ }).count()).toBe(0)
     }
-    for (const [alias, target] of [['/settings', '/settings/general'], ['/settings/engines', '/settings/devices'], ['/settings/lan', '/settings/features']] as const) {
+    for (const [alias, target] of [
+      ['/settings', '/settings/general'],
+      ['/settings/engines', '/settings/devices'],
+      ['/settings/lan', '/settings/features'],
+    ] as const) {
       const page = await app.open({ route: alias })
       await expect.poll(() => hash(page)).toBe(`#${target}`)
     }
@@ -66,11 +70,15 @@ describe('settings', () => {
     await rail.getByRole('button', { name: '训练' }).click()
     await expect.poll(() => hash(page)).toBe('#/training')
 
-    await page.evaluate(() => { window.location.hash = '#/settings/features' })
+    await page.evaluate(() => {
+      window.location.hash = '#/settings/features'
+    })
     await page.getByRole('switch', { name: '训练' }).click()
     await expect.poll(() => rail.getByRole('button', { name: '训练' }).count()).toBe(0)
     // Its route is gone too: an old link falls back to 创作.
-    await page.evaluate(() => { window.location.hash = '#/training' })
+    await page.evaluate(() => {
+      window.location.hash = '#/training'
+    })
     await expect.poll(() => page.locator('[data-page="/studio"]:not(.hidden)').count()).toBe(1)
   })
 
@@ -91,12 +99,18 @@ describe('settings', () => {
     await expect.poll(() => page.getByRole('group', { name: '模型所在的电脑' }).isVisible()).toBe(true)
 
     // Off again: every trace disappears.
-    await page.evaluate(() => { window.location.hash = '#/settings/features' })
+    await page.evaluate(() => {
+      window.location.hash = '#/settings/features'
+    })
     await page.getByRole('switch', { name: '远程主机' }).click()
     await expect.poll(() => app.calls('settings:update').then((calls) => calls.at(-1))).toEqual({ remoteHostsEnabled: false })
-    await page.evaluate(() => { window.location.hash = '#/models' })
+    await page.evaluate(() => {
+      window.location.hash = '#/models'
+    })
     await expect.poll(() => page.getByRole('group', { name: '模型所在的电脑' }).count()).toBe(0)
-    await page.evaluate(() => { window.location.hash = '#/settings/devices' })
+    await page.evaluate(() => {
+      window.location.hash = '#/settings/devices'
+    })
     await expect.poll(() => page.getByText('Linux GPU').count()).toBe(0)
   })
 

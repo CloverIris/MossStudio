@@ -19,7 +19,16 @@ vi.mock('@main/services/sshTools', () => ({
 vi.mock('@main/services/sshCredentials', () => ({ getSshPassword: () => 'pw' }))
 
 const root = useTempDataRoot()
-const host: TrainingHost = { id: 'h', name: 'H', kind: 'ssh', host: 'gpu.test', user: 'moss', port: 2200, trainerRoot: '~/trainer', status: 'ok' }
+const host: TrainingHost = {
+  id: 'h',
+  name: 'H',
+  kind: 'ssh',
+  host: 'gpu.test',
+  user: 'moss',
+  port: 2200,
+  trainerRoot: '~/trainer',
+  status: 'ok',
+}
 const ok = (stdout = '', stderr = '', code = 0): RunResult => ({ code, stdout, stderr, timedOut: false })
 
 beforeEach(() => {
@@ -118,10 +127,19 @@ describe('remote helpers', () => {
 describe('probeHost', () => {
   it('splits the sectioned output', async () => {
     const { probeHost } = await load()
-    run.mockResolvedValueOnce(ok('@@OS@@Linux x86_64\n@@GPU@@NVIDIA A100, 81920 MiB\nNVIDIA A100, 81920 MiB\n@@GIT@@git version 2.43\n@@UV@@\n@@PY@@Python 3.12.1\n@@ROOT@@yes\n'))
+    run.mockResolvedValueOnce(
+      ok(
+        '@@OS@@Linux x86_64\n@@GPU@@NVIDIA A100, 81920 MiB\nNVIDIA A100, 81920 MiB\n@@GIT@@git version 2.43\n@@UV@@\n@@PY@@Python 3.12.1\n@@ROOT@@yes\n',
+      ),
+    )
     const probe = await probeHost(host)
     expect(probe).toMatchObject({
-      os: 'Linux x86_64', gpu: 'NVIDIA A100, 81920 MiB\nNVIDIA A100, 81920 MiB', git: 'git version 2.43', uv: '', python: 'Python 3.12.1', rootReady: true,
+      os: 'Linux x86_64',
+      gpu: 'NVIDIA A100, 81920 MiB\nNVIDIA A100, 81920 MiB',
+      git: 'git version 2.43',
+      uv: '',
+      python: 'Python 3.12.1',
+      rootReady: true,
     })
   })
 

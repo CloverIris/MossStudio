@@ -35,9 +35,9 @@ describe('describeEngineReadiness', () => {
   })
 
   it('names the engine when the install has no version yet', () => {
-    expect(
-      describeEngineReadiness({ state: 'missing', path: null, installing: { phase: 'querying', percent: 3 } }),
-    ).toBe('正在安装 MossInfer · 3%')
+    expect(describeEngineReadiness({ state: 'missing', path: null, installing: { phase: 'querying', percent: 3 } })).toBe(
+      '正在安装 MossInfer · 3%',
+    )
   })
 
   it('reports installing even when an engine is already ready', () => {
@@ -53,9 +53,9 @@ describe('describeEngineReadiness', () => {
 
   it('shows plain ready without extra verification steps', () => {
     expect(describeEngineReadiness({ state: 'ready', path: 'moss-server' })).toBe('MossInfer 已就绪')
-    expect(
-      describeEngineReadiness({ state: 'ready', path: 'moss-server', lastAttempt: { at: '2026-11-01T00:00:00.000Z' } }),
-    ).toBe('MossInfer 已就绪')
+    expect(describeEngineReadiness({ state: 'ready', path: 'moss-server', lastAttempt: { at: '2026-11-01T00:00:00.000Z' } })).toBe(
+      'MossInfer 已就绪',
+    )
   })
 
   it('ignores a reason once the engine is ready', () => {

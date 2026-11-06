@@ -64,22 +64,26 @@ export function ControlAdaptersSection(): React.JSX.Element | null {
       }
     >
       <Group>
-        {adapters.length ? adapters.map((entry) => (
-          <Row
-            key={entry.id}
-            title={entry.name}
-            description={
-              <span className="flex flex-wrap items-center gap-1.5">
-                <span className="tabular">{sizeText(entry.sizeBytes)}</span>
-                {entry.controlKinds.map((kind) => <Pill key={kind}>{controlKindLabel(kind)}</Pill>)}
-              </span>
-            }
-          >
-            <IconButton label={`移除 ${entry.name}`} onClick={() => setRemoving(entry)}>
-              <Trash2 className="size-4" strokeWidth={1.6} />
-            </IconButton>
-          </Row>
-        )) : (
+        {adapters.length ? (
+          adapters.map((entry) => (
+            <Row
+              key={entry.id}
+              title={entry.name}
+              description={
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span className="tabular">{sizeText(entry.sizeBytes)}</span>
+                  {entry.controlKinds.map((kind) => (
+                    <Pill key={kind}>{controlKindLabel(kind)}</Pill>
+                  ))}
+                </span>
+              }
+            >
+              <IconButton label={`移除 ${entry.name}`} onClick={() => setRemoving(entry)}>
+                <Trash2 className="size-4" strokeWidth={1.6} />
+              </IconButton>
+            </Row>
+          ))
+        ) : (
           <Row title="还没有控制适配器" description="添加电脑上的 .safetensors 控制适配器文件。" />
         )}
       </Group>

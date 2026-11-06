@@ -33,11 +33,19 @@ export interface EngineStoreOptions {
 }
 
 const defaultOps: EngineStoreOps = {
-  mkdir: async (path) => { await mkdir(path, { recursive: true }) },
+  mkdir: async (path) => {
+    await mkdir(path, { recursive: true })
+  },
   readFile: async (path) => readFile(path, 'utf8'),
-  rename: async (from, to) => { await rename(from, to) },
-  rm: async (path) => { await rm(path, { recursive: true, force: true }) },
-  writeFile: async (path, contents) => { await writeFile(path, contents, 'utf8') },
+  rename: async (from, to) => {
+    await rename(from, to)
+  },
+  rm: async (path) => {
+    await rm(path, { recursive: true, force: true })
+  },
+  writeFile: async (path, contents) => {
+    await writeFile(path, contents, 'utf8')
+  },
 }
 
 function isInside(base: string, target: string): boolean {
@@ -46,17 +54,10 @@ function isInside(base: string, target: string): boolean {
 }
 
 function errorCode(error: unknown): string | undefined {
-  return typeof error === 'object' && error !== null && 'code' in error
-    ? String((error as { code?: unknown }).code)
-    : undefined
+  return typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : undefined
 }
 
-async function renameWithRetry(
-  from: string,
-  to: string,
-  ops: EngineStoreOps,
-  retryDelayMs: number,
-): Promise<void> {
+async function renameWithRetry(from: string, to: string, ops: EngineStoreOps, retryDelayMs: number): Promise<void> {
   let lastError: unknown
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -71,12 +72,7 @@ async function renameWithRetry(
   throw lastError
 }
 
-async function atomicWriteJson(
-  file: string,
-  value: unknown,
-  ops: EngineStoreOps,
-  retryDelayMs: number,
-): Promise<void> {
+async function atomicWriteJson(file: string, value: unknown, ops: EngineStoreOps, retryDelayMs: number): Promise<void> {
   const temporary = `${file}.tmp`
   await ops.writeFile(temporary, JSON.stringify(value, null, 2))
   await renameWithRetry(temporary, file, ops, retryDelayMs)
@@ -104,7 +100,7 @@ export function getEngineInstallProgress(): EngineInstallProgress | null {
 export function readEngineLastAttempt(root: string): EngineInstallAttempt | null {
   try {
     const raw = JSON.parse(readFileSync(join(root, 'last-attempt.json'), 'utf8')) as Partial<EngineInstallAttempt>
-    return typeof raw.at === 'string' ? raw as EngineInstallAttempt : null
+    return typeof raw.at === 'string' ? (raw as EngineInstallAttempt) : null
   } catch {
     return null
   }
@@ -154,13 +150,9 @@ export async function promoteInstall(
   if (!existsSync(stagingDir)) throw new Error('引擎暂存目录不存在')
 
   const installDir = join(root, input.stamp)
-  const replacingCurrent = Boolean(
-    input.currentServerPath && isInside(installDir, input.currentServerPath),
-  )
+  const replacingCurrent = Boolean(input.currentServerPath && isInside(installDir, input.currentServerPath))
   const unique = `${input.stamp}-${Date.now()}`
-  const previousDir = existsSync(installDir)
-    ? join(root, replacingCurrent ? '.backup' : '.trash', unique)
-    : undefined
+  const previousDir = existsSync(installDir) ? join(root, replacingCurrent ? '.backup' : '.trash', unique) : undefined
   const journalPath = join(root, '.pending.json')
   const journal: PendingJournal = {
     schemaVersion: 1,
@@ -200,9 +192,10 @@ export async function promoteInstall(
       }
       await bestEffortRm(stagingDir, ops)
       if (!rollbackError) await bestEffortRm(journalPath, ops)
-      const currentMessage = replacingCurrent && ['EBUSY', 'EPERM', 'EACCES'].includes(errorCode(error) ?? '')
-        ? '引擎正在使用，无法替换旧目录'
-        : '引擎目录晋升失败'
+      const currentMessage =
+        replacingCurrent && ['EBUSY', 'EPERM', 'EACCES'].includes(errorCode(error) ?? '')
+          ? '引擎正在使用，无法替换旧目录'
+          : '引擎目录晋升失败'
       const rollbackMessage = rollbackError
         ? `；自动回滚也失败，已保留 .pending.json 供下次启动恢复：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
         : ''
@@ -213,10 +206,7 @@ export async function promoteInstall(
 }
 
 /** settings 更新成功后清理旧版本；失败留待启动恢复，不影响新引擎。 */
-export async function cleanupPromotedInstall(
-  promotion: EngineInstallPromotion,
-  options: EngineStoreOptions = {},
-): Promise<void> {
+export async function cleanupPromotedInstall(promotion: EngineInstallPromotion, options: EngineStoreOptions = {}): Promise<void> {
   const ops: EngineStoreOps = { ...defaultOps, ...options.ops }
   await bestEffortRm(promotion.backupDir ?? promotion.trashDir, ops)
 }

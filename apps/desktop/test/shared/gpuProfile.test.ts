@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  gpuRequiresBf16Tier,
-  recommendGpuMemoryMode,
-  resolveGpuProfile,
-  settingsForGpuProfile,
-} from '@shared/gpuProfile'
+import { gpuRequiresBf16Tier, recommendGpuMemoryMode, resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
 import type { GpuInventoryDevice, GpuProfileOverride, Settings } from '@shared/types'
 
 const GiB = 1024 ** 3
@@ -194,7 +189,11 @@ describe('settingsForGpuProfile', () => {
   })
 
   it('does not leak the profile source into settings', () => {
-    const execution = settingsForGpuProfile(fullSettings(), { memoryMode: 'min_memory', tier: 'reference', source: 'hardware-compatibility' })
+    const execution = settingsForGpuProfile(fullSettings(), {
+      memoryMode: 'min_memory',
+      tier: 'reference',
+      source: 'hardware-compatibility',
+    })
     expect(execution).not.toHaveProperty('source')
     expect(execution.mossInferTier).toBe('reference')
   })

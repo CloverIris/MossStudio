@@ -9,7 +9,16 @@ import {
   rewriteJobInputPaths,
 } from '@main/services/generateParams'
 
-const base: JobParams = { prompt: 'a cat', negativePrompt: 'blurry', width: 1024, height: 768, steps: 30, cfg: 4.5, seed: 7, profile: 'base' }
+const base: JobParams = {
+  prompt: 'a cat',
+  negativePrompt: 'blurry',
+  width: 1024,
+  height: 768,
+  steps: 30,
+  cfg: 4.5,
+  seed: 7,
+  profile: 'base',
+}
 
 const full: JobParams = {
   ...base,
@@ -83,9 +92,34 @@ describe('buildGenerateParams', () => {
       preview_every: 2,
     })
     // Only parameters generate() accepts (its p.only list), never our own names.
-    const accepted = new Set(['output', 'prompt', 'negative_prompt', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler',
-      'scheduler', 'loras', 'save_metadata', 'include_prompts', 'preview_output', 'preview_every', 'init_image', 'mask',
-      'mask_encoding', 'denoise_strength', 'resize', 'hires', 'control', 'cfg_truncation', 'step_cache', 'references'])
+    const accepted = new Set([
+      'output',
+      'prompt',
+      'negative_prompt',
+      'width',
+      'height',
+      'steps',
+      'cfg',
+      'shift',
+      'seed',
+      'sampler',
+      'scheduler',
+      'loras',
+      'save_metadata',
+      'include_prompts',
+      'preview_output',
+      'preview_every',
+      'init_image',
+      'mask',
+      'mask_encoding',
+      'denoise_strength',
+      'resize',
+      'hires',
+      'control',
+      'cfg_truncation',
+      'step_cache',
+      'references',
+    ])
     expect(Object.keys(out).filter((key) => !accepted.has(key))).toEqual([])
   })
 
@@ -94,13 +128,16 @@ describe('buildGenerateParams', () => {
   })
 
   it('leaves out every optional member that is not set', () => {
-    const out = buildGenerateParams({
-      ...base,
-      initImage: { path: '/a.png', strength: 0 },
-      control: { adapter: '/c.safetensors', images: [] },
-      references: { paths: ['/r.png'] },
-      sampling: { hires: { width: 1024, height: 768 } },
-    }, { output: '/o.png', loras: [] })
+    const out = buildGenerateParams(
+      {
+        ...base,
+        initImage: { path: '/a.png', strength: 0 },
+        control: { adapter: '/c.safetensors', images: [] },
+        references: { paths: ['/r.png'] },
+        sampling: { hires: { width: 1024, height: 768 } },
+      },
+      { output: '/o.png', loras: [] },
+    )
     expect(out['init_image']).toBe('/a.png')
     expect(out['denoise_strength']).toBe(0)
     expect(out).not.toHaveProperty('resize')

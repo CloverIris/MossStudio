@@ -47,8 +47,14 @@ export function Checkbox({
         {checked ? <Check className="size-3.5" strokeWidth={2.6} /> : null}
       </span>
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span id={labelId} className="text-control text-ink">{label}</span>
-        {description ? <span id={descriptionId} className="text-caption text-ink-2 [overflow-wrap:anywhere]">{description}</span> : null}
+        <span id={labelId} className="text-control text-ink">
+          {label}
+        </span>
+        {description ? (
+          <span id={descriptionId} className="text-caption text-ink-2 [overflow-wrap:anywhere]">
+            {description}
+          </span>
+        ) : null}
       </span>
     </button>
   )

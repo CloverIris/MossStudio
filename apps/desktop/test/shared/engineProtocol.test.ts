@@ -360,12 +360,8 @@ describe('judgeEngineSupport', () => {
   })
 
   it('names the GPU, or a generic label, when no device matches', () => {
-    expect(judgeEngineSupport(helloWith([]), { index: 0, name: '  RTX  ' }).reason).toBe(
-      '引擎没有返回 RTX 的可匹配设备，未给出兼容性结论',
-    )
-    expect(judgeEngineSupport(helloWith([]), { index: 0, name: '   ' }).reason).toBe(
-      '引擎没有返回 当前 GPU 的可匹配设备，未给出兼容性结论',
-    )
+    expect(judgeEngineSupport(helloWith([]), { index: 0, name: '  RTX  ' }).reason).toBe('引擎没有返回 RTX 的可匹配设备，未给出兼容性结论')
+    expect(judgeEngineSupport(helloWith([]), { index: 0, name: '   ' }).reason).toBe('引擎没有返回 当前 GPU 的可匹配设备，未给出兼容性结论')
   })
 
   it('checks the protocol before anything else', () => {
@@ -376,28 +372,40 @@ describe('judgeEngineSupport', () => {
   it('emits no warnings when capability matches expectations', () => {
     const sm75 = helloWith([device({ compute: { major: 7, minor: 5 } })])
     expect(
-      judgeEngineSupport(sm75, { index: 0, name: 'GPU' }, {
-        expectedArchitecture: 'sm75',
-        inventoryCapability: { major: 7, minor: 5 },
-      }).warnings,
+      judgeEngineSupport(
+        sm75,
+        { index: 0, name: 'GPU' },
+        {
+          expectedArchitecture: 'sm75',
+          inventoryCapability: { major: 7, minor: 5 },
+        },
+      ).warnings,
     ).toEqual([])
     const ampere = helloWith([device({ compute: { major: 8, minor: 6 } })])
     expect(judgeEngineSupport(ampere, { index: 0, name: 'GPU' }, { expectedArchitecture: 'standard' }).warnings).toEqual([])
   })
 
   it('warns when a standard build reports a pre-Ampere capability', () => {
-    const verdict = judgeEngineSupport(helloWith([device({ compute: { major: 7, minor: 5 } })]), { index: 0, name: 'GPU' }, {
-      expectedArchitecture: 'standard',
-    })
+    const verdict = judgeEngineSupport(
+      helloWith([device({ compute: { major: 7, minor: 5 } })]),
+      { index: 0, name: 'GPU' },
+      {
+        expectedArchitecture: 'standard',
+      },
+    )
     expect(verdict.ok).toBe(true)
     expect(verdict.warnings).toEqual(['标准构建报告 GPU 算力为 7.5；以引擎 supported 结论为准'])
   })
 
   it('skips capability warnings when the engine reports no capability', () => {
-    const verdict = judgeEngineSupport(helloWith([device({ compute: null })]), { index: 0, name: 'GPU' }, {
-      expectedArchitecture: 'sm75',
-      inventoryCapability: { major: 8, minor: 9 },
-    })
+    const verdict = judgeEngineSupport(
+      helloWith([device({ compute: null })]),
+      { index: 0, name: 'GPU' },
+      {
+        expectedArchitecture: 'sm75',
+        inventoryCapability: { major: 8, minor: 9 },
+      },
+    )
     expect(verdict).toMatchObject({ ok: true, warnings: [] })
   })
 
@@ -430,10 +438,27 @@ describe('engineFeaturesOf', () => {
     server: 'moss-server',
     version: '2.2.0',
     capabilities: {
-      preview: true, comfyui_models: false, model_files: true, lora: true, tiers: true, samplers: true,
-      image_input: true, hires: true, distill: true, system_cuda: true, control: true, accel: true,
-      preload: true, release: true, certificate_dirs: false, te_host_pin: true, progress_fraction: true,
-      inspect: true, references: true, check: true, components: true,
+      preview: true,
+      comfyui_models: false,
+      model_files: true,
+      lora: true,
+      tiers: true,
+      samplers: true,
+      image_input: true,
+      hires: true,
+      distill: true,
+      system_cuda: true,
+      control: true,
+      accel: true,
+      preload: true,
+      release: true,
+      certificate_dirs: false,
+      te_host_pin: true,
+      progress_fraction: true,
+      inspect: true,
+      references: true,
+      check: true,
+      components: true,
     },
     values: {
       sampler: ['euler', 'ab2', 'euler_ancestral', 'heun', 'dpmpp_2m', 'dpmpp_2m_sde', 'er_sde', 'res_multistep', 'dataspace'],
@@ -448,29 +473,48 @@ describe('engineFeaturesOf', () => {
   it('reads the generation capabilities and the enum names of a 2.2 engine', () => {
     const features = engineFeaturesOf(decodeEngineHello(hello22))
     expect(features).toEqual({
-      preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true,
+      preview: true,
+      imageInput: true,
+      control: true,
+      references: true,
+      hires: true,
+      samplers: true,
+      lora: true,
       values: hello22.values,
     })
   })
 
   it('treats an engine without these capabilities (older than 2.2) as supporting none of them', () => {
-    const features = engineFeaturesOf(decodeEngineHello({ protocol_version: 2, version: '2.1.1', capabilities: { tiers: true, lora: true } }))
-    expect(features).toEqual({ preview: false, imageInput: false, control: false, references: false, hires: false, samplers: false, lora: true, values: {} })
+    const features = engineFeaturesOf(
+      decodeEngineHello({ protocol_version: 2, version: '2.1.1', capabilities: { tiers: true, lora: true } }),
+    )
+    expect(features).toEqual({
+      preview: false,
+      imageInput: false,
+      control: false,
+      references: false,
+      hires: false,
+      samplers: false,
+      lora: true,
+      values: {},
+    })
   })
 
   it('counts only a literal true, and keeps only string names', () => {
-    const features = engineFeaturesOf(decodeEngineHello({
-      protocol_version: 2,
-      capabilities: { preview: 'yes', image_input: 1, control: false },
-      values: { sampler: ['euler', 3, null, 'heun'], scheduler: 'karras', resize: [] },
-    }))
+    const features = engineFeaturesOf(
+      decodeEngineHello({
+        protocol_version: 2,
+        capabilities: { preview: 'yes', image_input: 1, control: false },
+        values: { sampler: ['euler', 3, null, 'heun'], scheduler: 'karras', resize: [] },
+      }),
+    )
     expect(features.preview).toBe(false)
     expect(features.imageInput).toBe(false)
     expect(features.control).toBe(false)
     expect(features.values).toEqual({ sampler: ['euler', 'heun'], resize: [] })
   })
 
-  it('returns a copy of the names, not the hello\'s own arrays', () => {
+  it("returns a copy of the names, not the hello's own arrays", () => {
     const hello = decodeEngineHello(hello22)
     engineFeaturesOf(hello).values['sampler']!.push('mine')
     expect(hello.values['sampler']).not.toContain('mine')

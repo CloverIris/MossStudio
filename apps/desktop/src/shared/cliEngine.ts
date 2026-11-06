@@ -65,8 +65,9 @@ export function cliBundleProblem(
   bundle: Pick<ModelBundle, 'name' | 'components'>,
   models: readonly Pick<ModelEntry, 'id' | 'provider' | 'format' | 'precision' | 'role'>[],
 ): string | null {
-  const parts = [bundle.components.dit, bundle.components.textEncoder, bundle.components.vae]
-    .map((id) => models.find((model) => model.id === id))
+  const parts = [bundle.components.dit, bundle.components.textEncoder, bundle.components.vae].map((id) =>
+    models.find((model) => model.id === id),
+  )
   if (parts.some((model) => !model)) {
     return `「${bundle.name}」的模型文件不在模型库里，无法确认它是 bf16 模型包，${CLI_ENGINE_LABEL[kind]}引擎用不了，请在模型库下载 MOSS-Image（bf16）`
   }

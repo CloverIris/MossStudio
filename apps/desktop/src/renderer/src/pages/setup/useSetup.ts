@@ -54,9 +54,13 @@ export function useSetup(): {
     }
   }, [])
   // First look: probe the machine afresh. Later: re-plan when installs finish (what is still missing).
-  useEffect(() => { void loadPlan(true) }, [loadPlan])
+  useEffect(() => {
+    void loadPlan(true)
+  }, [loadPlan])
   const engineFinished = engineDownload && !engineDownloadActive(engineDownload) ? engineDownload.phase : null
-  useEffect(() => { if (engineFinished) void loadPlan(false) }, [engineFinished, engine?.state, loadPlan])
+  useEffect(() => {
+    if (engineFinished) void loadPlan(false)
+  }, [engineFinished, engine?.state, loadPlan])
 
   // Re-read what is installed whenever a download finishes or the engine changes.
   const finished = downloads
@@ -73,24 +77,33 @@ export function useSetup(): {
       return null
     }
   }, [])
-  useEffect(() => { void loadStatus() }, [loadStatus, catalog, finished, engine?.state, settings?.modelsRoot])
+  useEffect(() => {
+    void loadStatus()
+  }, [loadStatus, catalog, finished, engine?.state, settings?.modelsRoot])
 
-  const view = useMemo(() => deriveSetup({
-    gpu: gpu.inventory,
-    gpuSelection: settings?.gpuSelection,
-    engine,
-    plan,
-    engineDownload,
-    engineError,
-    onboarding,
-    downloads,
-    modelError,
-  }), [gpu.inventory, settings?.gpuSelection, engine, plan, engineDownload, engineError, onboarding, downloads, modelError])
+  const view = useMemo(
+    () =>
+      deriveSetup({
+        gpu: gpu.inventory,
+        gpuSelection: settings?.gpuSelection,
+        engine,
+        plan,
+        engineDownload,
+        engineError,
+        onboarding,
+        downloads,
+        modelError,
+      }),
+    [gpu.inventory, settings?.gpuSelection, engine, plan, engineDownload, engineError, onboarding, downloads, modelError],
+  )
 
   const installEngine = useCallback(async () => {
     // Main installs what the plan says each GPU needs. Resolves when the install ends; progress arrives through store events.
     void call<MossInferDownloadState>(Ipc.mossInferDownload, { channel: 'stable' })
-      .then((state) => { setMossInferDownload(state); void refreshEngineReadiness() })
+      .then((state) => {
+        setMossInferDownload(state)
+        void refreshEngineReadiness()
+      })
       .catch((error: unknown) => setEngineError(message(error)))
   }, [refreshEngineReadiness, setMossInferDownload])
 
@@ -98,9 +111,11 @@ export function useSetup(): {
     const status = await loadStatus()
     const step = status?.steps.find((item) => item.id === 'model')
     if (!status || !step || step.status === 'ok') return
-    const active = new Set(modelDownloads(status, useApp.getState().downloads)
-      .filter((task) => ['queued', 'running', 'verifying'].includes(task.state))
-      .map((task) => task.targetId))
+    const active = new Set(
+      modelDownloads(status, useApp.getState().downloads)
+        .filter((task) => ['queued', 'running', 'verifying'].includes(task.state))
+        .map((task) => task.targetId),
+    )
     const models = useApp.getState().catalog?.models ?? []
     const missing = (step.modelIds ?? []).filter((id) => !active.has(id) && !models.find((model) => model.id === id)?.installed)
     if (missing.length === 0 && (step.modelIds ?? []).length === 0) {

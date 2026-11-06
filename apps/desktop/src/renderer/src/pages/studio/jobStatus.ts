@@ -70,25 +70,35 @@ export function formatDuration(startedAt: string | undefined, endedAt: string | 
 /** 1-based position among queued inference jobs on the same GPU and machine. */
 export function queuePosition(job: JobRecord, jobs: readonly JobRecord[]): number {
   if (job.state !== 'queued') return 0
-  return jobs
-    .filter((item) => item.kind === 'inference' && item.state === 'queued' && item.deviceUuid === job.deviceUuid && item.hostId === job.hostId)
-    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
-    .findIndex((item) => item.id === job.id) + 1
+  return (
+    jobs
+      .filter(
+        (item) => item.kind === 'inference' && item.state === 'queued' && item.deviceUuid === job.deviceUuid && item.hostId === job.hostId,
+      )
+      .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+      .findIndex((item) => item.id === job.id) + 1
+  )
 }
 
 export function cardJobView(canvas: ProjectCanvas, job: JobRecord | undefined, jobs: readonly JobRecord[] = []): CardJobView {
-  const outputs = job?.outputs?.length ? job.outputs : canvas.outputs ?? []
+  const outputs = job?.outputs?.length ? job.outputs : (canvas.outputs ?? [])
   const rawState = job?.state ?? canvas.jobState
   const lost = Boolean(canvas.jobId && !job && ACTIVE_JOB_STATES.has(canvas.jobState ?? ''))
-  const state: CardState = lost ? 'lost' : rawState ?? 'idle'
+  const state: CardState = lost ? 'lost' : (rawState ?? 'idle')
   const active = !lost && ACTIVE_JOB_STATES.has(state)
   const progress = job?.progress ?? canvas.progress
   const error = job?.error?.message ?? canvas.error?.message
 
   if (state === 'queued') {
-    const position = job ? job.queuePosition ?? queuePosition(job, jobs) : 0
+    const position = job ? (job.queuePosition ?? queuePosition(job, jobs)) : 0
     return {
-      state, active, label: '排队中', detail: position > 0 ? `排队中 · 第 ${position} 个` : '排队中', outputs, phase: 'queued', queuePosition: position,
+      state,
+      active,
+      label: '排队中',
+      detail: position > 0 ? `排队中 · 第 ${position} 个` : '排队中',
+      outputs,
+      phase: 'queued',
+      queuePosition: position,
     }
   }
   if (state === 'starting' || state === 'running') {
@@ -96,9 +106,10 @@ export function cardJobView(canvas: ProjectCanvas, job: JobRecord | undefined, j
     const phase = phaseOf(stage)
     const label = state === 'starting' ? '准备中' : '生成中'
     // The last preview stays up while the picture is decoded and saved, so the card never goes blank.
-    const preview = job?.preview?.path && (phase === 'denoise' || phase === 'decode' || phase === 'save')
-      ? { path: job.preview.path, seq: job.preview.seq }
-      : undefined
+    const preview =
+      job?.preview?.path && (phase === 'denoise' || phase === 'decode' || phase === 'save')
+        ? { path: job.preview.path, seq: job.preview.seq }
+        : undefined
     if (phase === 'denoise' && progress && progress.total > 0) {
       const percent = Math.min(100, Math.max(0, progress.percent))
       const detail = [`${progress.current} / ${progress.total}`, formatEta(progress.etaMs)].filter(Boolean).join(' · ')

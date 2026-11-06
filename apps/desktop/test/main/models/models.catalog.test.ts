@@ -23,7 +23,11 @@ const SHA = 'a'.repeat(40)
 
 const vae = rawModel({ id: 'vae-a', repo: 'org/vae', role: 'vae', subfolder: 'vae', files: ['vae/*'], size_bytes: 10 })
 const bundle = {
-  id: 'b1', name: 'B1', description: '', support: 'support-a', recommended: true,
+  id: 'b1',
+  name: 'B1',
+  description: '',
+  support: 'support-a',
+  recommended: true,
   components: { dit: 'dit-a', textEncoder: 'te-a', vae: 'vae-a' },
 }
 
@@ -45,8 +49,16 @@ describe('getCatalog sources', () => {
     expect(catalog.updatedAt).toBe('2026-01-01T00:00:00Z')
     expect(catalog.bundles).toEqual([bundle])
     expect(byId(catalog.models, 'vae-a')).toMatchObject({
-      provider: 'hf', revision: 'main', format: 'diffusers', family: 'moss-image', sizeBytes: 10, tags: [],
-      installed: false, installedBytes: 0, installState: 'missing', resolvedRevision: undefined,
+      provider: 'hf',
+      revision: 'main',
+      format: 'diffusers',
+      family: 'moss-image',
+      sizeBytes: 10,
+      tags: [],
+      installed: false,
+      installedBytes: 0,
+      installState: 'missing',
+      resolvedRevision: undefined,
     })
   })
 
@@ -179,8 +191,13 @@ describe('local imports and bundles in the catalog', () => {
     expect(catalog.bundles.map((b) => b.id)).toEqual(['b1'])
     const dit = catalog.models.find((m) => m.provider === 'local' && m.role === 'dit')!
     expect(dit).toMatchObject({
-      revision: 'local', format: 'comfyui', family: 'local', installState: 'ready', installed: true,
-      localPath: join(comfy, 'diffusion_models', 'd.safetensors'), tags: ['local-import', 'comfyui', 'unhashed'],
+      revision: 'local',
+      format: 'comfyui',
+      family: 'local',
+      installState: 'ready',
+      installed: true,
+      localPath: join(comfy, 'diffusion_models', 'd.safetensors'),
+      tags: ['local-import', 'comfyui', 'unhashed'],
     })
 
     await register(join(comfy, 'vae', 'v.safetensors'), 'vae')
@@ -225,7 +242,16 @@ describe('local imports and bundles in the catalog', () => {
 })
 
 describe('adapters', () => {
-  const adapterRaw = { id: 'lora-a', name: 'Lora A', provider: 'hf', repo: 'org/lora', kind: 'lora', license: 'mit', files: ['a.safetensors'], size_bytes: 3 }
+  const adapterRaw = {
+    id: 'lora-a',
+    name: 'Lora A',
+    provider: 'hf',
+    repo: 'org/lora',
+    kind: 'lora',
+    license: 'mit',
+    files: ['a.safetensors'],
+    size_bytes: 3,
+  }
   const adaptersRoot = (): string => join(modelsRoot(), 'adapters')
 
   beforeEach(() => {
@@ -238,7 +264,12 @@ describe('adapters', () => {
     writeFileSync(join(dir, 'a.safetensors'), 'abc')
     expect(byId((await models.getCatalog(settings, true)).adapters, 'lora-a')?.installed).toBe(false)
     writeFileSync(join(dir, 'adapter.json'), '{}')
-    expect(byId((await models.getCatalog(settings, true)).adapters, 'lora-a')).toMatchObject({ installed: true, installedBytes: 3, sizeBytes: 3, revision: 'main' })
+    expect(byId((await models.getCatalog(settings, true)).adapters, 'lora-a')).toMatchObject({
+      installed: true,
+      installedBytes: 3,
+      sizeBytes: 3,
+      revision: 'main',
+    })
   })
 
   it('imports a LoRA file by copying it under a sanitised, unique id', async () => {
@@ -247,13 +278,22 @@ describe('adapters', () => {
     writeFileSync(source, 'lora-bytes')
     const first = await models.importAdapterFile(settings, { sourcePath: source })
     const second = await models.importAdapterFile(settings, { sourcePath: source, name: '  Custom  ' })
-    expect(first).toMatchObject({ id: 'My-Style--v2-', name: 'My Style (v2)', provider: 'local', tags: ['local-import'], installed: true, sizeBytes: 10 })
+    expect(first).toMatchObject({
+      id: 'My-Style--v2-',
+      name: 'My Style (v2)',
+      provider: 'local',
+      tags: ['local-import'],
+      installed: true,
+      sizeBytes: 10,
+    })
     expect(second).toMatchObject({ id: 'My-Style--v2--2', name: 'Custom' })
     expect(readFileSync(join(adaptersRoot(), 'My-Style--v2-', 'My Style (v2).safetensors'), 'utf8')).toBe('lora-bytes')
 
     const catalog = await models.getCatalog(settings)
     expect(catalog.adapters.map((a) => a.id)).toEqual(['lora-a', 'My-Style--v2-', 'My-Style--v2--2'])
-    expect(await models.resolveAdapterFile(settings, 'My-Style--v2-')).toBe(join(adaptersRoot(), 'My-Style--v2-', 'My Style (v2).safetensors'))
+    expect(await models.resolveAdapterFile(settings, 'My-Style--v2-')).toBe(
+      join(adaptersRoot(), 'My-Style--v2-', 'My Style (v2).safetensors'),
+    )
   })
 
   it('rejects non-safetensors LoRA files', async () => {
@@ -272,7 +312,15 @@ describe('adapters', () => {
     await models.registerTrainedAdapter(settings, { id: 'run/1', name: '', sourcePath: source })
     writeFileSync(source, 'v2-longer')
     const entry = await models.registerTrainedAdapter(settings, { id: 'run/1', name: 'Run 1', sourcePath: source, base: 'moss-sft' })
-    expect(entry).toMatchObject({ id: 'run-1', name: 'Run 1', tags: ['trained'], sizeBytes: 9, base: 'moss-sft', kind: 'lora', license: 'local' })
+    expect(entry).toMatchObject({
+      id: 'run-1',
+      name: 'Run 1',
+      tags: ['trained'],
+      sizeBytes: 9,
+      base: 'moss-sft',
+      kind: 'lora',
+      license: 'local',
+    })
     const index = JSON.parse(readFileSync(join(adaptersRoot(), 'index.json'), 'utf8'))
     expect(index.adapters).toHaveLength(1)
   })
@@ -361,7 +409,11 @@ describe('deleteModel', () => {
     const using = join(bundles, 'c'.repeat(24))
     const other = join(bundles, 'd'.repeat(24))
     const foreign = join(bundles, 'not-a-bundle')
-    for (const [dir, id] of [[using, 'vae-a'], [other, 'other'], [foreign, 'vae-a']] as const) {
+    for (const [dir, id] of [
+      [using, 'vae-a'],
+      [other, 'other'],
+      [foreign, 'vae-a'],
+    ] as const) {
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'clover_model.json'), JSON.stringify({ version: 1, components: [{ id }] }))
     }

@@ -63,11 +63,9 @@ async function cloneMirror(settings: Settings, source = TRAINER_SOURCE): Promise
 }
 
 async function fetchTrainerMirror(settings: Settings) {
-  return run(
-    gitBinary(),
-    ['-C', trainerMirror(settings), 'fetch', '--prune', '--tags', 'origin', '+refs/heads/*:refs/heads/*'],
-    { timeoutMs: 180_000 },
-  )
+  return run(gitBinary(), ['-C', trainerMirror(settings), 'fetch', '--prune', '--tags', 'origin', '+refs/heads/*:refs/heads/*'], {
+    timeoutMs: 180_000,
+  })
 }
 
 async function assertTrainerHealthy(settings: Settings): Promise<void> {
@@ -116,7 +114,9 @@ export async function ensureTrainerMirror(settings: Settings): Promise<void> {
 export async function listTrainerBranches(settings: Settings): Promise<BranchInfo[]> {
   await ensureTrainerMirror(settings)
   const mirror = trainerMirror(settings)
-  const result = await run(gitBinary(), ['-C', mirror, 'for-each-ref', '--format=%(refname:short)|%(objectname)', 'refs/heads'], { timeoutMs: 10_000 })
+  const result = await run(gitBinary(), ['-C', mirror, 'for-each-ref', '--format=%(refname:short)|%(objectname)', 'refs/heads'], {
+    timeoutMs: 10_000,
+  })
   if (result.code !== 0) throw new Error(`读取训练器分支失败：${tail(result.stderr) || firstLine(result.stdout)}`)
   const branches = result.stdout.split(/\r?\n/).filter(Boolean)
   if (branches.length === 0) throw new Error('训练器镜像里没有可用分支')
@@ -156,7 +156,9 @@ export async function listTrainerCommits(settings: Settings, branch: string, lim
 }
 
 export async function trainerTagSha(settings: Settings, tag = 'v0.1.0'): Promise<string | null> {
-  const result = await run(gitBinary(), ['-C', trainerMirror(settings), 'rev-parse', '--verify', `refs/tags/${tag}^{commit}`], { timeoutMs: 5000 })
+  const result = await run(gitBinary(), ['-C', trainerMirror(settings), 'rev-parse', '--verify', `refs/tags/${tag}^{commit}`], {
+    timeoutMs: 5000,
+  })
   return result.code === 0 ? firstLine(result.stdout) || null : null
 }
 
@@ -167,7 +169,9 @@ export async function trainerCommitExists(settings: Settings, sha: string): Prom
 
 export async function createTrainerWorktree(settings: Settings, sha: string, destination: string): Promise<void> {
   await mkdir(trainerVersionsDir(settings), { recursive: true })
-  const result = await run(gitBinary(), ['-C', trainerMirror(settings), 'worktree', 'add', '--detach', destination, sha], { timeoutMs: 120_000 })
+  const result = await run(gitBinary(), ['-C', trainerMirror(settings), 'worktree', 'add', '--detach', destination, sha], {
+    timeoutMs: 120_000,
+  })
   if (result.code !== 0) throw new Error(`创建训练版本失败：${tail(result.stderr)}`)
 }
 
@@ -180,7 +184,19 @@ export async function removeTrainerWorktree(settings: Settings, destination: str
 export async function isTrainerDirty(destination: string): Promise<boolean> {
   const result = await run(
     gitBinary(),
-    ['-C', destination, 'status', '--porcelain', '--', '.', ':(exclude)trainer.json', ':(exclude)runs', ':(exclude)configs/user', ':(exclude)models', ':(exclude).venv'],
+    [
+      '-C',
+      destination,
+      'status',
+      '--porcelain',
+      '--',
+      '.',
+      ':(exclude)trainer.json',
+      ':(exclude)runs',
+      ':(exclude)configs/user',
+      ':(exclude)models',
+      ':(exclude).venv',
+    ],
     { timeoutMs: 10_000 },
   )
   return result.stdout.trim().length > 0

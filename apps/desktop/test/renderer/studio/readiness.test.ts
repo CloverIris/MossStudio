@@ -1,19 +1,53 @@
 import { describe, expect, it } from 'vitest'
 import type { AdapterEntry, Catalog, EngineReadiness, ModelBundle, ModelEntry } from '@shared/types'
-import { bundleInstalled, deriveReadiness, installedBundles, rerunEligibility, resolveBundle, updateRequiredReason, type ReadinessInput } from '@renderer/pages/studio/readiness'
+import {
+  bundleInstalled,
+  deriveReadiness,
+  installedBundles,
+  rerunEligibility,
+  resolveBundle,
+  updateRequiredReason,
+  type ReadinessInput,
+} from '@renderer/pages/studio/readiness'
 import { cliEngineFeatures } from '@shared/cliEngine'
 import { engineFeaturesFixture } from '@test/mocks/backend'
 import { canvas, layer } from './fixtures'
 
 const model = (id: string, installed = true): ModelEntry => ({
-  id, name: id, provider: 'hf', repo: id, revision: 'main', role: 'dit', precision: 'bf16', sizeBytes: 1,
-  license: 'x', tags: [], installed, installedBytes: installed ? 1 : 0,
+  id,
+  name: id,
+  provider: 'hf',
+  repo: id,
+  revision: 'main',
+  role: 'dit',
+  precision: 'bf16',
+  sizeBytes: 1,
+  license: 'x',
+  tags: [],
+  installed,
+  installedBytes: installed ? 1 : 0,
 })
 const bundle = (id: string, patch: Partial<ModelBundle> = {}): ModelBundle => ({
-  id, name: id.toUpperCase(), description: '', components: { dit: `${id}-dit`, textEncoder: 'te', vae: 'vae' }, support: 'cfg', ...patch,
+  id,
+  name: id.toUpperCase(),
+  description: '',
+  components: { dit: `${id}-dit`, textEncoder: 'te', vae: 'vae' },
+  support: 'cfg',
+  ...patch,
 })
 const adapter = (id: string, installed = true): AdapterEntry => ({
-  id, name: `LoRA ${id}`, provider: 'local', repo: '', revision: '', kind: 'lora', license: '', files: [], sizeBytes: 1, tags: [], installed, installedBytes: 1,
+  id,
+  name: `LoRA ${id}`,
+  provider: 'local',
+  repo: '',
+  revision: '',
+  kind: 'lora',
+  license: '',
+  files: [],
+  sizeBytes: 1,
+  tags: [],
+  installed,
+  installedBytes: 1,
 })
 
 function catalog(patch: Partial<Catalog> = {}): Catalog {
@@ -86,7 +120,9 @@ describe('studio/readiness deriveReadiness', () => {
 
   it('points an engine problem at settings, or at first-run setup before it is done', () => {
     const missing: EngineReadiness = { state: 'missing', path: null }
-    expect(deriveReadiness(input({ engine: missing })).blockers).toEqual([{ id: 'engine', message: '引擎未就绪', action: { label: '去设置', to: '/settings/devices' } }])
+    expect(deriveReadiness(input({ engine: missing })).blockers).toEqual([
+      { id: 'engine', message: '引擎未就绪', action: { label: '去设置', to: '/settings/devices' } },
+    ])
     expect(deriveReadiness(input({ engine: missing, setupDone: false })).blockers[0]?.action?.to).toBe('/setup')
     const installing: EngineReadiness = { state: 'missing', path: null, installing: { percent: 41.6 } as EngineReadiness['installing'] }
     expect(deriveReadiness(input({ engine: installing })).blockers[0]?.message).toBe('引擎正在安装 · 42%')
@@ -95,15 +131,26 @@ describe('studio/readiness deriveReadiness', () => {
   it('ignores the local engine for remote runs but needs the remote model location', () => {
     const missing: EngineReadiness = { state: 'missing', path: null }
     expect(deriveReadiness(input({ engine: missing, remote: { name: 'gpu-box', modelPath: '/models' } })).blockers).toEqual([])
-    expect(deriveReadiness(input({ remote: { name: 'gpu-box' } })).blockers[0]).toMatchObject({ id: 'remote-path', action: { to: '/settings/devices' } })
+    expect(deriveReadiness(input({ remote: { name: 'gpu-box' } })).blockers[0]).toMatchObject({
+      id: 'remote-path',
+      action: { to: '/settings/devices' },
+    })
   })
 
   it('names missing LoRAs and refuses LoRAs on remote runs', () => {
-    const withLora = canvas({ prompt: 'x', adapters: [{ id: 'style', strength: 1 }, { id: 'gone', strength: 1 }] })
+    const withLora = canvas({
+      prompt: 'x',
+      adapters: [
+        { id: 'style', strength: 1 },
+        { id: 'gone', strength: 1 },
+      ],
+    })
     const local = deriveReadiness(input({ canvas: withLora })).blockers
     expect(local.map((item) => item.id)).toEqual(['adapters'])
     expect(local[0]!.message).toContain('「LoRA gone」')
-    const remote = deriveReadiness(input({ canvas: canvas({ prompt: 'x', adapters: [{ id: 'style', strength: 1 }] }), remote: { name: 'r', modelPath: '/m' } })).blockers
+    const remote = deriveReadiness(
+      input({ canvas: canvas({ prompt: 'x', adapters: [{ id: 'style', strength: 1 }] }), remote: { name: 'r', modelPath: '/m' } }),
+    ).blockers
     expect(remote.map((item) => item.id)).toEqual(['remote-adapters'])
   })
 
@@ -153,7 +200,11 @@ describe('update-required blocker', () => {
 
   it('sends a copy that cannot update itself to 设置 instead, and words a missing minimum plainly', () => {
     const readiness = deriveReadiness(input({ update: { supported: false, required: true, minimumVersion: null } }))
-    expect(readiness.blockers[0]).toEqual({ id: 'update-required', message: '必须更新后才能继续生成', action: { label: '查看', to: '/settings/updates' } })
+    expect(readiness.blockers[0]).toEqual({
+      id: 'update-required',
+      message: '必须更新后才能继续生成',
+      action: { label: '查看', to: '/settings/updates' },
+    })
   })
 
   it('adds nothing when the update is not required or the state is unknown', () => {
@@ -168,14 +219,21 @@ describe('studio/readiness rerunEligibility with a required update', () => {
 
   it('disables the rerun with the same reason as 生成, before anything else', () => {
     const update = { supported: true, required: true, minimumVersion: '1.2.0' }
-    expect(rerunEligibility(card, { busy: false, submitting: false, update })).toEqual({ ok: false, reason: '必须更新到 1.2.0 才能继续生成' })
+    expect(rerunEligibility(card, { busy: false, submitting: false, update })).toEqual({
+      ok: false,
+      reason: '必须更新到 1.2.0 才能继续生成',
+    })
     // Even while busy or submitting, the update is the reason that matters.
     expect(rerunEligibility(card, { busy: true, submitting: true, update }).reason).toBe('必须更新到 1.2.0 才能继续生成')
-    expect(rerunEligibility(card, { busy: false, submitting: false, update: { ...update, minimumVersion: null } }).reason).toBe('必须更新后才能继续生成')
+    expect(rerunEligibility(card, { busy: false, submitting: false, update: { ...update, minimumVersion: null } }).reason).toBe(
+      '必须更新后才能继续生成',
+    )
   })
 
   it('reruns as before when no update is required or the state is unknown', () => {
-    expect(rerunEligibility(card, { busy: false, submitting: false, update: { supported: true, required: false, minimumVersion: '1.0.0' } })).toEqual({ ok: true })
+    expect(
+      rerunEligibility(card, { busy: false, submitting: false, update: { supported: true, required: false, minimumVersion: '1.0.0' } }),
+    ).toEqual({ ok: true })
     expect(rerunEligibility(card, { busy: false, submitting: false, update: null })).toEqual({ ok: true })
     expect(rerunEligibility(card, { busy: false, submitting: false })).toEqual({ ok: true })
   })
@@ -191,10 +249,12 @@ describe('studio/readiness on a CLI engine (兼容模式 / AMD 原生)', () => {
   const lora = canvas({ prompt: 'a street', adapters: [{ id: 'style', strength: 1 }] })
 
   it('blocks LoRAs with the engine named, and only when the engine cannot load them', () => {
-    expect(deriveReadiness(input({ canvas: lora, features: cliEngineFeatures('vulkan') })).blockers)
-      .toEqual([{ id: 'lora-unsupported', message: '兼容模式引擎不支持 LoRA，请移除 LoRA 后再生成' }])
-    expect(deriveReadiness(input({ canvas: lora, features: cliEngineFeatures('hip') })).blockers[0]!.message)
-      .toBe('AMD 原生引擎不支持 LoRA，请移除 LoRA 后再生成')
+    expect(deriveReadiness(input({ canvas: lora, features: cliEngineFeatures('vulkan') })).blockers).toEqual([
+      { id: 'lora-unsupported', message: '兼容模式引擎不支持 LoRA，请移除 LoRA 后再生成' },
+    ])
+    expect(deriveReadiness(input({ canvas: lora, features: cliEngineFeatures('hip') })).blockers[0]!.message).toBe(
+      'AMD 原生引擎不支持 LoRA，请移除 LoRA 后再生成',
+    )
     expect(deriveReadiness(input({ canvas: lora, features: engineFeaturesFixture() })).blockers).toEqual([])
     // Unknown (still reading) or no engine: nothing is known to be unsupported.
     expect(deriveReadiness(input({ canvas: lora, features: undefined })).blockers).toEqual([])
@@ -202,22 +262,35 @@ describe('studio/readiness on a CLI engine (兼容模式 / AMD 原生)', () => {
   })
 
   it('a remote run keeps its own LoRA message', () => {
-    const { blockers } = deriveReadiness(input({ canvas: lora, features: cliEngineFeatures('vulkan'), remote: { name: 'Lab', modelPath: '/m' } }))
+    const { blockers } = deriveReadiness(
+      input({ canvas: lora, features: cliEngineFeatures('vulkan'), remote: { name: 'Lab', modelPath: '/m' } }),
+    )
     expect(blockers.map((blocker) => blocker.id)).toEqual(['remote-adapters'])
   })
 
   it('blocks a bundle that is not a bf16 diffusers folder, with where to fix it', () => {
     const cat = catalog({
       bundles: [bundle('fp16'), bundle('comfy'), bundle('sft')],
-      models: [
-        model('fp16-dit'), model('comfy-dit'), model('sft-dit'), model('te'), model('vae'), model('cfg'),
-      ].map((entry) => entry.id === 'fp16-dit' ? { ...entry, precision: 'fp16' } : entry.id === 'comfy-dit' ? { ...entry, format: 'comfyui' as const } : entry),
+      models: [model('fp16-dit'), model('comfy-dit'), model('sft-dit'), model('te'), model('vae'), model('cfg')].map((entry) =>
+        entry.id === 'fp16-dit'
+          ? { ...entry, precision: 'fp16' }
+          : entry.id === 'comfy-dit'
+            ? { ...entry, format: 'comfyui' as const }
+            : entry,
+      ),
     })
     const pick = (id: string) => input({ catalog: cat, bundle: resolveBundle(cat, id, null), features: cliEngineFeatures('vulkan') })
-    expect(deriveReadiness(pick('fp16')).blockers).toEqual([{
-      id: 'model-engine', message: '「FP16」不是 bf16 模型，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型', action: { label: '去下载', to: '/models' },
-    }])
-    expect(deriveReadiness(pick('comfy')).blockers[0]).toMatchObject({ id: 'model-engine', message: expect.stringContaining('扫描到的单个模型文件') })
+    expect(deriveReadiness(pick('fp16')).blockers).toEqual([
+      {
+        id: 'model-engine',
+        message: '「FP16」不是 bf16 模型，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型',
+        action: { label: '去下载', to: '/models' },
+      },
+    ])
+    expect(deriveReadiness(pick('comfy')).blockers[0]).toMatchObject({
+      id: 'model-engine',
+      message: expect.stringContaining('扫描到的单个模型文件'),
+    })
     expect(deriveReadiness(pick('sft')).blockers).toEqual([])
     // The server engine runs all of them.
     expect(deriveReadiness({ ...pick('fp16'), features: engineFeaturesFixture() }).blockers).toEqual([])

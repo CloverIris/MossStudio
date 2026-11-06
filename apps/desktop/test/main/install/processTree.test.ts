@@ -1,13 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  helpersToKill,
-  isChromiumHelper,
-  parseProcStat,
-  parsePsTable,
-  processTable,
-  type ProcessEntry,
-} from '@main/install/processTree'
+import { helpersToKill, isChromiumHelper, parseProcStat, parsePsTable, processTable, type ProcessEntry } from '@main/install/processTree'
 
 const EXE = '/home/a/MossStudio/app-2.0.0/MossStudio'
 
@@ -19,9 +12,17 @@ describe('parsing', () => {
   })
 
   it('parses ps output with executable paths that contain spaces', () => {
-    expect(parsePsTable('  1     0 /sbin/launchd\n 501   1 /Applications/MossStudio.app/Contents/Frameworks/MossStudio Helper (GPU).app/Contents/MacOS/MossStudio Helper (GPU)\n\n')).toEqual([
+    expect(
+      parsePsTable(
+        '  1     0 /sbin/launchd\n 501   1 /Applications/MossStudio.app/Contents/Frameworks/MossStudio Helper (GPU).app/Contents/MacOS/MossStudio Helper (GPU)\n\n',
+      ),
+    ).toEqual([
       { pid: 1, ppid: 0, exe: '/sbin/launchd' },
-      { pid: 501, ppid: 1, exe: '/Applications/MossStudio.app/Contents/Frameworks/MossStudio Helper (GPU).app/Contents/MacOS/MossStudio Helper (GPU)' },
+      {
+        pid: 501,
+        ppid: 1,
+        exe: '/Applications/MossStudio.app/Contents/Frameworks/MossStudio Helper (GPU).app/Contents/MacOS/MossStudio Helper (GPU)',
+      },
     ])
   })
 })
@@ -57,7 +58,8 @@ describe('helpersToKill', () => {
     { pid: 101, ppid: 100, exe: EXE }, // gpu-process
     { pid: 102, ppid: 101, exe: EXE }, // broker (child of the GPU process)
     { pid: 103, ppid: 100, exe: EXE }, // network utility
-    { pid: 104, ppid: 100, exe: EXE }, { pid: 105, ppid: 104, exe: EXE }, // zygote and its child
+    { pid: 104, ppid: 100, exe: EXE },
+    { pid: 105, ppid: 104, exe: EXE }, // zygote and its child
     { pid: 106, ppid: 100, exe: '/home/a/MossStudio/app-2.0.0/chrome_crashpad_handler' },
     { pid: 110, ppid: 100, exe: '/tmp/MossStudio-uninstall-x/mossstudio' }, // temp launcher, --finish-uninstall
     { pid: 111, ppid: 110, exe: '/bin/sleep' },
@@ -76,7 +78,10 @@ describe('helpersToKill', () => {
     expect(helpersToKill(100, table, new Set(), ours)).not.toContain(110)
     expect(helpersToKill(100, table, new Set(), ours)).not.toContain(120)
     // Without the pid record, a spawned child running our own binary would be taken for a helper:
-    const sameExe: ProcessEntry[] = [{ pid: 100, ppid: 1, exe: EXE }, { pid: 130, ppid: 100, exe: EXE }]
+    const sameExe: ProcessEntry[] = [
+      { pid: 100, ppid: 1, exe: EXE },
+      { pid: 130, ppid: 100, exe: EXE },
+    ]
     expect(helpersToKill(100, sameExe, new Set(), ours)).toEqual([130])
     expect(helpersToKill(100, sameExe, new Set([130]), ours)).toEqual([])
   })

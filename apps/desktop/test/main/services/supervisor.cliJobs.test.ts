@@ -33,7 +33,7 @@ vi.mock('@main/services/engineInstalls', () => ({
   resolveDeviceEngine,
   currentEngineMachine,
   localServerPath: (uuid?: string) => {
-    const engine = uuid ? resolveDeviceEngine(uuid) as DeviceEngine | null : null
+    const engine = uuid ? (resolveDeviceEngine(uuid) as DeviceEngine | null) : null
     return engine?.package.kind === 'cuda' ? engine.binaryPath : null
   },
 }))
@@ -53,8 +53,22 @@ let supervisor: typeof import('@main/services/supervisor')
 
 const nvidia: GpuInventoryDevice = { uuid: 'GPU-a', index: 0, name: 'RTX 4090', computeCapability: { major: 8, minor: 9 } }
 const arc: GpuInventoryDevice = { uuid: 'vk-8086-56a0-0', index: 1, name: 'Intel Arc A770', vendor: 'intel', vulkanIndex: 2 }
-const amdA: GpuInventoryDevice = { uuid: 'vk-1002-744c-0', index: 2, name: 'Radeon RX 7900 XTX', vendor: 'amd', vulkanIndex: 0, gfxTarget: 'gfx1100' }
-const amdB: GpuInventoryDevice = { uuid: 'vk-1002-744c-1', index: 3, name: 'Radeon RX 7900 XTX', vendor: 'amd', vulkanIndex: 1, gfxTarget: 'gfx1100' }
+const amdA: GpuInventoryDevice = {
+  uuid: 'vk-1002-744c-0',
+  index: 2,
+  name: 'Radeon RX 7900 XTX',
+  vendor: 'amd',
+  vulkanIndex: 0,
+  gfxTarget: 'gfx1100',
+}
+const amdB: GpuInventoryDevice = {
+  uuid: 'vk-1002-744c-1',
+  index: 3,
+  name: 'Radeon RX 7900 XTX',
+  vendor: 'amd',
+  vulkanIndex: 1,
+  gfxTarget: 'gfx1100',
+}
 
 const deviceEngine = (kind: 'cuda' | 'vulkan' | 'hip', device: GpuInventoryDevice): DeviceEngine => ({
   deviceUuid: device.uuid,
@@ -68,7 +82,13 @@ const deviceEngine = (kind: 'cuda' | 'vulkan' | 'hip', device: GpuInventoryDevic
   ...(kind === 'hip' ? { env: { LD_LIBRARY_PATH: '/opt/rocm-7.0.1/lib' } } : {}),
 })
 
-const part = (id: string, role: ModelEntry['role'], precision = 'bf16'): Partial<ModelEntry> => ({ id, role, provider: 'hf', format: 'diffusers', precision })
+const part = (id: string, role: ModelEntry['role'], precision = 'bf16'): Partial<ModelEntry> => ({
+  id,
+  role,
+  provider: 'hf',
+  format: 'diffusers',
+  precision,
+})
 
 let sinks: Map<string, MossInferSink>
 let cliStarts: Array<{ job: JobRecord; opts: CliJobOptions }>
@@ -120,10 +140,17 @@ beforeEach(async () => {
   supervisor = await import('@main/services/supervisor')
 })
 
-const request = (patch: Record<string, unknown> = {}) => ({
-  prompt: 'a red apple', width: 1024, height: 1024, steps: 20, cfg: 4, seed: 1,
-  modelBinding: { bundleId: 'moss-sft', dit: 'sft-dit', textEncoder: 'te', vae: 'vae' }, ...patch,
-}) as Parameters<typeof supervisor.startEngineJob>[0]
+const request = (patch: Record<string, unknown> = {}) =>
+  ({
+    prompt: 'a red apple',
+    width: 1024,
+    height: 1024,
+    steps: 20,
+    cfg: 4,
+    seed: 1,
+    modelBinding: { bundleId: 'moss-sft', dit: 'sft-dit', textEncoder: 'te', vae: 'vae' },
+    ...patch,
+  }) as Parameters<typeof supervisor.startEngineJob>[0]
 
 const updates = (id: string): JobRecord[] =>
   emit.mock.calls.filter(([channel, job]) => channel === Events.job && (job as JobRecord).id === id).map(([, job]) => job as JobRecord)
@@ -150,7 +177,11 @@ describe('local jobs on a CLI engine', () => {
     sink.event({ type: 'ready', device: 'vulkan:2' })
     sink.event({ type: 'stage', name: 'denoise' })
     sink.event({ type: 'progress', stage: 'denoise', current: 5, total: 20, percent: 25, eta_ms: 15_000 })
-    expect(updates(job.id).at(-1)).toMatchObject({ state: 'running', stage: 'denoise', progress: { current: 5, total: 20, percent: 25, etaMs: 15_000 } })
+    expect(updates(job.id).at(-1)).toMatchObject({
+      state: 'running',
+      stage: 'denoise',
+      progress: { current: 5, total: 20, percent: 25, etaMs: 15_000 },
+    })
     sink.event({ type: 'result', images: [{ path: '/o.png', width: 1024, height: 1024, seed: 1 }] })
     sink.done(0)
     expect(updates(job.id).at(-1)).toMatchObject({ state: 'succeeded', outputs: [{ path: '/o.png' }] })
@@ -159,14 +190,21 @@ describe('local jobs on a CLI engine', () => {
   it('runs an AMD GPU through moss-infer-hip with its HIP index (cards of one gfx target in inventory order) and ROCm env', async () => {
     await supervisor.startEngineJob(request({ deviceUuid: amdB.uuid }))
     await vi.waitFor(() => expect(cliStarts).toHaveLength(1))
-    expect(hipDeviceIndex).toHaveBeenCalledWith('/engines/stable-v2.2.0-hip/bin/moss-infer-hip', { name: 'Radeon RX 7900 XTX', gfxTarget: 'gfx1100' }, 1, { LD_LIBRARY_PATH: '/opt/rocm-7.0.1/lib' })
+    expect(hipDeviceIndex).toHaveBeenCalledWith(
+      '/engines/stable-v2.2.0-hip/bin/moss-infer-hip',
+      { name: 'Radeon RX 7900 XTX', gfxTarget: 'gfx1100' },
+      1,
+      { LD_LIBRARY_PATH: '/opt/rocm-7.0.1/lib' },
+    )
     expect(cliStarts[0]!.opts).toMatchObject({
-      kind: 'hip', cliDeviceIndex: 1, env: { LD_LIBRARY_PATH: '/opt/rocm-7.0.1/lib' },
+      kind: 'hip',
+      cliDeviceIndex: 1,
+      env: { LD_LIBRARY_PATH: '/opt/rocm-7.0.1/lib' },
       expectedDevice: { name: 'Radeon RX 7900 XTX', gfxTarget: 'gfx1100' },
     })
   })
 
-  it("checks the Vulkan program against the name its own --list-devices gave that index", async () => {
+  it('checks the Vulkan program against the name its own --list-devices gave that index', async () => {
     engines.set(arc.uuid, { ...deviceEngine('vulkan', arc), expectedVulkanName: 'Intel(R) Arc(TM) A770 Graphics (DG2)' })
     await supervisor.startEngineJob(request({ deviceUuid: arc.uuid }))
     expect(cliStarts[0]!.opts.expectedDevice).toEqual({ name: 'Intel(R) Arc(TM) A770 Graphics (DG2)' })
@@ -179,7 +217,10 @@ describe('local jobs on a CLI engine', () => {
     writeFileSync(server, '#!')
     engines.set(nvidia.uuid, { ...deviceEngine('cuda', nvidia), binaryPath: server })
     refreshGpuInventory.mockResolvedValue({ devices: [nvidia, arc] })
-    const hello = decodeEngineHello({ protocol_version: 2, probe: { devices: [{ index: 0, name: 'RTX 4090', supported: true, compute_capability: '8.9' }] } })
+    const hello = decodeEngineHello({
+      protocol_version: 2,
+      probe: { devices: [{ index: 0, name: 'RTX 4090', supported: true, compute_capability: '8.9' }] },
+    })
     probeLocalEngineGpuCompatibility.mockResolvedValue({ hello, helloFor: (uuid: string) => (uuid === nvidia.uuid ? hello : null) })
     await supervisor.startEngineJob(request({ deviceUuid: nvidia.uuid }))
     expect(runMossInferJob).toHaveBeenCalledTimes(1)
@@ -187,10 +228,14 @@ describe('local jobs on a CLI engine', () => {
   })
 
   it('refuses a bundle that is not bf16 before anything starts, and says why', async () => {
-    await expect(supervisor.startEngineJob(request({
-      deviceUuid: arc.uuid,
-      modelBinding: { bundleId: 'moss-sft-fp16', dit: 'fp16-dit', textEncoder: 'te', vae: 'vae' },
-    }))).rejects.toThrow('「MOSS-Image SFT FP16」不是 bf16 模型，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型')
+    await expect(
+      supervisor.startEngineJob(
+        request({
+          deviceUuid: arc.uuid,
+          modelBinding: { bundleId: 'moss-sft-fp16', dit: 'fp16-dit', textEncoder: 'te', vae: 'vae' },
+        }),
+      ),
+    ).rejects.toThrow('「MOSS-Image SFT FP16」不是 bf16 模型，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型')
     expect(prepareModelSource).not.toHaveBeenCalled()
     expect(runCliJob).not.toHaveBeenCalled()
   })
@@ -232,17 +277,31 @@ describe('local jobs on a CLI engine', () => {
 
 describe('CLI jobs: HIP device lookup', () => {
   it('fails the job with the lookup message when moss-infer-hip does not list the card, and never starts it', async () => {
-    hipDeviceIndex.mockResolvedValue({ ok: false, message: 'moss-infer-hip 没有找到这张显卡（gfx1100，同型号第 2 张），请到 设置 › 设备 重新检测显卡后再试' })
+    hipDeviceIndex.mockResolvedValue({
+      ok: false,
+      message: 'moss-infer-hip 没有找到这张显卡（gfx1100，同型号第 2 张），请到 设置 › 设备 重新检测显卡后再试',
+    })
     const job = await supervisor.startEngineJob(request({ deviceUuid: amdB.uuid }))
-    await vi.waitFor(() => expect(updates(job.id).at(-1)).toMatchObject({
-      state: 'failed', error: { code: 'E_DEVICE', message: 'moss-infer-hip 没有找到这张显卡（gfx1100，同型号第 2 张），请到 设置 › 设备 重新检测显卡后再试' },
-    }))
+    await vi.waitFor(() =>
+      expect(updates(job.id).at(-1)).toMatchObject({
+        state: 'failed',
+        error: {
+          code: 'E_DEVICE',
+          message: 'moss-infer-hip 没有找到这张显卡（gfx1100，同型号第 2 张），请到 设置 › 设备 重新检测显卡后再试',
+        },
+      }),
+    )
     expect(runCliJob).not.toHaveBeenCalled()
   })
 
   it('a cancel during the lookup ends the job canceled without starting the program or touching moss-server', async () => {
     let release: (value: unknown) => void = () => undefined
-    hipDeviceIndex.mockImplementation(() => new Promise((resolve) => { release = resolve }))
+    hipDeviceIndex.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
     const job = await supervisor.startEngineJob(request({ deviceUuid: amdA.uuid }))
     await vi.waitFor(() => expect(hipDeviceIndex).toHaveBeenCalled())
     await supervisor.cancelJob(job.id)
@@ -265,7 +324,7 @@ describe('CLI jobs: HIP device lookup', () => {
 })
 
 describe('CLI jobs: model weights', () => {
-  it("refuses weights whose safetensors dtype is not bf16, whatever the catalog says", async () => {
+  it('refuses weights whose safetensors dtype is not bf16, whatever the catalog says', async () => {
     cliBundleDtypeProblem.mockResolvedValue('这个模型的DiT是 F16，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型')
     await expect(supervisor.startEngineJob(request({ deviceUuid: arc.uuid }))).rejects.toThrow('这个模型的DiT是 F16')
     expect(cliBundleDtypeProblem).toHaveBeenCalledWith('vulkan', bundle)
@@ -273,14 +332,22 @@ describe('CLI jobs: model weights', () => {
   })
 
   it('refuses a bundle whose parts the catalog does not list', async () => {
-    await expect(supervisor.startEngineJob(request({
-      deviceUuid: arc.uuid, modelBinding: { bundleId: 'moss-sft', dit: 'unknown-dit', textEncoder: 'te', vae: 'vae' },
-    }))).rejects.toThrow('无法确认它是 bf16 模型包')
+    await expect(
+      supervisor.startEngineJob(
+        request({
+          deviceUuid: arc.uuid,
+          modelBinding: { bundleId: 'moss-sft', dit: 'unknown-dit', textEncoder: 'te', vae: 'vae' },
+        }),
+      ),
+    ).rejects.toThrow('无法确认它是 bf16 模型包')
   })
 })
 
 describe('automatic GPU assignment on a mixed machine', () => {
-  const hello = decodeEngineHello({ protocol_version: 2, probe: { devices: [{ index: 0, name: 'RTX 4090', supported: true, compute_capability: '8.9' }] } })
+  const hello = decodeEngineHello({
+    protocol_version: 2,
+    probe: { devices: [{ index: 0, name: 'RTX 4090', supported: true, compute_capability: '8.9' }] },
+  })
   beforeEach(() => {
     const server = join(dataRoot(), 'stable-v2.2.0-cu13', 'bin', 'moss-server')
     mkdirSync(join(server, '..'), { recursive: true })
@@ -301,20 +368,35 @@ describe('automatic GPU assignment on a mixed machine', () => {
 
   it('a job with pictures or LoRA never lands on a CLI GPU; on a CLI-only machine it is refused with the reason', async () => {
     refreshGpuInventory.mockResolvedValue({ devices: [arc, nvidia] })
-    const job = await supervisor.startEngineJob(request({ initImage: { path: '/a/init.png', strength: 0.5 }, adapters: [{ path: '/l.safetensors', strength: 1 }] }))
+    const job = await supervisor.startEngineJob(
+      request({ initImage: { path: '/a/init.png', strength: 0.5 }, adapters: [{ path: '/l.safetensors', strength: 1 }] }),
+    )
     expect(job.deviceUuid).toBe(nvidia.uuid)
 
     refreshGpuInventory.mockResolvedValue({ devices: [arc, amdA] })
-    await expect(supervisor.startEngineJob(request({ prompt: 'img2img', initImage: { path: '/a/init.png', strength: 0.5 } })))
-      .rejects.toMatchObject({ code: 'E_NOT_SUPPORTED', message: '兼容模式引擎只能文生图，不支持起始图，请移除后再生成（这台电脑上没有能运行完整引擎的显卡）' })
+    await expect(
+      supervisor.startEngineJob(request({ prompt: 'img2img', initImage: { path: '/a/init.png', strength: 0.5 } })),
+    ).rejects.toMatchObject({
+      code: 'E_NOT_SUPPORTED',
+      message: '兼容模式引擎只能文生图，不支持起始图，请移除后再生成（这台电脑上没有能运行完整引擎的显卡）',
+    })
   })
 
   it('on a CLI-only machine prefers a discrete GPU over an integrated one', async () => {
-    const igpu: GpuInventoryDevice = { uuid: 'vk-8086-a780-0', index: 0, name: 'Intel(R) UHD Graphics 770', vendor: 'intel', vulkanIndex: 1 }
+    const igpu: GpuInventoryDevice = {
+      uuid: 'vk-8086-a780-0',
+      index: 0,
+      name: 'Intel(R) UHD Graphics 770',
+      vendor: 'intel',
+      vulkanIndex: 1,
+    }
     engines.set(igpu.uuid, deviceEngine('vulkan', igpu))
     currentEngineMachine.mockReturnValue({
       machine: {
-        os: 'linux', systemCuda: [], rocm7: true, vulkanProbed: true,
+        os: 'linux',
+        systemCuda: [],
+        rocm7: true,
+        vulkanProbed: true,
         gpus: [
           { id: igpu.uuid, name: igpu.name, vendor: 'intel', vulkan: { index: 1, usable: true, discrete: false } },
           { id: arc.uuid, name: arc.name, vendor: 'intel', vulkan: { index: 2, usable: true, discrete: true } },
@@ -328,10 +410,12 @@ describe('automatic GPU assignment on a mixed machine', () => {
 
   it('a CLI GPU picked by hand runs plain jobs and refuses what its engine cannot do', async () => {
     refreshGpuInventory.mockResolvedValue({ devices: [arc, nvidia] })
-    await expect(supervisor.startEngineJob(request({ deviceUuid: arc.uuid, references: { paths: ['/a/ref.png'] } })))
-      .rejects.toMatchObject({ code: 'E_NOT_SUPPORTED', message: 'Intel Arc A770：兼容模式引擎只能文生图，不支持参考图，请移除后再生成' })
-    await expect(supervisor.startEngineJob(request({ deviceUuid: arc.uuid, sampling: { sampler: 'heun' } })))
-      .rejects.toMatchObject({ code: 'E_NOT_SUPPORTED' })
+    await expect(supervisor.startEngineJob(request({ deviceUuid: arc.uuid, references: { paths: ['/a/ref.png'] } }))).rejects.toMatchObject(
+      { code: 'E_NOT_SUPPORTED', message: 'Intel Arc A770：兼容模式引擎只能文生图，不支持参考图，请移除后再生成' },
+    )
+    await expect(supervisor.startEngineJob(request({ deviceUuid: arc.uuid, sampling: { sampler: 'heun' } }))).rejects.toMatchObject({
+      code: 'E_NOT_SUPPORTED',
+    })
     const plain = await supervisor.startEngineJob(request({ deviceUuid: arc.uuid, sampling: { sampler: 'euler', scheduler: 'moss' } }))
     expect(plain.deviceUuid).toBe(arc.uuid)
     expect(cliStarts).toHaveLength(1)
@@ -341,7 +425,10 @@ describe('automatic GPU assignment on a mixed machine', () => {
 describe('a GPU that switches engines between jobs', () => {
   it('to Vulkan: the moss-server it ran before is released before the CLI starts', async () => {
     const order: string[] = []
-    releaseStaleMossInferRuntimes.mockImplementation(async (uuid?: string) => { order.push(`release:${uuid}`); return [uuid!] })
+    releaseStaleMossInferRuntimes.mockImplementation(async (uuid?: string) => {
+      order.push(`release:${uuid}`)
+      return [uuid!]
+    })
     runCliJob.mockImplementation(async (job: JobRecord, _params: unknown, opts: CliJobOptions, sink: MossInferSink) => {
       order.push('cli')
       cliStarts.push({ job, opts })
@@ -357,7 +444,10 @@ describe('a GPU that switches engines between jobs', () => {
     const server = join(dataRoot(), 'stable-v2.2.0-cu13', 'bin', 'moss-server')
     mkdirSync(join(server, '..'), { recursive: true })
     writeFileSync(server, '#!')
-    const hello = decodeEngineHello({ protocol_version: 2, probe: { devices: [{ index: 1, name: 'Intel Arc A770', supported: true, compute_capability: '8.9' }] } })
+    const hello = decodeEngineHello({
+      protocol_version: 2,
+      probe: { devices: [{ index: 1, name: 'Intel Arc A770', supported: true, compute_capability: '8.9' }] },
+    })
     probeLocalEngineGpuCompatibility.mockResolvedValue({ hello, helloFor: () => hello })
     const first = await supervisor.startEngineJob(request({ deviceUuid: arc.uuid }))
     const second = await supervisor.startEngineJob(request({ deviceUuid: arc.uuid, prompt: 'second' }))

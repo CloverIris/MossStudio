@@ -70,7 +70,10 @@ describe('studio/sampling 高清修复', () => {
 
   it('keeps a hires target in proportion when the canvas is resized', () => {
     const sampling = { sampler: 'euler', hires: { width: 2048, height: 2048, strength: 0.4 } }
-    expect(scaleHires(sampling, { width: 1024, height: 1024 }, { width: 1280, height: 720 })).toEqual({ sampler: 'euler', hires: { width: 2560, height: 1440, strength: 0.4 } })
+    expect(scaleHires(sampling, { width: 1024, height: 1024 }, { width: 1280, height: 720 })).toEqual({
+      sampler: 'euler',
+      hires: { width: 2560, height: 1440, strength: 0.4 },
+    })
     expect(scaleHires(sampling, { width: 1024, height: 1024 }, { width: 1024, height: 1024 })).toBe(sampling)
     expect(scaleHires({ sampler: 'euler' }, { width: 1, height: 1 }, { width: 2, height: 2 })).toEqual({ sampler: 'euler' })
   })

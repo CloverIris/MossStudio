@@ -31,11 +31,23 @@ export const app = {
   getLocale: () => 'zh-CN',
   whenReady: () => Promise.resolve(),
   isReady: () => true,
-  on: (event: string, listener: (...args: unknown[]) => void) => { appEvents.on(event, listener); return app },
-  once: (event: string, listener: (...args: unknown[]) => void) => { appEvents.once(event, listener); return app },
+  on: (event: string, listener: (...args: unknown[]) => void) => {
+    appEvents.on(event, listener)
+    return app
+  },
+  once: (event: string, listener: (...args: unknown[]) => void) => {
+    appEvents.once(event, listener)
+    return app
+  },
   emit: (event: string, ...args: unknown[]) => appEvents.emit(event, ...args),
-  off: (event: string, listener: (...args: unknown[]) => void) => { appEvents.off(event, listener); return app },
-  removeListener: (event: string, listener: (...args: unknown[]) => void) => { appEvents.off(event, listener); return app },
+  off: (event: string, listener: (...args: unknown[]) => void) => {
+    appEvents.off(event, listener)
+    return app
+  },
+  removeListener: (event: string, listener: (...args: unknown[]) => void) => {
+    appEvents.off(event, listener)
+    return app
+  },
   quit: (): void => undefined,
   exit: (): void => undefined,
   relaunch: (): void => undefined,
@@ -51,41 +63,71 @@ class FakeWebContents extends EventEmitter {
   send(channel: string, payload: unknown): void {
     this.sent.push({ channel, payload })
   }
-  isDestroyed(): boolean { return false }
+  isDestroyed(): boolean {
+    return false
+  }
 }
 
 const windows: BrowserWindow[] = []
 
 export class BrowserWindow extends EventEmitter {
-  static getAllWindows(): BrowserWindow[] { return windows.filter((win) => !win.destroyed) }
-  static getFocusedWindow(): BrowserWindow | null { return windows[0] ?? null }
-  static fromWebContents(): BrowserWindow | null { return windows[0] ?? null }
+  static getAllWindows(): BrowserWindow[] {
+    return windows.filter((win) => !win.destroyed)
+  }
+  static getFocusedWindow(): BrowserWindow | null {
+    return windows[0] ?? null
+  }
+  static fromWebContents(): BrowserWindow | null {
+    return windows[0] ?? null
+  }
   /** Test helper: drop every fake window. */
-  static reset(): void { windows.length = 0 }
+  static reset(): void {
+    windows.length = 0
+  }
   webContents = new FakeWebContents()
   destroyed = false
   constructor(readonly options: unknown = {}) {
     super()
     windows.push(this)
   }
-  isDestroyed(): boolean { return this.destroyed }
-  destroy(): void { this.destroyed = true }
-  close(): void { this.destroyed = true }
-  loadURL(): Promise<void> { return Promise.resolve() }
-  loadFile(): Promise<void> { return Promise.resolve() }
+  isDestroyed(): boolean {
+    return this.destroyed
+  }
+  destroy(): void {
+    this.destroyed = true
+  }
+  close(): void {
+    this.destroyed = true
+  }
+  loadURL(): Promise<void> {
+    return Promise.resolve()
+  }
+  loadFile(): Promise<void> {
+    return Promise.resolve()
+  }
   show(): void {}
   focus(): void {}
-  isMinimized(): boolean { return false }
-  isFocused(): boolean { return !this.destroyed }
-  isVisible(): boolean { return !this.destroyed }
+  isMinimized(): boolean {
+    return false
+  }
+  isFocused(): boolean {
+    return !this.destroyed
+  }
+  isVisible(): boolean {
+    return !this.destroyed
+  }
   restore(): void {}
 }
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 export const ipcMain = {
   handlers,
-  handle: (channel: string, handler: (...args: unknown[]) => unknown): void => { handlers.set(channel, handler) },
-  removeHandler: (channel: string): void => { handlers.delete(channel) },
+  handle: (channel: string, handler: (...args: unknown[]) => unknown): void => {
+    handlers.set(channel, handler)
+  },
+  removeHandler: (channel: string): void => {
+    handlers.delete(channel)
+  },
   on: (): void => undefined,
   removeAllListeners: (): void => undefined,
 }
@@ -117,8 +159,12 @@ export const dialog = {
 
 export const clipboard = {
   text: '',
-  writeText(value: string): void { clipboard.text = value },
-  readText(): string { return clipboard.text },
+  writeText(value: string): void {
+    clipboard.text = value
+  },
+  readText(): string {
+    return clipboard.text
+  },
 }
 
 export const nativeTheme = { shouldUseDarkColors: true, themeSource: 'system', on: (): void => undefined }
@@ -137,19 +183,38 @@ export const protocol = {
 export const powerMonitor = { on: (): void => undefined, off: (): void => undefined, removeListener: (): void => undefined }
 
 export class Notification extends EventEmitter {
-  static isSupported(): boolean { return true }
+  static isSupported(): boolean {
+    return true
+  }
   static shown: Array<{ title?: string; body?: string }> = []
-  constructor(readonly options: { title?: string; body?: string } = {}) { super() }
-  show(): void { Notification.shown.push(this.options) }
+  constructor(readonly options: { title?: string; body?: string } = {}) {
+    super()
+  }
+  show(): void {
+    Notification.shown.push(this.options)
+  }
   close(): void {}
 }
 
 export const utilityProcess = {
-  fork: (): never => { throw new Error('utilityProcess.fork is not available in unit tests') },
+  fork: (): never => {
+    throw new Error('utilityProcess.fork is not available in unit tests')
+  },
 }
 export type UtilityProcess = { kill(): boolean; pid?: number }
 
 export default {
-  app, BrowserWindow, ipcMain, safeStorage, shell, dialog, clipboard, nativeTheme,
-  nativeImage, protocol, powerMonitor, Notification, utilityProcess,
+  app,
+  BrowserWindow,
+  ipcMain,
+  safeStorage,
+  shell,
+  dialog,
+  clipboard,
+  nativeTheme,
+  nativeImage,
+  protocol,
+  powerMonitor,
+  Notification,
+  utilityProcess,
 }

@@ -57,15 +57,7 @@ export interface EngineAutoUpdateDeps {
 }
 
 export type EngineAutoUpdateResult =
-  | 'disabled'
-  | 'not-installed'
-  | 'unmanaged'
-  | 'pinned'
-  | 'backoff'
-  | 'busy'
-  | 'current'
-  | 'updated'
-  | 'failed'
+  'disabled' | 'not-installed' | 'unmanaged' | 'pinned' | 'backoff' | 'busy' | 'current' | 'updated' | 'failed'
 
 const ACTIVE_JOB_STATES = new Set<JobRecord['state']>(['queued', 'starting', 'running'])
 const DAY_MS = 24 * 60 * 60_000
@@ -95,7 +87,7 @@ export async function runEngineAutoUpdate(deps: EngineAutoUpdateDeps): Promise<E
   if (stamps.length === 0) return 'unmanaged'
   const state = deps.readState()
   if (state.pinnedTag && stamps.some((stamp) => stamp.tag === state.pinnedTag)) return 'pinned'
-  const latest = [...await deps.releases()].sort((a, b) => compareEngineTags(b.tag, a.tag))[0]
+  const latest = [...(await deps.releases())].sort((a, b) => compareEngineTags(b.tag, a.tag))[0]
   if (!latest) return 'current'
   const outdated = new Map<string, EnginePackage>()
   for (const stamp of stamps) {
@@ -151,7 +143,7 @@ function stateFile(): string {
 export function readEngineAutoUpdateState(): EngineAutoUpdateState {
   try {
     const parsed = JSON.parse(readFileSync(stateFile(), 'utf8')) as unknown
-    return parsed && typeof parsed === 'object' ? parsed as EngineAutoUpdateState : {}
+    return parsed && typeof parsed === 'object' ? (parsed as EngineAutoUpdateState) : {}
   } catch {
     return {}
   }
@@ -170,7 +162,7 @@ export async function recordManualEngineInstall(releaseTag: string | undefined):
   let latestTag: string | null = null
   if (releaseTag) {
     try {
-      latestTag = [...await listMossInferReleases()].sort((a, b) => compareEngineTags(b.tag, a.tag))[0]?.tag ?? null
+      latestTag = [...(await listMossInferReleases())].sort((a, b) => compareEngineTags(b.tag, a.tag))[0]?.tag ?? null
     } catch {
       latestTag = null
     }
@@ -207,8 +199,7 @@ function defaultDeps(): EngineAutoUpdateDeps {
     releases: listMossInferReleases,
     jobs: listJobs,
     downloadState: getMossInferDownloadState,
-    install: ({ packages, releaseTag, activation }) =>
-      installEnginePlan({ channel: 'stable', packages, releaseTag, activation }),
+    install: ({ packages, releaseTag, activation }) => installEnginePlan({ channel: 'stable', packages, releaseTag, activation }),
     readState: readEngineAutoUpdateState,
     writeState: writeEngineAutoUpdateState,
   }

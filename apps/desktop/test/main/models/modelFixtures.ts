@@ -38,9 +38,16 @@ export async function startFakeHf(repos: Record<string, FakeRepo>): Promise<Fake
         return
       }
       if (path === `/api/models/${name}/tree/${repo.sha}`) {
-        res.end(JSON.stringify(Object.entries(repo.files).map(([file, body]) => ({
-          type: 'file', path: file, size: Buffer.byteLength(body), lfs: { oid: sha256(body) },
-        }))))
+        res.end(
+          JSON.stringify(
+            Object.entries(repo.files).map(([file, body]) => ({
+              type: 'file',
+              path: file,
+              size: Buffer.byteLength(body),
+              lfs: { oid: sha256(body) },
+            })),
+          ),
+        )
         return
       }
       const prefix = `/${name}/resolve/${repo.sha}/`
@@ -118,7 +125,12 @@ export function installOnDisk(
   writeFileSync(
     join(dir, `.clover-${model.id}.json`),
     JSON.stringify({
-      version: 2, id: model.id, repo: model.repo, revision: model.revision ?? 'main', sha, entries,
+      version: 2,
+      id: model.id,
+      repo: model.repo,
+      revision: model.revision ?? 'main',
+      sha,
+      entries,
       owned: options.owned === false ? [] : entries.map((e) => e.path),
     }),
   )

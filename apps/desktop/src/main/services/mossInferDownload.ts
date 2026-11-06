@@ -1,7 +1,21 @@
 import { app } from 'electron'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { closeSync, createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, chmodSync, statSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  rmSync,
+  chmodSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { open, rename } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -67,17 +81,21 @@ function publish(patch: Partial<MossInferDownloadState> & { phase: MossInferDown
   if (!current) return
   current = { ...current, ...patch, updatedAt: new Date().toISOString() }
   const terminal = ['done', 'error', 'canceled'].includes(current.phase)
-  setEngineInstallProgress(terminal ? null : {
-    phase: current.phase,
-    percent: current.percent,
-    version: current.version,
-  })
+  setEngineInstallProgress(
+    terminal
+      ? null
+      : {
+          phase: current.phase,
+          percent: current.percent,
+          version: current.version,
+        },
+  )
   if (current.phase === 'done' || current.phase === 'error') {
     try {
       writeEngineLastAttempt(paths.mossinfer(), {
         at: current.updatedAt,
         version: current.version,
-        error: current.phase === 'error' ? current.error ?? '安装失败' : undefined,
+        error: current.phase === 'error' ? (current.error ?? '安装失败') : undefined,
       })
     } catch (error) {
       console.error('[engine] persist last attempt', error)
@@ -125,14 +143,12 @@ async function ghJson(path: string, token: string | null): Promise<unknown> {
   let response: Response
   try {
     response = await fetch(`${API}${path}`, {
-    headers: {
-      accept: 'application/vnd.github+json',
-      'user-agent': `MossStudio-Launcher/${app.getVersion()}`,
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    signal: controller
-      ? AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
-      : AbortSignal.timeout(20_000),
+      headers: {
+        accept: 'application/vnd.github+json',
+        'user-agent': `MossStudio-Launcher/${app.getVersion()}`,
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      signal: controller ? AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
     })
   } catch (error) {
     if (controller?.signal.aborted) throw new Error('已取消下载')
@@ -140,9 +156,7 @@ async function ghJson(path: string, token: string | null): Promise<unknown> {
   }
   if (!response.ok) {
     if (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') {
-      throw new Error(
-        `GitHub API 请求限流（403）：${path}。请在引擎页保存 GitHub Token 后重试，或等待限流重置。`,
-      )
+      throw new Error(`GitHub API 请求限流（403）：${path}。请在引擎页保存 GitHub Token 后重试，或等待限流重置。`)
     }
     if (response.status === 403 && !token) {
       throw new Error(`GitHub API ${path} 返回 HTTP 403；可能是匿名请求限流，请在引擎页保存 GitHub Token 后重试。`)
@@ -351,7 +365,6 @@ async function downloadTo(
   return hash.digest('hex')
 }
 
-
 function sha256Of(sumsText: string, name: string): string | null {
   for (const line of sumsText.split(/\r?\n/)) {
     const match = line.trim().match(/^([a-f0-9]{64})\s+(\S+)$/)
@@ -421,7 +434,11 @@ async function extractZip(zip: string, dest: string): Promise<void> {
             void pipeline(stream, output).then(
               () => opened.readEntry(),
               (pipelineError: unknown) =>
-                fail(new Error(`ZIP 解压失败 ${entry.fileName}：${pipelineError instanceof Error ? pipelineError.message : String(pipelineError)}`)),
+                fail(
+                  new Error(
+                    `ZIP 解压失败 ${entry.fileName}：${pipelineError instanceof Error ? pipelineError.message : String(pipelineError)}`,
+                  ),
+                ),
             )
           })
         } catch (error) {
@@ -463,7 +480,6 @@ function singleTopDir(dir: string): string {
   }
   return join(dir, entries[0]!.name)
 }
-
 
 async function stageTree(
   extractedRoot: string,
@@ -543,12 +559,13 @@ export async function fetchEngineRelease(releaseTag?: string): Promise<EngineRel
   const everyDigest = release.assets.filter((item) => item.name !== 'SHA256SUMS').every((item) => digestOf(item))
   let sums: string | null = null
   if (sumsAsset && !everyDigest) {
-    const signal = controller
-      ? AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
-      : AbortSignal.timeout(20_000)
+    const signal = controller ? AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000)
     let response: Response
     try {
-      response = await fetch(sumsAsset.browser_download_url, { headers: { 'user-agent': `MossStudio-Launcher/${app.getVersion()}` }, signal })
+      response = await fetch(sumsAsset.browser_download_url, {
+        headers: { 'user-agent': `MossStudio-Launcher/${app.getVersion()}` },
+        signal,
+      })
     } catch (error) {
       if (controller?.signal.aborted) throw new Error('已取消下载')
       throw new Error(`无法从 github.com 读取 SHA256SUMS（校验值不经过镜像）：${error instanceof Error ? error.message : String(error)}`)
@@ -558,9 +575,14 @@ export async function fetchEngineRelease(releaseTag?: string): Promise<EngineRel
   }
   return {
     tag: release.tag_name,
-    version: releaseAssetVersion(release.tag_name, release.assets.map((item) => item.name)),
+    version: releaseAssetVersion(
+      release.tag_name,
+      release.assets.map((item) => item.name),
+    ),
     assets: release.assets.map((item) => ({
-      name: item.name, size: item.size, url: item.browser_download_url,
+      name: item.name,
+      size: item.size,
+      url: item.browser_download_url,
       ...(digestOf(item) ? { sha256: digestOf(item)! } : {}),
     })),
     sums,
@@ -616,7 +638,8 @@ export async function ensureVulkanProbe(release: EngineRelease): Promise<string>
       if (!existsSync(binary)) throw new Error(`Vulkan 探测包里没有 ${binary}`)
       if (process.platform !== 'win32') chmodSync(binary, 0o755)
       // Only the newest release's probe is kept.
-      for (const entry of readdirSync(probeRoot)) if (entry !== release.tag) rmSync(join(probeRoot, entry), { recursive: true, force: true })
+      for (const entry of readdirSync(probeRoot))
+        if (entry !== release.tag) rmSync(join(probeRoot, entry), { recursive: true, force: true })
       return binary
     } finally {
       rmSync(download, { force: true })
@@ -658,7 +681,8 @@ function stableSource(pkg: EnginePackage, release: EngineRelease): Source {
   if (!packageExistsFor(pkg, osToken())) {
     throw new Error(`上游没有 ${osToken() === 'windows' ? 'Windows' : 'Linux'} 版的 ${enginePackageOptionLabel(pkg)} 引擎包`)
   }
-  const pick = (candidate: EnginePackage) => release.assets.find((item) => item.name === engineAssetName(release.version, osToken(), candidate))
+  const pick = (candidate: EnginePackage) =>
+    release.assets.find((item) => item.name === engineAssetName(release.version, osToken(), candidate))
   let effective = pkg
   let asset = pick(pkg)
   let fallbackNote: string | undefined
@@ -673,7 +697,12 @@ function stableSource(pkg: EnginePackage, release: EngineRelease): Source {
   if (!asset) {
     throw new MissingReleaseAssetError(
       `release ${release.tag} 里没有 ${engineAssetName(release.version, osToken(), pkg)}` +
-        (release.assets.length ? `（现有资产：${release.assets.map((a) => a.name).slice(0, 6).join(', ')}…）` : '（该 release 还没有资产）'),
+        (release.assets.length
+          ? `（现有资产：${release.assets
+              .map((a) => a.name)
+              .slice(0, 6)
+              .join(', ')}…）`
+          : '（该 release 还没有资产）'),
     )
   }
   return {
@@ -709,9 +738,7 @@ async function devSource(pkg: EnginePackage, settings: Settings): Promise<Source
   }
   const token = resolveGithubToken(settings)
   if (!token) {
-    throw new Error(
-      'GitHub Actions 构件下载需要 token（public 仓库也一样）：请设置 githubToken，或配置 GH_TOKEN 环境变量 / gh CLI 登录',
-    )
+    throw new Error('GitHub Actions 构件下载需要 token（public 仓库也一样）：请设置 githubToken，或配置 GH_TOKEN 环境变量 / gh CLI 登录')
   }
   const runs = (await ghJson('/actions/runs?branch=main&status=success&per_page=1&name=ci', token)) as {
     workflow_runs: Array<{ id: number; head_sha: string }>
@@ -847,7 +874,9 @@ async function verifyStaged(
     // The CLIs answer --version without a GPU; a missing runtime library (ROCm) fails here.
     const result = await run(staged.binaryPath, ['--version'], { timeoutMs: 20_000, env })
     if (result.code !== 0) {
-      throw new Error(`${enginePackageOptionLabel(pkg)} 引擎无法启动（退出码 ${result.code}）：${(result.stderr || result.stdout).trim().slice(0, 300)}；未激活该构建`)
+      throw new Error(
+        `${enginePackageOptionLabel(pkg)} 引擎无法启动（退出码 ${result.code}）：${(result.stderr || result.stdout).trim().slice(0, 300)}；未激活该构建`,
+      )
     }
     return { notes: [] }
   }
@@ -871,12 +900,14 @@ async function verifyStaged(
   notes.push(...verdict.warnings)
   if (!verdict.ok) {
     const os = osToken()
-    const driver = target.driverVersion && !driverSupports(pkg.flavour, os, target.driverVersion)
-      ? `当前 NVIDIA 驱动为 ${target.driverVersion}，CUDA ${pkg.flavour.slice(2)} 引擎需要 ${driverMinimumLabel(pkg.flavour, os)} 或更新版本。`
-      : null
+    const driver =
+      target.driverVersion && !driverSupports(pkg.flavour, os, target.driverVersion)
+        ? `当前 NVIDIA 驱动为 ${target.driverVersion}，CUDA ${pkg.flavour.slice(2)} 引擎需要 ${driverMinimumLabel(pkg.flavour, os)} 或更新版本。`
+        : null
     throw new Error(
       [driver, verdict.reason, `新引擎未能验证 ${target.name} 对 ${enginePackageOptionLabel(pkg)} 构建的支持；未激活该构建并保留当前引擎。`]
-        .filter(Boolean).join(' '),
+        .filter(Boolean)
+        .join(' '),
     )
   }
   return { notes, recommendedFlavour: recommended, cublaslt: probe.probe?.cublasLt }
@@ -957,40 +988,46 @@ export async function downloadMossInfer(request: EngineDownloadRequest): Promise
       if (verified.cublaslt !== undefined) cublaslt = verified.cublaslt
       // Activation restarts the engine: run it under the activation lock so new
       // jobs wait for it, and (for background updates) only while no job runs.
-      const binaryPath = await activateWhenAllowed(async () => {
-        const installDir = join(paths.mossinfer(), staged.stamp)
-        const inPlace = engineBinaryPath(installDir, staged.package.kind)
-        const promotion = await promoteInstall({
-          root: paths.mossinfer(),
-          stagingDir: staged.stagingDir,
-          stamp: staged.stamp,
-          currentServerPath: existsSync(inPlace) ? inPlace : null,
-          // Replacing an install that is running: stop its processes first (moss-server, or the Vulkan / HIP CLI jobs).
-          // Only the CLI jobs that run the install being replaced.
-          beforeReplace: staged.package.kind === 'cuda'
-            ? shutdownMossInfer
-            : () => shutdownCliEngines({ kind: staged.package.kind as 'vulkan' | 'hip', binary: installDir }),
-        })
-        pendingStagingDir = undefined
-        const promotedPath = engineBinaryPath(promotion.installDir, staged.package.kind)
-        if (staged.package.kind === 'cuda') {
-          // Each GPU now runs the newest install of its own package: a pin to one moss-server is released.
-          const update = updateSettings({ mossInferServerPath: null, mossInferChannel: channel })
-          emit(Events.settingsChanged, update)
-          await shutdownMossInfer() // 激活其他版本后，下一次任务也不能复用旧二进制 runtime。
-        } else if (getSettings().mossInferChannel !== channel) {
-          emit(Events.settingsChanged, updateSettings({ mossInferChannel: channel }))
-        }
-        await cleanupPromotedInstall(promotion)
-        return promotedPath
-      }, activation ? {
-        ...activation,
-        signal: operationController.signal,
-        onWaiting: () => {
-          publish({ phase: 'verifying', note: '新版本已准备好，等正在运行的任务结束后切换' })
-          activation.onWaiting?.()
+      const binaryPath = await activateWhenAllowed(
+        async () => {
+          const installDir = join(paths.mossinfer(), staged.stamp)
+          const inPlace = engineBinaryPath(installDir, staged.package.kind)
+          const promotion = await promoteInstall({
+            root: paths.mossinfer(),
+            stagingDir: staged.stagingDir,
+            stamp: staged.stamp,
+            currentServerPath: existsSync(inPlace) ? inPlace : null,
+            // Replacing an install that is running: stop its processes first (moss-server, or the Vulkan / HIP CLI jobs).
+            // Only the CLI jobs that run the install being replaced.
+            beforeReplace:
+              staged.package.kind === 'cuda'
+                ? shutdownMossInfer
+                : () => shutdownCliEngines({ kind: staged.package.kind as 'vulkan' | 'hip', binary: installDir }),
+          })
+          pendingStagingDir = undefined
+          const promotedPath = engineBinaryPath(promotion.installDir, staged.package.kind)
+          if (staged.package.kind === 'cuda') {
+            // Each GPU now runs the newest install of its own package: a pin to one moss-server is released.
+            const update = updateSettings({ mossInferServerPath: null, mossInferChannel: channel })
+            emit(Events.settingsChanged, update)
+            await shutdownMossInfer() // 激活其他版本后，下一次任务也不能复用旧二进制 runtime。
+          } else if (getSettings().mossInferChannel !== channel) {
+            emit(Events.settingsChanged, updateSettings({ mossInferChannel: channel }))
+          }
+          await cleanupPromotedInstall(promotion)
+          return promotedPath
         },
-      } : undefined)
+        activation
+          ? {
+              ...activation,
+              signal: operationController.signal,
+              onWaiting: () => {
+                publish({ phase: 'verifying', note: '新版本已准备好，等正在运行的任务结束后切换' })
+                activation.onWaiting?.()
+              },
+            }
+          : undefined,
+      )
       installed.push(enginePackageId(staged.package))
       landed.push(staged.package)
       lastBinary = binaryPath

@@ -37,12 +37,17 @@ describe('studio/useEngineFeatures', () => {
     const hook = await mount(() => useEngineFeatures({ deviceUuid: 'GPU-1' }))
     await held.called
     expect(hook.current()).toBeUndefined()
-    await act(async () => { await held.release() })
+    await act(async () => {
+      await held.release()
+    })
     expect(hook.current()).toMatchObject({ imageInput: true, control: true })
     expect(backend.callsTo(Ipc.engineFeatures)).toEqual([{ deviceUuid: 'GPU-1' }])
 
     backend.state.engineFeatures = engineFeaturesFixture({ control: false })
-    await act(async () => { backend.emit(Events.settingsChanged, null); await flush() })
+    await act(async () => {
+      backend.emit(Events.settingsChanged, null)
+      await flush()
+    })
     expect((hook.current() as EngineFeatures).control).toBe(false)
   })
 
@@ -52,14 +57,18 @@ describe('studio/useEngineFeatures', () => {
     clearEngineFeaturesCache()
     backend.state.engineFeatures = null
     const none = await mount(() => useEngineFeatures({}))
-    await act(async () => { await flush() })
+    await act(async () => {
+      await flush()
+    })
     expect(none.current()).toBeNull()
     act(() => root?.unmount())
 
     clearEngineFeaturesCache()
     backend.fail(Ipc.engineFeatures, { code: 'E_ENGINE', message: 'no' })
     const failed = await mount(() => useEngineFeatures({ hostId: 'h1' }))
-    await act(async () => { await flush() })
+    await act(async () => {
+      await flush()
+    })
     expect(failed.current()).toBeNull()
   })
 })
@@ -70,12 +79,17 @@ describe('lib/useControlAdapters', () => {
     const { useControlAdapters } = await import('@renderer/lib/useControlAdapters')
     backend.state.controlAdapters = [controlAdapterFixture()]
     const hook = await mount(() => useControlAdapters())
-    await act(async () => { await flush() })
+    await act(async () => {
+      await flush()
+    })
     expect(hook.current().loaded).toBe(true)
     expect(hook.current().adapters.map((item: ControlAdapterEntry) => item.id)).toEqual(['control-union'])
 
     backend.state.controlAdapters = []
-    await act(async () => { backend.emit(Events.modelsChanged, null); await flush() })
+    await act(async () => {
+      backend.emit(Events.modelsChanged, null)
+      await flush()
+    })
     expect(hook.current().adapters).toEqual([])
   })
 })

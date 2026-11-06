@@ -40,7 +40,9 @@ export async function pickPython(settings: Settings): Promise<{ path: string; ve
     const roots = [
       process.env['LOCALAPPDATA'] ? join(process.env['LOCALAPPDATA'], 'Programs', 'Python') : '',
       process.env['ProgramFiles'] ? join(process.env['ProgramFiles'], 'Python') : '',
-      'C:\\Python312', 'C:\\Python311', 'C:\\Python310',
+      'C:\\Python312',
+      'C:\\Python311',
+      'C:\\Python310',
     ].filter(Boolean)
     for (const root of roots) {
       const candidates = [root]
@@ -48,7 +50,9 @@ export async function pickPython(settings: Settings): Promise<{ path: string; ve
         for (const entry of await readdir(root, { withFileTypes: true })) {
           if (entry.isDirectory() && /^Python3\d+$/.test(entry.name)) candidates.push(join(root, entry.name))
         }
-      } catch { /* missing root */ }
+      } catch {
+        /* missing root */
+      }
       for (const candidate of candidates) {
         const path = join(candidate, 'python.exe')
         const version = await pythonVersion(path)

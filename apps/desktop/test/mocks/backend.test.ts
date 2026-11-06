@@ -2,7 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { Events, Ipc } from '@shared/channels'
 import type { WebAccessInfo } from '@shared/backend'
 import type { IpcResult, JobRecord, OnboardingStatus, TrainingHost } from '@shared/types'
-import { ENGINE_JOBS_CHANNEL, SFT_BUNDLE_IDS, createMockBackend, previewPathFixture, downloadFixture, jobFixture, scenario, settingsFixture, sshHostFixture, trainerVersionFixture, type ScenarioName } from './backend'
+import {
+  ENGINE_JOBS_CHANNEL,
+  SFT_BUNDLE_IDS,
+  createMockBackend,
+  previewPathFixture,
+  downloadFixture,
+  jobFixture,
+  scenario,
+  settingsFixture,
+  sshHostFixture,
+  trainerVersionFixture,
+  type ScenarioName,
+} from './backend'
 
 async function invoke<T>(backend: ReturnType<typeof createMockBackend>, channel: string, payload?: unknown): Promise<IpcResult<T>> {
   return backend.bridge.invoke<IpcResult<T>>(channel, payload)
@@ -11,7 +23,10 @@ async function invoke<T>(backend: ReturnType<typeof createMockBackend>, channel:
 describe('mock backend', () => {
   it('answers unknown channels with E_MOCK_UNHANDLED and records them', async () => {
     const backend = createMockBackend()
-    expect(await invoke(backend, 'nope:channel')).toEqual({ ok: false, error: { code: 'E_MOCK_UNHANDLED', message: 'mock backend has no handler for nope:channel' } })
+    expect(await invoke(backend, 'nope:channel')).toEqual({
+      ok: false,
+      error: { code: 'E_MOCK_UNHANDLED', message: 'mock backend has no handler for nope:channel' },
+    })
     expect(backend.unhandled).toEqual(['nope:channel'])
   })
 
@@ -31,7 +46,9 @@ describe('mock backend', () => {
 
   it('handle() overrides a default and thrown errors become IPC errors', async () => {
     const backend = createMockBackend()
-    backend.handle(Ipc.jobList, () => { throw new Error('crash') })
+    backend.handle(Ipc.jobList, () => {
+      throw new Error('crash')
+    })
     expect(await invoke(backend, Ipc.jobList)).toEqual({ ok: false, error: { code: 'E_MOCK', message: 'crash' } })
   })
 
@@ -89,11 +106,19 @@ describe('mock backend', () => {
 
   it('playJob can queue the job (counting down its place) and play live preview frames', () => {
     const backend = createMockBackend()
-    const sequence = backend.playJob(jobFixture({ id: 'p', params: { ...jobFixture().params, steps: 20 } }), { queuedAhead: 2, previews: 4 })
-    expect(sequence.slice(0, 2).map((job) => [job.state, job.queuePosition])).toEqual([['queued', 2], ['queued', 1]])
+    const sequence = backend.playJob(jobFixture({ id: 'p', params: { ...jobFixture().params, steps: 20 } }), {
+      queuedAhead: 2,
+      previews: 4,
+    })
+    expect(sequence.slice(0, 2).map((job) => [job.state, job.queuePosition])).toEqual([
+      ['queued', 2],
+      ['queued', 1],
+    ])
     expect(sequence[2]!.queuePosition).toBeUndefined()
     const frames = sequence.filter((job) => job.preview)
-    expect(frames.map((job) => job.preview)).toEqual([5, 10, 15, 20].map((step, index) => ({ path: previewPathFixture('p'), step, total: 20, seq: index + 1 })))
+    expect(frames.map((job) => job.preview)).toEqual(
+      [5, 10, 15, 20].map((step, index) => ({ path: previewPathFixture('p'), step, total: 20, seq: index + 1 })),
+    )
     expect(frames.every((job) => job.stage === 'denoise' && job.state === 'running')).toBe(true)
     expect(sequence.at(-1)).toMatchObject({ state: 'succeeded' })
     expect(sequence.at(-1)!.preview).toBeUndefined()
@@ -112,15 +137,30 @@ describe('mock backend', () => {
   it('answers a Studio job submission with a queued job carrying every input', async () => {
     const backend = createMockBackend()
     const body = {
-      prompt: 'p', width: 512, height: 512, steps: 8, cfg: 1, seed: 3, canvasId: 'c1', projectId: 'project-1',
-      initImage: { path: '/a/init.png', strength: 0.6 }, mask: { path: '/a/mask.png' },
+      prompt: 'p',
+      width: 512,
+      height: 512,
+      steps: 8,
+      cfg: 1,
+      seed: 3,
+      canvasId: 'c1',
+      projectId: 'project-1',
+      initImage: { path: '/a/init.png', strength: 0.6 },
+      mask: { path: '/a/mask.png' },
       control: { adapter: '/m/c.safetensors', images: [{ kind: 'depth', path: '/a/d.png', strength: 1, start: 0, end: 1 }] },
-      references: { paths: ['/a/r.png'] }, sampling: { sampler: 'heun', hires: { width: 768, height: 768 } },
+      references: { paths: ['/a/r.png'] },
+      sampling: { sampler: 'heun', hires: { width: 768, height: 768 } },
     }
     const result = await backend.bridge.invoke<{ ok: boolean; data: JobRecord }>(ENGINE_JOBS_CHANNEL, body)
     expect(result.ok).toBe(true)
     expect(result.data).toMatchObject({ id: 'job-e2e-1', state: 'queued', canvasId: 'c1', projectId: 'project-1' })
-    expect(result.data.params).toMatchObject({ initImage: body.initImage, mask: body.mask, control: body.control, references: body.references, sampling: body.sampling })
+    expect(result.data.params).toMatchObject({
+      initImage: body.initImage,
+      mask: body.mask,
+      control: body.control,
+      references: body.references,
+      sampling: body.sampling,
+    })
     expect(backend.state.jobs[0]!.id).toBe('job-e2e-1')
     expect(backend.callsTo(ENGINE_JOBS_CHANNEL)).toEqual([body])
     const plain = await backend.bridge.invoke<{ ok: boolean; data: JobRecord }>(ENGINE_JOBS_CHANNEL, { prompt: 'q' })
@@ -141,7 +181,13 @@ describe('mock backend', () => {
     const backend = createMockBackend()
     const events: unknown[] = []
     backend.bridge.on(Events.hostsChanged, (hosts) => events.push(hosts))
-    const saved = await invoke<{ hasPassword: boolean; password?: string }>(backend, Ipc.hostsSave, { name: 'GPU', host: 'h', authMethod: 'password', password: 'pw', trainerRoot: '~/t' })
+    const saved = await invoke<{ hasPassword: boolean; password?: string }>(backend, Ipc.hostsSave, {
+      name: 'GPU',
+      host: 'h',
+      authMethod: 'password',
+      password: 'pw',
+      trainerRoot: '~/t',
+    })
     expect(saved).toMatchObject({ ok: true, data: { hasPassword: true } })
     expect(saved.ok && 'password' in saved.data).toBe(false)
     expect(events).toHaveLength(1)
@@ -160,7 +206,7 @@ describe('mock backend', () => {
 
   describe('onboardingStatus per scenario', () => {
     const status = async (name: ScenarioName, hostId?: string) =>
-      (await invoke<OnboardingStatus>(createMockBackend(name), Ipc.onboardingStatus, hostId ? { hostId } : undefined))
+      await invoke<OnboardingStatus>(createMockBackend(name), Ipc.onboardingStatus, hostId ? { hostId } : undefined)
 
     it.each([
       ['firstRun', ['ok', 'missing', 'missing'], false],
@@ -182,14 +228,23 @@ describe('mock backend', () => {
   })
 
   it('engineProbe reports the current engine and one verdict per GPU, and fails without an engine', async () => {
-    const ready = await invoke<{ hello: { version: string }; gpuCompatibility: { devices: unknown[] } }>(createMockBackend('ready'), Ipc.engineProbe)
-    expect(ready).toMatchObject({ ok: true, data: { hello: { version: 'v2.1.1' }, gpuCompatibility: { devices: [expect.objectContaining({ status: 'supported' })] } } })
+    const ready = await invoke<{ hello: { version: string }; gpuCompatibility: { devices: unknown[] } }>(
+      createMockBackend('ready'),
+      Ipc.engineProbe,
+    )
+    expect(ready).toMatchObject({
+      ok: true,
+      data: { hello: { version: 'v2.1.1' }, gpuCompatibility: { devices: [expect.objectContaining({ status: 'supported' })] } },
+    })
     expect(await invoke(createMockBackend('firstRun'), Ipc.engineProbe)).toMatchObject({ ok: false, error: { code: 'E_ENGINE_MISSING' } })
   })
 
   it('webAccessInfo follows the LAN feature switch', async () => {
     const off = await invoke<WebAccessInfo>(createMockBackend('ready'), Ipc.webAccessInfo)
-    const on = await invoke<WebAccessInfo>(createMockBackend(scenario('ready', { settings: settingsFixture({ lanWebEnabled: true }) })), Ipc.webAccessInfo)
+    const on = await invoke<WebAccessInfo>(
+      createMockBackend(scenario('ready', { settings: settingsFixture({ lanWebEnabled: true }) })),
+      Ipc.webAccessInfo,
+    )
     expect(off).toMatchObject({ ok: true, data: { ready: false, urls: [] } })
     expect(on).toMatchObject({ ok: true, data: { ready: true, port: 7860 } })
   })
@@ -198,12 +253,18 @@ describe('mock backend', () => {
     const hosts = [sshHostFixture()]
     const versions = [trainerVersionFixture(), trainerVersionFixture({ id: 'remote-main', hostId: 'ssh-gpu' })]
     const list = async (remoteHostsEnabled: boolean) => {
-      const result = await invoke<TrainingHost[]>(createMockBackend(scenario('ready', { hosts, trainerVersions: versions, settings: settingsFixture({ remoteHostsEnabled }) })), Ipc.trainerHosts)
+      const result = await invoke<TrainingHost[]>(
+        createMockBackend(scenario('ready', { hosts, trainerVersions: versions, settings: settingsFixture({ remoteHostsEnabled }) })),
+        Ipc.trainerHosts,
+      )
       if (!result.ok) throw new Error(result.error.message)
       return result.data.map((host) => [host.id, host.versions?.map((version) => version.id)])
     }
     expect(await list(false)).toEqual([['local', ['trainer-main']]])
-    expect(await list(true)).toEqual([['local', ['trainer-main']], ['ssh-gpu', ['remote-main']]])
+    expect(await list(true)).toEqual([
+      ['local', ['trainer-main']],
+      ['ssh-gpu', ['remote-main']],
+    ])
   })
 
   it('answers releases and trainer versions from state', async () => {

@@ -13,7 +13,9 @@ describe('transportUrls', () => {
     const urls = transportUrls(GH, { networkMode: 'auto', gitMirror: null })
     expect(urls[0]).toBe(GH)
     expect(urls.length).toBeGreaterThan(1)
-    expect(urls.slice(1).every((url) => url.endsWith('github.com/CloverIris/MossStudio/releases/download/updates/update-stable.json'))).toBe(true)
+    expect(
+      urls.slice(1).every((url) => url.endsWith('github.com/CloverIris/MossStudio/releases/download/updates/update-stable.json')),
+    ).toBe(true)
   })
 
   it('puts the mirror the user chose first and keeps GitHub as the last resort', () => {
@@ -25,18 +27,28 @@ describe('transportUrls', () => {
 
   it('uses GitHub only in direct mode, and non-GitHub URLs as they are', () => {
     expect(transportUrls(GH, { networkMode: 'direct', gitMirror: 'https://ghproxy.net/' })).toEqual([GH])
-    expect(transportUrls('http://127.0.0.1:9/update-stable.json', { networkMode: 'auto', gitMirror: 'https://ghproxy.net/' })).toEqual(['http://127.0.0.1:9/update-stable.json'])
+    expect(transportUrls('http://127.0.0.1:9/update-stable.json', { networkMode: 'auto', gitMirror: 'https://ghproxy.net/' })).toEqual([
+      'http://127.0.0.1:9/update-stable.json',
+    ])
   })
 })
 
 describe('busyReasons', () => {
   it('reports active inference, training, model and engine downloads with counts', () => {
-    expect(busyReasons({
-      jobs: [{ state: 'running' }, { state: 'queued', kind: 'inference' }, { state: 'starting', kind: 'training' }, { state: 'succeeded' }, { state: 'failed', kind: 'training' }],
-      downloads: [{ state: 'running' }, { state: 'verifying' }, { state: 'paused' }, { state: 'done' }],
-      engineDownloadPhase: 'downloading',
-      engineInstalling: false,
-    })).toEqual([
+    expect(
+      busyReasons({
+        jobs: [
+          { state: 'running' },
+          { state: 'queued', kind: 'inference' },
+          { state: 'starting', kind: 'training' },
+          { state: 'succeeded' },
+          { state: 'failed', kind: 'training' },
+        ],
+        downloads: [{ state: 'running' }, { state: 'verifying' }, { state: 'paused' }, { state: 'done' }],
+        engineDownloadPhase: 'downloading',
+        engineInstalling: false,
+      }),
+    ).toEqual([
       { kind: 'inference', count: 2, label: '2 个生成任务' },
       { kind: 'training', count: 1, label: '1 个训练任务' },
       { kind: 'model-download', count: 2, label: '2 个模型下载' },
@@ -45,7 +57,9 @@ describe('busyReasons', () => {
   })
 
   it('is empty when idle', () => {
-    expect(busyReasons({ jobs: [{ state: 'canceled' }], downloads: [{ state: 'error' }], engineDownloadPhase: 'done', engineInstalling: false })).toEqual([])
+    expect(
+      busyReasons({ jobs: [{ state: 'canceled' }], downloads: [{ state: 'error' }], engineDownloadPhase: 'done', engineInstalling: false }),
+    ).toEqual([])
     expect(busyReasons({ jobs: [], downloads: [], engineDownloadPhase: null, engineInstalling: true })).toHaveLength(1)
   })
 })
@@ -104,7 +118,12 @@ describe('UpdateScheduler', () => {
 
   it('runs one check at a time and survives a failing check', async () => {
     let release!: () => void
-    const check = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
+    const check = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        }),
+    )
     const scheduler = new UpdateScheduler({ check, onFocus: () => () => undefined })
     const first = scheduler.run('manual')
     expect(scheduler.run('manual')).toBe(first)
@@ -119,10 +138,21 @@ class FakeWindow extends EventEmitter implements HealthWindow {
   visible = false
   destroyed = false
   webContents = new EventEmitter()
-  isVisible(): boolean { return this.visible }
-  isDestroyed(): boolean { return this.destroyed }
-  show(): void { this.visible = true; this.emit('show') }
-  close(): void { this.visible = false; this.destroyed = true; this.emit('closed') }
+  isVisible(): boolean {
+    return this.visible
+  }
+  isDestroyed(): boolean {
+    return this.destroyed
+  }
+  show(): void {
+    this.visible = true
+    this.emit('show')
+  }
+  close(): void {
+    this.visible = false
+    this.destroyed = true
+    this.emit('closed')
+  }
 }
 
 describe('armHealthConfirm', () => {
@@ -174,8 +204,16 @@ describe('updateContext', () => {
   const record = { current: '1.0.3' } as never
   const input = (run: Partial<UpdateContextInput['run']>, patch: Partial<UpdateContextInput> = {}): UpdateContextInput => ({
     run: {
-      mode: 'installed', platform: 'linux', platformKey: 'linux-x64', packaged: true, root: '/opt/moss', launcher: '/opt/moss/mossstudio',
-      appPath: '/opt/moss/app-1.0.3', recordPath: '/opt/moss/install.json', record, ...run,
+      mode: 'installed',
+      platform: 'linux',
+      platformKey: 'linux-x64',
+      packaged: true,
+      root: '/opt/moss',
+      launcher: '/opt/moss/mossstudio',
+      appPath: '/opt/moss/app-1.0.3',
+      recordPath: '/opt/moss/install.json',
+      record,
+      ...run,
     },
     hasKeys: true,
     exists: () => true,
@@ -259,6 +297,8 @@ describe('armAppHealth', () => {
 
 describe('busyReasons (git)', () => {
   it('counts git mirror operations', () => {
-    expect(busyReasons({ jobs: [], downloads: [], engineDownloadPhase: null, engineInstalling: false, gitOperations: 1 })).toEqual([{ kind: 'git-clone', count: 1, label: '代码仓库下载' }])
+    expect(busyReasons({ jobs: [], downloads: [], engineDownloadPhase: null, engineInstalling: false, gitOperations: 1 })).toEqual([
+      { kind: 'git-clone', count: 1, label: '代码仓库下载' },
+    ])
   })
 })

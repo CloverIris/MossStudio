@@ -68,7 +68,7 @@ describe('commitText', () => {
   it('parses numbers', () => {
     expect(commitText('8', 4, { validate: integerInRange(1, 16), parse: Number })).toEqual({ kind: 'save', value: 8 })
     expect(commitText('4', 4, { parse: Number })).toEqual({ kind: 'unchanged' })
-    expect(commitText('', 8080 as number | null, { parse: (text) => text ? Number(text) : null })).toEqual({ kind: 'save', value: null })
+    expect(commitText('', 8080 as number | null, { parse: (text) => (text ? Number(text) : null) })).toEqual({ kind: 'save', value: null })
   })
 
   it('shows stored values as text', () => {

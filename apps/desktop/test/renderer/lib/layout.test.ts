@@ -34,7 +34,12 @@ describe('lib/layout', () => {
       expect(payload.bbox_format).toBe('yxyx')
       expect(payload.summary).toEqual({ caption: exampleDraft().summary.caption, meta: ['poster'], canvas: 'single' })
       // [x1,y1,x2,y2] = [128,96,896,224] on 1024² -> [y1-512, x1-512, y2-512, x2-512]
-      expect(payload.items[0]).toEqual({ label: 'text', caption: 'Large dark-blue uppercase title centered at the top.', bbox: [-416, -384, -288, 384], text: 'EXPLORE' })
+      expect(payload.items[0]).toEqual({
+        label: 'text',
+        caption: 'Large dark-blue uppercase title centered at the top.',
+        bbox: [-416, -384, -288, 384],
+        text: 'EXPLORE',
+      })
       expect(payload.items[1].text).toBeUndefined()
       expect(JSON.parse(result.preview)).toEqual(payload)
     })
@@ -49,7 +54,16 @@ describe('lib/layout', () => {
 
     it('excludes hidden items from both validation and output', () => {
       const base = exampleDraft()
-      const items = [...base.items, { id: 'hidden', label: 'text' as const, caption: '', bbox: [-5, -5, 9999, 9999] as [number, number, number, number], visible: false }]
+      const items = [
+        ...base.items,
+        {
+          id: 'hidden',
+          label: 'text' as const,
+          caption: '',
+          bbox: [-5, -5, 9999, 9999] as [number, number, number, number],
+          visible: false,
+        },
+      ]
       const result = compileLayout({ ...base, items })
       expect(result.ok).toBe(true)
       expect(JSON.parse(result.prompt).items).toHaveLength(2)
@@ -73,14 +87,16 @@ describe('lib/layout', () => {
     })
 
     it('reports item problems with 1-based indices', () => {
-      const result = compileLayout(draft({
-        items: [
-          { id: 'a', label: 'object', caption: 'fine', bbox: [0, 0, 10, 10] },
-          { id: 'b', label: 'text', caption: ' ', bbox: [0, 0, 10, 10] },
-          { id: 'c', label: 'object', caption: 'c', bbox: [10, 10, 10, 20] },
-          { id: 'd', label: 'object', caption: 'd', bbox: [0, 0, 1025, 10] },
-        ],
-      }))
+      const result = compileLayout(
+        draft({
+          items: [
+            { id: 'a', label: 'object', caption: 'fine', bbox: [0, 0, 10, 10] },
+            { id: 'b', label: 'text', caption: ' ', bbox: [0, 0, 10, 10] },
+            { id: 'c', label: 'object', caption: 'c', bbox: [10, 10, 10, 20] },
+            { id: 'd', label: 'object', caption: 'd', bbox: [0, 0, 1025, 10] },
+          ],
+        }),
+      )
       expect(result.errors).toEqual(['区域 2 还没有描述', '文字区域 2 还没有填写要显示的文字', '区域 3 超出了画面', '区域 4 超出了画面'])
     })
 
@@ -104,13 +120,17 @@ describe('lib/layout', () => {
     })
 
     it('clamps imported boxes to the canvas', () => {
-      const parsed = parseDraft(JSON.stringify({ width: 100, height: 100, items: [{ label: 'object', caption: 'c', bbox: [-5, 90, 200, 50] }] }))!
+      const parsed = parseDraft(
+        JSON.stringify({ width: 100, height: 100, items: [{ label: 'object', caption: 'c', bbox: [-5, 90, 200, 50] }] }),
+      )!
       expect(parsed.items[0]!.bbox).toEqual([0, 50, 100, 90])
     })
 
     it('fills summary defaults when missing or malformed', () => {
       expect(parseDraft(JSON.stringify({ width: 64, height: 64, items: [] }))!.summary).toEqual({ caption: '', meta: [], canvas: 'single' })
-      expect(parseDraft(JSON.stringify({ width: 64, height: 64, items: [], summary: { caption: 'x', meta: 'oops' } }))!.summary.meta).toEqual([])
+      expect(
+        parseDraft(JSON.stringify({ width: 64, height: 64, items: [], summary: { caption: 'x', meta: 'oops' } }))!.summary.meta,
+      ).toEqual([])
     })
 
     it.each([

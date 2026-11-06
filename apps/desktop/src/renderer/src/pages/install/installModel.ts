@@ -33,9 +33,10 @@ export function folderProblemMessage(check: FolderCheck): FolderMessage | null {
       return { text: '没有权限写入这个文件夹。请换一个位置，例如你自己的用户文件夹。', suggestion }
     case 'E_NO_SPACE':
       return {
-        text: check.freeBytes !== null
-          ? `这个磁盘的空间不够：需要 ${bytes(check.requiredBytes)}，只剩 ${bytes(check.freeBytes)}。请清理一些空间，或换一个磁盘。`
-          : `这个磁盘的空间不够：需要 ${bytes(check.requiredBytes)}。请清理一些空间，或换一个磁盘。`,
+        text:
+          check.freeBytes !== null
+            ? `这个磁盘的空间不够：需要 ${bytes(check.requiredBytes)}，只剩 ${bytes(check.freeBytes)}。请清理一些空间，或换一个磁盘。`
+            : `这个磁盘的空间不够：需要 ${bytes(check.requiredBytes)}。请清理一些空间，或换一个磁盘。`,
         suggestion,
       }
     case 'E_SYSTEM_DIR':
@@ -74,7 +75,9 @@ export function legacyInPlace(
   location: { kind: string; path: string } | null,
 ): boolean {
   if (!location) return false
-  return legacy.source === 'kept' ? location.kind === 'data' && sameFolder(platform, location.path, legacy.root) : location.kind === 'legacy'
+  return legacy.source === 'kept'
+    ? location.kind === 'data' && sameFolder(platform, location.path, legacy.root)
+    : location.kind === 'legacy'
 }
 
 /** "需要 820 MB · 可用 120 GB" (free space only when known). */
@@ -137,7 +140,10 @@ export function setupScreen(input: {
 }
 
 /** The progress view of a setup state's phase and last progress event. */
-export function runView(phase: 'idle' | 'installing' | 'done' | 'failed', progress: { phase: InstallStep; percent: number } | null): InstallRunView {
+export function runView(
+  phase: 'idle' | 'installing' | 'done' | 'failed',
+  progress: { phase: InstallStep; percent: number } | null,
+): InstallRunView {
   return {
     status: phase === 'done' ? 'done' : phase === 'failed' ? 'failed' : 'running',
     step: progress?.phase ?? null,
@@ -150,7 +156,13 @@ export interface OldInstallView {
   description: string
 }
 
-export function oldInstallText(old: { root: string; dataBytes: number | null; version: string | null; dataDir?: string; source?: string }): OldInstallView {
+export function oldInstallText(old: {
+  root: string
+  dataBytes: number | null
+  version: string | null
+  dataDir?: string
+  source?: string
+}): OldInstallView {
   const size = old.dataBytes !== null && old.dataBytes > 0 ? `，共 ${bytes(old.dataBytes)}` : ''
   if (old.source === 'kept') {
     return {

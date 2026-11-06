@@ -1,12 +1,5 @@
 import { createHash } from 'node:crypto'
-import type {
-  BranchInfo,
-  CommitInfo,
-  Settings,
-  TrainerRuntimeInfo,
-  TrainerVersion,
-  TrainingHost,
-} from '@shared/types'
+import type { BranchInfo, CommitInfo, Settings, TrainerRuntimeInfo, TrainerVersion, TrainingHost } from '@shared/types'
 import { posixQuote, sshExec } from './ssh'
 import { getTrainingHost, listTrainingHosts, updateTrainingHostVersions } from './trainingHosts'
 import { TRAINER_SOURCE } from './trainerGit'
@@ -77,10 +70,7 @@ export async function remoteCommits(settings: Settings, hostId: string, branch: 
   const safe = branch.replace(/[^A-Za-z0-9._/-]/g, '')
   const result = await sshExec(
     host,
-    [
-      remoteSetup(host),
-      `git -C "$MIRROR" log -n${limit} --format="%H%x1f%h%x1f%ct%x1f%s%x1f%an" ${posixQuote(safe)}`,
-    ].join('\n'),
+    [remoteSetup(host), `git -C "$MIRROR" log -n${limit} --format="%H%x1f%h%x1f%ct%x1f%s%x1f%an" ${posixQuote(safe)}`].join('\n'),
     30_000,
   )
   if (result.code !== 0) throw new Error((result.stderr || result.stdout).trim())
@@ -144,13 +134,14 @@ function runtimeIdFor(host: TrainingHost, material: string): string {
   return `tr-${host.id}-${createHash('sha256').update(material).digest('hex').slice(0, 10)}`
 }
 
-export async function remoteInstallRuntime(
-  settings: Settings,
-  version: TrainerVersion,
-): Promise<TrainerRuntimeInfo> {
+export async function remoteInstallRuntime(settings: Settings, version: TrainerVersion): Promise<TrainerRuntimeInfo> {
   if (!version.hostId || version.hostId === 'local') throw new Error('该版本不是 SSH 远端版本，拒绝在本机安装远端依赖')
   const host = hostOf(settings, version.hostId)
-  const pyproject = await sshExec(host, [remoteSetup(host), `cat "$VERSIONS/${version.id}/pyproject.toml" 2>/dev/null || true`].join('\n'), 20_000)
+  const pyproject = await sshExec(
+    host,
+    [remoteSetup(host), `cat "$VERSIONS/${version.id}/pyproject.toml" 2>/dev/null || true`].join('\n'),
+    20_000,
+  )
   const python = await sshExec(host, 'python3 --version 2>&1 || python --version 2>&1', 15_000)
   const uv = await sshExec(host, 'command -v uv 2>/dev/null || true', 10_000)
   const material = JSON.stringify({ pyproject: pyproject.stdout, python: python.stdout.trim(), os: host.remote?.os })
@@ -168,19 +159,11 @@ export async function remoteInstallRuntime(
     createdAt: new Date().toISOString(),
   }
   const usingUv = Boolean(uv.stdout.trim())
-  const create = usingUv
-    ? `uv venv "$RUNTIME" --python python3`
-    : `python3 -m venv "$RUNTIME"`
+  const create = usingUv ? `uv venv "$RUNTIME" --python python3` : `python3 -m venv "$RUNTIME"`
   const install = usingUv
     ? `uv pip install --python "$RUNTIME/bin/python" --index-url ${posixQuote(settings.pipIndex ?? 'https://pypi.org/simple')} -e "$VERSIONS/${version.id}"`
     : `"$RUNTIME/bin/python" -m pip install --index-url ${posixQuote(settings.pipIndex ?? 'https://pypi.org/simple')} -e "$VERSIONS/${version.id}"`
-  const command = [
-    remoteSetup(host),
-    `RUNTIME="$RUNTIMES/${id}"`,
-    'mkdir -p "$RUNTIME"',
-    create,
-    install,
-  ].join('\n')
+  const command = [remoteSetup(host), `RUNTIME="$RUNTIMES/${id}"`, 'mkdir -p "$RUNTIME"', create, install].join('\n')
   const result = await sshExec(host, command, 3_600_000)
   runtimeInfo.state = result.code === 0 ? 'ready' : 'error'
   const next = (host.versions ?? []).map((item) =>
@@ -241,7 +224,9 @@ export async function remoteRootCheck(settings: Settings, hostId: string): Promi
   const host = hostOf(settings, hostId)
   const result = await sshExec(
     host,
-    [remoteSetup(host), 'test -f "$MIRROR/HEAD" && echo mirror-ready || echo mirror-missing; test -d "$ROOT" && echo root-ready'].join('\n'),
+    [remoteSetup(host), 'test -f "$MIRROR/HEAD" && echo mirror-ready || echo mirror-missing; test -d "$ROOT" && echo root-ready'].join(
+      '\n',
+    ),
     30_000,
   )
   return { root: host.trainerRoot, ready: result.stdout.includes('root-ready'), output: result.stdout.trim() }

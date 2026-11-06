@@ -1,7 +1,14 @@
 // original-fs: in the packaged main process node:fs treats every *.asar as a folder; app folders are plain files here.
 import { existsSync, promises as fsp, readFileSync, rmSync } from 'original-fs'
 import { dirname, join } from 'node:path'
-import { HEALTH_TIMEOUT_MS, type FileList, type InstallRecord, type PlatformKey, type UpdateChannel, type UpdateFeed } from '@shared/install'
+import {
+  HEALTH_TIMEOUT_MS,
+  type FileList,
+  type InstallRecord,
+  type PlatformKey,
+  type UpdateChannel,
+  type UpdateFeed,
+} from '@shared/install'
 import type { Settings } from '@shared/types'
 import { compareSemver, type UpdateBusyReason, type UpdateRestartResult, type UpdaterState } from '@shared/update'
 import type { UpdatePublicKey } from '@shared/updateKeys'
@@ -33,7 +40,13 @@ export interface UpdateContext {
 
 export type UpdateSettings = Pick<
   Settings,
-  'networkMode' | 'gitMirror' | 'updateChannel' | 'autoDownloadUpdates' | 'dismissedAnnouncements' | 'skippedUpdateVersion' | 'noticedFailedUpdates'
+  | 'networkMode'
+  | 'gitMirror'
+  | 'updateChannel'
+  | 'autoDownloadUpdates'
+  | 'dismissedAnnouncements'
+  | 'skippedUpdateVersion'
+  | 'noticedFailedUpdates'
 >
 
 export interface UpdateHost {
@@ -174,16 +187,17 @@ export class UpdateRuntime {
   private refreshRecord(): void {
     const record = this.supported ? this.host.readRecord() : null
     const previous = record?.previous ?? null
-    const pending = record?.pending && compareSemver(record.pending, this.host.version) > 0 && existsSync(this.layout.appDir(record.pending))
-      ? record.pending
-      : null
+    const pending =
+      record?.pending && compareSemver(record.pending, this.host.version) > 0 && existsSync(this.layout.appDir(record.pending))
+        ? record.pending
+        : null
     const canRollback = Boolean(
       this.supported && previous && !record?.failed.includes(previous) && existsSync(this.layout.previousBundle(previous)),
     )
     // The newest version that failed its start and is newer than this one (older entries no longer matter).
-    const failedVersion = (record?.failed ?? [])
-      .filter((version) => compareSemver(version, this.host.version) > 0)
-      .sort((a, b) => compareSemver(b, a))[0] ?? null
+    const failedVersion =
+      (record?.failed ?? []).filter((version) => compareSemver(version, this.host.version) > 0).sort((a, b) => compareSemver(b, a))[0] ??
+      null
     const failedNotice = this.state.failedNotice && failedVersion === this.state.failedVersion
     this.state = { ...this.state, pending, previous, canRollback, failedVersion, failedNotice }
     if (pending && this.state.phase === 'idle') this.state = { ...this.state, phase: 'ready' }
@@ -322,7 +336,13 @@ export class UpdateRuntime {
     const record = this.supported ? this.host.readRecord() : null
     const platform = this.host.context.platformKey
     this.selection = platform
-      ? selectUpdate({ feeds, current: this.host.version, failed: record?.failed ?? [], platform, skipped: this.host.settings().skippedUpdateVersion })
+      ? selectUpdate({
+          feeds,
+          current: this.host.version,
+          failed: record?.failed ?? [],
+          platform,
+          skipped: this.host.settings().skippedUpdateVersion,
+        })
       : null
     const minimumVersion = minimumVersionOf(feeds)
     setMinimumVersion(minimumVersion, this.host.version)
@@ -397,7 +417,14 @@ export class UpdateRuntime {
       .map((result) => (result.status === 'rejected' ? result.reason : result.value.error))
       .find((error) => error !== null && error !== undefined)
     if (!feeds.length) {
-      const phase = this.supported && this.state.phase === 'checking' ? (this.state.pending ? 'ready' : this.state.available ? 'available' : 'error') : this.state.phase
+      const phase =
+        this.supported && this.state.phase === 'checking'
+          ? this.state.pending
+            ? 'ready'
+            : this.state.available
+              ? 'available'
+              : 'error'
+          : this.state.phase
       this.set({ phase, error: failure ? message(failure) : '检查更新失败', checkedAt: new Date(this.now()).toISOString() })
       return this.state
     }
@@ -444,7 +471,11 @@ export class UpdateRuntime {
     const settings = this.host.settings()
     const started = this.now()
     try {
-      this.set({ phase: 'downloading', error: null, progress: { bytes: 0, totalBytes: selection.download.asset.size, speedBps: 0, percent: 0 } })
+      this.set({
+        phase: 'downloading',
+        error: null,
+        progress: { bytes: 0, totalBytes: selection.download.asset.size, speedBps: 0, percent: 0 },
+      })
       await mkdir(staging, { recursive: true })
       for (const name of await readdir(this.layout.staging).catch(() => [] as string[])) {
         if (name !== version) await rm(join(this.layout.staging, name), { recursive: true, force: true })
@@ -475,7 +506,14 @@ export class UpdateRuntime {
           onProgress: (bytes) => {
             const elapsed = Math.max(1, this.now() - started) / 1000
             this.set(
-              { progress: { bytes, totalBytes: asset.size, speedBps: Math.round(bytes / elapsed), percent: Math.min(100, Math.round((bytes / asset.size) * 100)) } },
+              {
+                progress: {
+                  bytes,
+                  totalBytes: asset.size,
+                  speedBps: Math.round(bytes / elapsed),
+                  percent: Math.min(100, Math.round((bytes / asset.size) * 100)),
+                },
+              },
               { progress: true },
             )
           },
@@ -554,7 +592,14 @@ export class UpdateRuntime {
     this.idleTimer = null
     if (!enabled || !this.supported) {
       this.refreshRecord()
-      const phase = this.state.phase === 'waiting-idle' ? (this.state.pending ? 'ready' : this.state.available ? 'available' : 'idle') : this.state.phase
+      const phase =
+        this.state.phase === 'waiting-idle'
+          ? this.state.pending
+            ? 'ready'
+            : this.state.available
+              ? 'available'
+              : 'idle'
+          : this.state.phase
       this.set({ restartWhenIdle: false, phase, busy: [] })
       return this.state
     }
@@ -657,7 +702,8 @@ export class UpdateRuntime {
       if (context.os === 'darwin') {
         const recordPath = context.recordPath
         if (!recordPath) throw new Error('找不到安装记录（install.json）')
-        const incoming = target.kind === 'update' ? this.layout.appDir(target.incomingVersion) : this.layout.previousBundle(target.incomingVersion)
+        const incoming =
+          target.kind === 'update' ? this.layout.appDir(target.incomingVersion) : this.layout.previousBundle(target.incomingVersion)
         // install.json is left as it is: the swapped-in app records itself (reconcileMac), and
         // the helper only moves bundles while current still names this version.
         await spawnMacSwap(

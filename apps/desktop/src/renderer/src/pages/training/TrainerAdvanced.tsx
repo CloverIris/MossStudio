@@ -69,9 +69,7 @@ export function TrainerAdvanced({
   async function loadBranches(): Promise<void> {
     setWorking('branches')
     try {
-      const rows = local
-        ? await call<BranchInfo[]>(Ipc.trainerBranches)
-        : await call<BranchInfo[]>(Ipc.trainerRemoteBranches, { hostId })
+      const rows = local ? await call<BranchInfo[]>(Ipc.trainerBranches) : await call<BranchInfo[]>(Ipc.trainerRemoteBranches, { hostId })
       setBranches(rows)
       const name = defaultBranch(rows)
       setBranch(name)
@@ -116,7 +114,14 @@ export function TrainerAdvanced({
 
   return (
     <div className="flex flex-col gap-0.5">
-      <Row title="Python" description={env?.pythons.length ? `已找到：${env.pythons.map((python) => python.version).join('、')}` : '留空时自动查找本机的 Python 3.10 或更新版本'}>
+      <Row
+        title="Python"
+        description={
+          env?.pythons.length
+            ? `已找到：${env.pythons.map((python) => python.version).join('、')}`
+            : '留空时自动查找本机的 Python 3.10 或更新版本'
+        }
+      >
         <TextSetting
           label="Python 路径"
           className="w-[280px]"
@@ -156,32 +161,39 @@ export function TrainerAdvanced({
       </Row>
       <Row title="训练器目录" description={settings?.trainerRoot ?? '默认放在应用数据目录的 trainer 文件夹'}>
         {settings?.trainerRoot ? (
-          <Button tone="ghost" onClick={() => void save({ trainerRoot: null }).catch(() => undefined)}>恢复默认</Button>
+          <Button tone="ghost" onClick={() => void save({ trainerRoot: null }).catch(() => undefined)}>
+            恢复默认
+          </Button>
         ) : null}
-        <Button onClick={() => void pickTrainerRoot()}><FolderOpen className="size-4" aria-hidden="true" />选择</Button>
+        <Button onClick={() => void pickTrainerRoot()}>
+          <FolderOpen className="size-4" aria-hidden="true" />
+          选择
+        </Button>
       </Row>
 
       <div className="px-3.5 pb-1 pt-3 text-caption font-medium text-ink-2">{local ? '本机的版本' : '这台主机上的版本'}</div>
       {here.length === 0 ? (
         <p className="px-3.5 pb-2 text-caption text-ink-2">还没有版本。</p>
-      ) : here.map((version) => (
-        <Row
-          key={version.id}
-          title={`${version.shortCommit} · ${version.subject}`}
-          description={`${version.branch} · ${dateTime(version.commitDate)}`}
-        >
-          <Pill tone={version.runtimeState === 'ready' ? 'ok' : version.runtimeState === 'error' ? 'danger' : 'neutral'}>
-            {RUNTIME_LABEL[version.runtimeState]}
-          </Pill>
-          <IconButton
-            label={`删除版本 ${version.shortCommit}`}
-            disabled={busy || working !== null}
-            onClick={() => setRemoveTarget(version)}
+      ) : (
+        here.map((version) => (
+          <Row
+            key={version.id}
+            title={`${version.shortCommit} · ${version.subject}`}
+            description={`${version.branch} · ${dateTime(version.commitDate)}`}
           >
-            {working === version.id ? <Spinner /> : <Trash2 className="size-4" />}
-          </IconButton>
-        </Row>
-      ))}
+            <Pill tone={version.runtimeState === 'ready' ? 'ok' : version.runtimeState === 'error' ? 'danger' : 'neutral'}>
+              {RUNTIME_LABEL[version.runtimeState]}
+            </Pill>
+            <IconButton
+              label={`删除版本 ${version.shortCommit}`}
+              disabled={busy || working !== null}
+              onClick={() => setRemoveTarget(version)}
+            >
+              {working === version.id ? <Spinner /> : <Trash2 className="size-4" />}
+            </IconButton>
+          </Row>
+        ))
+      )}
 
       <div className="flex flex-wrap items-center gap-2 px-3.5 pb-3 pt-2">
         {branches.length === 0 ? (
@@ -206,9 +218,11 @@ export function TrainerAdvanced({
               className="min-w-0 flex-1"
               value={commit}
               onValueChange={setCommit}
-              options={commits.length
-                ? commits.map((item) => ({ value: item.sha, label: `${item.short} · ${item.subject.slice(0, 60)}` }))
-                : [{ value: '', label: '这个分支没有提交' }]}
+              options={
+                commits.length
+                  ? commits.map((item) => ({ value: item.sha, label: `${item.short} · ${item.subject.slice(0, 60)}` }))
+                  : [{ value: '', label: '这个分支没有提交' }]
+              }
             />
             <Button onClick={() => void createVersion()} disabled={!commit || busy || working !== null}>
               {working === 'create' ? <Spinner /> : null}

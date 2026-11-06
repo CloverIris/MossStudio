@@ -29,12 +29,11 @@ export function selectAutomaticGpu(
   })
   if (idle) return idle
 
-  return compatible.sort((a, b) => {
-    const loadA = loads[a.uuid] ?? { runningTasks: 0, queuedTasks: 0 }
-    const loadB = loads[b.uuid] ?? { runningTasks: 0, queuedTasks: 0 }
-    return (
-      loadA.runningTasks + loadA.queuedTasks - loadB.runningTasks - loadB.queuedTasks ||
-      compareRecommendedGpu(a, b)
-    )
-  })[0] ?? null
+  return (
+    compatible.sort((a, b) => {
+      const loadA = loads[a.uuid] ?? { runningTasks: 0, queuedTasks: 0 }
+      const loadB = loads[b.uuid] ?? { runningTasks: 0, queuedTasks: 0 }
+      return loadA.runningTasks + loadA.queuedTasks - loadB.runningTasks - loadB.queuedTasks || compareRecommendedGpu(a, b)
+    })[0] ?? null
+  )
 }

@@ -46,10 +46,16 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
       <SubHeading>性能</SubHeading>
       <Row
         title="显存模式"
-        description={settings.gpuProfileMode === 'auto' ? '现在按每块 GPU 的显存自动选择。手动选择后对所有 GPU 生效。' : '省显存更稳，速度优先需要更多显存。'}
+        description={
+          settings.gpuProfileMode === 'auto'
+            ? '现在按每块 GPU 的显存自动选择。手动选择后对所有 GPU 生效。'
+            : '省显存更稳，速度优先需要更多显存。'
+        }
       >
         {settings.gpuProfileMode === 'custom' ? (
-          <Button tone="ghost" onClick={() => void save({ gpuProfileMode: 'auto' })}>恢复自动</Button>
+          <Button tone="ghost" onClick={() => void save({ gpuProfileMode: 'auto' })}>
+            恢复自动
+          </Button>
         ) : null}
         <Segmented
           label="显存模式"
@@ -58,7 +64,10 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
           options={MEMORY_OPTIONS}
         />
       </Row>
-      <Row title="性能档位" description="Reference 最精确；High 和 Turbo 更快，需要对应的量化模型。较老的显卡（SM 8.0 以下）总是使用 Reference。">
+      <Row
+        title="性能档位"
+        description="Reference 最精确；High 和 Turbo 更快，需要对应的量化模型。较老的显卡（SM 8.0 以下）总是使用 Reference。"
+      >
         <Segmented
           label="性能档位"
           value={settings.mossInferTier}
@@ -88,7 +97,7 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
                   aria-label={`${device.name} 性能档位`}
                   className="w-32"
                   disabled={bf16Only}
-                  value={bf16Only ? 'reference' : override?.tier ?? 'global'}
+                  value={bf16Only ? 'reference' : (override?.tier ?? 'global')}
                   onValueChange={(value) => saveOverride(device.uuid, 'tier', value)}
                   options={[{ value: 'global', label: '跟随上面' }, ...TIER_OPTIONS]}
                 />
@@ -145,13 +154,18 @@ function GpuEngines({ engine }: { engine: EngineState }): React.JSX.Element | nu
       <SubHeading>每块 GPU 的引擎</SubHeading>
       {plan.choices.map((choice) => {
         const options = engineOverrideOptions(plan, choice.gpuId)
-        const value = overrides[choice.gpuId] && options.some((option) => option.value === overrides[choice.gpuId]) ? overrides[choice.gpuId]! : 'auto'
+        const value =
+          overrides[choice.gpuId] && options.some((option) => option.value === overrides[choice.gpuId]) ? overrides[choice.gpuId]! : 'auto'
         const picked = options.find((option) => option.value === value)
         const description = choice.package
           ? `${value === 'auto' ? '自动：' : ''}${enginePackageOptionLabel(choice.package)}${picked?.description ? ` · ${picked.description}` : ''}`
           : choice.reason
         return (
-          <Row key={choice.gpuId} title={choice.gpuName} description={choice.overrideIgnored ? `${description} · 之前选的引擎不能用于这块显卡，已改回自动` : description}>
+          <Row
+            key={choice.gpuId}
+            title={choice.gpuName}
+            description={choice.overrideIgnored ? `${description} · 之前选的引擎不能用于这块显卡，已改回自动` : description}
+          >
             <Select
               aria-label={`${choice.gpuName} 使用的引擎`}
               className="w-56"
@@ -165,7 +179,9 @@ function GpuEngines({ engine }: { engine: EngineState }): React.JSX.Element | nu
       })}
       {plan.missing.length > 0 ? (
         <Row title="所选引擎还没有安装" description={plan.missing.map((id) => packageLabel(id) ?? id).join('、')}>
-          <Button onClick={() => void installMissing()} disabled={installing}>安装</Button>
+          <Button onClick={() => void installMissing()} disabled={installing}>
+            安装
+          </Button>
         </Row>
       ) : null}
     </>
@@ -199,13 +215,19 @@ function InstallOptions({ engine }: { engine: EngineState }): React.JSX.Element 
 
   return (
     <>
-      <Row title="渠道" description={channel === 'dev' ? '开发版来自最新的自动构建，需要在 网络 › 高级 填写 GitHub 令牌。' : '正式发布的版本。'}>
+      <Row
+        title="渠道"
+        description={channel === 'dev' ? '开发版来自最新的自动构建，需要在 网络 › 高级 填写 GitHub 令牌。' : '正式发布的版本。'}
+      >
         <Select
           aria-label="引擎渠道"
           className="w-40"
           value={channel}
           onValueChange={(value) => setChannel(value as LocalInstallOptions['channel'])}
-          options={[{ value: 'stable', label: '正式版' }, { value: 'dev', label: '开发版' }]}
+          options={[
+            { value: 'stable', label: '正式版' },
+            { value: 'dev', label: '开发版' },
+          ]}
         />
       </Row>
       {channel === 'stable' ? (
@@ -272,29 +294,45 @@ function InstalledVersions({ engine }: { engine: EngineState }): React.JSX.Eleme
 
   return (
     <>
-      {engine.versions.length === 0 ? <Row title="还没有安装引擎" /> : engine.versions.map((version) => (
-        <Row key={version.id} title={<span className="font-mono text-caption">{version.name}</span>} description={<span className="font-mono">{version.path}</span>}>
-          {version.current ? <Pill tone="accent">正在使用</Pill> : (
-            <Button onClick={() => void select(version)} disabled={busy !== null || installing}>
-              {busy === version.id ? <Spinner /> : null}使用这个版本
-            </Button>
-          )}
-          <IconButton
-            label={version.current ? '正在使用的版本不能删除' : `删除 ${version.name}`}
-            disabled={version.current || busy !== null || installing}
-            onClick={() => setRemoving(version)}
+      {engine.versions.length === 0 ? (
+        <Row title="还没有安装引擎" />
+      ) : (
+        engine.versions.map((version) => (
+          <Row
+            key={version.id}
+            title={<span className="font-mono text-caption">{version.name}</span>}
+            description={<span className="font-mono">{version.path}</span>}
           >
-            <Trash2 className="size-4" />
-          </IconButton>
-        </Row>
-      ))}
+            {version.current ? (
+              <Pill tone="accent">正在使用</Pill>
+            ) : (
+              <Button onClick={() => void select(version)} disabled={busy !== null || installing}>
+                {busy === version.id ? <Spinner /> : null}使用这个版本
+              </Button>
+            )}
+            <IconButton
+              label={version.current ? '正在使用的版本不能删除' : `删除 ${version.name}`}
+              disabled={version.current || busy !== null || installing}
+              onClick={() => setRemoving(version)}
+            >
+              <Trash2 className="size-4" />
+            </IconButton>
+          </Row>
+        ))
+      )}
       <ConfirmDialog
         open={Boolean(removing)}
         title="删除这个引擎版本？"
-        description={removing ? `${removing.name} 的全部文件会被删除。${removing.source === 'external' ? '自定义引擎只会从列表中移除，文件夹保留。' : ''}` : ''}
+        description={
+          removing
+            ? `${removing.name} 的全部文件会被删除。${removing.source === 'external' ? '自定义引擎只会从列表中移除，文件夹保留。' : ''}`
+            : ''
+        }
         confirmLabel="删除"
         onClose={() => setRemoving(null)}
-        onConfirm={() => { if (removing) void remove(removing) }}
+        onConfirm={() => {
+          if (removing) void remove(removing)
+        }}
       />
     </>
   )
@@ -329,22 +367,35 @@ function CustomEngine({ engine }: { engine: EngineState }): React.JSX.Element {
 
   const hello = engine.hello
   const compatible = engine.probe?.devices.filter((device) => device.status === 'supported').length ?? 0
-  const needsCudaLibs = Boolean(engine.readiness?.path?.includes('system-cuda') && hello && (!hello.probe?.cublasLt || hello.probe.cublasLt.error))
+  const needsCudaLibs = Boolean(
+    engine.readiness?.path?.includes('system-cuda') && hello && (!hello.probe?.cublasLt || hello.probe.cublasLt.error),
+  )
 
   return (
     <>
-      <Row title="添加自定义引擎" description="选择自己编译或第三方提供的 MossInfer 文件夹（包含 bin/moss-server）。添加前会检查它能否正常通信。">
-        <Button onClick={() => void add()} disabled={adding}>{adding ? <Spinner /> : <FolderPlus className="size-4" />}选择文件夹</Button>
+      <Row
+        title="添加自定义引擎"
+        description="选择自己编译或第三方提供的 MossInfer 文件夹（包含 bin/moss-server）。添加前会检查它能否正常通信。"
+      >
+        <Button onClick={() => void add()} disabled={adding}>
+          {adding ? <Spinner /> : <FolderPlus className="size-4" />}选择文件夹
+        </Button>
       </Row>
       <Row
         title="测试当前引擎"
-        description={tested || hello || engine.probeError
-          ? engine.probeError
-            ? `失败：${engine.probeError}`
-            : hello ? `通信正常 · ${hello.server ?? 'MossInfer'} ${hello.version ?? ''} · 协议 ${hello.protocol} · ${compatible} 块 GPU 可用` : '正在测试…'
-          : '启动引擎并检查它能使用哪些 GPU。'}
+        description={
+          tested || hello || engine.probeError
+            ? engine.probeError
+              ? `失败：${engine.probeError}`
+              : hello
+                ? `通信正常 · ${hello.server ?? 'MossInfer'} ${hello.version ?? ''} · 协议 ${hello.protocol} · ${compatible} 块 GPU 可用`
+                : '正在测试…'
+            : '启动引擎并检查它能使用哪些 GPU。'
+        }
       >
-        <Button onClick={() => void test()} disabled={!ready || engine.probing}>{engine.probing ? <Spinner /> : null}测试</Button>
+        <Button onClick={() => void test()} disabled={!ready || engine.probing}>
+          {engine.probing ? <Spinner /> : null}测试
+        </Button>
       </Row>
       {needsCudaLibs ? <CudaLibsRow /> : null}
     </>
@@ -367,7 +418,9 @@ function CudaLibsRow(): React.JSX.Element {
   }
   return (
     <Row title="当前引擎缺少 CUDA 运行库" description="当前版本依赖系统 CUDA，但没有找到可用的 cuBLASLt。可以下载运行库放到引擎旁边。">
-      <Button onClick={() => void install()} disabled={busy}>{busy ? <Spinner /> : null}下载运行库</Button>
+      <Button onClick={() => void install()} disabled={busy}>
+        {busy ? <Spinner /> : null}下载运行库
+      </Button>
     </Row>
   )
 }

@@ -7,8 +7,12 @@ import { afterEach, beforeEach } from 'vitest'
 
 export function useTemp() {
   let dir = ''
-  beforeEach(() => { dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'moss release 发布-'))) })
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+  beforeEach(() => {
+    dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'moss release 发布-')))
+  })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
   return () => dir
 }
 

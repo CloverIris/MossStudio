@@ -13,7 +13,18 @@ export type InputBlockerId = 'input-source' | 'input-adapter' | 'input-unsupport
  */
 
 export interface Blocker {
-  id: 'update-required' | 'model-none' | 'model-missing' | 'model-engine' | 'engine' | 'remote-path' | 'adapters' | 'remote-adapters' | 'lora-unsupported' | 'prompt' | InputBlockerId
+  id:
+    | 'update-required'
+    | 'model-none'
+    | 'model-missing'
+    | 'model-engine'
+    | 'engine'
+    | 'remote-path'
+    | 'adapters'
+    | 'remote-adapters'
+    | 'lora-unsupported'
+    | 'prompt'
+    | InputBlockerId
   message: string
   /** Where the fix lives; `opens: 'update'` opens the title bar update popover instead of going to `to`. */
   action?: { label: string; to: string; opens?: 'update' }
@@ -54,16 +65,13 @@ export function resolveBundle(
     return { bundle, installed: bundleInstalled(bundle, catalog.models), unavailable: false }
   }
   const installed = installedBundles(catalog)
-  const bundle = installed.find((item) => item.id === preferredId)
-    ?? installed.find((item) => item.recommended)
-    ?? installed[0]
-    ?? null
+  const bundle = installed.find((item) => item.id === preferredId) ?? installed.find((item) => item.recommended) ?? installed[0] ?? null
   return { bundle, installed: Boolean(bundle), unavailable: false }
 }
 
 export interface ReadinessInput {
   canvas: Pick<ProjectCanvas, 'prompt' | 'summary' | 'layers' | 'width' | 'height' | 'adapters'> | null
-  catalog: Pick<Catalog, 'bundles' | 'models'> & { adapters?: readonly AdapterEntry[] } | null | undefined
+  catalog: (Pick<Catalog, 'bundles' | 'models'> & { adapters?: readonly AdapterEntry[] }) | null | undefined
   bundle: BundleChoice
   /** Local engine state; null while it is still being read (never a blocker then). */
   engine: EngineReadiness | null
@@ -99,12 +107,18 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
       id: 'update-required',
       message: updateReason,
       // A copy that cannot update itself has no popover to open: 设置 says why and links the download.
-      action: input.update.supported ? { label: '更新', to: '/settings/updates', opens: 'update' } : { label: '查看', to: '/settings/updates' },
+      action: input.update.supported
+        ? { label: '更新', to: '/settings/updates', opens: 'update' }
+        : { label: '查看', to: '/settings/updates' },
     })
   }
   if (input.catalog) {
     if (input.bundle.unavailable) {
-      blockers.push({ id: 'model-missing', message: '这个画面用的模型已经不在模型库里，请换一个模型', action: installedBundles(input.catalog).length ? undefined : toModels })
+      blockers.push({
+        id: 'model-missing',
+        message: '这个画面用的模型已经不在模型库里，请换一个模型',
+        action: installedBundles(input.catalog).length ? undefined : toModels,
+      })
     } else if (!input.bundle.bundle) {
       blockers.push({ id: 'model-none', message: '还没有可用的模型', action: toModels })
     } else if (!input.bundle.installed) {
@@ -121,7 +135,11 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
 
   if (input.remote) {
     if (!input.remote.modelPath?.trim()) {
-      blockers.push({ id: 'remote-path', message: `「${input.remote.name}」还没有设置模型位置`, action: { label: '去设置', to: '/settings/devices' } })
+      blockers.push({
+        id: 'remote-path',
+        message: `「${input.remote.name}」还没有设置模型位置`,
+        action: { label: '去设置', to: '/settings/devices' },
+      })
     }
   } else if (input.engine && input.engine.state !== 'ready') {
     const target = input.setupDone ? '/settings/devices' : '/setup'
@@ -135,9 +153,7 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
 
   const adapters = normalizeCanvasAdapters(input.canvas?.adapters)
   // Until the library has loaded nothing is known to be missing.
-  const missing = input.catalog
-    ? adapterStatuses(adapters, input.catalog.adapters).filter((item) => !item.installed)
-    : []
+  const missing = input.catalog ? adapterStatuses(adapters, input.catalog.adapters).filter((item) => !item.installed) : []
   if (missing.length) {
     blockers.push({
       id: 'adapters',

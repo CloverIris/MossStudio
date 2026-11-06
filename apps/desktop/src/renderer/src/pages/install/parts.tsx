@@ -54,7 +54,9 @@ export function FolderField({
           <PathText path={path} />
           {detail ? <span className="tabular text-caption text-ink-2">{detail}</span> : null}
         </div>
-        <Button onClick={onChange} disabled={disabled}>更改…</Button>
+        <Button onClick={onChange} disabled={disabled}>
+          更改…
+        </Button>
       </div>
       {children}
     </section>
@@ -104,9 +106,18 @@ export function ChoiceList<T extends string>({
             aria-checked={selected}
             disabled={disabled}
             onClick={() => onChange(option.value)}
-            className={cn('flex min-h-9 items-center gap-3 rounded-lg px-3.5 py-1.5 text-left transition-colors disabled:opacity-40', selected ? 'bg-well' : 'enabled:hover:bg-well')}
+            className={cn(
+              'flex min-h-9 items-center gap-3 rounded-lg px-3.5 py-1.5 text-left transition-colors disabled:opacity-40',
+              selected ? 'bg-well' : 'enabled:hover:bg-well',
+            )}
           >
-            <span aria-hidden="true" className={cn('flex size-[18px] shrink-0 items-center justify-center rounded-full', selected ? 'bg-accent' : 'bg-well-strong')}>
+            <span
+              aria-hidden="true"
+              className={cn(
+                'flex size-[18px] shrink-0 items-center justify-center rounded-full',
+                selected ? 'bg-accent' : 'bg-well-strong',
+              )}
+            >
               {selected ? <span className="size-1.5 rounded-full bg-on-accent" /> : null}
             </span>
             <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
@@ -121,10 +132,23 @@ export function ChoiceList<T extends string>({
 }
 
 /** The progress block of the install and uninstall screens. */
-export function ProgressBlock({ label, percent, detail }: { label: string; percent: number | null; detail?: ReactNode }): React.JSX.Element {
+export function ProgressBlock({
+  label,
+  percent,
+  detail,
+}: {
+  label: string
+  percent: number | null
+  detail?: ReactNode
+}): React.JSX.Element {
   return (
     <div className="flex flex-col gap-2.5 pt-2" role="status" aria-live="polite">
-      <ProgressBar value={percent ?? 100} tone={percent === null ? 'neutral' : 'accent'} label={label} className={cn('h-1.5', percent === null && 'animate-pulse')} />
+      <ProgressBar
+        value={percent ?? 100}
+        tone={percent === null ? 'neutral' : 'accent'}
+        label={label}
+        className={cn('h-1.5', percent === null && 'animate-pulse')}
+      />
       <div className="flex items-baseline justify-between gap-4">
         <span className="text-ui text-ink">{label}</span>
         {percent !== null && percent < 100 ? <span className="tabular text-ui text-ink-2">{Math.round(percent)}%</span> : null}

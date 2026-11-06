@@ -143,7 +143,8 @@ export function uninstallInfoFixture(patch: Partial<UninstallInfo> = {}): Uninst
 }
 
 /** Named starting points for the setup window. */
-export type SetupScenarioName = 'first' | 'legacy' | 'legacyInPlace' | 'keptData' | 'keptDataInPlace' | 'update' | 'repair' | 'downgrade' | 'macDmg' | 'noSpace'
+export type SetupScenarioName =
+  'first' | 'legacy' | 'legacyInPlace' | 'keptData' | 'keptDataInPlace' | 'update' | 'repair' | 'downgrade' | 'macDmg' | 'noSpace'
 
 export function setupScenario(name: SetupScenarioName): SetupState {
   const installed = { root: SETUP_FIXTURE_ROOT, dataRoot: `${SETUP_FIXTURE_ROOT}\\data`, version: '1.9.0' }
@@ -165,9 +166,17 @@ export function setupScenario(name: SetupScenarioName): SetupState {
     case 'update':
       return setupStateFixture({ kind: 'update', installed, location: locationCheckFixture({ kind: 'install' }) })
     case 'repair':
-      return setupStateFixture({ kind: 'repair', installed: { ...installed, version: '2.0.0' }, location: locationCheckFixture({ kind: 'install' }) })
+      return setupStateFixture({
+        kind: 'repair',
+        installed: { ...installed, version: '2.0.0' },
+        location: locationCheckFixture({ kind: 'install' }),
+      })
     case 'downgrade':
-      return setupStateFixture({ kind: 'downgrade', installed: { ...installed, version: '2.1.0' }, location: locationCheckFixture({ kind: 'install' }) })
+      return setupStateFixture({
+        kind: 'downgrade',
+        installed: { ...installed, version: '2.1.0' },
+        location: locationCheckFixture({ kind: 'install' }),
+      })
     case 'macDmg':
       return setupStateFixture({
         platform: 'darwin',
@@ -178,7 +187,11 @@ export function setupScenario(name: SetupScenarioName): SetupState {
       })
     case 'noSpace':
       return setupStateFixture({
-        location: locationCheckFixture({ ok: false, freeBytes: 100 * 1024 * 1024, problem: { code: 'E_NO_SPACE', message: '磁盘空间不足。' } }),
+        location: locationCheckFixture({
+          ok: false,
+          freeBytes: 100 * 1024 * 1024,
+          problem: { code: 'E_NO_SPACE', message: '磁盘空间不足。' },
+        }),
       })
   }
 }
@@ -207,7 +220,10 @@ type Emit = (event: string, data: unknown) => void
 type Handler = (payload: unknown, context: { state: { install: MockInstallState }; emit: Emit }) => unknown
 
 class InstallMockError extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
     super(message)
   }
 }
@@ -216,7 +232,12 @@ function checkFor(install: MockInstallState, path: string): SetupLocationCheck {
   if (install.checks[path]) return install.checks[path]
   const absolute = /^(?:[A-Za-z]:\\|\\\\|\/)/.test(path.trim())
   if (!absolute) {
-    return locationCheckFixture({ path: path.trim(), ok: false, problem: { code: 'E_NOT_ABSOLUTE', message: '请选择一个完整的文件夹路径。' }, freeBytes: null })
+    return locationCheckFixture({
+      path: path.trim(),
+      ok: false,
+      problem: { code: 'E_NOT_ABSOLUTE', message: '请选择一个完整的文件夹路径。' },
+      freeBytes: null,
+    })
   }
   return locationCheckFixture({ path: path.trim() })
 }
@@ -266,61 +287,84 @@ const handlers: Array<[string, Handler]> = [
   [Ipc.installState, (_, { state }) => state.install.setup],
   [Ipc.installValidate, (payload, { state }) => checkFor(state.install, (payload as { path: string }).path)],
   [Ipc.installInspectLegacy, (payload, { state }) => state.install.legacyAt[(payload as { path: string }).path] ?? null],
-  [Ipc.installChooseFolder, (payload, { state }): SetupFolderChoice => {
-    const { purpose } = payload as { purpose: 'install' | 'data' | 'legacy' }
-    const choice = state.install.folderChoice
-    state.install.folderChoice = null
-    if (!choice || choice.purpose !== purpose) return { canceled: true, path: null, check: null, legacy: null }
-    if (purpose === 'legacy') return { canceled: false, path: choice.path, check: null, legacy: state.install.legacyAt[choice.path] ?? null }
-    return { canceled: false, path: choice.path, check: checkFor(state.install, choice.path), legacy: null }
-  }],
-  [Ipc.installStart, (payload, { state, emit }) => {
-    const input = payload as SetupStartInput
-    const install = state.install
-    install.starts.push(input)
-    if (install.setup.phase === 'installing') throw new InstallMockError('E_BUSY', '正在安装。')
-    if (install.setup.kind === 'downgrade' && !input.allowDowngrade) {
-      throw new InstallMockError('E_DOWNGRADE', `已安装的版本（${install.setup.installed?.version}）比这个安装程序（${install.setup.version}）新。确认后才会降级。`)
-    }
-    const root = install.setup.installed?.root ?? input.root
-    let replacing = Boolean(install.setup.installed)
-    if (!install.setup.installed) {
-      const check = checkFor(install, input.root)
-      if (!check.ok) throw new InstallMockError(check.problem?.code ?? 'E_LOCATION', check.problem?.message ?? '不能安装到这个位置。')
-      replacing = check.kind === 'install' || check.kind === 'legacy'
-    }
-    // As main: replacing an install while MossStudio runs ends in a failed state (重试).
-    if (replacing && install.appRunning) {
-      const failure = { code: 'E_APP_RUNNING', message: 'MossStudio 正在运行。请在它弹出的对话框里关闭它（或手动退出），然后重试。' }
-      install.setup = { ...install.setup, phase: 'failed', error: failure }
-      setTimeout(() => emit(Events.installFailed, failure), install.stepMs)
+  [
+    Ipc.installChooseFolder,
+    (payload, { state }): SetupFolderChoice => {
+      const { purpose } = payload as { purpose: 'install' | 'data' | 'legacy' }
+      const choice = state.install.folderChoice
+      state.install.folderChoice = null
+      if (!choice || choice.purpose !== purpose) return { canceled: true, path: null, check: null, legacy: null }
+      if (purpose === 'legacy')
+        return { canceled: false, path: choice.path, check: null, legacy: state.install.legacyAt[choice.path] ?? null }
+      return { canceled: false, path: choice.path, check: checkFor(state.install, choice.path), legacy: null }
+    },
+  ],
+  [
+    Ipc.installStart,
+    (payload, { state, emit }) => {
+      const input = payload as SetupStartInput
+      const install = state.install
+      install.starts.push(input)
+      if (install.setup.phase === 'installing') throw new InstallMockError('E_BUSY', '正在安装。')
+      if (install.setup.kind === 'downgrade' && !input.allowDowngrade) {
+        throw new InstallMockError(
+          'E_DOWNGRADE',
+          `已安装的版本（${install.setup.installed?.version}）比这个安装程序（${install.setup.version}）新。确认后才会降级。`,
+        )
+      }
+      const root = install.setup.installed?.root ?? input.root
+      let replacing = Boolean(install.setup.installed)
+      if (!install.setup.installed) {
+        const check = checkFor(install, input.root)
+        if (!check.ok) throw new InstallMockError(check.problem?.code ?? 'E_LOCATION', check.problem?.message ?? '不能安装到这个位置。')
+        replacing = check.kind === 'install' || check.kind === 'legacy'
+      }
+      // As main: replacing an install while MossStudio runs ends in a failed state (重试).
+      if (replacing && install.appRunning) {
+        const failure = { code: 'E_APP_RUNNING', message: 'MossStudio 正在运行。请在它弹出的对话框里关闭它（或手动退出），然后重试。' }
+        install.setup = { ...install.setup, phase: 'failed', error: failure }
+        setTimeout(() => emit(Events.installFailed, failure), install.stepMs)
+        return install.setup
+      }
+      install.setup = { ...install.setup, phase: 'installing', progress: null, error: null }
+      if (install.outcome !== 'hold') play(install, emit, root)
       return install.setup
-    }
-    install.setup = { ...install.setup, phase: 'installing', progress: null, error: null }
-    if (install.outcome !== 'hold') play(install, emit, root)
-    return install.setup
-  }],
-  [Ipc.installLaunch, (payload, { state }) => {
-    if (state.install.setup.phase !== 'done') throw new InstallMockError('E_NOT_DONE', '还没有安装完成。')
-    state.install.launched = { eject: Boolean((payload as { eject?: boolean } | undefined)?.eject) }
-    return true
-  }],
-  [Ipc.installOpenLog, (payload, { state }) => {
-    const which = (payload as { log?: 'setup' | 'launcher' } | undefined)?.log ?? 'setup'
-    if (which === 'launcher' && !state.install.setup.launcherLogPath) throw new InstallMockError('E_NO_LOG', '没有这份日志。')
-    state.install.openedLogs.push(which)
-    return true
-  }],
-  [Ipc.installQuit, (_, { state }) => {
-    state.install.quit = true
-    return true
-  }],
+    },
+  ],
+  [
+    Ipc.installLaunch,
+    (payload, { state }) => {
+      if (state.install.setup.phase !== 'done') throw new InstallMockError('E_NOT_DONE', '还没有安装完成。')
+      state.install.launched = { eject: Boolean((payload as { eject?: boolean } | undefined)?.eject) }
+      return true
+    },
+  ],
+  [
+    Ipc.installOpenLog,
+    (payload, { state }) => {
+      const which = (payload as { log?: 'setup' | 'launcher' } | undefined)?.log ?? 'setup'
+      if (which === 'launcher' && !state.install.setup.launcherLogPath) throw new InstallMockError('E_NO_LOG', '没有这份日志。')
+      state.install.openedLogs.push(which)
+      return true
+    },
+  ],
+  [
+    Ipc.installQuit,
+    (_, { state }) => {
+      state.install.quit = true
+      return true
+    },
+  ],
   [Ipc.uninstallInfo, (_, { state }) => state.install.uninstall],
-  [Ipc.uninstallStart, (payload, { state }) => {
-    if (state.install.uninstall.running) throw new InstallMockError('E_APP_RUNNING', 'MossStudio 正在运行。请在它弹出的对话框里关闭它（或手动退出），然后再卸载。')
-    state.install.uninstallStarted = { removeData: Boolean((payload as { removeData?: boolean }).removeData) }
-    return true
-  }],
+  [
+    Ipc.uninstallStart,
+    (payload, { state }) => {
+      if (state.install.uninstall.running)
+        throw new InstallMockError('E_APP_RUNNING', 'MossStudio 正在运行。请在它弹出的对话框里关闭它（或手动退出），然后再卸载。')
+      state.install.uninstallStarted = { removeData: Boolean((payload as { removeData?: boolean }).removeData) }
+      return true
+    },
+  ],
 ]
 
 /**

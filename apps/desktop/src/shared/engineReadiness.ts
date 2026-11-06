@@ -7,9 +7,7 @@ export function describeEngineReadiness(readiness: EngineReadiness): string {
     return `正在安装 ${readiness.installing.version ?? 'MossInfer'} · ${percent}%`
   }
   if (readiness.state === 'ready') {
-    return readiness.lastAttempt?.error
-      ? 'MossInfer 已就绪 · 上次更新失败'
-      : 'MossInfer 已就绪'
+    return readiness.lastAttempt?.error ? 'MossInfer 已就绪 · 上次更新失败' : 'MossInfer 已就绪'
   }
   return readiness.reason ?? '尚未准备 MossInfer 引擎；请下载或选择自定义引擎目录'
 }

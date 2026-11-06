@@ -22,7 +22,10 @@ describe('fetchVerifiedFeed anti-rollback across transports', () => {
       return new Response(url.endsWith('.sig') ? body.sig : body.feed)
     }) as typeof fetch
     const result = await fetchVerifiedFeed('stable', {
-      keys: [key.publicKey], settings: { networkMode: 'auto', gitMirror: null }, url: GH, fetchImpl,
+      keys: [key.publicKey],
+      settings: { networkMode: 'auto', gitMirror: null },
+      url: GH,
+      fetchImpl,
       highWater: { version: '1.2.0', publishedAt: '2026-11-01T00:00:00.000Z' },
     })
     expect(result.feed.version).toBe('1.2.0')
@@ -33,10 +36,15 @@ describe('fetchVerifiedFeed anti-rollback across transports', () => {
   it('fails with the rollback reason when every transport is stale', async () => {
     const stale = signed('1.1.0')
     const fetchImpl = (async (input: string | URL) => new Response(String(input).endsWith('.sig') ? stale.sig : stale.feed)) as typeof fetch
-    await expect(fetchVerifiedFeed('stable', {
-      keys: [key.publicKey], settings: { networkMode: 'direct', gitMirror: null }, url: GH, fetchImpl,
-      highWater: { version: '1.2.0', publishedAt: '2026-11-01T00:00:00.000Z' },
-    })).rejects.toThrow('版本回退')
+    await expect(
+      fetchVerifiedFeed('stable', {
+        keys: [key.publicKey],
+        settings: { networkMode: 'direct', gitMirror: null },
+        url: GH,
+        fetchImpl,
+        highWater: { version: '1.2.0', publishedAt: '2026-11-01T00:00:00.000Z' },
+      }),
+    ).rejects.toThrow('版本回退')
     expect(new FeedRollbackError({ version: '1.1.0' }, { version: '1.2.0', publishedAt: '' }).name).toBe('FeedRollbackError')
   })
 

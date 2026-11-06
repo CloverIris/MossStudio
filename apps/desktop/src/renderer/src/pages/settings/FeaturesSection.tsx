@@ -46,22 +46,37 @@ function LanAccess(): React.JSX.Element {
   useEffect(() => {
     let canceled = false
     void call<WebAccessInfo>(Ipc.webAccessInfo)
-      .then((next) => { if (!canceled) setAccess(next) })
-      .catch((error: unknown) => { if (!canceled) setAccess({ ready: false, urls: [], token: null, port: null, instanceId: null, error: errorText(error) }) })
-    return () => { canceled = true }
+      .then((next) => {
+        if (!canceled) setAccess(next)
+      })
+      .catch((error: unknown) => {
+        if (!canceled) setAccess({ ready: false, urls: [], token: null, port: null, instanceId: null, error: errorText(error) })
+      })
+    return () => {
+      canceled = true
+    }
   }, [settings.lanWebEnabled, settings.lanWebPort])
 
   // Phones reach the computer through its network address, not 127.0.0.1.
   const primary = useMemo(() => access?.urls?.find((url) => !url.includes('127.0.0.1') && !url.includes('localhost')) ?? '', [access])
 
   useEffect(() => {
-    if (!primary) { setQr(''); return }
+    if (!primary) {
+      setQr('')
+      return
+    }
     let canceled = false
     // Default black-on-white: inverted codes are not read by every phone camera.
     void QRCode.toDataURL(primary, { margin: 1, width: 176 })
-      .then((url) => { if (!canceled) setQr(url) })
-      .catch(() => { if (!canceled) setQr('') })
-    return () => { canceled = true }
+      .then((url) => {
+        if (!canceled) setQr(url)
+      })
+      .catch(() => {
+        if (!canceled) setQr('')
+      })
+    return () => {
+      canceled = true
+    }
   }, [primary])
 
   async function rotate(): Promise<void> {
@@ -84,8 +99,12 @@ function LanAccess(): React.JSX.Element {
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               {access.urls.map((url) => (
                 <div key={url} className="flex min-w-0 items-center gap-2">
-                  <code className="selectable min-w-0 flex-1 truncate rounded-md bg-well px-2.5 py-1.5 font-mono text-caption text-ink">{url}</code>
-                  <IconButton label="复制地址" onClick={() => void copyText(url, '地址已复制')}><Copy className="size-4" /></IconButton>
+                  <code className="selectable min-w-0 flex-1 truncate rounded-md bg-well px-2.5 py-1.5 font-mono text-caption text-ink">
+                    {url}
+                  </code>
+                  <IconButton label="复制地址" onClick={() => void copyText(url, '地址已复制')}>
+                    <Copy className="size-4" />
+                  </IconButton>
                 </div>
               ))}
               <p className="text-caption text-ink-2">在手机上打开地址，或用相机扫右侧二维码。</p>
@@ -102,13 +121,16 @@ function LanAccess(): React.JSX.Element {
           value={settings.lanWebPort}
           placeholder="自动"
           validate={integerInRange(1024, 65535, { optional: true })}
-          parse={(text) => text ? Number(text) : null}
+          parse={(text) => (text ? Number(text) : null)}
           type="number"
           inputClassName="w-28"
           onSave={(lanWebPort) => save({ lanWebPort })}
         />
         <Row title="更换访问密钥" description="之前发出去的地址会失效。">
-          <Button onClick={() => void rotate()} disabled={rotating}><RefreshCw className="size-4" />更换</Button>
+          <Button onClick={() => void rotate()} disabled={rotating}>
+            <RefreshCw className="size-4" />
+            更换
+          </Button>
         </Row>
       </Group>
     </Section>

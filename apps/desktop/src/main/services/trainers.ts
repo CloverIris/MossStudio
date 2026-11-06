@@ -240,7 +240,8 @@ export async function trainerDoctor(settings: Settings, versionId: string): Prom
   if (!runtime || !existsSync(runtime.python)) {
     throw new Error('训练环境尚未创建，请先安装环境')
   }
-  const bin = process.platform === 'win32' ? join(runtime.path, 'Scripts', 'kohakumoss-doctor.exe') : join(runtime.path, 'bin', 'kohakumoss-doctor')
+  const bin =
+    process.platform === 'win32' ? join(runtime.path, 'Scripts', 'kohakumoss-doctor.exe') : join(runtime.path, 'bin', 'kohakumoss-doctor')
   const command = existsSync(bin) ? bin : runtime.python
   const args = existsSync(bin) ? [] : ['-m', 'kohakumoss.cli.doctor']
   const result = await run(command, args, { cwd: version.path, timeoutMs: 120_000 })
@@ -259,7 +260,6 @@ export async function trainerRuntimeSummary(settings: Settings, versionId: strin
   if (!version?.runtimeId) return null
   return readRuntime(settings, version.runtimeId)
 }
-
 
 function quote(value: string): string {
   return process.platform === 'win32' ? `"${value.replace(/"/g, '""')}"` : `'${value.replace(/'/g, `'\\''`)}'`
@@ -301,14 +301,14 @@ export async function startTrainerRun(settings: Settings, input: TrainerRunInput
         `$kogine = Join-Path ${powershellLiteral(join(runtime.path, 'Scripts'))} 'kogine.exe'`,
         ...(input.action === 'export'
           ? [
-              "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $exportPath) | Out-Null",
-              "& $kogine run scripts/export/export.py --set \"WEIGHTS=$weights\" --set \"ADAPTER=$($adapter.FullName)\" --set \"OUT=$exportPath\"",
+              'New-Item -ItemType Directory -Force -Path (Split-Path -Parent $exportPath) | Out-Null',
+              '& $kogine run scripts/export/export.py --set "WEIGHTS=$weights" --set "ADAPTER=$($adapter.FullName)" --set "OUT=$exportPath"',
             ]
           : [
-              "$exportedAdapter = Join-Path (Get-Location) $exportPath",
+              '$exportedAdapter = Join-Path (Get-Location) $exportPath',
               "if (-not (Test-Path -LiteralPath $exportedAdapter)) { throw '请先导出 adapter，再执行采样' }",
-              "New-Item -ItemType Directory -Force -Path $sampleDir | Out-Null",
-              "& $kogine run scripts/sample/sample.py --set \"WEIGHTS=$weights\" --set \"ADAPTERS=${exportPath}:1.0\" --set \"PROMPT=a lighthouse on a rocky coast at sunset\" --set \"OUT=$sampleDir\"",
+              'New-Item -ItemType Directory -Force -Path $sampleDir | Out-Null',
+              '& $kogine run scripts/sample/sample.py --set "WEIGHTS=$weights" --set "ADAPTERS=${exportPath}:1.0" --set "PROMPT=a lighthouse on a rocky coast at sunset" --set "OUT=$sampleDir"',
             ]),
         'if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }',
         'exit 0',
@@ -343,7 +343,10 @@ export async function startTrainerRun(settings: Settings, input: TrainerRunInput
       `${quote(join(runtime.path, 'bin', 'kogine'))} run scripts/sample/sample.py --set WEIGHTS=${quote(input.weights)} --set ADAPTERS=${quote(`${exportPath}:1.0`)} --set PROMPT=${quote('a lighthouse on a rocky coast at sunset')} --set OUT=${quote(sampleDir)}`,
     ].join('\n')
     const script = join(version.path, `.clover-${input.action}.sh`)
-    await writeFile(script, `#!/usr/bin/env bash\nset -euo pipefail\n${input.action === 'export' ? exportCommand : sampleCommand}\n`, { encoding: 'utf8', mode: 0o755 })
+    await writeFile(script, `#!/usr/bin/env bash\nset -euo pipefail\n${input.action === 'export' ? exportCommand : sampleCommand}\n`, {
+      encoding: 'utf8',
+      mode: 0o755,
+    })
     return startTrainingJob({
       versionId: version.id,
       name: `Kohaku ${input.action === 'export' ? '导出' : '采样'}`,
@@ -428,7 +431,6 @@ export async function startTrainerRun(settings: Settings, input: TrainerRunInput
   })
 }
 
-
 async function startRemoteTrainerRun(settings: Settings, input: TrainerRunInput, version: TrainerVersion): Promise<JobRecord> {
   const host = getTrainingHost(settings, version.hostId)
   if (!host || host.kind !== 'ssh') throw new Error('SSH 训练主机不存在')
@@ -466,7 +468,18 @@ async function startRemoteTrainerRun(settings: Settings, input: TrainerRunInput,
         : `mkdir -p ${posixQuote(sampleDir)}; "$RUNTIME/bin/kogine" run scripts/sample/sample.py --set WEIGHTS=${posixQuote(input.weights)} --set ADAPTERS=${posixQuote(`${exportPath}:1.0`)} --set PROMPT=${posixQuote('a lighthouse on a rocky coast at sunset')} --set OUT=${posixQuote(sampleDir)}`,
     ].join('\n')
     const marker = `CLOVER_REMOTE_${Date.now()}`
-    const write = await sshExec(host, [remoteSetup(host), `VERSION="$VERSIONS/${version.id}"`, `cat > "$VERSION/.clover-${input.action}.sh" <<'${marker}'`, script, marker, `chmod +x "$VERSION/.clover-${input.action}.sh"`].join('\n'), 30_000)
+    const write = await sshExec(
+      host,
+      [
+        remoteSetup(host),
+        `VERSION="$VERSIONS/${version.id}"`,
+        `cat > "$VERSION/.clover-${input.action}.sh" <<'${marker}'`,
+        script,
+        marker,
+        `chmod +x "$VERSION/.clover-${input.action}.sh"`,
+      ].join('\n'),
+      30_000,
+    )
     if (write.code !== 0) throw new Error(`写入远端动作脚本失败：${(write.stderr || write.stdout).trim().slice(-1000)}`)
     return startTrainingJob({
       versionId: version.id,
@@ -475,13 +488,27 @@ async function startRemoteTrainerRun(settings: Settings, input: TrainerRunInput,
       cwd: process.cwd(),
       command: sshCommand(),
       env: sshEnv(host),
-      args: sshArgs(host, [remoteSetup(host), `VERSION="$VERSIONS/${version.id}"`, `bash "$VERSION/.clover-${input.action}.sh"`].join('\n')),
+      args: sshArgs(
+        host,
+        [remoteSetup(host), `VERSION="$VERSIONS/${version.id}"`, `bash "$VERSION/.clover-${input.action}.sh"`].join('\n'),
+      ),
       totalSteps: 0,
       runName,
       action: input.action,
       weights: input.weights,
       algo: input.algo,
-      cancelCommand: { command: sshCommand(), env: sshEnv(host), args: sshArgs(host, [remoteSetup(host), `VERSION="$VERSIONS/${version.id}"`, 'if [ -f "$VERSION/.clover.pid" ]; then kill -TERM "$(cat "$VERSION/.clover.pid")" 2>/dev/null || true; fi'].join('\n')) },
+      cancelCommand: {
+        command: sshCommand(),
+        env: sshEnv(host),
+        args: sshArgs(
+          host,
+          [
+            remoteSetup(host),
+            `VERSION="$VERSIONS/${version.id}"`,
+            'if [ -f "$VERSION/.clover.pid" ]; then kill -TERM "$(cat "$VERSION/.clover.pid")" 2>/dev/null || true; fi',
+          ].join('\n'),
+        ),
+      },
     })
   }
   const configPath = `configs/user/${runName}.py`
@@ -491,13 +518,20 @@ async function startRemoteTrainerRun(settings: Settings, input: TrainerRunInput,
     .map((line) => line.trim())
     .filter((line) => line.includes('=') && !line.startsWith('#'))
   const setupArgs = [
-    'new', 'train',
-    '--weights', posixQuote(input.weights),
-    '--data', posixQuote(input.dataset),
-    '--source', 'kohya',
-    '--algo', posixQuote(input.algo),
-    '--name', posixQuote(runName),
-    '--steps', String(input.steps),
+    'new',
+    'train',
+    '--weights',
+    posixQuote(input.weights),
+    '--data',
+    posixQuote(input.dataset),
+    '--source',
+    'kohya',
+    '--algo',
+    posixQuote(input.algo),
+    '--name',
+    posixQuote(runName),
+    '--steps',
+    String(input.steps),
     '--force',
   ].join(' ')
   const setArgs = [
@@ -545,11 +579,7 @@ async function startRemoteTrainerRun(settings: Settings, input: TrainerRunInput,
   )
   if (write.code !== 0) throw new Error(`写入远端训练脚本失败：${(write.stderr || write.stdout).trim().slice(-1000)}`)
 
-  const start = [
-    remoteSetup(host),
-    `VERSION="$VERSIONS/${version.id}"`,
-    `bash "$VERSION/.clover-${input.action}.sh"`,
-  ].join('\n')
+  const start = [remoteSetup(host), `VERSION="$VERSIONS/${version.id}"`, `bash "$VERSION/.clover-${input.action}.sh"`].join('\n')
   const cancel = [
     remoteSetup(host),
     `VERSION="$VERSIONS/${version.id}"`,

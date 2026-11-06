@@ -25,7 +25,9 @@ describe('gitBinary', () => {
   })
 
   it('still resolves the binary when environment setup throws', async () => {
-    setupEnvironment.mockImplementation(() => { throw new Error('no env') })
+    setupEnvironment.mockImplementation(() => {
+      throw new Error('no env')
+    })
     const { gitBinary } = await import('@main/lib/gitBinary')
     expect(gitBinary()).toBe('/bundled/git')
     gitBinary()

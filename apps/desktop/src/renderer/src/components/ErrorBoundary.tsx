@@ -32,12 +32,18 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button tone="primary" size="md" onClick={() => window.location.reload()}>重新加载</Button>
-          <Button size="md" onClick={() => void navigator.clipboard.writeText(details).catch(() => undefined)}>复制错误信息</Button>
+          <Button tone="primary" size="md" onClick={() => window.location.reload()}>
+            重新加载
+          </Button>
+          <Button size="md" onClick={() => void navigator.clipboard.writeText(details).catch(() => undefined)}>
+            复制错误信息
+          </Button>
         </div>
         <details className="w-full max-w-2xl">
           <summary className="cursor-pointer text-center text-caption text-ink-2">查看错误详情</summary>
-          <pre className="selectable mt-2 max-h-72 overflow-auto rounded-lg bg-well p-3 text-left font-mono text-caption text-ink-2">{details}</pre>
+          <pre className="selectable mt-2 max-h-72 overflow-auto rounded-lg bg-well p-3 text-left font-mono text-caption text-ink-2">
+            {details}
+          </pre>
         </details>
       </div>
     )

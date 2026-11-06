@@ -17,7 +17,10 @@ const pending = new Map<string, { resolve: (value: unknown) => void; reject: (er
 
 /** An RPC failure from main, with its E_* code when main gave one. */
 class RpcError extends Error {
-  constructor(message: string, readonly code?: string) {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
     super(message)
   }
 }
@@ -147,11 +150,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return
     }
     if (req.method === 'GET' && url.pathname === '/api/studio/bootstrap') {
-      const [projects, models, gallery] = await Promise.all([
-        rpc('listProjects'),
-        rpc('listModels'),
-        rpc('listGallery', { limit: 12 }),
-      ])
+      const [projects, models, gallery] = await Promise.all([rpc('listProjects'), rpc('listModels'), rpc('listGallery', { limit: 12 })])
       send(res, 200, { projects, instances: [], models, gallery })
       return
     }
@@ -179,12 +178,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return
     }
     if (req.method === 'GET' && url.pathname === '/api/gallery') {
-      send(res, 200, await rpc('listGallery', {
-        cursor: url.searchParams.get('cursor') ?? undefined,
-        limit: Number(url.searchParams.get('limit') ?? 48) || 48,
-        query: url.searchParams.get('query') ?? undefined,
-        root: url.searchParams.get('root') ?? undefined,
-      }))
+      send(
+        res,
+        200,
+        await rpc('listGallery', {
+          cursor: url.searchParams.get('cursor') ?? undefined,
+          limit: Number(url.searchParams.get('limit') ?? 48) || 48,
+          query: url.searchParams.get('query') ?? undefined,
+          root: url.searchParams.get('root') ?? undefined,
+        }),
+      )
       return
     }
     if (req.method === 'GET' && url.pathname.startsWith('/api/jobs/')) {
@@ -261,7 +264,8 @@ parentPort?.on('message', (event) => {
     if (!entry) return
     pending.delete(String(message['id']))
     clearTimeout(entry.timer)
-    if (message['error']) entry.reject(new RpcError(String(message['error']), typeof message['code'] === 'string' ? message['code'] : undefined))
+    if (message['error'])
+      entry.reject(new RpcError(String(message['error']), typeof message['code'] === 'string' ? message['code'] : undefined))
     else entry.resolve(message['result'])
     return
   }

@@ -44,7 +44,13 @@ describe('trainingForm persistence', () => {
   })
 
   it('ignores a storage that throws on write', () => {
-    expect(() => saveTrainingForm(filled, { setItem: () => { throw new Error('quota') } })).not.toThrow()
+    expect(() =>
+      saveTrainingForm(filled, {
+        setItem: () => {
+          throw new Error('quota')
+        },
+      }),
+    ).not.toThrow()
   })
 
   it('replaces malformed fields one by one and keeps the rest', () => {

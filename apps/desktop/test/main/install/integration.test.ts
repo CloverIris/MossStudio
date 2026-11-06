@@ -1,7 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { desktopExecArg, linuxDesktopEntry, windowsShortcutPaths, writeLinuxIntegration, writeWindowsShortcuts, type ShortcutOptions } from '@main/install/integration'
+import {
+  desktopExecArg,
+  linuxDesktopEntry,
+  windowsShortcutPaths,
+  writeLinuxIntegration,
+  writeWindowsShortcuts,
+  type ShortcutOptions,
+} from '@main/install/integration'
 import { useTempDir } from '@test/helpers/tempDir'
 
 const temp = useTempDir()
@@ -19,26 +26,43 @@ describe('Windows shortcuts', () => {
   it('point at the launcher with the app’s AppUserModelID', () => {
     const calls: Array<{ path: string; operation: string; options: ShortcutOptions }> = []
     const paths = [join(temp(), '开始 菜单', 'MossStudio.lnk'), join(temp(), 'Desktop', 'MossStudio.lnk')]
-    const failed = writeWindowsShortcuts((path, operation, options) => {
-      calls.push({ path, operation, options })
-      return true
-    }, paths, 'C:\\R\\MossStudio.exe', 'C:\\R')
+    const failed = writeWindowsShortcuts(
+      (path, operation, options) => {
+        calls.push({ path, operation, options })
+        return true
+      },
+      paths,
+      'C:\\R\\MossStudio.exe',
+      'C:\\R',
+    )
     expect(failed).toEqual([])
     expect(calls.map((call) => call.path)).toEqual(paths)
     expect(calls[0]).toEqual({
       path: paths[0],
       operation: 'replace',
-      options: { target: 'C:\\R\\MossStudio.exe', cwd: 'C:\\R', description: 'MossStudio', icon: 'C:\\R\\MossStudio.exe', iconIndex: 0, appUserModelId: 'com.cloveriris.mossstudio' },
+      options: {
+        target: 'C:\\R\\MossStudio.exe',
+        cwd: 'C:\\R',
+        description: 'MossStudio',
+        icon: 'C:\\R\\MossStudio.exe',
+        iconIndex: 0,
+        appUserModelId: 'com.cloveriris.mossstudio',
+      },
     })
     expect(existsSync(join(temp(), '开始 菜单'))).toBe(true)
   })
 
   it('falls back to create and reports shortcuts that could not be written', () => {
     const operations: string[] = []
-    const failed = writeWindowsShortcuts((path, operation) => {
-      operations.push(operation)
-      return path.includes('ok') && operation === 'create'
-    }, [join(temp(), 'ok.lnk'), join(temp(), 'bad.lnk')], 'C:\\R\\MossStudio.exe', 'C:\\R')
+    const failed = writeWindowsShortcuts(
+      (path, operation) => {
+        operations.push(operation)
+        return path.includes('ok') && operation === 'create'
+      },
+      [join(temp(), 'ok.lnk'), join(temp(), 'bad.lnk')],
+      'C:\\R\\MossStudio.exe',
+      'C:\\R',
+    )
     expect(operations).toEqual(['replace', 'create', 'replace', 'create'])
     expect(failed).toEqual([join(temp(), 'bad.lnk')])
   })

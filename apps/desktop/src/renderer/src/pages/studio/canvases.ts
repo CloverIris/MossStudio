@@ -11,7 +11,18 @@ import { cleanSampling, generationSize, outputSize, scaleHires } from './samplin
 
 export type CanvasSettings = Pick<
   ProjectCanvas,
-  'width' | 'height' | 'negative' | 'seed' | 'seedLocked' | 'steps' | 'cfg' | 'modelBundleId' | 'deviceId' | 'deviceUuid' | 'adapters' | 'sampling'
+  | 'width'
+  | 'height'
+  | 'negative'
+  | 'seed'
+  | 'seedLocked'
+  | 'steps'
+  | 'cfg'
+  | 'modelBundleId'
+  | 'deviceId'
+  | 'deviceUuid'
+  | 'adapters'
+  | 'sampling'
 >
 
 export function defaultSettings(): CanvasSettings {
@@ -37,13 +48,21 @@ function migrateInputs(inputs: CanvasInputs): CanvasInputs | undefined {
   if (inputs.init?.link?.canvasId) next.init = { ...inputs.init, strength: unit(inputs.init.strength, DEFAULT_INIT_STRENGTH) }
   if (next.init && inputs.mask?.path) next.mask = inputs.mask
   if (inputs.control) {
-    const images = (inputs.control.images ?? []).filter((image) => image?.kind && image.link?.canvasId).map((image) => {
-      const start = unit(image.start, 0)
-      return { ...image, strength: typeof image.strength === 'number' && Number.isFinite(image.strength) ? Math.min(10, Math.max(0, image.strength)) : 1, start, end: Math.max(start, unit(image.end, 1)) }
-    })
+    const images = (inputs.control.images ?? [])
+      .filter((image) => image?.kind && image.link?.canvasId)
+      .map((image) => {
+        const start = unit(image.start, 0)
+        return {
+          ...image,
+          strength: typeof image.strength === 'number' && Number.isFinite(image.strength) ? Math.min(10, Math.max(0, image.strength)) : 1,
+          start,
+          end: Math.max(start, unit(image.end, 1)),
+        }
+      })
     next.control = { ...inputs.control, adapterId: inputs.control.adapterId ?? '', images }
   }
-  if (inputs.references?.links?.length) next.references = { ...inputs.references, links: inputs.references.links.filter((link) => link?.canvasId) }
+  if (inputs.references?.links?.length)
+    next.references = { ...inputs.references, links: inputs.references.links.filter((link) => link?.canvasId) }
   return next.init || next.control || next.references ? next : undefined
 }
 
@@ -95,7 +114,11 @@ export function settingsFrom(canvas: ProjectCanvas | null | undefined): CanvasSe
 }
 
 /** A blank layout canvas placed in the first free board slot. */
-export function createLayoutCanvas(existing: readonly ProjectCanvas[], settings: CanvasSettings, id: string = crypto.randomUUID()): ProjectCanvas {
+export function createLayoutCanvas(
+  existing: readonly ProjectCanvas[],
+  settings: CanvasSettings,
+  id: string = crypto.randomUUID(),
+): ProjectCanvas {
   const position = nextFreeSpot(existing, settings)
   return {
     id,
@@ -159,7 +182,9 @@ export function createImageCanvas(
     const w = cardWidth(size)
     const rect = { x: near.x - w - BOARD_GAP * 2, y: near.y, w, h: cardRect({ x: 0, y: 0, ...size }).h }
     for (let guard = 0; guard < 200; guard += 1) {
-      const clash = taken.some((item) => rect.x < item.x + item.w && rect.x + rect.w > item.x && rect.y < item.y + item.h && rect.y + rect.h > item.y)
+      const clash = taken.some(
+        (item) => rect.x < item.x + item.w && rect.x + rect.w > item.x && rect.y < item.y + item.h && rect.y + rect.h > item.y,
+      )
       if (!clash) break
       rect.y += rect.h + BOARD_GAP
     }
@@ -170,7 +195,9 @@ export function createImageCanvas(
     kind: 'image',
     imagePath: picture.path,
     // The picture's real pixels (a mask must match them); width/height are the card size.
-    ...(picture.width > 0 && picture.height > 0 ? { imageSize: { width: Math.round(picture.width), height: Math.round(picture.height) } } : {}),
+    ...(picture.width > 0 && picture.height > 0
+      ? { imageSize: { width: Math.round(picture.width), height: Math.round(picture.height) } }
+      : {}),
     title,
     x: position.x,
     y: position.y,
@@ -201,7 +228,7 @@ export function taskCanvasFor(
   if (runInPlace) {
     return {
       taskId: source.id,
-      canvases: canvases.map((item) => item.id === source.id ? { ...source, ...reset } : item),
+      canvases: canvases.map((item) => (item.id === source.id ? { ...source, ...reset } : item)),
     }
   }
   // A 高清修复 run's card is the size of the finished picture; the first-pass
@@ -235,8 +262,8 @@ export function applyJobs(canvases: ProjectCanvas[], jobs: readonly JobRecord[])
     const job = jobs.find((item) => item.id === canvas.jobId)
     if (!job) return canvas
     const outputs = job.outputs ?? canvas.outputs ?? []
-    const sameOutputs = outputs.length === (canvas.outputs?.length ?? 0)
-      && outputs.every((output, index) => output.path === canvas.outputs?.[index]?.path)
+    const sameOutputs =
+      outputs.length === (canvas.outputs?.length ?? 0) && outputs.every((output, index) => output.path === canvas.outputs?.[index]?.path)
     if (canvas.jobState === job.state && sameOutputs && canvas.error?.message === job.error?.message) return canvas
     changed = true
     return { ...canvas, jobState: job.state, outputs, error: job.error }
@@ -255,7 +282,11 @@ export function newRegion(kind: ProjectLayerKind, bbox: [number, number, number,
 }
 
 /** A drawn rectangle becomes a region only when it is big enough to be intentional. */
-export function regionFromDrag(start: [number, number], end: [number, number], canvas: Pick<ProjectCanvas, 'width' | 'height'>): [number, number, number, number] | null {
+export function regionFromDrag(
+  start: [number, number],
+  end: [number, number],
+  canvas: Pick<ProjectCanvas, 'width' | 'height'>,
+): [number, number, number, number] | null {
   const box = clampBox(
     [Math.min(start[0], end[0]), Math.min(start[1], end[1]), Math.max(start[0], end[0]), Math.max(start[1], end[1])],
     canvas.width,
@@ -264,7 +295,12 @@ export function regionFromDrag(start: [number, number], end: [number, number], c
   return box[2] - box[0] >= MIN_REGION && box[3] - box[1] >= MIN_REGION ? box : null
 }
 
-export function moveBox(origin: [number, number, number, number], dx: number, dy: number, canvas: Pick<ProjectCanvas, 'width' | 'height'>): [number, number, number, number] {
+export function moveBox(
+  origin: [number, number, number, number],
+  dx: number,
+  dy: number,
+  canvas: Pick<ProjectCanvas, 'width' | 'height'>,
+): [number, number, number, number] {
   const [x1, y1, x2, y2] = origin
   const width = x2 - x1
   const height = y2 - y1
@@ -273,7 +309,12 @@ export function moveBox(origin: [number, number, number, number], dx: number, dy
   return [left, top, left + width, top + height]
 }
 
-export function resizeBox(origin: [number, number, number, number], dx: number, dy: number, canvas: Pick<ProjectCanvas, 'width' | 'height'>): [number, number, number, number] {
+export function resizeBox(
+  origin: [number, number, number, number],
+  dx: number,
+  dy: number,
+  canvas: Pick<ProjectCanvas, 'width' | 'height'>,
+): [number, number, number, number] {
   const [x1, y1, x2, y2] = origin
   return [
     x1,
@@ -295,7 +336,11 @@ export function reorderLayers(layers: readonly ProjectLayer[], fromId: string, t
 }
 
 /** Change the picture size, pull every region back inside it and keep a 高清修复 target in proportion. */
-export function resizeCanvas<T extends Pick<ProjectCanvas, 'width' | 'height' | 'layers'> & { sampling?: ProjectCanvas['sampling'] }>(canvas: T, width: number, height: number): T {
+export function resizeCanvas<T extends Pick<ProjectCanvas, 'width' | 'height' | 'layers'> & { sampling?: ProjectCanvas['sampling'] }>(
+  canvas: T,
+  width: number,
+  height: number,
+): T {
   const next = {
     ...canvas,
     width,
@@ -308,7 +353,10 @@ export function resizeCanvas<T extends Pick<ProjectCanvas, 'width' | 'height' | 
 
 /** After deleting a canvas: the remaining canvases without links to it, and how many links went. */
 export function removeCanvasFrom(canvases: readonly ProjectCanvas[], id: string): { canvases: ProjectCanvas[]; removedLinks: number } {
-  const { canvases: next, removed } = dropLinksTo(canvases.filter((canvas) => canvas.id !== id), id)
+  const { canvases: next, removed } = dropLinksTo(
+    canvases.filter((canvas) => canvas.id !== id),
+    id,
+  )
   return { canvases: next, removedLinks: removed }
 }
 
@@ -320,8 +368,10 @@ export function removeCanvasFrom(canvases: readonly ProjectCanvas[], id: string)
 export function matchAdapterPath(path: string, catalog: readonly AdapterEntry[]): AdapterEntry | undefined {
   const parts = path.split(/[\\/]/).filter(Boolean)
   const base = parts[parts.length - 1]
-  return catalog.find((entry) => entry.files.some((file) => file.split(/[\\/]/).pop() === base))
-    ?? catalog.find((entry) => parts.includes(entry.id))
+  return (
+    catalog.find((entry) => entry.files.some((file) => file.split(/[\\/]/).pop() === base)) ??
+    catalog.find((entry) => parts.includes(entry.id))
+  )
 }
 
 export interface ReuseResult {

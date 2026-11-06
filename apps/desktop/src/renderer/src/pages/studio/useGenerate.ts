@@ -19,9 +19,11 @@ export type SeedMode = 'auto' | 'new' | 'same'
 function isJobRecord(value: unknown): value is JobRecord {
   if (!value || typeof value !== 'object') return false
   const record = value as Record<string, unknown>
-  return typeof record['id'] === 'string'
-    && typeof record['state'] === 'string'
-    && ['queued', 'starting', 'running', 'succeeded', 'failed', 'canceled'].includes(record['state'])
+  return (
+    typeof record['id'] === 'string' &&
+    typeof record['state'] === 'string' &&
+    ['queued', 'starting', 'running', 'succeeded', 'failed', 'canceled'].includes(record['state'])
+  )
 }
 
 function errorMessage(body: unknown, status: number): string {
@@ -47,7 +49,10 @@ export function useGenerate(options: {
   controlAdapters?: readonly ControlAdapterEntry[]
   controlAdaptersLoaded?: boolean
   notify: (message: string, tone: 'info' | 'success' | 'error') => void
-}): { submitting: boolean; generate: (canvasId?: string, seed?: SeedMode) => Promise<{ queued: boolean; canvasId?: string; jobId?: string; error?: string }> } {
+}): {
+  submitting: boolean
+  generate: (canvasId?: string, seed?: SeedMode) => Promise<{ queued: boolean; canvasId?: string; jobId?: string; error?: string }>
+} {
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const backend = useRef<BackendInfo | null>(null)
@@ -90,7 +95,8 @@ export function useGenerate(options: {
     if (activeCanvasBranchIds(canvases, jobs).has(source.id)) return stop('这个画面正在生成，等它完成后再试')
 
     const choice = resolveBundle(catalog, source.modelBundleId, preferredBundleId)
-    if (!choice.bundle) return stop(choice.unavailable ? '这个画面用的模型已经不在模型库里，请换一个模型' : '还没有可用的模型，请先到模型页下载')
+    if (!choice.bundle)
+      return stop(choice.unavailable ? '这个画面用的模型已经不在模型库里，请换一个模型' : '还没有可用的模型，请先到模型页下载')
     if (!choice.installed) return stop(`「${choice.bundle.name}」还没有下载完`)
     const remoteModelPath = remoteHost?.modelPath?.trim()
     if (remoteHost && !remoteModelPath) return stop(`「${remoteHost.name}」还没有设置模型位置，请到 设置 › 设备与引擎 填写`)
@@ -114,9 +120,10 @@ export function useGenerate(options: {
     try {
       // An editable source remembers the seed this run used, so 种子 shows it
       // afterwards. A result card's parameters are frozen and stay as they were.
-      const withSeed = source.kind === 'layout'
-        ? canvases.map((canvas) => canvas.id === source.id ? { ...canvas, seed, modelBundleId: choice.bundle!.id } : canvas)
-        : canvases
+      const withSeed =
+        source.kind === 'layout'
+          ? canvases.map((canvas) => (canvas.id === source.id ? { ...canvas, seed, modelBundleId: choice.bundle!.id } : canvas))
+          : canvases
       const task = taskCanvasFor(runSource, withSeed)
       taskId = task.taskId
       board = task.canvases
@@ -163,9 +170,17 @@ export function useGenerate(options: {
       if (!response.ok) throw new Error(errorMessage(body, response.status))
       if (!isJobRecord(body)) throw new Error('生成服务返回了无法识别的任务')
       const observed = useApp.getState().jobs.find((job) => job.id === body.id)
-      board = project.canvasesRef.current.map((canvas) => canvas.id === taskId
-        ? { ...canvas, jobId: body.id, jobState: observed?.state ?? body.state, deviceId: body.deviceId ?? canvas.deviceId, deviceUuid: body.deviceUuid ?? canvas.deviceUuid }
-        : canvas)
+      board = project.canvasesRef.current.map((canvas) =>
+        canvas.id === taskId
+          ? {
+              ...canvas,
+              jobId: body.id,
+              jobState: observed?.state ?? body.state,
+              deviceId: body.deviceId ?? canvas.deviceId,
+              deviceUuid: body.deviceUuid ?? canvas.deviceUuid,
+            }
+          : canvas,
+      )
       project.setCanvases(board)
       const linked = await project.saveNow()
       if (!linked) notify('已开始生成，但项目没有保存成功；进度可以在「活动」里查看', 'error')
@@ -174,9 +189,9 @@ export function useGenerate(options: {
       const message = error instanceof Error ? error.message : String(error)
       if (taskId) {
         const id = taskId
-        project.setCanvases((previous) => previous.map((canvas) => canvas.id === id
-          ? { ...canvas, jobState: 'failed', error: { code: 'E_SUBMIT', message } }
-          : canvas))
+        project.setCanvases((previous) =>
+          previous.map((canvas) => (canvas.id === id ? { ...canvas, jobState: 'failed', error: { code: 'E_SUBMIT', message } } : canvas)),
+        )
         void project.saveNow()
       }
       return fail(message)

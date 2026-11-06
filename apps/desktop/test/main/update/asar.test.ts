@@ -12,11 +12,15 @@ import { fileListOf, makeZip, sha256, thisPlatform } from './helpers'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs/promises')>()
-  const guard = <T extends (...args: never[]) => unknown>(fn: T): T => ((...args: Parameters<T>) => {
-    if (args.some((arg) => typeof arg === 'string' && /\.asar(?:[\\/]|$)/.test(arg))) return Promise.reject(new Error(`Invalid package ${String(args[0])}`))
-    return fn(...args)
-  }) as T
-  const patched = Object.fromEntries(Object.entries(real).map(([name, value]) => [name, typeof value === 'function' ? guard(value as never) : value]))
+  const guard = <T extends (...args: never[]) => unknown>(fn: T): T =>
+    ((...args: Parameters<T>) => {
+      if (args.some((arg) => typeof arg === 'string' && /\.asar(?:[\\/]|$)/.test(arg)))
+        return Promise.reject(new Error(`Invalid package ${String(args[0])}`))
+      return fn(...args)
+    }) as T
+  const patched = Object.fromEntries(
+    Object.entries(real).map(([name, value]) => [name, typeof value === 'function' ? guard(value as never) : value]),
+  )
   return { ...patched, default: patched }
 })
 
@@ -37,11 +41,21 @@ describe('app folders with app.asar', () => {
     write('resources/app.asar', asar)
     write('resources/app.asar.unpacked/native.node', 'native')
     const list = fileListOf(source, '1.1.0', platform)
-    const items = list.entries.map((entry) => ({ name: entry.path, data: readFileSync(join(source, ...entry.path.split('/'))), mode: entry.type === 'file' ? entry.mode : undefined }))
+    const items = list.entries.map((entry) => ({
+      name: entry.path,
+      data: readFileSync(join(source, ...entry.path.split('/'))),
+      mode: entry.type === 'file' ? entry.mode : undefined,
+    }))
     const zip = join(temp(), 'full.zip')
     writeFileSync(zip, makeZip(items))
     const root = join(temp(), 'R')
-    const out = await materialize({ kind: 'full', zipPath: zip, fileList: list, partialDir: join(root, 'app-1.1.0.partial'), finalDir: join(root, 'app-1.1.0') })
+    const out = await materialize({
+      kind: 'full',
+      zipPath: zip,
+      fileList: list,
+      partialDir: join(root, 'app-1.1.0.partial'),
+      finalDir: join(root, 'app-1.1.0'),
+    })
     expect(readFileSync(join(out, 'resources', 'app.asar')).equals(asar)).toBe(true)
     await expect(verifyTree(out, list)).resolves.toBeUndefined()
 
@@ -50,12 +64,32 @@ describe('app folders with app.asar', () => {
     write('resources/app.asar', asar2)
     const next = { ...fileListOf(source, '1.2.0', platform) }
     const filesBytes = Buffer.from(JSON.stringify(next))
-    const manifest = { schema: 1, platform, from: '1.1.0', to: '1.2.0', files: { sha256: sha256(filesBytes), size: filesBytes.length }, changed: ['resources/app.asar'], removed: [] }
+    const manifest = {
+      schema: 1,
+      platform,
+      from: '1.1.0',
+      to: '1.2.0',
+      files: { sha256: sha256(filesBytes), size: filesBytes.length },
+      changed: ['resources/app.asar'],
+      removed: [],
+    }
     const delta = join(temp(), 'delta.zip')
-    writeFileSync(delta, makeZip([{ name: 'delta.json', data: JSON.stringify(manifest) }, { name: 'files/resources/app.asar', data: asar2 }]))
+    writeFileSync(
+      delta,
+      makeZip([
+        { name: 'delta.json', data: JSON.stringify(manifest) },
+        { name: 'files/resources/app.asar', data: asar2 },
+      ]),
+    )
     const out2 = await materialize({
-      kind: 'delta', zipPath: delta, fileList: next, baseDir: out, baseVersion: '1.1.0', filesSha256: manifest.files.sha256,
-      partialDir: join(root, 'app-1.2.0.partial'), finalDir: join(root, 'app-1.2.0'),
+      kind: 'delta',
+      zipPath: delta,
+      fileList: next,
+      baseDir: out,
+      baseVersion: '1.1.0',
+      filesSha256: manifest.files.sha256,
+      partialDir: join(root, 'app-1.2.0.partial'),
+      finalDir: join(root, 'app-1.2.0'),
     })
     expect(readFileSync(join(out2, 'resources', 'app.asar')).equals(asar2)).toBe(true)
     expect(readFileSync(join(out2, 'resources', 'app.asar.unpacked', 'native.node'), 'utf8')).toBe('native')

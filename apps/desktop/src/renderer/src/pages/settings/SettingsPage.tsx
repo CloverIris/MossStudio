@@ -44,7 +44,9 @@ export function SettingsPage(): React.JSX.Element {
     if (onSettings && (bare || !isCanonicalSectionPath(location.pathname))) void navigate(sectionPath(section), { replace: true })
   }, [onSettings, bare, location.pathname, section, navigate])
 
-  useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [section])
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: 0 })
+  }, [section])
 
   const Section = SECTION_COMPONENTS[section]
 
@@ -73,8 +75,13 @@ export function SettingsPage(): React.JSX.Element {
       <div ref={scroller} className="min-w-0 flex-1 overflow-y-auto">
         <div className="flex w-full max-w-[768px] flex-col gap-7 px-14 pb-16 pt-10">
           <h1 className="text-title font-semibold text-ink">{sectionLabel(section)}</h1>
-          {settings ? <Section /> : (
-            <div className="flex items-center gap-2 text-ui text-ink-2"><Spinner />正在读取设置…</div>
+          {settings ? (
+            <Section />
+          ) : (
+            <div className="flex items-center gap-2 text-ui text-ink-2">
+              <Spinner />
+              正在读取设置…
+            </div>
           )}
         </div>
       </div>

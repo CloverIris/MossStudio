@@ -48,10 +48,7 @@ export async function spawnLauncherRestart(launcher: string, pid: number, spawn:
  * with every value as an argument. Resolves (with the script path) once the helper runs; the
  * script deletes itself when it is done.
  */
-export async function spawnMacSwap(
-  args: MacSwapArgs,
-  deps: { spawn?: SpawnFn; tempDir?: string } = {},
-): Promise<string> {
+export async function spawnMacSwap(args: MacSwapArgs, deps: { spawn?: SpawnFn; tempDir?: string } = {}): Promise<string> {
   const file = join(deps.tempDir ?? tmpdir(), `mossstudio-swap-${randomBytes(6).toString('hex')}.sh`)
   await writeFile(file, MAC_SWAP_HELPER, { encoding: 'utf8', mode: 0o700, flag: 'wx' })
   await chmod(file, 0o700)

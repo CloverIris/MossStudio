@@ -15,9 +15,18 @@ export function useControlAdapters(): { adapters: ControlAdapterEntry[]; loaded:
   useEffect(() => {
     let alive = true
     call<ControlAdapterEntry[]>(Ipc.controlAdaptersList)
-      .then((list) => { if (alive) { setAdapters(Array.isArray(list) ? list : []); setLoaded(true) } })
-      .catch(() => { if (alive) setLoaded(true) })
-    return () => { alive = false }
+      .then((list) => {
+        if (alive) {
+          setAdapters(Array.isArray(list) ? list : [])
+          setLoaded(true)
+        }
+      })
+      .catch(() => {
+        if (alive) setLoaded(true)
+      })
+    return () => {
+      alive = false
+    }
   }, [stamp])
 
   return { adapters, loaded, refresh }

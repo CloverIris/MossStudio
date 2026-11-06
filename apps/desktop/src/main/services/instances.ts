@@ -58,11 +58,13 @@ function recordFile(id: string): string {
 }
 
 function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48) || 'instance'
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'instance'
+  )
 }
 
 async function readRecord(id: string): Promise<InstanceRecord | null> {
@@ -78,11 +80,7 @@ async function writeRecord(record: InstanceRecord): Promise<void> {
   await writeFile(recordFile(record.id), JSON.stringify(record, null, 2), 'utf8')
 }
 
-function channelFor(
-  branch: string,
-  commit: string,
-  mainSha: string | null,
-): InstanceInfo['channel'] {
+function channelFor(branch: string, commit: string, mainSha: string | null): InstanceInfo['channel'] {
   if (branch === 'main' && commit === mainSha) return 'stable'
   return branch === 'main' ? 'experimental' : 'custom'
 }
@@ -93,8 +91,7 @@ async function toInfo(record: InstanceRecord): Promise<InstanceInfo> {
   const dir = placement.kind === 'local' ? localDir : placement.root
   const runtime = await readRuntime(record.runtimeId)
   const mainSha = await branchStableSha(record.source)
-  const exists =
-    placement.kind === 'local' ? existsSync(localDir) && existsSync(join(localDir, 'pyproject.toml')) : true
+  const exists = placement.kind === 'local' ? existsSync(localDir) && existsSync(join(localDir, 'pyproject.toml')) : true
   const dirty = placement.kind === 'local' && exists ? await isDirty(localDir) : false
   return {
     id: record.id,
@@ -292,22 +289,14 @@ export async function deleteInstance(id: string, keepOutputs: boolean, settings?
     const runtime = await readRuntime(record.runtimeId)
     if (runtime) {
       runtime.instanceIds = runtime.instanceIds.filter((item) => item !== id)
-      await writeFile(
-        join(paths.runtime(runtime.id), 'runtime.json'),
-        JSON.stringify(runtime, null, 2),
-        'utf8',
-      )
+      await writeFile(join(paths.runtime(runtime.id), 'runtime.json'), JSON.stringify(runtime, null, 2), 'utf8')
     }
   }
   await rm(dir, { recursive: true, force: true })
   emit(Events.instancesChanged, { id })
 }
 
-export async function updateInstance(
-  id: string,
-  commit: string,
-  settings?: Settings,
-): Promise<InstanceInfo> {
+export async function updateInstance(id: string, commit: string, settings?: Settings): Promise<InstanceInfo> {
   const record = await readRecord(id)
   if (!record) throw new Error('实例不存在')
   let info: { sha: string; date: string; subject: string; author: string } | undefined

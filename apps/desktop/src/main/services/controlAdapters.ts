@@ -23,9 +23,15 @@ function registryFile(): string {
 function isEntry(value: unknown): value is ControlAdapterEntry {
   if (!value || typeof value !== 'object') return false
   const entry = value as Record<string, unknown>
-  return typeof entry['id'] === 'string' && typeof entry['path'] === 'string' && typeof entry['name'] === 'string' &&
-    typeof entry['sizeBytes'] === 'number' && Array.isArray(entry['controlKinds']) &&
-    (entry['controlKinds'] as unknown[]).every((kind) => typeof kind === 'string') && typeof entry['addedAt'] === 'string'
+  return (
+    typeof entry['id'] === 'string' &&
+    typeof entry['path'] === 'string' &&
+    typeof entry['name'] === 'string' &&
+    typeof entry['sizeBytes'] === 'number' &&
+    Array.isArray(entry['controlKinds']) &&
+    (entry['controlKinds'] as unknown[]).every((kind) => typeof kind === 'string') &&
+    typeof entry['addedAt'] === 'string'
+  )
 }
 
 export function listControlAdapters(): ControlAdapterEntry[] {

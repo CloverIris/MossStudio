@@ -87,7 +87,9 @@ export function FeaturedModel({
                 </Button>
               ) : null}
               {location.kind === 'local' ? (
-                <Button tone="secondary" size="md" onClick={() => navigate('/studio')}>去创作</Button>
+                <Button tone="secondary" size="md" onClick={() => navigate('/studio')}>
+                  去创作
+                </Button>
               ) : null}
             </>
           ) : view.action ? (
@@ -103,7 +105,9 @@ export function FeaturedModel({
           <StatusDot status={statusTone(view)} />
           <span className={cn('tabular text-control', view.status === 'failed' ? 'text-danger' : 'text-ink')}>{view.stateText}</span>
           {/* The state line already says the size when nothing is downloaded yet. */}
-          {view.stateText.includes(sizeText(view.totalBytes)) ? null : <span className="tabular ml-auto text-caption text-ink-2">{sizeText(view.totalBytes)}</span>}
+          {view.stateText.includes(sizeText(view.totalBytes)) ? null : (
+            <span className="tabular ml-auto text-caption text-ink-2">{sizeText(view.totalBytes)}</span>
+          )}
         </div>
         {progressing ? <ProgressBar value={view.percent} label={`${view.bundle.name} 下载进度`} /> : null}
       </div>
@@ -142,11 +146,20 @@ export function ModelList({
               </span>
             }
           >
-            <span className={cn('tabular text-caption', view.status === 'failed' ? 'text-danger' : view.status === 'ready' ? 'text-ok' : 'text-ink-2')}>
+            <span
+              className={cn(
+                'tabular text-caption',
+                view.status === 'failed' ? 'text-danger' : view.status === 'ready' ? 'text-ok' : 'text-ink-2',
+              )}
+            >
               {view.stateText}
             </span>
             {view.status === 'ready' ? (
-              deletable(view.bundle) ? <Button tone="ghost" onClick={() => onDelete(view.bundle)}>删除</Button> : null
+              deletable(view.bundle) ? (
+                <Button tone="ghost" onClick={() => onDelete(view.bundle)}>
+                  删除
+                </Button>
+              ) : null
             ) : view.action ? (
               <Button tone="secondary" disabled={busy !== null} onClick={() => void act(view)}>
                 {busy === view.bundle.id ? <Spinner /> : <ActionIcon action={view.action} />}
@@ -175,7 +188,9 @@ export function DeleteModelDialog({
   onClose: () => void
 }): React.JSX.Element {
   const toast = useToast()
-  const plan = bundle ? bundleDeletePlan(bundle, bundles, models, location.isModelInstalled, location.tasks) : { ids: [], bytes: 0, kept: [] }
+  const plan = bundle
+    ? bundleDeletePlan(bundle, bundles, models, location.isModelInstalled, location.tasks)
+    : { ids: [], bytes: 0, kept: [] }
   const local = bundle ? plan.ids.every((id) => models.find((model) => model.id === id)?.provider === 'local') : false
   const keptNames = plan.kept.map((id) => models.find((model) => model.id === id)?.name ?? id)
   const where = location.kind === 'remote' ? `${location.host?.name ?? '远程主机'} 上的` : ''

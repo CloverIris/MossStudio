@@ -177,15 +177,21 @@ describe('importImageFile / importImageBytes', () => {
 
   it('says what to do with a WebP Electron cannot decode', async () => {
     await expect(assets.importImageBytes('project-1', webpLossy(10, 10))).rejects.toMatchObject({
-      code: 'E_IMAGE_FORMAT', message: '无法读取这张 WebP 图片，请先转换为 PNG 或 JPEG 再导入',
+      code: 'E_IMAGE_FORMAT',
+      message: '无法读取这张 WebP 图片，请先转换为 PNG 或 JPEG 再导入',
     })
   })
 
   it('refuses other formats, empty or oversized files, giant pictures and bad project ids', async () => {
-    await expect(assets.importImageBytes('project-1', Buffer.from('GIF89a'))).rejects.toMatchObject({ code: 'E_IMAGE_FORMAT', message: '只能导入 PNG、JPEG 或 WebP 图片' })
+    await expect(assets.importImageBytes('project-1', Buffer.from('GIF89a'))).rejects.toMatchObject({
+      code: 'E_IMAGE_FORMAT',
+      message: '只能导入 PNG、JPEG 或 WebP 图片',
+    })
     await expect(assets.importImageBytes('project-1', Buffer.alloc(0))).rejects.toMatchObject({ code: 'E_IMAGE_FORMAT' })
     await expect(assets.importImageBytes('project-1', png(20000, 10))).rejects.toMatchObject({ code: 'E_IMAGE_TOO_LARGE' })
-    await expect(assets.importImageBytes('project-1', Buffer.alloc(assets.MAX_IMPORT_BYTES + 1))).rejects.toMatchObject({ code: 'E_IMAGE_TOO_LARGE' })
+    await expect(assets.importImageBytes('project-1', Buffer.alloc(assets.MAX_IMPORT_BYTES + 1))).rejects.toMatchObject({
+      code: 'E_IMAGE_TOO_LARGE',
+    })
     await expect(assets.importImageBytes('../escape', png(4, 4))).rejects.toMatchObject({ code: 'E_INPUT' })
     await expect(assets.importImageFile('project-1', join(pictures(), 'gone.png'))).rejects.toMatchObject({ code: 'E_INPUT_PATH' })
     mkdirSync(join(pictures(), 'folder'))
@@ -210,7 +216,10 @@ describe('saveMask', () => {
   })
 
   it('refuses anything that is not a PNG, and oversized masks', async () => {
-    await expect(assets.saveMask('project-1', 'c', jpeg(4, 4))).rejects.toMatchObject({ code: 'E_IMAGE_FORMAT', message: '遮罩必须是 PNG 图片' })
+    await expect(assets.saveMask('project-1', 'c', jpeg(4, 4))).rejects.toMatchObject({
+      code: 'E_IMAGE_FORMAT',
+      message: '遮罩必须是 PNG 图片',
+    })
     await expect(assets.saveMask('project-1', 'c', Buffer.alloc(0))).rejects.toMatchObject({ code: 'E_IMAGE_FORMAT' })
     const huge = Buffer.concat([png(4, 4), Buffer.alloc(assets.MAX_MASK_BYTES)])
     await expect(assets.saveMask('project-1', 'c', huge)).rejects.toMatchObject({ code: 'E_IMAGE_TOO_LARGE' })
@@ -220,7 +229,10 @@ describe('saveMask', () => {
 
 describe('mask cleanup', () => {
   const strokes = [png(4, 4), png(5, 5), png(6, 6), png(7, 7)]
-  const masks = (): string[] => readdirSync(assetsDir()).filter((name) => name.startsWith('mask-')).sort()
+  const masks = (): string[] =>
+    readdirSync(assetsDir())
+      .filter((name) => name.startsWith('mask-'))
+      .sort()
 
   async function project(canvases: Array<Partial<ProjectCanvas>>): Promise<void> {
     const { saveProject } = await import('@main/services/projects')
@@ -230,7 +242,10 @@ describe('mask cleanup', () => {
   beforeEach(async () => {
     // saveProject makes a new id unless the project exists: create project-1 first.
     mkdirSync(assetsDir(), { recursive: true })
-    writeFileSync(join(assetsDir(), '..', 'project.json'), JSON.stringify({ schemaVersion: 3, id: 'project-1', name: 'p', canvases: [], createdAt: '', updatedAt: '' }))
+    writeFileSync(
+      join(assetsDir(), '..', 'project.json'),
+      JSON.stringify({ schemaVersion: 3, id: 'project-1', name: 'p', canvases: [], createdAt: '', updatedAt: '' }),
+    )
   })
 
   it('keeps only the latest mask of a canvas painted four times', async () => {

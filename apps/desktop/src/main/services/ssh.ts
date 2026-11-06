@@ -29,23 +29,36 @@ function authArgs(host: TrainingHost): string[] {
   const method = host.authMethod ?? 'identityFile'
   if (method === 'password') {
     return [
-      '-o', 'BatchMode=no',
-      '-o', 'PreferredAuthentications=password',
-      '-o', 'PasswordAuthentication=yes',
-      '-o', 'PubkeyAuthentication=no',
-      '-o', 'KbdInteractiveAuthentication=no',
-      '-o', 'NumberOfPasswordPrompts=1',
+      '-o',
+      'BatchMode=no',
+      '-o',
+      'PreferredAuthentications=password',
+      '-o',
+      'PasswordAuthentication=yes',
+      '-o',
+      'PubkeyAuthentication=no',
+      '-o',
+      'KbdInteractiveAuthentication=no',
+      '-o',
+      'NumberOfPasswordPrompts=1',
     ]
   }
   if (method === 'none') {
     return [
-      '-o', 'BatchMode=yes',
-      '-o', 'PreferredAuthentications=none',
-      '-o', 'PubkeyAuthentication=no',
-      '-o', 'PasswordAuthentication=no',
-      '-o', 'KbdInteractiveAuthentication=no',
-      '-o', 'GSSAPIAuthentication=no',
-      '-o', 'HostbasedAuthentication=no',
+      '-o',
+      'BatchMode=yes',
+      '-o',
+      'PreferredAuthentications=none',
+      '-o',
+      'PubkeyAuthentication=no',
+      '-o',
+      'PasswordAuthentication=no',
+      '-o',
+      'KbdInteractiveAuthentication=no',
+      '-o',
+      'GSSAPIAuthentication=no',
+      '-o',
+      'HostbasedAuthentication=no',
     ]
   }
   const args = ['-o', 'BatchMode=yes', '-o', 'PreferredAuthentications=publickey']
@@ -104,13 +117,7 @@ export function sshArgs(host: TrainingHost, command: string): string[] {
 
 /** Quote/lifecycle wrapper for a long-running remote process started over SSH. */
 export function sshTunnelArgs(host: TrainingHost, localPort: number, remotePort: number): string[] {
-  return [
-    ...commonArgs(host),
-    '-N',
-    '-L',
-    `127.0.0.1:${localPort}:127.0.0.1:${remotePort}`,
-    targetOf(host),
-  ]
+  return [...commonArgs(host), '-N', '-L', `127.0.0.1:${localPort}:127.0.0.1:${remotePort}`, targetOf(host)]
 }
 
 export function sshCommand(): string {
@@ -123,12 +130,7 @@ export function scpCommand(): string {
 
 export function scpArgs(host: TrainingHost, remotePath: string, localPath: string): string[] {
   if (host.kind !== 'ssh' || !host.host || !host.user) throw new Error('不是有效的 SSH 训练主机')
-  const args = [
-    '-S', sshCommand(),
-    ...authArgs(host),
-    ...hostKeyArgs(),
-    '-o', 'ConnectTimeout=12',
-  ]
+  const args = ['-S', sshCommand(), ...authArgs(host), ...hostKeyArgs(), '-o', 'ConnectTimeout=12']
   if (host.port) args.push('-P', String(host.port))
   args.push(`${targetOf(host)}:${remotePath}`, sshLocalPath(localPath))
   return args
@@ -179,8 +181,7 @@ export async function remotePathExists(host: TrainingHost, path: string, timeout
 }
 
 export async function remoteFreePort(host: TrainingHost): Promise<number> {
-  const code =
-    'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'
+  const code = 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'
   const result = await sshExec(host, `python3 -c ${posixQuote(code)}`, 15_000)
   const port = Number.parseInt(result.stdout.trim().split('\n').pop() ?? '', 10)
   if (!Number.isInteger(port) || port < 1024 || port > 65535) {

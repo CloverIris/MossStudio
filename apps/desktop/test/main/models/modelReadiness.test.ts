@@ -58,15 +58,17 @@ describe('legacyModelReady', () => {
     expect(await legacyModelReady(tempDir())).toBe(true)
   })
 
-  it.each(['vae/config.json', 'tokenizer/tokenizer.json', 'scheduler/scheduler_config.json', 'transformer/diffusion_pytorch_model.safetensors'])(
-    'is not ready without %s',
-    async (missing) => {
-      const files = { ...fullModel }
-      delete files[missing]
-      put(tempDir(), files)
-      expect(await legacyModelReady(tempDir())).toBe(false)
-    },
-  )
+  it.each([
+    'vae/config.json',
+    'tokenizer/tokenizer.json',
+    'scheduler/scheduler_config.json',
+    'transformer/diffusion_pytorch_model.safetensors',
+  ])('is not ready without %s', async (missing) => {
+    const files = { ...fullModel }
+    delete files[missing]
+    put(tempDir(), files)
+    expect(await legacyModelReady(tempDir())).toBe(false)
+  })
 
   it('is not ready when the path cannot be resolved', async () => {
     expect(await legacyModelReady(join(tempDir(), 'missing'))).toBe(false)

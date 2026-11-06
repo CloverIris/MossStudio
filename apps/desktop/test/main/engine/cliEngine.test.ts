@@ -32,14 +32,19 @@ vi.mock('node:child_process', async (importOriginal) => {
   const execFile = ((command: string, args: string[], options: Record<string, unknown>, callback: (...result: unknown[]) => void) => {
     launches.push({ command, args })
     const behavior = `${command}.json`
-    return actual.execFile(process.execPath, [fake, ...args], {
-      ...options,
-      env: {
-        ...process.env,
-        FAKE_CLI_KIND: basename(command).includes('hip') ? 'hip' : 'vulkan',
-        ...(exists(behavior) ? { FAKE_CLI_BEHAVIOR: behavior } : {}),
+    return actual.execFile(
+      process.execPath,
+      [fake, ...args],
+      {
+        ...options,
+        env: {
+          ...process.env,
+          FAKE_CLI_KIND: basename(command).includes('hip') ? 'hip' : 'vulkan',
+          ...(exists(behavior) ? { FAKE_CLI_BEHAVIOR: behavior } : {}),
+        },
       },
-    }, callback)
+      callback,
+    )
   }) as unknown as typeof actual.execFile
   return { ...actual, spawn, execFile, default: { ...actual, spawn, execFile } }
 })
@@ -47,7 +52,16 @@ vi.mock('node:child_process', async (importOriginal) => {
 const dataRoot = useTempDataRoot()
 let cli: typeof import('@main/services/cliEngine')
 
-const params: JobParams = { prompt: 'a red apple', negativePrompt: 'blurry', width: 64, height: 48, steps: 4, cfg: 3, seed: 7, profile: 'base' }
+const params: JobParams = {
+  prompt: 'a red apple',
+  negativePrompt: 'blurry',
+  width: 64,
+  height: 48,
+  steps: 4,
+  cfg: 3,
+  seed: 7,
+  profile: 'base',
+}
 
 interface Behavior {
   stepMs?: number
@@ -85,23 +99,41 @@ interface Run {
   output: string
 }
 
-function run(id: string, options: { kind?: CliEngineKind; behavior?: Behavior; params?: Partial<JobParams>; deviceUuid?: string; cliDeviceIndex?: number; model?: string; expectedDevice?: { name: string; gfxTarget?: string } } = {}): Run {
+function run(
+  id: string,
+  options: {
+    kind?: CliEngineKind
+    behavior?: Behavior
+    params?: Partial<JobParams>
+    deviceUuid?: string
+    cliDeviceIndex?: number
+    model?: string
+    expectedDevice?: { name: string; gfxTarget?: string }
+  } = {},
+): Run {
   const kind = options.kind ?? 'vulkan'
   const events: Array<Record<string, unknown>> = []
   const stderr: string[] = []
   let resolveDone: (code: number) => void = () => undefined
-  const done = new Promise<number>((resolve) => { resolveDone = resolve })
+  const done = new Promise<number>((resolve) => {
+    resolveDone = resolve
+  })
   const output = join(dataRoot(), 'outputs', `${id}-1.png`)
-  void cli.runCliJob({ id } as JobRecord, { ...params, ...options.params }, {
-    kind,
-    binary: binary(kind, options.behavior),
-    version: '2.2.0',
-    model: options.model ?? bundle(),
-    output,
-    deviceUuid: options.deviceUuid ?? 'vk-1002-744c-0',
-    cliDeviceIndex: options.cliDeviceIndex,
-    ...(options.expectedDevice ? { expectedDevice: options.expectedDevice } : {}),
-  }, { event: (payload) => events.push(payload), stderr: (line) => stderr.push(line), done: resolveDone })
+  void cli.runCliJob(
+    { id } as JobRecord,
+    { ...params, ...options.params },
+    {
+      kind,
+      binary: binary(kind, options.behavior),
+      version: '2.2.0',
+      model: options.model ?? bundle(),
+      output,
+      deviceUuid: options.deviceUuid ?? 'vk-1002-744c-0',
+      cliDeviceIndex: options.cliDeviceIndex,
+      ...(options.expectedDevice ? { expectedDevice: options.expectedDevice } : {}),
+    },
+    { event: (payload) => events.push(payload), stderr: (line) => stderr.push(line), done: resolveDone },
+  )
   return { events, stderr, done, output }
 }
 
@@ -130,8 +162,26 @@ describe('runCliJob', () => {
     const r = run('job-1', { cliDeviceIndex: 0 })
     expect(await r.done).toBe(0)
     expect(launches[0]!.args).toEqual([
-      '--model', join(dataRoot(), 'bundle'), '--prompt', 'a red apple', '--negative', 'blurry',
-      '--width', '64', '--height', '48', '--steps', '4', '--cfg', '3', '--seed', '7', '--device', '0', '-o', r.output,
+      '--model',
+      join(dataRoot(), 'bundle'),
+      '--prompt',
+      'a red apple',
+      '--negative',
+      'blurry',
+      '--width',
+      '64',
+      '--height',
+      '48',
+      '--steps',
+      '4',
+      '--cfg',
+      '3',
+      '--seed',
+      '7',
+      '--device',
+      '0',
+      '-o',
+      r.output,
     ])
     expect(r.events.slice(0, 3)).toEqual([
       { type: 'hello', protocol: 1, runner_version: 'moss-infer-vulkan-2.2.0' },
@@ -160,7 +210,14 @@ describe('runCliJob', () => {
     expect(r.stderr.at(-1)).toMatch(/^done: seed 7; text encoder 0\.4 s, DiT load 1\.2 s \(42 of 42 blocks on the device\)/)
     expect(readFileSync(r.output).subarray(1, 4).toString()).toBe('PNG')
     expect(JSON.parse(readFileSync(r.output.replace(/\.png$/, '.json'), 'utf8'))).toEqual({
-      prompt: 'a red apple', negative_prompt: 'blurry', seed: 7, width: 64, height: 48, engine: 'mossinfer', backend: 'vulkan', tier: 'reference',
+      prompt: 'a red apple',
+      negative_prompt: 'blurry',
+      seed: 7,
+      width: 64,
+      height: 48,
+      engine: 'mossinfer',
+      backend: 'vulkan',
+      tier: 'reference',
     })
   })
 
@@ -186,9 +243,16 @@ describe('runCliJob', () => {
   })
 
   it('refuses inputs the CLI cannot do before starting anything', async () => {
-    const r = run('job-lora', { params: { adapters: [{ path: '/l.safetensors', strength: 1 }], initImage: { path: '/i.png', strength: 0.5 } } })
+    const r = run('job-lora', {
+      params: { adapters: [{ path: '/l.safetensors', strength: 1 }], initImage: { path: '/i.png', strength: 0.5 } },
+    })
     expect(await r.done).toBe(1)
-    expect(errorOf(r)).toEqual({ type: 'error', code: 'E_NOT_SUPPORTED', message: '兼容模式引擎只能文生图，不支持LoRA、起始图，请移除后再生成', fatal: true })
+    expect(errorOf(r)).toEqual({
+      type: 'error',
+      code: 'E_NOT_SUPPORTED',
+      message: '兼容模式引擎只能文生图，不支持LoRA、起始图，请移除后再生成',
+      fatal: true,
+    })
     expect(launches).toHaveLength(0)
   })
 
@@ -208,11 +272,28 @@ describe('runCliJob', () => {
   it('says when the program is not installed', async () => {
     const events: Array<Record<string, unknown>> = []
     let code = -99
-    await cli.runCliJob({ id: 'job-missing' } as JobRecord, params, {
-      kind: 'vulkan', binary: join(dataRoot(), 'nowhere', 'moss-infer-vulkan'), model: bundle(), output: join(dataRoot(), 'o.png'), deviceUuid: 'vk-a',
-    }, { event: (payload) => events.push(payload), stderr: () => undefined, done: (exit) => { code = exit } })
+    await cli.runCliJob(
+      { id: 'job-missing' } as JobRecord,
+      params,
+      {
+        kind: 'vulkan',
+        binary: join(dataRoot(), 'nowhere', 'moss-infer-vulkan'),
+        model: bundle(),
+        output: join(dataRoot(), 'o.png'),
+        deviceUuid: 'vk-a',
+      },
+      {
+        event: (payload) => events.push(payload),
+        stderr: () => undefined,
+        done: (exit) => {
+          code = exit
+        },
+      },
+    )
     expect(code).toBe(1)
-    expect(events).toEqual([{ type: 'error', code: 'E_ENGINE', message: '找不到 moss-infer-vulkan，请到 设置 › 设备 重新安装引擎', fatal: true }])
+    expect(events).toEqual([
+      { type: 'error', code: 'E_ENGINE', message: '找不到 moss-infer-vulkan，请到 设置 › 设备 重新安装引擎', fatal: true },
+    ])
   })
 })
 
@@ -221,13 +302,22 @@ describe('runCliJob: failures', () => {
     const r = run('job-size', { params: { width: 100 } })
     expect(await r.done).toBe(2)
     expect(errorOf(r)).toEqual({
-      type: 'error', code: 'E_NOT_SUPPORTED', message: '引擎不接受这次的设置：宽和高必须是 16 的倍数（Height and width must be positive multiples of 16.）', fatal: true,
+      type: 'error',
+      code: 'E_NOT_SUPPORTED',
+      message: '引擎不接受这次的设置：宽和高必须是 16 的倍数（Height and width must be positive multiples of 16.）',
+      fatal: true,
     })
     expect(r.stderr.some((line) => line.startsWith('usage: moss-infer-vulkan'))).toBe(true)
   })
 
   it('a run the device cannot hold is E_OOM', async () => {
-    const r = run('job-oom', { behavior: { failAt: 'start', failMessage: 'the DiT at 2048x2048 needs at least 9000 MiB of device memory (its activations, every block streamed); 4000 MiB are free' } })
+    const r = run('job-oom', {
+      behavior: {
+        failAt: 'start',
+        failMessage:
+          'the DiT at 2048x2048 needs at least 9000 MiB of device memory (its activations, every block streamed); 4000 MiB are free',
+      },
+    })
     expect(await r.done).toBe(1)
     expect(errorOf(r)).toMatchObject({ code: 'E_OOM', message: expect.stringContaining('9000 MiB of device memory') })
   })
@@ -334,7 +424,10 @@ describe('hipDeviceIndex', () => {
     expect(await cli.hipDeviceIndex(hip, { gfxTarget: 'gfx1100' }, 1)).toEqual({ ok: true, index: 2 })
     expect(lists()).toBe(1)
     // Another LD_LIBRARY_PATH can load another ROCm: asked again.
-    expect(await cli.hipDeviceIndex(hip, { gfxTarget: 'gfx1100' }, 0, { LD_LIBRARY_PATH: '/opt/rocm-7.1/lib' })).toEqual({ ok: true, index: 1 })
+    expect(await cli.hipDeviceIndex(hip, { gfxTarget: 'gfx1100' }, 0, { LD_LIBRARY_PATH: '/opt/rocm-7.1/lib' })).toEqual({
+      ok: true,
+      index: 1,
+    })
     expect(lists()).toBe(2)
     expect(await cli.hipDeviceIndex(hip, {}, 0)).toEqual({ ok: true })
   })
@@ -342,7 +435,8 @@ describe('hipDeviceIndex', () => {
   it('never puts a card the list does not have onto another one', async () => {
     const hip = binary('hip', { devices })
     expect(await cli.hipDeviceIndex(hip, { name: 'AMD Radeon RX 7900 XTX', gfxTarget: 'gfx1100' }, 2)).toEqual({
-      ok: false, message: 'moss-infer-hip 没有找到这张显卡（「AMD Radeon RX 7900 XTX」，gfx1100，同型号第 3 张），请到 设置 › 设备 重新检测显卡后再试',
+      ok: false,
+      message: 'moss-infer-hip 没有找到这张显卡（「AMD Radeon RX 7900 XTX」，gfx1100，同型号第 3 张），请到 设置 › 设备 重新检测显卡后再试',
     })
     expect(await cli.hipDeviceIndex(hip, { gfxTarget: 'gfx1030' }, 0)).toMatchObject({ ok: false })
   })
@@ -350,7 +444,8 @@ describe('hipDeviceIndex', () => {
   it('a failed list is an error with the program’s message and is not remembered', async () => {
     const hip = binary('hip', { listFail: 'hip: hipGetDeviceCount: no ROCm-capable device is detected' })
     expect(await cli.hipDeviceIndex(hip, { gfxTarget: 'gfx1100' }, 0)).toEqual({
-      ok: false, message: '无法读取 moss-infer-hip 的显卡列表：moss-infer-hip: hip: hipGetDeviceCount: no ROCm-capable device is detected',
+      ok: false,
+      message: '无法读取 moss-infer-hip 的显卡列表：moss-infer-hip: hip: hipGetDeviceCount: no ROCm-capable device is detected',
     })
     writeFileSync(`${hip}.json`, JSON.stringify({ devices }))
     expect(await cli.hipDeviceIndex(hip, { gfxTarget: 'gfx1100' }, 0)).toEqual({ ok: true, index: 1 })
@@ -367,20 +462,30 @@ describe('runCliJob: the device the program chose', () => {
 
   it('stops before anything loads when the program chose another card, and says which', async () => {
     const r = run('job-other', {
-      behavior: { stepMs: 300, devices: [{ name: 'Intel(R) UHD Graphics 770', vendor: 0x8086, device: 0xa780, discrete: false, kernels: 'plain' }] },
+      behavior: {
+        stepMs: 300,
+        devices: [{ name: 'Intel(R) UHD Graphics 770', vendor: 0x8086, device: 0xa780, discrete: false, kernels: 'plain' }],
+      },
       expectedDevice: { name: 'Intel(R) Arc(TM) A770 Graphics' },
     })
     expect(await r.done).toBe(1)
     expect(errorOf(r)).toEqual({
-      type: 'error', code: 'E_DEVICE', fatal: true,
-      message: 'moss-infer-vulkan 选中的是第 0 号显卡「Intel(R) UHD Graphics 770」，不是这个任务分配的「Intel(R) Arc(TM) A770 Graphics」，已在加载模型前停止。请到 设置 › 设备 重新检测显卡后再试',
+      type: 'error',
+      code: 'E_DEVICE',
+      fatal: true,
+      message:
+        'moss-infer-vulkan 选中的是第 0 号显卡「Intel(R) UHD Graphics 770」，不是这个任务分配的「Intel(R) Arc(TM) A770 Graphics」，已在加载模型前停止。请到 设置 › 设备 重新检测显卡后再试',
     })
     expect(r.events.some((event) => event['type'] === 'progress' && Number(event['current']) > 0)).toBe(false)
     expect(existsSync(r.output)).toBe(false)
   })
 
   it('checks the gfx target moss-infer-hip prints', async () => {
-    const r = run('job-gfx', { kind: 'hip', behavior: { stepMs: 300 }, expectedDevice: { name: 'AMD Radeon RX 7900 XTX', gfxTarget: 'gfx1201' } })
+    const r = run('job-gfx', {
+      kind: 'hip',
+      behavior: { stepMs: 300 },
+      expectedDevice: { name: 'AMD Radeon RX 7900 XTX', gfxTarget: 'gfx1201' },
+    })
     expect(await r.done).toBe(1)
     expect(errorOf(r)).toMatchObject({ code: 'E_DEVICE', message: expect.stringContaining('「AMD Radeon RX 7900 XTX（gfx1100）」') })
   })
@@ -390,16 +495,29 @@ describe('runCliJob: a cancel that arrives as the program finishes', () => {
   it('a written picture is a success with its sidecar, even when the cancel then stops the program', async () => {
     const events: Array<Record<string, unknown>> = []
     let resolveDone: (code: number) => void = () => undefined
-    const done = new Promise<number>((resolve) => { resolveDone = resolve })
-    const output = join(dataRoot(), 'outputs', 'job-late-1.png')
-    await cli.runCliJob({ id: 'job-late' } as JobRecord, params, {
-      kind: 'vulkan', binary: binary('vulkan'), model: bundle(), output, deviceUuid: 'vk-a',
-    }, {
-      event: (payload) => events.push(payload),
-      // The summary line comes after the PNG is written; cancel right there, before the program exits.
-      stderr: (line) => { if (line.startsWith('done: ')) cli.cancelCliJob('job-late') },
-      done: resolveDone,
+    const done = new Promise<number>((resolve) => {
+      resolveDone = resolve
     })
+    const output = join(dataRoot(), 'outputs', 'job-late-1.png')
+    await cli.runCliJob(
+      { id: 'job-late' } as JobRecord,
+      params,
+      {
+        kind: 'vulkan',
+        binary: binary('vulkan'),
+        model: bundle(),
+        output,
+        deviceUuid: 'vk-a',
+      },
+      {
+        event: (payload) => events.push(payload),
+        // The summary line comes after the PNG is written; cancel right there, before the program exits.
+        stderr: (line) => {
+          if (line.startsWith('done: ')) cli.cancelCliJob('job-late')
+        },
+        done: resolveDone,
+      },
+    )
     expect(await done).toBe(0)
     expect(events.map((event) => event['type'])).toContain('result')
     expect(events.map((event) => event['type'])).not.toContain('canceled')
@@ -458,10 +576,12 @@ describe('cliBundleDtypeProblem', () => {
   })
 
   it('refuses fp16 or quantized weights, naming the part and the engine', async () => {
-    expect(await cli.cliBundleDtypeProblem('vulkan', folder(['F16', 'F32'], ['BF16'])))
-      .toBe('这个模型的DiT是 F16/F32，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型')
-    expect(await cli.cliBundleDtypeProblem('hip', folder(['BF16'], ['I8', 'BF16'])))
-      .toBe('这个模型的文本编码器是 I8/BF16，AMD 原生引擎只能用 bf16 的 MOSS-Image，请换一个模型')
+    expect(await cli.cliBundleDtypeProblem('vulkan', folder(['F16', 'F32'], ['BF16']))).toBe(
+      '这个模型的DiT是 F16/F32，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型',
+    )
+    expect(await cli.cliBundleDtypeProblem('hip', folder(['BF16'], ['I8', 'BF16']))).toBe(
+      '这个模型的文本编码器是 I8/BF16，AMD 原生引擎只能用 bf16 的 MOSS-Image，请换一个模型',
+    )
   })
 
   it('refuses what it cannot read', async () => {
@@ -469,6 +589,8 @@ describe('cliBundleDtypeProblem', () => {
     mkdirSync(join(root, 'transformer'), { recursive: true })
     writeFileSync(join(root, 'transformer', 'a.safetensors'), 'xx')
     expect(await cli.cliBundleDtypeProblem('vulkan', root)).toMatch(/^读不了 transformer\/a\.safetensors：/)
-    expect(await cli.cliBundleDtypeProblem('vulkan', join(dataRoot(), 'nothing'))).toBe('模型包缺少 transformer 的权重文件，请在模型库重新下载')
+    expect(await cli.cliBundleDtypeProblem('vulkan', join(dataRoot(), 'nothing'))).toBe(
+      '模型包缺少 transformer 的权重文件，请在模型库重新下载',
+    )
   })
 })

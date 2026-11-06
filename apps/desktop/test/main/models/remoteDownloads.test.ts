@@ -25,36 +25,85 @@ let remote: Remote
 let emitted: Array<{ channel: string; payload: unknown }>
 
 const host: TrainingHost = {
-  id: 'gpu', name: 'GPU box', kind: 'ssh', host: 'h', user: 'u', trainerRoot: '~/t', status: 'ok',
-  hfEndpoint: 'https://hf.example/', downloadProxy: 'http://user:pw@proxy.example:3128',
+  id: 'gpu',
+  name: 'GPU box',
+  kind: 'ssh',
+  host: 'h',
+  user: 'u',
+  trainerRoot: '~/t',
+  status: 'ok',
+  hfEndpoint: 'https://hf.example/',
+  downloadProxy: 'http://user:pw@proxy.example:3128',
 }
 const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
 const b64 = (value: unknown): string => Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64')
-const ok = (stdout = ''): { code: number; stdout: string; stderr: string; timedOut: boolean } => ({ code: 0, stdout, stderr: '', timedOut: false })
+const ok = (stdout = ''): { code: number; stdout: string; stderr: string; timedOut: boolean } => ({
+  code: 0,
+  stdout,
+  stderr: '',
+  timedOut: false,
+})
 
 function task(id: string, patch: Partial<DownloadTask> = {}): DownloadTask {
   return {
-    id, kind: 'model', targetId: 'm', label: 'Model', state: 'queued', filesTotal: 0, filesDone: 0,
-    bytes: 0, totalBytes: 100, speedBps: 0, updatedAt: '2026-01-01T00:00:00.000Z', ...patch,
+    id,
+    kind: 'model',
+    targetId: 'm',
+    label: 'Model',
+    state: 'queued',
+    filesTotal: 0,
+    filesDone: 0,
+    bytes: 0,
+    totalBytes: 100,
+    speedBps: 0,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...patch,
   }
 }
 
 const manifest = {
-  sha: 'a'.repeat(40), path: '/home/u/m/hf/hub/models--org--m/snapshots/' + 'a'.repeat(40), cache: '/home/u/m/hf/hub/models--org--m',
-  files: [{ path: 'w.safetensors', size: 60, oid: null }, { path: 'config.json', size: 40, oid: null }],
+  sha: 'a'.repeat(40),
+  path: '/home/u/m/hf/hub/models--org--m/snapshots/' + 'a'.repeat(40),
+  cache: '/home/u/m/hf/hub/models--org--m',
+  files: [
+    { path: 'w.safetensors', size: 60, oid: null },
+    { path: 'config.json', size: 40, oid: null },
+  ],
 }
 
 /** One `NATIVE` row as the remote worker's `list` prints it. */
 function native(
   t: DownloadTask,
-  state: { generation?: number; desired?: string; stateGeneration?: number; state?: string; bytes?: number; speed?: number; filesDone?: number; current?: string; error?: string; timestamp?: number; manifest?: boolean } = {},
+  state: {
+    generation?: number
+    desired?: string
+    stateGeneration?: number
+    state?: string
+    bytes?: number
+    speed?: number
+    filesDone?: number
+    current?: string
+    error?: string
+    timestamp?: number
+    manifest?: boolean
+  } = {},
 ): string {
   const meta = { task: t, repo: 'org/m', revision: 'main', modelsRoot: '~/m', ...(state.manifest === false ? {} : { manifest }) }
   const generation = state.generation ?? 1
   return [
-    'NATIVE', `task-${digest(t.id)}`, b64(meta), String(generation), state.desired ?? 'running',
-    String(state.stateGeneration ?? generation), state.state ?? 'running', String(state.bytes ?? 50), String(state.speed ?? 10),
-    String(state.filesDone ?? 1), state.current ? b64(state.current) : '-', state.error ? b64(state.error) : '-', String(state.timestamp ?? 1_767_225_600),
+    'NATIVE',
+    `task-${digest(t.id)}`,
+    b64(meta),
+    String(generation),
+    state.desired ?? 'running',
+    String(state.stateGeneration ?? generation),
+    state.state ?? 'running',
+    String(state.bytes ?? 50),
+    String(state.speed ?? 10),
+    String(state.filesDone ?? 1),
+    state.current ? b64(state.current) : '-',
+    state.error ? b64(state.error) : '-',
+    String(state.timestamp ?? 1_767_225_600),
   ].join('\t')
 }
 
@@ -79,16 +128,16 @@ afterEach(async () => {
 /** Deploy succeeds, then the worker `list` prints `rows`. */
 function workerPrints(rows: string[]): void {
   sshExec.mockImplementation(async (_host: unknown, _command: string, _timeout: number, script: string) =>
-    ok(script.includes(' list\n') ? `${rows.join('\n')}\n` : ''))
+    ok(script.includes(' list\n') ? `${rows.join('\n')}\n` : ''),
+  )
 }
 
 describe('listRemoteDownloads', () => {
   it('restores the last snapshot, marks active tasks as reconnecting and hides canceled ones', () => {
-    writeFileSync(join(dataRoot(), 'remote-downloads.json'), JSON.stringify([
-      task('r1', { state: 'running', speedBps: 99 }),
-      task('r2', { state: 'done' }),
-      task('r3', { state: 'canceled' }),
-    ]))
+    writeFileSync(
+      join(dataRoot(), 'remote-downloads.json'),
+      JSON.stringify([task('r1', { state: 'running', speedBps: 99 }), task('r2', { state: 'done' }), task('r3', { state: 'canceled' })]),
+    )
     const list = remote.listRemoteDownloads()
     expect(list.map((t) => [t.id, t.state, t.speedBps, Boolean(t.connectionError)])).toEqual([
       ['r1', 'running', 0, true],
@@ -116,12 +165,25 @@ describe('refreshRemoteDownloads', () => {
       `NATIVE\ttask-${'0'.repeat(64)}\t${b64({ task: task('other') })}`,
     ])
     const tasks = await remote.refreshRemoteDownloads('gpu')
-    expect(tasks).toEqual([{
-      ...task(id), hostId: 'gpu', hostName: 'GPU box', connectionError: undefined,
-      state: 'running', bytes: 55, speedBps: 12, filesDone: 1, currentFile: 'w.safetensors', error: undefined,
-      remotePath: manifest.path, revision: manifest.sha, totalBytes: 100, filesTotal: 2,
-      updatedAt: new Date(1_767_225_600_000).toISOString(),
-    }])
+    expect(tasks).toEqual([
+      {
+        ...task(id),
+        hostId: 'gpu',
+        hostName: 'GPU box',
+        connectionError: undefined,
+        state: 'running',
+        bytes: 55,
+        speedBps: 12,
+        filesDone: 1,
+        currentFile: 'w.safetensors',
+        error: undefined,
+        remotePath: manifest.path,
+        revision: manifest.sha,
+        totalBytes: 100,
+        filesTotal: 2,
+        updatedAt: new Date(1_767_225_600_000).toISOString(),
+      },
+    ])
     expect(JSON.parse(readFileSync(join(dataRoot(), 'remote-downloads.json'), 'utf8'))).toHaveLength(1)
     expect(emitted.filter((e) => e.channel === Events.download)).toHaveLength(1)
 
@@ -134,7 +196,14 @@ describe('refreshRemoteDownloads', () => {
     const id = 'remote:gpu:m:stale'
     workerPrints([native(task(id, { bytes: 7, filesDone: 0 }), { generation: 3, stateGeneration: 2, state: 'running', bytes: 99 })])
     const [parsed] = await remote.refreshRemoteDownloads('gpu')
-    expect(parsed).toMatchObject({ state: 'queued', bytes: 7, speedBps: 0, filesDone: 0, currentFile: undefined, updatedAt: '2026-01-01T00:00:00.000Z' })
+    expect(parsed).toMatchObject({
+      state: 'queued',
+      bytes: 7,
+      speedBps: 0,
+      filesDone: 0,
+      currentFile: undefined,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
   })
 
   it('a paused or canceled desire wins over the worker state and zeroes the speed', async () => {
@@ -144,7 +213,11 @@ describe('refreshRemoteDownloads', () => {
       native(task('remote:gpu:c:1'), { state: 'verifying', speed: 50 }),
     ])
     const tasks = await remote.refreshRemoteDownloads('gpu')
-    expect(tasks.map((t) => [t.state, t.speedBps])).toEqual([['paused', 0], ['canceled', 0], ['verifying', 0]])
+    expect(tasks.map((t) => [t.state, t.speedBps])).toEqual([
+      ['paused', 0],
+      ['canceled', 0],
+      ['verifying', 0],
+    ])
     expect(remote.listRemoteDownloads().map((t) => t.id)).toEqual(['remote:gpu:a:1', 'remote:gpu:c:1'])
   })
 
@@ -152,7 +225,14 @@ describe('refreshRemoteDownloads', () => {
     const id = 'remote:gpu:legacy:1'
     const request = { task: task(id), repo: 'org/m', revision: 'main', modelsRoot: '~/m' }
     const row = (control: unknown, state = 'running'): string =>
-      ['LEGACY', `task-${digest(id)}`, b64({ ...task(id, { state: state as DownloadTask['state'], speedBps: 5 }), generation: 1 }), b64(request), '-', control === null ? '-' : b64(control)].join('\t')
+      [
+        'LEGACY',
+        `task-${digest(id)}`,
+        b64({ ...task(id, { state: state as DownloadTask['state'], speedBps: 5 }), generation: 1 }),
+        b64(request),
+        '-',
+        control === null ? '-' : b64(control),
+      ].join('\t')
     workerPrints([row({ desired: 'paused', generation: 1 })])
     expect((await remote.refreshRemoteDownloads('gpu'))[0]).toMatchObject({ state: 'paused', speedBps: 0 })
     workerPrints([row({ desired: 'running', generation: 1 }, 'done')])
@@ -263,7 +343,12 @@ describe('startRemoteDownload', () => {
     sshExec.mockImplementation(async (_h: unknown, _c: string, _t: number, script: string) => {
       const match = script.match(/shell-meta\.json"[^\n]*\n/)
       if (script.includes('shell-control') && match) {
-        const meta = JSON.parse(Buffer.from(script.match(/printf '%s' '([A-Za-z0-9+/=]+)' \| base64 -d > "\$directory\/shell-meta\.json/)![1]!, 'base64').toString())
+        const meta = JSON.parse(
+          Buffer.from(
+            script.match(/printf '%s' '([A-Za-z0-9+/=]+)' \| base64 -d > "\$directory\/shell-meta\.json/)![1]!,
+            'base64',
+          ).toString(),
+        )
         rows = [native(meta.task as DownloadTask, { manifest: false, state: 'queued', generation: 1, stateGeneration: 0 })]
       }
       return ok(script.includes(' list\n') ? `${rows.join('\n')}\n` : '')

@@ -69,10 +69,7 @@ export interface AdapterStatus {
 }
 
 /** Join a Canvas' selection with the library so the UI can flag missing files. */
-export function adapterStatuses(
-  adapters: readonly CanvasAdapter[],
-  catalog: readonly AdapterEntry[] | null | undefined,
-): AdapterStatus[] {
+export function adapterStatuses(adapters: readonly CanvasAdapter[], catalog: readonly AdapterEntry[] | null | undefined): AdapterStatus[] {
   const byId = new Map((catalog ?? []).map((entry) => [entry.id, entry]))
   return adapters.map((adapter) => {
     const entry = byId.get(adapter.id)
@@ -96,7 +93,11 @@ export function isSelectableAdapter(entry: AdapterEntry): boolean {
 
 /** `1` instead of `1.00`, `0.85` instead of `0.8500000000000001`. */
 export function formatAdapterStrength(value: number): string {
-  return normalizeStrength(value).toFixed(2).replace(/\.?0+$/, '') || '0'
+  return (
+    normalizeStrength(value)
+      .toFixed(2)
+      .replace(/\.?0+$/, '') || '0'
+  )
 }
 
 /** One resolved LoRA, ready for `moss-server`'s `generate.loras`. */
@@ -126,10 +127,7 @@ export interface AdapterResolver {
  * while the Canvas still shows it selected — the kind of silent quality
  * regression that is very hard to spot in the output.
  */
-export async function resolveAdapterSelection(
-  adapters: readonly CanvasAdapter[],
-  resolver: AdapterResolver,
-): Promise<ResolvedLora[]> {
+export async function resolveAdapterSelection(adapters: readonly CanvasAdapter[], resolver: AdapterResolver): Promise<ResolvedLora[]> {
   const resolved: ResolvedLora[] = []
   const missing: string[] = []
   for (const adapter of adapters) {

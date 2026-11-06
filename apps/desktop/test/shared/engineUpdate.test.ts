@@ -7,21 +7,32 @@ const release = (tag: string): MossInferRelease => ({ tag, name: tag, publishedA
 describe('parseEngineStamp', () => {
   it('reads a stable system-CUDA release folder', () => {
     expect(parseEngineStamp('stable-v1.0.3-cu13-system-cuda')).toEqual({
-      channel: 'stable', tag: 'v1.0.3', packageId: 'cu13-system-cuda',
+      channel: 'stable',
+      tag: 'v1.0.3',
+      packageId: 'cu13-system-cuda',
       package: { kind: 'cuda', flavour: 'cu13', arch: 'standard', runtime: 'system-cuda' },
     })
   })
 
   it('reads SM75 and bundled builds and CI artifacts', () => {
-    expect(parseEngineStamp('stable-v2.0.0-cu13-sm75')).toMatchObject({ packageId: 'cu13-sm75', package: { arch: 'sm75', runtime: 'bundled' } })
-    expect(parseEngineStamp('dev-run42-abcdef12-cu12-system-cuda')).toMatchObject({ channel: 'dev', tag: 'run42-abcdef12', package: { flavour: 'cu12' } })
+    expect(parseEngineStamp('stable-v2.0.0-cu13-sm75')).toMatchObject({
+      packageId: 'cu13-sm75',
+      package: { arch: 'sm75', runtime: 'bundled' },
+    })
+    expect(parseEngineStamp('dev-run42-abcdef12-cu12-system-cuda')).toMatchObject({
+      channel: 'dev',
+      tag: 'run42-abcdef12',
+      package: { flavour: 'cu12' },
+    })
   })
 
   it('reads the SM70, Vulkan and HIP packages of v2.2', () => {
     expect(parseEngineStamp('stable-v2.2.0-cu12-sm70-system-cuda')).toMatchObject({ tag: 'v2.2.0', packageId: 'cu12-sm70-system-cuda' })
     expect(parseEngineStamp('stable-v2.2.0-vulkan')).toMatchObject({ tag: 'v2.2.0', package: { kind: 'vulkan' } })
     expect(parseEngineStamp('dev-run7-0123abcd-hip')).toMatchObject({ channel: 'dev', tag: 'run7-0123abcd', package: { kind: 'hip' } })
-    expect(engineStampName('stable', 'v2.2.0', { kind: 'cuda', flavour: 'cu13', arch: 'sm75', runtime: 'system-cuda' })).toBe('stable-v2.2.0-cu13-sm75-system-cuda')
+    expect(engineStampName('stable', 'v2.2.0', { kind: 'cuda', flavour: 'cu13', arch: 'sm75', runtime: 'system-cuda' })).toBe(
+      'stable-v2.2.0-cu13-sm75-system-cuda',
+    )
   })
 
   it('returns null for folders it did not write', () => {

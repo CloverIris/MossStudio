@@ -23,21 +23,19 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
   const [importing, setImporting] = useState(false)
   const chosen = useMemo(() => new Set(selected.map((item) => item.id)), [selected])
   const selectable = useMemo(() => (catalog ?? []).filter(isSelectableAdapter), [catalog])
-  const hiddenDmd = useMemo(
-    () => (catalog ?? []).filter((entry) => entry.installed && entry.kind === 'dmd').length,
-    [catalog],
-  )
+  const hiddenDmd = useMemo(() => (catalog ?? []).filter((entry) => entry.installed && entry.kind === 'dmd').length, [catalog])
   // A project can reference adapters that were uninstalled later; surface them so
   // the user can drop them instead of hunting for a missing entry.
-  const orphans = useMemo(
-    () => adapterStatuses(selected, catalog).filter((row) => !row.installed),
-    [selected, catalog],
-  )
+  const orphans = useMemo(() => adapterStatuses(selected, catalog).filter((row) => !row.installed), [selected, catalog])
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
     const rows = needle
-      ? selectable.filter((entry) =>
-          entry.name.toLowerCase().includes(needle) || entry.id.toLowerCase().includes(needle) || entry.base?.toLowerCase().includes(needle))
+      ? selectable.filter(
+          (entry) =>
+            entry.name.toLowerCase().includes(needle) ||
+            entry.id.toLowerCase().includes(needle) ||
+            entry.base?.toLowerCase().includes(needle),
+        )
       : selectable
     return [...rows].sort((a, b) => Number(chosen.has(b.id)) - Number(chosen.has(a.id)) || a.name.localeCompare(b.name, 'zh-CN'))
   }, [selectable, query, chosen])
@@ -64,7 +62,9 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
             {importing ? <Spinner className="size-4" /> : <FilePlus2 className="size-4" />}
             导入文件
           </Button>
-          <Button tone="primary" size="md" data-dialog-initial-focus onClick={onClose}>完成</Button>
+          <Button tone="primary" size="md" data-dialog-initial-focus onClick={onClose}>
+            完成
+          </Button>
         </>
       }
     >
@@ -83,9 +83,11 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
         <div className="max-h-[46vh] min-h-24 overflow-y-auto rounded-xl bg-panel p-1.5">
           {visible.length === 0 ? (
             <div className="px-4 py-8 text-center text-ui text-ink-2">
-              {selectable.length === 0
-                ? <>模型库里还没有 LoRA。用下面的「导入文件」把电脑上的 .safetensors 文件加进来。</>
-                : <>没有名称包含「{query.trim()}」的 LoRA。</>}
+              {selectable.length === 0 ? (
+                <>模型库里还没有 LoRA。用下面的「导入文件」把电脑上的 .safetensors 文件加进来。</>
+              ) : (
+                <>没有名称包含「{query.trim()}」的 LoRA。</>
+              )}
             </div>
           ) : (
             <ul className="flex flex-col gap-0.5">
@@ -103,10 +105,12 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
                         active ? 'bg-well-strong' : 'hover:bg-well',
                       )}
                     >
-                      <span className={cn(
-                        'inline-flex size-4 shrink-0 items-center justify-center rounded-[4px]',
-                        active ? 'bg-accent text-on-accent' : 'bg-well-strong',
-                      )}>
+                      <span
+                        className={cn(
+                          'inline-flex size-4 shrink-0 items-center justify-center rounded-[4px]',
+                          active ? 'bg-accent text-on-accent' : 'bg-well-strong',
+                        )}
+                      >
                         {active ? <Check className="size-3" aria-hidden="true" /> : null}
                       </span>
                       <span className="min-w-0 flex-1">

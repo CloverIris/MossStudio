@@ -29,7 +29,11 @@ export function Field({
           {label}
         </label>
         {children}
-        {hint ? <span id={hintId} className="text-caption text-ink-2">{hint}</span> : null}
+        {hint ? (
+          <span id={hintId} className="text-caption text-ink-2">
+            {hint}
+          </span>
+        ) : null}
       </div>
     </FieldContext.Provider>
   )
@@ -69,9 +73,13 @@ export function Select({
       }}
       {...props}
     >
-      {options ? options.map((option) => (
-        <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>
-      )) : children}
+      {options
+        ? options.map((option) => (
+            <option key={option.value} value={option.value} disabled={option.disabled}>
+              {option.label}
+            </option>
+          ))
+        : children}
     </select>
   )
 }

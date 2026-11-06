@@ -23,7 +23,9 @@ const rangesFor = (path: string) => server.hits.filter((hit) => hit.path === pat
 describe('downloadAsset', () => {
   it('downloads, checks sha256 and reports progress', async () => {
     const progress: number[] = []
-    await expect(downloadAsset({ ...options([server.url('/github/pkg.zip')]), onProgress: (bytes) => progress.push(bytes) })).resolves.toBe(dest())
+    await expect(downloadAsset({ ...options([server.url('/github/pkg.zip')]), onProgress: (bytes) => progress.push(bytes) })).resolves.toBe(
+      dest(),
+    )
     expect(readFileSync(dest()).equals(body)).toBe(true)
     expect(existsSync(`${dest()}.part`)).toBe(false)
     expect(progress.at(-1)).toBe(body.length)
@@ -68,7 +70,9 @@ describe('downloadAsset', () => {
 
   it('fails with every transport down, and on a body larger than declared', async () => {
     server.routes.set('/github/pkg.zip', { body, status: 503 })
-    await expect(downloadAsset(options([server.url('/github/pkg.zip'), server.url('/missing.zip')]))).rejects.toThrow(/HTTP 503[\s\S]*HTTP 404/)
+    await expect(downloadAsset(options([server.url('/github/pkg.zip'), server.url('/missing.zip')]))).rejects.toThrow(
+      /HTTP 503[\s\S]*HTTP 404/,
+    )
     server.routes.set('/github/pkg.zip', { body: Buffer.concat([body, Buffer.from('extra')]) })
     await expect(downloadAsset({ ...options([server.url('/github/pkg.zip')]), rounds: 1 })).rejects.toThrow('超过声明的大小')
   })

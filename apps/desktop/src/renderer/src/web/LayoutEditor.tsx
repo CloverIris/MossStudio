@@ -1,13 +1,6 @@
 import { Trash2 } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
-import {
-  clampBox,
-  compileLayout,
-  draftJson,
-  parseDraft,
-  type LayoutDraft,
-  type LayoutLabel,
-} from '../lib/layout'
+import { clampBox, compileLayout, draftJson, parseDraft, type LayoutDraft, type LayoutLabel } from '../lib/layout'
 import { Button, Card, Field, IconButton, Input, Modal, Segmented, Textarea, cn } from '../components/ui'
 
 const LABELS: Array<{ id: LayoutLabel; name: string }> = [
@@ -16,9 +9,7 @@ const LABELS: Array<{ id: LayoutLabel; name: string }> = [
   { id: 'text', name: '文字' },
 ]
 
-type Drag =
-  | { kind: 'move' | 'resize'; id: string; startX: number; startY: number; origin: [number, number, number, number] }
-  | null
+type Drag = { kind: 'move' | 'resize'; id: string; startX: number; startY: number; origin: [number, number, number, number] } | null
 
 interface Props {
   draft: LayoutDraft
@@ -89,9 +80,7 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
     const dy = y - drag.startY
     const [x1, y1, x2, y2] = drag.origin
     const box: [number, number, number, number] =
-      drag.kind === 'move'
-        ? [x1 + dx, y1 + dy, x2 + dx, y2 + dy]
-        : [x1, y1, Math.max(x1 + 8, x2 + dx), Math.max(y1 + 8, y2 + dy)]
+      drag.kind === 'move' ? [x1 + dx, y1 + dy, x2 + dx, y2 + dy] : [x1, y1, Math.max(x1 + 8, x2 + dx), Math.max(y1 + 8, y2 + dy)]
     const item = draft.items.find((entry) => entry.id === drag.id)
     if (item) updateItem(item.id, { bbox: clampBox(box, draft.width, draft.height) })
   }
@@ -183,7 +172,9 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
           <div className="text-control font-medium text-ink">画面布局</div>
           <div className="mt-0.5 text-caption text-ink-2">在画布上拖出方框，标出每样东西的位置</div>
         </div>
-        <Button tone="ghost" onClick={openJson}>查看数据</Button>
+        <Button tone="ghost" onClick={openJson}>
+          查看数据
+        </Button>
       </div>
 
       <Segmented
@@ -193,7 +184,10 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
         options={modeOptions}
         onChange={(value) => {
           if (value === 'select') setTool('select')
-          else { setLabel(value); setTool('draw') }
+          else {
+            setLabel(value)
+            setTool('draw')
+          }
         }}
       />
 
@@ -206,7 +200,14 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
         className="relative w-full touch-none overflow-hidden rounded-lg bg-well text-ink"
         style={{ aspectRatio: `${draft.width} / ${draft.height}` }}
       >
-        <div className="pointer-events-none absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)', backgroundSize: '12.5% 12.5%' }} />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-10"
+          style={{
+            backgroundImage:
+              'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)',
+            backgroundSize: '12.5% 12.5%',
+          }}
+        />
         {draft.items.map((item) => {
           const meta = LABELS.find((entry) => entry.id === item.label) ?? LABELS[0]!
           const isSelected = selectedId === item.id
@@ -224,11 +225,17 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
                 top: `${(item.bbox[1] / draft.height) * 100}%`,
                 width: `${((item.bbox[2] - item.bbox[0]) / draft.width) * 100}%`,
                 height: `${((item.bbox[3] - item.bbox[1]) / draft.height) * 100}%`,
-                opacity: item.visible === false ? 0.25 : item.opacity ?? 1,
+                opacity: item.visible === false ? 0.25 : (item.opacity ?? 1),
               }}
             >
-              <span className={cn('pointer-events-none absolute left-1 top-1 rounded-md px-1 py-0.5 text-micro', isSelected ? 'bg-accent text-on-accent' : 'bg-raised text-ink')}>
-                {meta.name}{item.text ? ` · ${item.text.slice(0, 10)}` : ''}
+              <span
+                className={cn(
+                  'pointer-events-none absolute left-1 top-1 rounded-md px-1 py-0.5 text-micro',
+                  isSelected ? 'bg-accent text-on-accent' : 'bg-raised text-ink',
+                )}
+              >
+                {meta.name}
+                {item.text ? ` · ${item.text.slice(0, 10)}` : ''}
               </span>
               {!item.locked ? (
                 <span
@@ -242,13 +249,23 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
         {drawBox ? (
           <div
             className="pointer-events-none absolute bg-accent-soft outline-dashed outline-2 outline-accent"
-            style={{ left: `${(drawBox[0] / draft.width) * 100}%`, top: `${(drawBox[1] / draft.height) * 100}%`, width: `${((drawBox[2] - drawBox[0]) / draft.width) * 100}%`, height: `${((drawBox[3] - drawBox[1]) / draft.height) * 100}%` }}
+            style={{
+              left: `${(drawBox[0] / draft.width) * 100}%`,
+              top: `${(drawBox[1] / draft.height) * 100}%`,
+              width: `${((drawBox[2] - drawBox[0]) / draft.width) * 100}%`,
+              height: `${((drawBox[3] - drawBox[1]) / draft.height) * 100}%`,
+            }}
           />
         ) : null}
       </div>
 
       <Field label="整体描述">
-        <Textarea value={draft.summary.caption} onChange={(event) => onChange({ ...draft, summary: { ...draft.summary, caption: event.target.value } })} rows={2} placeholder="整张图的构图、风格和文字位置" />
+        <Textarea
+          value={draft.summary.caption}
+          onChange={(event) => onChange({ ...draft, summary: { ...draft.summary, caption: event.target.value } })}
+          rows={2}
+          placeholder="整张图的构图、风格和文字位置"
+        />
       </Field>
 
       {selected ? (
@@ -259,13 +276,37 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
               <Trash2 className="size-4" />
             </IconButton>
           </div>
-          <Input value={selected.caption} onChange={(event) => updateItem(selected.id, { caption: event.target.value })} placeholder="这个区域里是什么" aria-label="区域描述" />
+          <Input
+            value={selected.caption}
+            onChange={(event) => updateItem(selected.id, { caption: event.target.value })}
+            placeholder="这个区域里是什么"
+            aria-label="区域描述"
+          />
           {selected.label === 'text' ? (
-            <Input value={selected.text ?? ''} onChange={(event) => updateItem(selected.id, { text: event.target.value })} placeholder="图中的文字内容" aria-label="图中文字" />
+            <Input
+              value={selected.text ?? ''}
+              onChange={(event) => updateItem(selected.id, { text: event.target.value })}
+              placeholder="图中的文字内容"
+              aria-label="图中文字"
+            />
           ) : null}
           <div className="flex items-center gap-4 text-ui text-ink-2">
-            <label className="inline-flex min-h-10 items-center gap-2"><input type="checkbox" checked={selected.visible !== false} onChange={(event) => updateItem(selected.id, { visible: event.target.checked })} /> 显示</label>
-            <label className="inline-flex min-h-10 items-center gap-2"><input type="checkbox" checked={selected.locked === true} onChange={(event) => updateItem(selected.id, { locked: event.target.checked })} /> 锁定</label>
+            <label className="inline-flex min-h-10 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={selected.visible !== false}
+                onChange={(event) => updateItem(selected.id, { visible: event.target.checked })}
+              />{' '}
+              显示
+            </label>
+            <label className="inline-flex min-h-10 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={selected.locked === true}
+                onChange={(event) => updateItem(selected.id, { locked: event.target.checked })}
+              />{' '}
+              锁定
+            </label>
           </div>
         </Card>
       ) : (
@@ -276,8 +317,12 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
       {!compiled.ok ? <div className="text-caption leading-4 text-warn">{compiled.errors[0]}</div> : null}
 
       <div className="flex gap-2">
-        <Button tone="primary" size="md" block onClick={compileAndInsert} disabled={!compiled.ok} className="h-11 flex-1">写入提示词</Button>
-        <Button size="md" onClick={onSaveProject} className="h-11">保存</Button>
+        <Button tone="primary" size="md" block onClick={compileAndInsert} disabled={!compiled.ok} className="h-11 flex-1">
+          写入提示词
+        </Button>
+        <Button size="md" onClick={onSaveProject} className="h-11">
+          保存
+        </Button>
       </div>
 
       <Modal
@@ -289,11 +334,20 @@ export function LayoutEditor({ draft, onChange, onInsertPrompt, onSaveProject }:
           <>
             <Button onClick={() => void navigator.clipboard.writeText(jsonText)}>复制</Button>
             <Button onClick={applyJson}>应用到画布</Button>
-            <Button tone="primary" onClick={compileAndInsert} disabled={!compiled.ok}>写入提示词</Button>
+            <Button tone="primary" onClick={compileAndInsert} disabled={!compiled.ok}>
+              写入提示词
+            </Button>
           </>
         }
       >
-        <Textarea value={jsonText} onChange={(event) => setJsonText(event.target.value)} rows={12} className="font-mono text-caption" spellCheck={false} aria-label="布局数据" />
+        <Textarea
+          value={jsonText}
+          onChange={(event) => setJsonText(event.target.value)}
+          rows={12}
+          className="font-mono text-caption"
+          spellCheck={false}
+          aria-label="布局数据"
+        />
       </Modal>
     </Card>
   )

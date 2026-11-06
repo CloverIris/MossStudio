@@ -14,7 +14,6 @@ const config: Record<WindowKind, { width: number; height: number; minWidth: numb
   trainer: { width: 1280, height: 840, minWidth: 980, minHeight: 640, route: '/trainer', title: 'Kohaku Trainer' },
 }
 
-
 const TITLEBAR_HEIGHT = 40
 /** Frame colours of the renderer theme; the native chrome must match them. */
 const chrome = {
@@ -77,11 +76,7 @@ export function createAppWindow(kind: WindowKind, show = true): BrowserWindow {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      additionalArguments: [
-        '--clover-opaque',
-        `--clover-window=${kind}`,
-        `--clover-channel=${app.isPackaged ? 'release' : 'dev'}`,
-      ],
+      additionalArguments: ['--clover-opaque', `--clover-window=${kind}`, `--clover-channel=${app.isPackaged ? 'release' : 'dev'}`],
     },
   })
 

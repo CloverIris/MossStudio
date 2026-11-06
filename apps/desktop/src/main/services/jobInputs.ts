@@ -78,9 +78,10 @@ function unsupported(message: string): Error {
 function checkFeatures(inputs: JobInputs, features: EngineFeatures, remote: boolean): void {
   const where = remote ? '这台电脑上的引擎' : '当前引擎'
   // A CLI engine never gains these with an update: it only does text to image.
-  const missing = (what: string): Error => features.cli
-    ? unsupported(`${CLI_ENGINE_LABEL[features.cli]}引擎只能文生图，不支持${what}，请移除后再生成`)
-    : unsupported(`${where}不支持${what}，请更新 MossInfer`)
+  const missing = (what: string): Error =>
+    features.cli
+      ? unsupported(`${CLI_ENGINE_LABEL[features.cli]}引擎只能文生图，不支持${what}，请移除后再生成`)
+      : unsupported(`${where}不支持${what}，请更新 MossInfer`)
   if ((inputs.initImage || inputs.mask) && !features.imageInput) throw missing('起始图')
   if (inputs.control && !features.control) throw missing('控制图')
   if (inputs.references && !features.references) throw missing('参考图')
@@ -127,10 +128,12 @@ export async function validateJobInputs(source: Record<string, unknown>, context
     } catch {
       adapterPath = null
     }
-    const registered = await Promise.all(context.controlAdapters.map(async (entry) => ({
-      entry,
-      real: await realpath(entry.path).catch(() => null),
-    })))
+    const registered = await Promise.all(
+      context.controlAdapters.map(async (entry) => ({
+        entry,
+        real: await realpath(entry.path).catch(() => null),
+      })),
+    )
     const adapter = registered.find((item) => item.real !== null && item.real === adapterPath)?.entry
     if (!adapterPath || !adapter) {
       throw codedError('E_INPUT_PATH', `控制适配器「${basename(inputs.control.adapter)}」没有登记或已被移动，请到模型页重新添加`)
@@ -141,7 +144,8 @@ export async function validateJobInputs(source: Record<string, unknown>, context
       }
     }
     const images = []
-    for (const image of inputs.control.images) images.push({ ...image, path: await checkImage(image.path, `控制图（${image.kind}）`, roots) })
+    for (const image of inputs.control.images)
+      images.push({ ...image, path: await checkImage(image.path, `控制图（${image.kind}）`, roots) })
     out.control = { ...inputs.control, adapter: adapterPath, images }
   }
   if (inputs.references) {

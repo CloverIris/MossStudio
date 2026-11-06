@@ -27,7 +27,9 @@ export function TextSetting({
   const [saving, setSaving] = useState(false)
   const errorId = useId()
 
-  useEffect(() => { setDraft(value ?? '') }, [value])
+  useEffect(() => {
+    setDraft(value ?? '')
+  }, [value])
 
   async function commit(): Promise<void> {
     const next = draft.trim()
@@ -53,15 +55,28 @@ export function TextSetting({
         value={draft}
         placeholder={placeholder}
         disabled={saving}
-        onChange={(event) => { setDraft(event.target.value); if (error) setError(null) }}
+        onChange={(event) => {
+          setDraft(event.target.value)
+          if (error) setError(null)
+        }}
         onBlur={() => void commit()}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') { event.preventDefault(); void commit() }
-          if (event.key === 'Escape') { setDraft(value ?? ''); setError(null) }
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            void commit()
+          }
+          if (event.key === 'Escape') {
+            setDraft(value ?? '')
+            setError(null)
+          }
         }}
         className={cn('w-full', mono && 'font-mono text-caption')}
       />
-      {error ? <span id={errorId} role="alert" className="text-caption text-danger">{error}</span> : null}
+      {error ? (
+        <span id={errorId} role="alert" className="text-caption text-danger">
+          {error}
+        </span>
+      ) : null}
     </div>
   )
 }

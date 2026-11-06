@@ -2,7 +2,15 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { isUpdateTestBuild } from '@main/update/keys'
-import { loadTestHook, parseTestHook, readyToRestart, shouldCrash, TEST_HOOK_FILE, TEST_STATUS_FILE, writeTestStatus } from '@main/update/testHook'
+import {
+  loadTestHook,
+  parseTestHook,
+  readyToRestart,
+  shouldCrash,
+  TEST_HOOK_FILE,
+  TEST_STATUS_FILE,
+  writeTestStatus,
+} from '@main/update/testHook'
 import { updaterStateFixture } from '@test/mocks/backend/fixtures'
 import { useTempDir } from '@test/helpers/tempDir'
 

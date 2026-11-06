@@ -126,17 +126,21 @@ export function StudioPage(): React.JSX.Element {
   const [pickTarget, setPickTarget] = useState<PickTarget | null>(null)
 
   const remoteEnabled = settings?.remoteHostsEnabled === true
-  const remoteHost = remoteEnabled ? hosts.find((host) => host.id === remoteHostId) ?? null : null
+  const remoteHost = remoteEnabled ? (hosts.find((host) => host.id === remoteHostId) ?? null) : null
   const bundle = resolveBundle(catalog, selected?.modelBundleId, preferredBundleId)
   // Board: wires, imported pictures and masks.
-  const boardFeatures = useEngineFeatures(selected ? { deviceUuid: selected.deviceUuid, hostId: remoteHost?.id } : { hostId: remoteHost?.id })
+  const boardFeatures = useEngineFeatures(
+    selected ? { deviceUuid: selected.deviceUuid, hostId: remoteHost?.id } : { hostId: remoteHost?.id },
+  )
   const { adapters: controlAdapters, loaded: controlAdaptersLoaded } = useControlAdapters()
   const boardAssets = useBoardAssets({ project, notify: toast.push })
   // Inspector: what the selected canvas's pictures and sampling resolve to.
   const inputBlockers = useMemo(
-    () => selected?.kind === 'layout'
-      ? resolveJobInputs(selected, { canvases: project.canvases, features: boardFeatures, controlAdapters, controlAdaptersLoaded }).blockers
-      : [],
+    () =>
+      selected?.kind === 'layout'
+        ? resolveJobInputs(selected, { canvases: project.canvases, features: boardFeatures, controlAdapters, controlAdaptersLoaded })
+            .blockers
+        : [],
     [selected, project.canvases, boardFeatures, controlAdapters, controlAdaptersLoaded],
   )
   const readiness = deriveReadiness({
@@ -153,21 +157,33 @@ export function StudioPage(): React.JSX.Element {
   })
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false
-  const { submitting, generate } = useGenerate({ project, catalog, preferredBundleId, remoteHost, controlAdapters, controlAdaptersLoaded, notify: toast.push })
+  const { submitting, generate } = useGenerate({
+    project,
+    catalog,
+    preferredBundleId,
+    remoteHost,
+    controlAdapters,
+    controlAdaptersLoaded,
+    notify: toast.push,
+  })
   const inputImport = useInputImport({ project, notify: toast.push })
 
-  useEffect(() => { writeStorage(WIDTH_KEY, JSON.stringify(widths)) }, [widths])
+  useEffect(() => {
+    writeStorage(WIDTH_KEY, JSON.stringify(widths))
+  }, [widths])
 
   // A different canvas has its own regions.
   useEffect(() => setSelectedRegionId(null), [project.selectedCanvasId])
   // Picking fills a slot of the selected canvas; selecting another one ends it, and so does leaving the mask tool's canvas.
   useEffect(() => {
-    setPickTarget((current) => current && current.canvasId !== project.selectedCanvasId ? null : current)
-    setTool((current) => current === 'mask' ? 'select' : current)
+    setPickTarget((current) => (current && current.canvasId !== project.selectedCanvasId ? null : current))
+    setTool((current) => (current === 'mask' ? 'select' : current))
   }, [project.selectedCanvasId])
 
   useEffect(() => {
-    void call<GpuInventorySnapshot>(Ipc.gpuInventory).then(setGpuInventory).catch(() => undefined)
+    void call<GpuInventorySnapshot>(Ipc.gpuInventory)
+      .then(setGpuInventory)
+      .catch(() => undefined)
     return onEvent<GpuInventorySnapshot>(Events.gpuInventory, setGpuInventory)
   }, [])
 
@@ -177,26 +193,34 @@ export function StudioPage(): React.JSX.Element {
     let alive = true
     const load = (): void => {
       void call<ManagedHost[]>(Ipc.hostsList)
-        .then((list) => { if (alive) setHosts(list.filter((host) => host.kind === 'ssh')) })
+        .then((list) => {
+          if (alive) setHosts(list.filter((host) => host.kind === 'ssh'))
+        })
         .catch(() => undefined)
     }
     load()
     const stop = onEvent(Events.hostsChanged, load)
-    return () => { alive = false; stop() }
+    return () => {
+      alive = false
+      stop()
+    }
   }, [remoteEnabled])
 
   // `project` is a new object every render; its refs and actions are stable.
   // Effects depend on those, so a job progress tick does not re-run them.
   const { loaded, canvasesRef, selectedRef, updateCanvas, addCanvas, setCanvases, select } = project
 
-  const applyUnderlay = useCallback((path: string | undefined) => {
-    const current = canvasesRef.current.find((canvas) => canvas.id === selectedRef.current)
-    if (current?.kind === 'layout') updateCanvas(current.id, { backgroundPath: path })
-    else if (path) {
-      const created = addCanvas()
-      updateCanvas(created.id, { backgroundPath: path })
-    }
-  }, [canvasesRef, selectedRef, updateCanvas, addCanvas])
+  const applyUnderlay = useCallback(
+    (path: string | undefined) => {
+      const current = canvasesRef.current.find((canvas) => canvas.id === selectedRef.current)
+      if (current?.kind === 'layout') updateCanvas(current.id, { backgroundPath: path })
+      else if (path) {
+        const created = addCanvas()
+        updateCanvas(created.id, { backgroundPath: path })
+      }
+    },
+    [canvasesRef, selectedRef, updateCanvas, addCanvas],
+  )
 
   // A picture chosen as underlay from 作品 arrives through the store (same window)
   // or through localStorage (another window).
@@ -276,10 +300,14 @@ export function StudioPage(): React.JSX.Element {
     controlAdapters,
     pickTarget,
     onPickTarget: setPickTarget,
-    onAddFromFile: (role, kind) => { if (selected) void inputImport.addFromFile(selected.id, role, kind) },
+    onAddFromFile: (role, kind) => {
+      if (selected) void inputImport.addFromFile(selected.id, role, kind)
+    },
     maskTool: tool === 'mask',
-    onToggleMask: () => setTool((current) => current === 'mask' ? 'select' : 'mask'),
-    onNavigate: (to) => { void navigate(to) },
+    onToggleMask: () => setTool((current) => (current === 'mask' ? 'select' : 'mask')),
+    onNavigate: (to) => {
+      void navigate(to)
+    },
   }
 
   const run = async (canvasId: string, seed?: 'new' | 'same'): Promise<void> => {
@@ -344,7 +372,8 @@ export function StudioPage(): React.JSX.Element {
                 })),
               }
             : null,
-          notes: 'prompt is the overall description; the final prompt is compiled from it plus the visible regions. bbox is [x1,y1,x2,y2] in canvas pixels; studio_add_layer takes normalised 0-1 x/y/w/h. steps snap to 8 (fast), 20 (standard) or 50 (fine).',
+          notes:
+            'prompt is the overall description; the final prompt is compiled from it plus the visible regions. bbox is [x1,y1,x2,y2] in canvas pixels; studio_add_layer takes normalised 0-1 x/y/w/h. steps snap to 8 (fast), 20 (standard) or 50 (fine).',
         }
       },
       snapshot: () => {
@@ -355,7 +384,12 @@ export function StudioPage(): React.JSX.Element {
           description: canvasDescription(canvas),
           width: canvas.width,
           height: canvas.height,
-          regions: canvas.layers.map((layer) => ({ kind: layer.kind, caption: layer.caption, text: layer.text, visible: layer.visible !== false })),
+          regions: canvas.layers.map((layer) => ({
+            kind: layer.kind,
+            caption: layer.caption,
+            text: layer.text,
+            visible: layer.visible !== false,
+          })),
         }
       },
       setPrompt: (value) => {
@@ -367,7 +401,11 @@ export function StudioPage(): React.JSX.Element {
         const canvas = editable()
         let next = canvas
         if (patch.width !== undefined || patch.height !== undefined) {
-          next = resizeCanvas(next, clampDimension(patch.width ?? next.width, next.width), clampDimension(patch.height ?? next.height, next.height))
+          next = resizeCanvas(
+            next,
+            clampDimension(patch.width ?? next.width, next.width),
+            clampDimension(patch.height ?? next.height, next.height),
+          )
         }
         if (patch.steps !== undefined) {
           const preset = qualityPreset(nearestQuality(patch.steps))
@@ -422,7 +460,7 @@ export function StudioPage(): React.JSX.Element {
       if (key === 'v') setTool('select')
       else if (key === 'b') setTool('draw')
       else if (key === 'h') setTool('pan')
-      else if (key === 'm') setTool((current) => current === 'mask' ? 'select' : 'mask')
+      else if (key === 'm') setTool((current) => (current === 'mask' ? 'select' : 'mask'))
       else if (key === 'escape') setSelectedRegionId(null)
       else if ((key === 'delete' || key === 'backspace') && selected?.kind === 'layout' && selectedRegionId) {
         const region = selected.layers.find((layer) => layer.id === selectedRegionId)
@@ -436,7 +474,7 @@ export function StudioPage(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const viewerCanvas = viewer ? project.canvases.find((canvas) => canvas.id === viewer.canvasId) ?? null : null
+  const viewerCanvas = viewer ? (project.canvases.find((canvas) => canvas.id === viewer.canvasId) ?? null) : null
   const viewerJob = viewerCanvas?.jobId ? jobs.find((job) => job.id === viewerCanvas.jobId) : undefined
 
   return (
@@ -457,9 +495,12 @@ export function StudioPage(): React.JSX.Element {
           gpuInventory={gpuInventory}
           hosts={hosts}
           remoteHostId={remoteHostId}
-          onRemoteHostChange={(id) => { setRemoteHostId(id); writeStorage(HOST_KEY, id || null) }}
+          onRemoteHostChange={(id) => {
+            setRemoteHostId(id)
+            writeStorage(HOST_KEY, id || null)
+          }}
           blockers={readiness.blockers}
-          prompt={selected ? readiness.prompt ?? null : null}
+          prompt={selected ? (readiness.prompt ?? null) : null}
           busy={selectedBusy}
           submitting={submitting}
           onChange={changeSelected}
@@ -470,7 +511,9 @@ export function StudioPage(): React.JSX.Element {
           }}
           onOpenAdapters={() => setAdapterPickerOpen(true)}
           onGenerate={runPrimary}
-          onCopyAsLayout={() => { if (selected) project.addCanvas(selected) }}
+          onCopyAsLayout={() => {
+            if (selected) project.addCanvas(selected)
+          }}
           onAddCanvas={() => project.addCanvas()}
           onNavigate={(to) => navigate(to)}
           inputs={inputsWiring}
@@ -494,7 +537,11 @@ export function StudioPage(): React.JSX.Element {
           onRegionKind={setRegionKind}
           selectedRegionId={selectedRegionId}
           onSelectRegion={setSelectedRegionId}
-          onOpenRegion={(id) => { setSelectedRegionId(id); setRightTab('inspector'); setFocusToken((value) => value + 1) }}
+          onOpenRegion={(id) => {
+            setSelectedRegionId(id)
+            setRightTab('inspector')
+            setFocusToken((value) => value + 1)
+          }}
           onSelectCanvas={(id) => project.select(id)}
           onMoveCanvas={(id, x, y) => project.updateCanvas(id, { x, y })}
           onChangeLayers={changeLayers}
@@ -505,7 +552,9 @@ export function StudioPage(): React.JSX.Element {
           }}
           onOpenViewer={(canvasId, index) => setViewer({ canvasId, index })}
           onRerun={(canvasId, seed) => void run(canvasId, seed)}
-          onCancel={(jobId) => { void cancelJob(jobId).catch((error: unknown) => toast.push(error instanceof Error ? error.message : String(error), 'error')) }}
+          onCancel={(jobId) => {
+            void cancelJob(jobId).catch((error: unknown) => toast.push(error instanceof Error ? error.message : String(error), 'error'))
+          }}
           onShowActivity={(jobId) => openActivity('jobs', jobId ?? null)}
           onCopy={(canvas) => {
             const created = project.addCanvas(canvas)
@@ -523,21 +572,33 @@ export function StudioPage(): React.JSX.Element {
           controlAdapters={controlAdapters}
           onLink={(targetId, role, link, kind) => project.updateCanvas(targetId, (canvas) => setLink(canvas, role, link, kind))}
           onRemoveLink={(canvasId, role, at) => project.updateCanvas(canvasId, (canvas) => removeLink(canvas, role, at))}
-          onImportImages={(files, at) => { void boardAssets.importImages(files, at) }}
-          onSaveMask={(canvasId, png) => { void boardAssets.saveMask(canvasId, png) }}
+          onImportImages={(files, at) => {
+            void boardAssets.importImages(files, at)
+          }}
+          onSaveMask={(canvasId, png) => {
+            void boardAssets.saveMask(canvasId, png)
+          }}
           pickTarget={pickTarget}
           onPick={pickSource}
         />
       </main>
 
-      <StudioSidebar side="right" label="检查器与助手" width={widths.right} onWidthChange={(right) => setWidths((value) => ({ ...value, right }))}>
+      <StudioSidebar
+        side="right"
+        label="检查器与助手"
+        width={widths.right}
+        onWidthChange={(right) => setWidths((value) => ({ ...value, right }))}
+      >
         <div className="flex h-full min-h-0 flex-col gap-5 p-4">
           <Segmented
             block
             label="右侧面板"
             value={rightTab}
             onChange={setRightTab}
-            options={[{ value: 'inspector', label: '检查器' }, { value: 'assistant', label: '助手' }]}
+            options={[
+              { value: 'inspector', label: '检查器' },
+              { value: 'assistant', label: '助手' },
+            ]}
           />
           <div hidden={rightTab !== 'inspector'} className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4">
             <InspectorPanel
@@ -545,7 +606,9 @@ export function StudioPage(): React.JSX.Element {
               selectedRegionId={selectedRegionId}
               focusToken={focusToken}
               onSelectRegion={setSelectedRegionId}
-              onChangeLayers={(update) => { if (selected) changeLayers(selected.id, update) }}
+              onChangeLayers={(update) => {
+                if (selected) changeLayers(selected.id, update)
+              }}
             />
           </div>
           {/* Stays mounted so a running conversation survives tab switches. */}
@@ -560,7 +623,7 @@ export function StudioPage(): React.JSX.Element {
         job={viewerJob}
         catalog={catalog}
         index={viewer?.index ?? 0}
-        onIndex={(index) => setViewer((value) => value ? { ...value, index } : value)}
+        onIndex={(index) => setViewer((value) => (value ? { ...value, index } : value))}
         onClose={() => setViewer(null)}
       />
 
@@ -584,15 +647,17 @@ export function StudioPage(): React.JSX.Element {
         selected={normalizeCanvasAdapters(selected?.adapters)}
         catalog={catalog?.adapters}
         onClose={() => setAdapterPickerOpen(false)}
-        onToggle={(id) => changeSelected((canvas) => {
-          const current = normalizeCanvasAdapters(canvas.adapters)
-          return {
-            ...canvas,
-            adapters: current.some((item) => item.id === id)
-              ? current.filter((item) => item.id !== id)
-              : normalizeCanvasAdapters([...current, { id, strength: ADAPTER_STRENGTH_DEFAULT }]),
-          }
-        })}
+        onToggle={(id) =>
+          changeSelected((canvas) => {
+            const current = normalizeCanvasAdapters(canvas.adapters)
+            return {
+              ...canvas,
+              adapters: current.some((item) => item.id === id)
+                ? current.filter((item) => item.id !== id)
+                : normalizeCanvasAdapters([...current, { id, strength: ADAPTER_STRENGTH_DEFAULT }]),
+            }
+          })
+        }
         onImport={async () => {
           const imported = await importAdapters().catch((error: unknown) => {
             toast.push(error instanceof Error ? error.message : String(error), 'error')

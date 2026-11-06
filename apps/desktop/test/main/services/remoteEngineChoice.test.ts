@@ -24,14 +24,36 @@ function host(cuda: Partial<RemoteCudaProbe>): Pick<RemoteEngineInfo, 'cuda' | '
 
 describe('remoteMachine', () => {
   it('one NVIDIA GPU per nvidia-smi row plus the other display devices', () => {
-    expect(remoteMachine(host({
-      gpuNames: ['NVIDIA A100-SXM4-80GB', 'Tesla V100'], computeCapabilities: ['8.0', '7.0'], driverVersion: '550.163.01', flavours: ['cu12'],
-      pciIds: ['10de:20b2', '10de:1db4', '1a03:2000', '1002:744c'],
-    }))).toEqual({
-      os: 'linux', systemCuda: ['cu12'], rocm7: false, vulkanProbed: true,
+    expect(
+      remoteMachine(
+        host({
+          gpuNames: ['NVIDIA A100-SXM4-80GB', 'Tesla V100'],
+          computeCapabilities: ['8.0', '7.0'],
+          driverVersion: '550.163.01',
+          flavours: ['cu12'],
+          pciIds: ['10de:20b2', '10de:1db4', '1a03:2000', '1002:744c'],
+        }),
+      ),
+    ).toEqual({
+      os: 'linux',
+      systemCuda: ['cu12'],
+      rocm7: false,
+      vulkanProbed: true,
       gpus: [
-        { id: 'remote-nvidia-0', name: 'NVIDIA A100-SXM4-80GB', vendor: 'nvidia', computeCapability: { major: 8, minor: 0 }, driverVersion: '550.163.01' },
-        { id: 'remote-nvidia-1', name: 'Tesla V100', vendor: 'nvidia', computeCapability: { major: 7, minor: 0 }, driverVersion: '550.163.01' },
+        {
+          id: 'remote-nvidia-0',
+          name: 'NVIDIA A100-SXM4-80GB',
+          vendor: 'nvidia',
+          computeCapability: { major: 8, minor: 0 },
+          driverVersion: '550.163.01',
+        },
+        {
+          id: 'remote-nvidia-1',
+          name: 'Tesla V100',
+          vendor: 'nvidia',
+          computeCapability: { major: 7, minor: 0 },
+          driverVersion: '550.163.01',
+        },
         { id: 'remote-1a03:2000-0', name: '显卡', vendor: 'other', pciId: '1a03:2000' },
         { id: 'remote-1002:744c-0', name: 'AMD 显卡', vendor: 'amd', pciId: '1002:744c' },
       ],
@@ -41,20 +63,36 @@ describe('remoteMachine', () => {
 
 describe('chooseRemotePackage', () => {
   it('CUDA 13 with a new driver, the system-CUDA package when the host has CUDA 13', () => {
-    expect(chooseRemotePackage(host({ gpuNames: ['RTX 4090'], computeCapabilities: ['8.9'], driverVersion: '590.48.01' }), LINUX_220))
-      .toEqual({ kind: 'cuda', flavour: 'cu13', arch: 'standard', runtime: 'bundled' })
-    expect(chooseRemotePackage(host({ gpuNames: ['RTX 4090'], computeCapabilities: ['8.9'], driverVersion: '590.48.01', flavours: ['cu13'] }), LINUX_220))
-      .toMatchObject({ flavour: 'cu13', runtime: 'system-cuda' })
+    expect(
+      chooseRemotePackage(host({ gpuNames: ['RTX 4090'], computeCapabilities: ['8.9'], driverVersion: '590.48.01' }), LINUX_220),
+    ).toEqual({ kind: 'cuda', flavour: 'cu13', arch: 'standard', runtime: 'bundled' })
+    expect(
+      chooseRemotePackage(
+        host({ gpuNames: ['RTX 4090'], computeCapabilities: ['8.9'], driverVersion: '590.48.01', flavours: ['cu13'] }),
+        LINUX_220,
+      ),
+    ).toMatchObject({ flavour: 'cu13', runtime: 'system-cuda' })
   })
 
   it('CUDA 12 for an older driver, SM70 for Volta and Turing', () => {
-    expect(chooseRemotePackage(host({ computeCapabilities: ['8.6'], driverVersion: '535.183.01' }), LINUX_220)).toMatchObject({ flavour: 'cu12', arch: 'standard' })
-    expect(chooseRemotePackage(host({ computeCapabilities: ['7.0'], driverVersion: '550.163.01' }), LINUX_220)).toMatchObject({ flavour: 'cu12', arch: 'sm70' })
-    expect(chooseRemotePackage(host({ computeCapabilities: ['7.5'], driverVersion: '590.48.01' }), LINUX_220)).toMatchObject({ flavour: 'cu12', arch: 'sm70' })
+    expect(chooseRemotePackage(host({ computeCapabilities: ['8.6'], driverVersion: '535.183.01' }), LINUX_220)).toMatchObject({
+      flavour: 'cu12',
+      arch: 'standard',
+    })
+    expect(chooseRemotePackage(host({ computeCapabilities: ['7.0'], driverVersion: '550.163.01' }), LINUX_220)).toMatchObject({
+      flavour: 'cu12',
+      arch: 'sm70',
+    })
+    expect(chooseRemotePackage(host({ computeCapabilities: ['7.5'], driverVersion: '590.48.01' }), LINUX_220)).toMatchObject({
+      flavour: 'cu12',
+      arch: 'sm70',
+    })
   })
 
   it('serves the most GPUs of a mixed host', () => {
-    expect(chooseRemotePackage(host({ computeCapabilities: ['8.9', '7.0', '7.0'], driverVersion: '590.48.01' }), LINUX_220)).toMatchObject({ arch: 'sm70' })
+    expect(chooseRemotePackage(host({ computeCapabilities: ['8.9', '7.0', '7.0'], driverVersion: '590.48.01' }), LINUX_220)).toMatchObject({
+      arch: 'sm70',
+    })
   })
 
   it('a host with only an AMD GPU says so', () => {
@@ -62,8 +100,12 @@ describe('chooseRemotePackage', () => {
   })
 
   it('an NVIDIA GPU that no CUDA build runs on, or a driver too old for CUDA 12', () => {
-    expect(() => chooseRemotePackage(host({ gpuNames: ['GTX 1080'], computeCapabilities: ['6.1'], driverVersion: '590.48.01' }), LINUX_220)).toThrow(/GTX 1080 没有可用的 CUDA 引擎/)
-    expect(() => chooseRemotePackage(host({ computeCapabilities: ['8.9'], driverVersion: '470.256.02' }), LINUX_220)).toThrow(/470\.256\.02/)
+    expect(() =>
+      chooseRemotePackage(host({ gpuNames: ['GTX 1080'], computeCapabilities: ['6.1'], driverVersion: '590.48.01' }), LINUX_220),
+    ).toThrow(/GTX 1080 没有可用的 CUDA 引擎/)
+    expect(() => chooseRemotePackage(host({ computeCapabilities: ['8.9'], driverVersion: '470.256.02' }), LINUX_220)).toThrow(
+      /470\.256\.02/,
+    )
   })
 
   it('a timed-out nvidia-smi says so instead of "no GPU"', () => {

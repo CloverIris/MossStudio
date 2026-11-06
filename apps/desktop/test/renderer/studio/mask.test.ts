@@ -1,8 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import type { EngineFeatures } from '@shared/types'
 import {
-  clampBrush, createMask, encodeMaskPng, invertMask, isEmptyMask, maskAvailability, maskFromRgba, maskToCanvas, maskToPicture, pictureArea, placement, settleBands,
-  resampleMask, stampSegment, startPictureSize, tintRgba, BRUSH_MAX, BRUSH_MIN, type MaskRaster,
+  clampBrush,
+  createMask,
+  encodeMaskPng,
+  invertMask,
+  isEmptyMask,
+  maskAvailability,
+  maskFromRgba,
+  maskToCanvas,
+  maskToPicture,
+  pictureArea,
+  placement,
+  settleBands,
+  resampleMask,
+  stampSegment,
+  startPictureSize,
+  tintRgba,
+  BRUSH_MAX,
+  BRUSH_MIN,
+  type MaskRaster,
 } from '@renderer/pages/studio/mask'
 import { canvas } from './fixtures'
 
@@ -92,7 +109,15 @@ describe('studio/mask pixels', () => {
 
 describe('studio/mask availability', () => {
   const features = (patch: Partial<EngineFeatures> = {}): EngineFeatures => ({
-    preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true, values: {}, ...patch,
+    preview: true,
+    imageInput: true,
+    control: true,
+    references: true,
+    hires: true,
+    samplers: true,
+    lora: true,
+    values: {},
+    ...patch,
   })
   const withInit = canvas({ inputs: { init: { link: { canvasId: 'a' }, strength: 0.6 } } })
 
@@ -127,25 +152,56 @@ describe('studio/mask start-picture space', () => {
   })
 
   it('crop: saves at the picture size; what the crop hides keeps the earlier mask or is kept', () => {
-    const out = maskToPicture(filled(100, 100, () => true), wide, 'crop')
+    const out = maskToPicture(
+      filled(100, 100, () => true),
+      wide,
+      'crop',
+    )
     expect([out.width, out.height]).toEqual([400, 200])
-    expect([px(out, 0, 0), px(out, 99, 100), px(out, 100, 0), px(out, 299, 199), px(out, 300, 50), px(out, 399, 199)]).toEqual([0, 0, 255, 255, 0, 0])
+    expect([px(out, 0, 0), px(out, 99, 100), px(out, 100, 0), px(out, 299, 199), px(out, 300, 50), px(out, 399, 199)]).toEqual([
+      0, 0, 255, 255, 0, 0,
+    ])
     const earlier = filled(400, 200, (x) => x < 20)
-    const merged = maskToPicture(filled(100, 100, () => false), wide, 'crop', earlier)
+    const merged = maskToPicture(
+      filled(100, 100, () => false),
+      wide,
+      'crop',
+      earlier,
+    )
     expect([px(merged, 10, 10), px(merged, 30, 10), px(merged, 150, 10)]).toEqual([255, 0, 0])
   })
 
   it('fit: every picture pixel is on the canvas; painted bands count for nothing', () => {
-    const all = maskToPicture(filled(100, 100, () => true), wide, 'fit')
+    const all = maskToPicture(
+      filled(100, 100, () => true),
+      wide,
+      'fit',
+    )
     expect(isEmptyMask(invertMask(all))).toBe(true)
     // Only the band above the picture is painted: nothing of the picture is.
-    expect(isEmptyMask(maskToPicture(filled(100, 100, (_x, y) => y < 25), wide, 'fit'))).toBe(true)
-    const top = maskToPicture(filled(100, 100, (_x, y) => y < 50), wide, 'fit')
+    expect(
+      isEmptyMask(
+        maskToPicture(
+          filled(100, 100, (_x, y) => y < 25),
+          wide,
+          'fit',
+        ),
+      ),
+    ).toBe(true)
+    const top = maskToPicture(
+      filled(100, 100, (_x, y) => y < 50),
+      wide,
+      'fit',
+    )
     expect([px(top, 200, 0), px(top, 200, 99), px(top, 200, 100), px(top, 200, 199)]).toEqual([255, 255, 0, 0])
   })
 
   it('stretch: a plain scale on each axis', () => {
-    const left = maskToPicture(filled(100, 100, (x) => x < 50), wide, 'stretch')
+    const left = maskToPicture(
+      filled(100, 100, (x) => x < 50),
+      wide,
+      'stretch',
+    )
     expect([px(left, 0, 0), px(left, 199, 199), px(left, 200, 0), px(left, 399, 199)]).toEqual([255, 255, 0, 0])
   })
 
@@ -164,7 +220,11 @@ describe('studio/mask start-picture space', () => {
 
   it('crop with a very different aspect ratio only touches the visible strip', () => {
     const picture = { width: 1600, height: 100 }
-    const out = maskToPicture(filled(512, 512, () => true), picture, 'crop')
+    const out = maskToPicture(
+      filled(512, 512, () => true),
+      picture,
+      'crop',
+    )
     // Cover scale 5.12: 8192 × 512, centred, so picture columns 750–849 are visible.
     expect([px(out, 749, 50), px(out, 750, 50), px(out, 849, 50), px(out, 850, 50)]).toEqual([0, 255, 255, 0])
   })
@@ -178,7 +238,14 @@ describe('studio/mask start-picture space', () => {
 
   it('knows the start picture size from an imported picture or a recorded output', () => {
     const image = canvas({ id: 'img', kind: 'image', imagePath: '/p.png', imageSize: { width: 1600, height: 1200 } })
-    const result = canvas({ id: 'res', kind: 'result', outputs: [{ path: '/o/0.png', width: 832, height: 1216, seed: 1 }, { path: '/o/1.png', width: 640, height: 640, seed: 2 }] })
+    const result = canvas({
+      id: 'res',
+      kind: 'result',
+      outputs: [
+        { path: '/o/0.png', width: 832, height: 1216, seed: 1 },
+        { path: '/o/1.png', width: 640, height: 640, seed: 2 },
+      ],
+    })
     const target = (link: { canvasId: string; output?: number }) => canvas({ id: 't', inputs: { init: { link, strength: 0.6 } } })
     const all = [image, result]
     expect(startPictureSize(target({ canvasId: 'img' }), all)).toEqual({ width: 1600, height: 1200 })
@@ -197,8 +264,8 @@ describe('studio/mask matches the engine resize_to', () => {
     const srcRatio = iw / ih
     const floordiv = (a: number, b: number) => Number(BigInt(a) / BigInt(b))
     const intHalf = (v: number) => Number(BigInt(v) / 2n)
-    const w = mode === 'crop' ? (ratio > srcRatio ? W : floordiv(iw * H, ih)) : (ratio < srcRatio ? W : floordiv(iw * H, ih))
-    const h = mode === 'crop' ? (ratio <= srcRatio ? H : floordiv(ih * W, iw)) : (ratio >= srcRatio ? H : floordiv(ih * W, iw))
+    const w = mode === 'crop' ? (ratio > srcRatio ? W : floordiv(iw * H, ih)) : ratio < srcRatio ? W : floordiv(iw * H, ih)
+    const h = mode === 'crop' ? (ratio <= srcRatio ? H : floordiv(ih * W, iw)) : ratio >= srcRatio ? H : floordiv(ih * W, iw)
     const ox = intHalf(W) - intHalf(w)
     const oy = intHalf(H) - intHalf(h)
     const rowsFill = mode === 'fit' && ratio < srcRatio ? intHalf(H) - intHalf(h) : 0
@@ -207,8 +274,15 @@ describe('studio/mask matches the engine resize_to', () => {
   }
 
   const cases: Array<[number, number, number, number]> = [
-    [333, 517, 1000, 768], [1001, 999, 512, 513], [7, 3, 5, 9], [3, 7, 10, 10], [1920, 1080, 1023, 1025],
-    [640, 480, 1024, 768], [1, 1000, 999, 1], [4097, 15, 64, 2048], [517, 333, 9, 1001],
+    [333, 517, 1000, 768],
+    [1001, 999, 512, 513],
+    [7, 3, 5, 9],
+    [3, 7, 10, 10],
+    [1920, 1080, 1023, 1025],
+    [640, 480, 1024, 768],
+    [1, 1000, 999, 1],
+    [4097, 15, 64, 2048],
+    [517, 333, 9, 1001],
   ]
   for (const [iw, ih, W, H] of cases) {
     for (const mode of ['crop', 'fit'] as const) {
@@ -218,13 +292,18 @@ describe('studio/mask matches the engine resize_to', () => {
         expect({ w: got.w, h: got.h, ox: got.ox, oy: got.oy }).toEqual({ w: want.w, h: want.h, ox: want.ox, oy: want.oy })
         expect(got.sx).toBeCloseTo(want.w / iw, 12)
         expect(got.sy).toBeCloseTo(want.h / ih, 12)
-        const fill = want.rowsFill > 0 ? { bands: 'rows', fill: want.rowsFill } : want.columnsFill > 0 ? { bands: 'columns', fill: want.columnsFill } : { bands: null, fill: 0 }
+        const fill =
+          want.rowsFill > 0
+            ? { bands: 'rows', fill: want.rowsFill }
+            : want.columnsFill > 0
+              ? { bands: 'columns', fill: want.columnsFill }
+              : { bands: null, fill: 0 }
         expect({ bands: got.bands, fill: got.fill }).toEqual(fill)
       })
     }
   }
 
-  it('fit with rows: bands repeat the picture\'s first and last row; an odd leftover row stays 0', () => {
+  it("fit with rows: bands repeat the picture's first and last row; an odd leftover row stays 0", () => {
     // 4×2 into 9×9: picture 9×4 at y 2–5, bands rows 0–1 and 6–7, row 8 is left blank by the engine.
     const place = placement({ width: 4, height: 2 }, { width: 9, height: 9 }, 'fit')
     expect(place).toMatchObject({ w: 9, h: 4, ox: 0, oy: 2, bands: 'rows', fill: 2 })
@@ -245,7 +324,11 @@ describe('studio/mask matches the engine resize_to', () => {
     const place = placement({ width: 2, height: 5 }, { width: 11, height: 6 }, 'fit')
     expect(place).toMatchObject({ w: 2, h: 6, ox: 4, oy: 0, bands: 'columns', fill: 4 })
     const mask = createMask(11, 6)
-    for (let y = 0; y < 6; y += 1) { mask.data[y * 11 + 4] = y % 2 ? 255 : 0; mask.data[y * 11 + 5] = 255; mask.data[y * 11 + 10] = 255 }
+    for (let y = 0; y < 6; y += 1) {
+      mask.data[y * 11 + 4] = y % 2 ? 255 : 0
+      mask.data[y * 11 + 5] = 255
+      mask.data[y * 11 + 10] = 255
+    }
     settleBands(mask, place)
     for (let y = 0; y < 6; y += 1) {
       const line = [...mask.data.subarray(y * 11, y * 11 + 11)]

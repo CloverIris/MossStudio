@@ -33,7 +33,8 @@ function unsupportedReason({ run, hasKeys, exists, writable }: UpdateContextInpu
   if (!hasKeys) return '此版本未内置更新签名密钥，无法验证更新'
   if (!run.recordPath || !run.record) return '找不到安装记录（install.json），无法自动更新'
   if (run.platform === 'darwin') {
-    if (!writable(run.root ?? run.appPath)) return '应用所在的文件夹不可写，无法自动更新（请把 MossStudio 移到“应用程序”或你有写入权限的文件夹）'
+    if (!writable(run.root ?? run.appPath))
+      return '应用所在的文件夹不可写，无法自动更新（请把 MossStudio 移到“应用程序”或你有写入权限的文件夹）'
     return null
   }
   if (!run.launcher || !exists(run.launcher)) {

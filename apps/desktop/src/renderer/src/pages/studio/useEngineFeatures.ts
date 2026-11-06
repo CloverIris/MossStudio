@@ -30,7 +30,9 @@ export function useEngineFeatures(target: EngineTarget | null): EngineFeatures |
   useEffect(() => {
     const bump = (): void => setStamp((value) => value + 1)
     const stops = [onEvent(Events.settingsChanged, bump), onEvent(Events.hostsChanged, bump)]
-    return () => { for (const stop of stops) stop() }
+    return () => {
+      for (const stop of stops) stop()
+    }
   }, [])
 
   useEffect(() => {
@@ -43,7 +45,9 @@ export function useEngineFeatures(target: EngineTarget | null): EngineFeatures |
         cache.set(key, features)
         if (alive) setAnswer({ key, features })
       })
-    return () => { alive = false }
+    return () => {
+      alive = false
+    }
     // `target` is read through `key`.
   }, [key, engineKey, stamp])
 

@@ -111,7 +111,8 @@ export interface ChooseOptions {
 
 const UPDATE_DRIVER_R580 = '把 NVIDIA 显卡驱动更新到 R580 或更新版本，可以使用更快的 CUDA 引擎。'
 const ROCM_TIP = '安装 ROCm 7 可获得更快的原生支持。'
-const HIP_ACCESS_TIP = '已安装 ROCm 7，但当前用户不能访问 /dev/kfd 或 /dev/dri/renderD*：把用户加入 render 和 video 组（sudo usermod -aG render,video $USER）后重新登录，即可使用更快的 AMD 原生引擎。'
+const HIP_ACCESS_TIP =
+  '已安装 ROCm 7，但当前用户不能访问 /dev/kfd 或 /dev/dri/renderD*：把用户加入 render 和 video 组（sudo usermod -aG render,video $USER）后重新登录，即可使用更快的 AMD 原生引擎。'
 
 function updateDriverTip(os: 'windows' | 'linux'): string {
   return `把 NVIDIA 显卡驱动更新到 ${driverMinimumLabel('cu12', os)} 或更新版本，可以使用更快的 CUDA 引擎。`
@@ -164,10 +165,9 @@ function ladder(machine: EngineMachine, gpu: EngineMachineGpu): Step[] {
           tip: UPDATE_DRIVER_R580,
         })
       }
-      steps.push(vulkan(
-        `${name} 的显卡驱动${gpu.driverVersion ? `（${gpu.driverVersion}）` : ''}太旧，暂时使用兼容模式`,
-        updateDriverTip(os),
-      ))
+      steps.push(
+        vulkan(`${name} 的显卡驱动${gpu.driverVersion ? `（${gpu.driverVersion}）` : ''}太旧，暂时使用兼容模式`, updateDriverTip(os)),
+      )
     } else if (cc.major === 7 && cc.minor >= 5) {
       if (os === 'windows') {
         if (cu13) steps.push({ pkg: cudaCandidates(machine, 'cu13', 'sm75'), reason: `${name}（${sm}）使用 CUDA 13 的 SM75 引擎` })
@@ -249,7 +249,11 @@ export function chooseEnginePackages(machine: EngineMachine, release: EngineAsse
       const wanted = compatible.find((pkg) => enginePackageId(pkg) === override)
       if (wanted) {
         overridden.add(gpu.id)
-        picked = { pkg: wanted, asset: assetIn(release, machine.os, wanted)!, step: { pkg: [wanted], reason: `${gpu.name} 使用你在高级设置里选的引擎` } }
+        picked = {
+          pkg: wanted,
+          asset: assetIn(release, machine.os, wanted)!,
+          step: { pkg: [wanted], reason: `${gpu.name} 使用你在高级设置里选的引擎` },
+        }
       } else if (parseEnginePackageId(override)) {
         choice.overrideIgnored = true
       }

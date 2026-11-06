@@ -41,7 +41,8 @@ export function InspectorPanel({
 
   const layers = canvas.layers
   const region = layers.find((layer) => layer.id === selectedRegionId) ?? null
-  const patch = (id: string, value: Partial<ProjectLayer>): void => onChangeLayers((items) => items.map((item) => item.id === id ? { ...item, ...value } : item))
+  const patch = (id: string, value: Partial<ProjectLayer>): void =>
+    onChangeLayers((items) => items.map((item) => (item.id === id ? { ...item, ...value } : item)))
 
   return (
     <div className="flex flex-col gap-5">
@@ -52,7 +53,7 @@ export function InspectorPanel({
             block
             label="区域类型"
             value={region.kind}
-            onChange={(kind) => patch(region.id, { kind, text: kind === 'text' ? region.text ?? '' : region.text })}
+            onChange={(kind) => patch(region.id, { kind, text: kind === 'text' ? (region.text ?? '') : region.text })}
             options={KINDS.map((kind) => ({ value: kind, label: KIND_LABEL[kind] }))}
           />
           <Textarea
@@ -60,11 +61,22 @@ export function InspectorPanel({
             aria-label="区域描述"
             value={region.caption}
             onChange={(event) => patch(region.id, { caption: event.target.value })}
-            placeholder={region.kind === 'character' ? '这个人是什么样子、在做什么' : region.kind === 'text' ? '文字的样式，例如：大号白色标题' : '这里画什么'}
+            placeholder={
+              region.kind === 'character'
+                ? '这个人是什么样子、在做什么'
+                : region.kind === 'text'
+                  ? '文字的样式，例如：大号白色标题'
+                  : '这里画什么'
+            }
             className="h-[92px] resize-none"
           />
           {region.kind === 'text' ? (
-            <Input aria-label="要显示的文字" value={region.text ?? ''} onChange={(event) => patch(region.id, { text: event.target.value })} placeholder="要显示的文字" />
+            <Input
+              aria-label="要显示的文字"
+              value={region.text ?? ''}
+              onChange={(event) => patch(region.id, { text: event.target.value })}
+              placeholder="要显示的文字"
+            />
           ) : null}
           <label className="flex items-center gap-3 text-caption">
             <span className="w-12 shrink-0 text-ink-2">不透明度</span>
@@ -80,10 +92,26 @@ export function InspectorPanel({
             <span className="tabular w-9 shrink-0 text-right text-ink">{Math.round((region.opacity ?? 1) * 100)}%</span>
           </label>
           <div className="flex items-center gap-1.5">
-            <Button tone="secondary" aria-pressed={region.locked} onClick={() => patch(region.id, { locked: !region.locked })}>{region.locked ? '解锁' : '锁定'}</Button>
-            <Button tone="secondary" aria-pressed={region.visible === false} onClick={() => patch(region.id, { visible: region.visible === false })}>{region.visible === false ? '显示' : '隐藏'}</Button>
+            <Button tone="secondary" aria-pressed={region.locked} onClick={() => patch(region.id, { locked: !region.locked })}>
+              {region.locked ? '解锁' : '锁定'}
+            </Button>
+            <Button
+              tone="secondary"
+              aria-pressed={region.visible === false}
+              onClick={() => patch(region.id, { visible: region.visible === false })}
+            >
+              {region.visible === false ? '显示' : '隐藏'}
+            </Button>
             <span className="flex-1" />
-            <Button tone="ghost" onClick={() => { onChangeLayers((items) => items.filter((item) => item.id !== region.id)); onSelectRegion(null) }}>删除</Button>
+            <Button
+              tone="ghost"
+              onClick={() => {
+                onChangeLayers((items) => items.filter((item) => item.id !== region.id))
+                onSelectRegion(null)
+              }}
+            >
+              删除
+            </Button>
           </div>
         </section>
       ) : (
@@ -95,7 +123,11 @@ export function InspectorPanel({
       <section aria-label="图层" className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between pb-2">
           <span className="text-caption font-semibold text-ink-2">图层</span>
-          {layers.length ? <Button tone="ghost" size="sm" className="-mr-2 h-7 px-2" onClick={() => setClearing(true)}>清空</Button> : null}
+          {layers.length ? (
+            <Button tone="ghost" size="sm" className="-mr-2 h-7 px-2" onClick={() => setClearing(true)}>
+              清空
+            </Button>
+          ) : null}
         </div>
         {layers.length === 0 ? <p className="text-caption text-ink-2">还没有区域。</p> : null}
         <ul className="flex flex-col gap-0.5">
@@ -105,7 +137,10 @@ export function InspectorPanel({
               data-layer-id={layer.id}
               draggable
               onDragStart={(event) => {
-                if ((event.target as HTMLElement).closest('button:not([data-layer-select])')) { event.preventDefault(); return }
+                if ((event.target as HTMLElement).closest('button:not([data-layer-select])')) {
+                  event.preventDefault()
+                  return
+                }
                 setDragId(layer.id)
                 event.dataTransfer.effectAllowed = 'move'
                 event.dataTransfer.setData('text/plain', layer.id)
@@ -116,14 +151,17 @@ export function InspectorPanel({
                 event.dataTransfer.dropEffect = 'move'
                 setDropId(layer.id)
               }}
-              onDragLeave={() => setDropId((current) => current === layer.id ? null : current)}
+              onDragLeave={() => setDropId((current) => (current === layer.id ? null : current))}
               onDrop={(event) => {
                 event.preventDefault()
                 if (dragId && dragId !== layer.id) onChangeLayers((items) => reorderLayers(items, dragId, layer.id))
                 setDragId(null)
                 setDropId(null)
               }}
-              onDragEnd={() => { setDragId(null); setDropId(null) }}
+              onDragEnd={() => {
+                setDragId(null)
+                setDropId(null)
+              }}
               className={cn(
                 'group relative flex h-9 items-center gap-2 rounded-md pl-1 pr-1 text-ui transition-colors',
                 layer.id === selectedRegionId ? 'bg-well' : 'hover:bg-well',
@@ -163,7 +201,11 @@ export function InspectorPanel({
         title="清空所有区域？"
         description={`这个画面的 ${layers.length} 个区域都会删除，描述和底图会保留。`}
         confirmLabel="清空区域"
-        onConfirm={() => { onChangeLayers(() => []); onSelectRegion(null); setClearing(false) }}
+        onConfirm={() => {
+          onChangeLayers(() => [])
+          onSelectRegion(null)
+          setClearing(false)
+        }}
       />
     </div>
   )

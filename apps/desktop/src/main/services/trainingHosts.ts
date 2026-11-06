@@ -102,7 +102,7 @@ export function saveTrainingHost(input: SaveTrainingHostInput): TrainingHost {
     modelsRoot: input.modelsRoot?.trim() || undefined,
     downloadProxy: input.downloadProxy === undefined ? existing?.downloadProxy : input.downloadProxy.trim() || undefined,
     hfEndpoint: input.hfEndpoint === undefined ? existing?.hfEndpoint : input.hfEndpoint.trim() || undefined,
-    downloadConcurrency: input.downloadConcurrency === undefined ? existing?.downloadConcurrency : input.downloadConcurrency ?? undefined,
+    downloadConcurrency: input.downloadConcurrency === undefined ? existing?.downloadConcurrency : (input.downloadConcurrency ?? undefined),
     hasHfToken: hasHfToken(id),
     status: 'unchecked',
     lastCheckedAt: undefined,

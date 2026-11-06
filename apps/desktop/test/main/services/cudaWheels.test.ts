@@ -16,11 +16,20 @@ function zip(entries: Record<string, string>): Buffer {
     const fileName = Buffer.from(name)
     const crc = crc32(data)
     const local = Buffer.alloc(30)
-    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14)
-    local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(fileName.length, 26)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(data.length, 22)
+    local.writeUInt16LE(fileName.length, 26)
     const central = Buffer.alloc(46)
-    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt32LE(crc, 16)
-    central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(fileName.length, 28)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(20, 4)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(data.length, 20)
+    central.writeUInt32LE(data.length, 24)
+    central.writeUInt16LE(fileName.length, 28)
     central.writeUInt32LE(offset, 42)
     locals.push(local, fileName, data)
     centrals.push(central, fileName)
@@ -28,8 +37,11 @@ function zip(entries: Record<string, string>): Buffer {
   }
   const directory = Buffer.concat(centrals)
   const end = Buffer.alloc(22)
-  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(Object.keys(entries).length, 8); end.writeUInt16LE(Object.keys(entries).length, 10)
-  end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(Object.keys(entries).length, 8)
+  end.writeUInt16LE(Object.keys(entries).length, 10)
+  end.writeUInt32LE(directory.length, 12)
+  end.writeUInt32LE(offset, 16)
   return Buffer.concat([...locals, directory, end])
 }
 
@@ -54,29 +66,47 @@ const setPlatform = (platform: NodeJS.Platform) => Object.defineProperty(process
 const sha = (buffer: Buffer) => createHash('sha256').update(buffer).digest('hex')
 
 const wheels: Record<string, Buffer> = {
-  'nvidia-cublas': zip({ 'nvidia/cu13/lib/': '', 'nvidia/cu13/lib/libcublasLt.so.13': 'lt', 'nvidia/cu13/lib/libcublas.so.13': 'blas', 'nvidia/__init__.py': '' }),
-  'nvidia-cuda-runtime': zip({ 'nvidia/cu13/lib/libcudart.so.13': 'rt', 'METADATA': 'x' }),
+  'nvidia-cublas': zip({
+    'nvidia/cu13/lib/': '',
+    'nvidia/cu13/lib/libcublasLt.so.13': 'lt',
+    'nvidia/cu13/lib/libcublas.so.13': 'blas',
+    'nvidia/__init__.py': '',
+  }),
+  'nvidia-cuda-runtime': zip({ 'nvidia/cu13/lib/libcudart.so.13': 'rt', METADATA: 'x' }),
   'nvidia-cublas-cu12': zip({ 'nvidia/cublas/lib/libcublasLt.so.12': 'lt12' }),
   'nvidia-cuda-runtime-cu12': zip({ 'nvidia/cuda_runtime/lib/libcudart.so.12': 'rt12' }),
 }
 const options = { badDigest: '' as string, noWheel: '' as string, http: 200 }
 
 function stubPyPi() {
-  vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
-    const url = String(input)
-    const json = /https:\/\/pypi\.org\/pypi\/([^/]+)\/json/.exec(url)
-    if (json) {
-      const pkg = decodeURIComponent(json[1]!)
-      const wheel = wheels[pkg]!
-      return Response.json({ urls: [
-        { filename: `${pkg}-1.0-py3-none-win_amd64.whl`, url: `https://files.test/${pkg}-win.whl`, digests: { sha256: sha(wheel) } },
-        ...(options.noWheel === pkg ? [] : [{ filename: `${pkg}-1.0-py3-none-manylinux_2_27_x86_64.whl`, url: `https://files.test/${pkg}.whl`, digests: { sha256: options.badDigest === pkg ? '0'.repeat(64) : sha(wheel) } }]),
-      ] })
-    }
-    const pkg = /files\.test\/(.+?)(?:-win)?\.whl$/.exec(url)?.[1]
-    if (pkg && wheels[pkg]) return new Response(new Uint8Array(wheels[pkg]), { status: options.http })
-    return new Response('', { status: 404 })
-  }))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      const json = /https:\/\/pypi\.org\/pypi\/([^/]+)\/json/.exec(url)
+      if (json) {
+        const pkg = decodeURIComponent(json[1]!)
+        const wheel = wheels[pkg]!
+        return Response.json({
+          urls: [
+            { filename: `${pkg}-1.0-py3-none-win_amd64.whl`, url: `https://files.test/${pkg}-win.whl`, digests: { sha256: sha(wheel) } },
+            ...(options.noWheel === pkg
+              ? []
+              : [
+                  {
+                    filename: `${pkg}-1.0-py3-none-manylinux_2_27_x86_64.whl`,
+                    url: `https://files.test/${pkg}.whl`,
+                    digests: { sha256: options.badDigest === pkg ? '0'.repeat(64) : sha(wheel) },
+                  },
+                ]),
+          ],
+        })
+      }
+      const pkg = /files\.test\/(.+?)(?:-win)?\.whl$/.exec(url)?.[1]
+      if (pkg && wheels[pkg]) return new Response(new Uint8Array(wheels[pkg]), { status: options.http })
+      return new Response('', { status: 404 })
+    }),
+  )
 }
 
 beforeEach(() => {
@@ -93,7 +123,10 @@ const load = () => import('@main/services/cudaWheels')
 describe('installCudaWheels', () => {
   it('extracts only shared libraries from the platform wheels into lib/', async () => {
     const result = await (await load()).installCudaWheels(temp(), 'cu13')
-    expect(result.packages).toEqual(['nvidia-cublas-1.0-py3-none-manylinux_2_27_x86_64.whl', 'nvidia-cuda-runtime-1.0-py3-none-manylinux_2_27_x86_64.whl'])
+    expect(result.packages).toEqual([
+      'nvidia-cublas-1.0-py3-none-manylinux_2_27_x86_64.whl',
+      'nvidia-cuda-runtime-1.0-py3-none-manylinux_2_27_x86_64.whl',
+    ])
     expect(result.installed.sort()).toEqual(['libcublas.so.13', 'libcublasLt.so.13', 'libcudart.so.13'])
     expect(readdirSync(join(temp(), 'lib')).sort()).toEqual(['libcublas.so.13', 'libcublasLt.so.13', 'libcudart.so.13'])
     expect(readFileSync(join(temp(), 'lib', 'libcublasLt.so.13'), 'utf8')).toBe('lt')

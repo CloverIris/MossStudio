@@ -29,18 +29,24 @@ describe('probeRemoteCuda', () => {
   })
 
   it('reads every display device from DRM and the nvidia-smi names, for the engine chooser', async () => {
-    reply([...base,
+    reply([
+      ...base,
       put('GPU_CSV', 'Tesla V100-PCIE-32GB, 32768 MiB, 550.163.01, 7.0'),
       put('DRM', '0x1a03:0x2000\n0x10de:0x1db6\n0x1002:0x744c\n'),
     ])
     const status = await probeRemoteCuda(host)
-    expect(status.cuda).toMatchObject({ gpuNames: ['Tesla V100-PCIE-32GB'], pciIds: ['1a03:2000', '10de:1db6', '1002:744c'], standardArchitectureSupported: false })
+    expect(status.cuda).toMatchObject({
+      gpuNames: ['Tesla V100-PCIE-32GB'],
+      pciIds: ['1a03:2000', '10de:1db6', '1002:744c'],
+      standardArchitectureSupported: false,
+    })
     expect(status.cuda!.gpuReason).toContain('SM70 引擎包')
     expect(sshExec.mock.calls[0]![3]).toContain('/sys/class/drm/card[0-9]/device')
   })
 
   it('decodes engine state, GPU rows, driver and passing libraries', async () => {
-    reply([...base,
+    reply([
+      ...base,
       put('DRIVER', 'NVRM version: NVIDIA UNIX x86_64 Kernel Module  580.82.07  Wed'),
       put('GPU', 'NVIDIA A100'),
       put('GPU_CSV', 'NVIDIA A100, 81920 MiB, 580.82.07, 8.0\nNVIDIA A100, 81920 MiB, 580.82.07, 8.0'),
@@ -48,13 +54,31 @@ describe('probeRemoteCuda', () => {
       lib('/usr/lib/libcublasLt.so.12', '/usr/lib/libcublasLt.so.12.4.5', 'failed'),
     ])
     const status = await probeRemoteCuda(host)
-    expect(status).toMatchObject({ online: true, available: true, root: '/home/moss/.mossstudio/engine', path: '/home/moss/.mossstudio/engine/bin/moss-server', version: 'v2.1.1' })
+    expect(status).toMatchObject({
+      online: true,
+      available: true,
+      root: '/home/moss/.mossstudio/engine',
+      path: '/home/moss/.mossstudio/engine/bin/moss-server',
+      version: 'v2.1.1',
+    })
     expect(status.gpu).toBe('NVIDIA A100, 81920 MiB\nNVIDIA A100, 81920 MiB')
     expect(status.cuda).toMatchObject({
-      driverVersion: '580.82.07', computeCapabilities: ['8.0', '8.0'], flavours: ['cu13'], foundFlavours: ['cu13', 'cu12'],
-      recommendedFlavour: 'cu13', recommendedVariant: 'system-cuda', standardArchitectureSupported: true, error: undefined,
+      driverVersion: '580.82.07',
+      computeCapabilities: ['8.0', '8.0'],
+      flavours: ['cu13'],
+      foundFlavours: ['cu13', 'cu12'],
+      recommendedFlavour: 'cu13',
+      recommendedVariant: 'system-cuda',
+      standardArchitectureSupported: true,
+      error: undefined,
     })
-    expect(status.cuda!.libraries[0]).toEqual({ path: '/usr/lib/libcublasLt.so.13.0.2', major: 13, versionText: '13.0.2', dependencyCheck: 'passed', error: undefined })
+    expect(status.cuda!.libraries[0]).toEqual({
+      path: '/usr/lib/libcublasLt.so.13.0.2',
+      major: 13,
+      versionText: '13.0.2',
+      dependencyCheck: 'passed',
+      error: undefined,
+    })
     expect(sshExec).toHaveBeenCalledWith(host, 'bash -s', 30_000, expect.stringContaining("root='~/.mossstudio/engine'"))
   })
 
@@ -69,7 +93,13 @@ describe('probeRemoteCuda', () => {
   it('recommends bundled CUDA when the driver allows cu13 but no system library passed', async () => {
     reply([...base, put('DRIVER', 'Kernel Module  590.10.01 '), put('GPU_CSV', 'RTX 2080, 8192 MiB, , 7.5')])
     const status = await probeRemoteCuda(host)
-    expect(status.cuda).toMatchObject({ driverVersion: '590.10.01', recommendedFlavour: 'cu13', recommendedVariant: 'bundled', standardArchitectureSupported: false, error: '未发现系统 cuBLASLt 12/13。' })
+    expect(status.cuda).toMatchObject({
+      driverVersion: '590.10.01',
+      recommendedFlavour: 'cu13',
+      recommendedVariant: 'bundled',
+      standardArchitectureSupported: false,
+      error: '未发现系统 cuBLASLt 12/13。',
+    })
     expect(status.cuda!.gpuReason).toMatch(/SM75/)
   })
 
@@ -94,7 +124,12 @@ describe('probeRemoteCuda', () => {
 
   it('reports offline hosts, failed scripts and bad metadata', async () => {
     reply([], { code: 255, stderr: 'Connection refused' })
-    expect(await probeRemoteCuda(host)).toMatchObject({ online: false, available: false, error: 'Connection refused', root: '~/.mossstudio/engine' })
+    expect(await probeRemoteCuda(host)).toMatchObject({
+      online: false,
+      available: false,
+      error: 'Connection refused',
+      root: '~/.mossstudio/engine',
+    })
     reply([], { code: 127, stderr: '远端检测缺少系统命令：base64' })
     expect(await probeRemoteCuda(host)).toMatchObject({ online: true, available: false, error: '远端检测缺少系统命令：base64' })
     reply([put('ROOT', '/r'), put('ENGINE', 'no'), put('METADATA', '{bad')])

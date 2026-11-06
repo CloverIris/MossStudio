@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useTempDataRoot } from '@test/helpers/tempDir'
 
-type SafeStorage = typeof import('@test/mocks/electron')['safeStorage']
+type SafeStorage = (typeof import('@test/mocks/electron'))['safeStorage']
 
 const root = useTempDataRoot()
 const file = () => join(root(), 'hf-credentials.json')

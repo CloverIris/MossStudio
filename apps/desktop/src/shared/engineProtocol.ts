@@ -215,15 +215,14 @@ export function matchEngineDevice(
     const byIndex = candidates.filter((candidate) => candidate.index === gpu.index)
     return gpu.index !== undefined && byIndex.length === 1 ? byIndex[0] : undefined
   }
-  const byIndex = candidates.filter((candidate) =>
-    gpu.index !== undefined &&
-    candidate.index === gpu.index &&
-    (!candidate.name || !gpu.name || normalizedName(candidate.name) === normalizedName(gpu.name)),
+  const byIndex = candidates.filter(
+    (candidate) =>
+      gpu.index !== undefined &&
+      candidate.index === gpu.index &&
+      (!candidate.name || !gpu.name || normalizedName(candidate.name) === normalizedName(gpu.name)),
   )
   if (byIndex.length === 1) return byIndex[0]
-  const byName = candidates.filter((candidate) =>
-    candidate.name && gpu.name && normalizedName(candidate.name) === normalizedName(gpu.name),
-  )
+  const byName = candidates.filter((candidate) => candidate.name && gpu.name && normalizedName(candidate.name) === normalizedName(gpu.name))
   return byName.length === 1 ? byName[0] : undefined
 }
 
@@ -255,8 +254,11 @@ export function judgeEngineSupport(
   }
 
   const capability = device.compute
-  if (capability && options.inventoryCapability &&
-      (capability.major !== options.inventoryCapability.major || capability.minor !== options.inventoryCapability.minor)) {
+  if (
+    capability &&
+    options.inventoryCapability &&
+    (capability.major !== options.inventoryCapability.major || capability.minor !== options.inventoryCapability.minor)
+  ) {
     warnings.push(
       `系统算力为 ${options.inventoryCapability.major}.${options.inventoryCapability.minor}，引擎报告为 ${capability.major}.${capability.minor}；以引擎 supported 结论为准`,
     )

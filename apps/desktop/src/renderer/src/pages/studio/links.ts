@@ -115,7 +115,11 @@ export function setLink(canvas: ProjectCanvas, role: LinkRole, link: CanvasImage
   if (role === 'init') {
     const previous = inputs.init
     const changedSource = previous && !sameLink(previous.link, link)
-    inputs.init = { link: { ...link }, strength: previous?.strength ?? DEFAULT_INIT_STRENGTH, ...(previous?.resize ? { resize: previous.resize } : {}) }
+    inputs.init = {
+      link: { ...link },
+      strength: previous?.strength ?? DEFAULT_INIT_STRENGTH,
+      ...(previous?.resize ? { resize: previous.resize } : {}),
+    }
     // A mask is painted over one particular start picture.
     if (changedSource) delete inputs.mask
     return withInputs(canvas, inputs)
@@ -127,7 +131,7 @@ export function setLink(canvas: ProjectCanvas, role: LinkRole, link: CanvasImage
     const image = existing
       ? { ...existing, link: { ...link } }
       : { kind, link: { ...link }, strength: DEFAULT_CONTROL_STRENGTH, start: 0, end: 1 }
-    const images = existing ? control.images.map((item) => item.kind === kind ? image : item) : [...control.images, image]
+    const images = existing ? control.images.map((item) => (item.kind === kind ? image : item)) : [...control.images, image]
     inputs.control = { ...control, images }
     return withInputs(canvas, inputs)
   }
@@ -154,7 +158,7 @@ export function removeLink(canvas: ProjectCanvas, role: LinkRole, which?: number
   if (role === 'control') {
     const control = inputs.control
     if (!control) return canvas
-    const images = control.images.filter((image, index) => typeof which === 'number' ? index !== which : image.kind !== which)
+    const images = control.images.filter((image, index) => (typeof which === 'number' ? index !== which : image.kind !== which))
     if (images.length === control.images.length) return canvas
     inputs.control = { ...control, images }
     return withInputs(canvas, inputs)
@@ -247,7 +251,11 @@ export function patchControl(canvas: ProjectCanvas, patch: { loraStrength?: numb
   return { ...canvas, inputs: { ...canvas.inputs, control: next } }
 }
 
-export function patchControlImage(canvas: ProjectCanvas, kind: string, patch: Partial<Pick<ControlImage, 'strength' | 'start' | 'end'>>): ProjectCanvas {
+export function patchControlImage(
+  canvas: ProjectCanvas,
+  kind: string,
+  patch: Partial<Pick<ControlImage, 'strength' | 'start' | 'end'>>,
+): ProjectCanvas {
   const control = canvas.inputs?.control
   if (!control?.images.some((image) => image.kind === kind)) return canvas
   const images = control.images.map((image) => {

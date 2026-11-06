@@ -1,11 +1,5 @@
 import { createHash } from 'node:crypto'
-import type {
-  BranchInfo,
-  CommitInfo,
-  RuntimeInfo,
-  Settings,
-  TrainingHost,
-} from '@shared/types'
+import type { BranchInfo, CommitInfo, RuntimeInfo, Settings, TrainingHost } from '@shared/types'
 import { writeRemoteRuntime } from './runtimes'
 import { getTrainingHost } from './trainingHosts'
 import { DEFAULT_SOURCE } from './git'
@@ -27,10 +21,7 @@ export async function remoteRoots(settings: Settings, hostId: string): Promise<R
   const host = hostOf(settings, hostId)
   if (!host.instanceRoot) throw new Error('该 host 未配置实例根目录（instanceRoot）')
   const instanceRoot = await remoteAbsolute(host, host.instanceRoot)
-  const modelsRoot = await remoteAbsolute(
-    host,
-    host.modelsRoot ?? `${instanceRoot.replace(/\/$/, '')}/models`,
-  )
+  const modelsRoot = await remoteAbsolute(host, host.modelsRoot ?? `${instanceRoot.replace(/\/$/, '')}/models`)
   return { host, instanceRoot, modelsRoot }
 }
 
@@ -45,10 +36,7 @@ export function remoteMirrorPath(roots: RemoteInstanceRoots, source = DEFAULT_SO
   return `${base}/moss-image-${key}.git`
 }
 
-export async function ensureRemoteMirror(
-  roots: RemoteInstanceRoots,
-  source = DEFAULT_SOURCE,
-): Promise<void> {
+export async function ensureRemoteMirror(roots: RemoteInstanceRoots, source = DEFAULT_SOURCE): Promise<void> {
   const mirror = remoteMirrorPath(roots, source)
   const gitDir = `${roots.instanceRoot.replace(/\/$/, '')}/git`
   const command = [
@@ -109,7 +97,7 @@ export async function remoteBranches(roots: RemoteInstanceRoots, source = DEFAUL
         name,
         sha,
         isDefault: name === 'main',
-        isStable: name === 'main' && (!!main && sha === main),
+        isStable: name === 'main' && !!main && sha === main,
       }
     })
     .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name))
@@ -168,27 +156,15 @@ export async function createRemoteWorktree(
   return target
 }
 
-export async function remoteCheckout(
-  roots: RemoteInstanceRoots,
-  id: string,
-  commit: string,
-): Promise<void> {
+export async function remoteCheckout(roots: RemoteInstanceRoots, id: string, commit: string): Promise<void> {
   const target = remoteInstancePath(roots, id)
-  const result = await sshExec(
-    roots.host,
-    `git -C ${posixQuote(target)} checkout --detach ${posixQuote(commit)}`,
-    60_000,
-  )
+  const result = await sshExec(roots.host, `git -C ${posixQuote(target)} checkout --detach ${posixQuote(commit)}`, 60_000)
   if (result.code !== 0) {
     throw new Error(`远端版本切换失败：${(result.stderr || result.stdout).trim().slice(-1200)}`)
   }
 }
 
-export async function createRemoteRuntime(
-  roots: RemoteInstanceRoots,
-  instanceId: string,
-  commit: string,
-): Promise<RuntimeInfo> {
+export async function createRemoteRuntime(roots: RemoteInstanceRoots, instanceId: string, commit: string): Promise<RuntimeInfo> {
   const root = remoteInstancePath(roots, instanceId)
   const venv = `${root}/.venv`
   const command = [
@@ -253,9 +229,6 @@ export async function installRemoteRuntime(
   return runtime
 }
 
-export async function remoteModelReady(
-  roots: RemoteInstanceRoots,
-  modelRepo = 'models--OpenMOSS-Team--MOSS-Image-SFT',
-): Promise<boolean> {
+export async function remoteModelReady(roots: RemoteInstanceRoots, modelRepo = 'models--OpenMOSS-Team--MOSS-Image-SFT'): Promise<boolean> {
   return remotePathExists(roots.host, `${roots.modelsRoot.replace(/\/$/, '')}/hf/hub/${modelRepo}`)
 }

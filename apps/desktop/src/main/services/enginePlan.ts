@@ -131,7 +131,9 @@ export function planView(stored: StoredMachineProbe, release: EngineRelease | nu
 }
 
 /** Detect (fresh when asked), fetch the release, and plan. Offline: plan against what is installed. */
-export async function getEnginePlan(options: { refresh?: boolean; releaseTag?: string; channel?: 'stable' | 'dev' } = {}): Promise<EnginePlanView> {
+export async function getEnginePlan(
+  options: { refresh?: boolean; releaseTag?: string; channel?: 'stable' | 'dev' } = {},
+): Promise<EnginePlanView> {
   const channel = options.channel ?? getSettings().mossInferChannel
   let release: EngineRelease | null = null
   let releaseError: string | undefined
@@ -172,17 +174,24 @@ export async function installEnginePlan(request: InstallPlanRequest): Promise<Mo
   const stored = await detectEngineMachine({ release })
   const view = planView(stored, release, request.channel)
   if (!request.packages && view.blocked) throw new Error(view.blocked)
-  const packages = request.packages ?? view.packages
-    .filter((item) => request.all || request.releaseTag || view.missing.includes(item.packageId))
-    .map((item) => item.package)
+  const packages =
+    request.packages ??
+    view.packages.filter((item) => request.all || request.releaseTag || view.missing.includes(item.packageId)).map((item) => item.package)
   const targets = Object.fromEntries(view.packages.map((item) => [item.packageId, item.gpuIds]))
   const os = engineOsOf(process.platform)
   const rocm = stored.rocmLibDir && stored.rocmLibDir !== '/opt/rocm/lib' ? { LD_LIBRARY_PATH: stored.rocmLibDir } : undefined
   if (packages.length === 0) {
     // Everything planned is installed already: report done without downloading.
     return {
-      channel: request.channel, phase: 'done', bytes: 0, totalBytes: 0, percent: 100, speedBps: 0,
-      packages: view.installed, note: os === 'macos' ? undefined : '引擎已是最新', updatedAt: new Date().toISOString(),
+      channel: request.channel,
+      phase: 'done',
+      bytes: 0,
+      totalBytes: 0,
+      percent: 100,
+      speedBps: 0,
+      packages: view.installed,
+      note: os === 'macos' ? undefined : '引擎已是最新',
+      updatedAt: new Date().toISOString(),
     }
   }
   return downloadMossInfer({
@@ -215,4 +224,3 @@ export async function startupEnginePlan(): Promise<EnginePlanView> {
   await scanNvidiaGpus().catch(() => undefined)
   return getEnginePlan()
 }
-

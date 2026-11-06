@@ -32,7 +32,16 @@ const hello22 = decodeEngineHello({
   values: { sampler: ['euler', 'heun'], scheduler: ['karras'] },
 })
 const helloOld = decodeEngineHello({ protocol_version: 2, version: '2.1.1', capabilities: { tiers: true } })
-const all = { preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true, values: { sampler: ['euler', 'heun'], scheduler: ['karras'] } }
+const all = {
+  preview: true,
+  imageInput: true,
+  control: true,
+  references: true,
+  hires: true,
+  samplers: true,
+  lora: true,
+  values: { sampler: ['euler', 'heun'], scheduler: ['karras'] },
+}
 
 beforeEach(async () => {
   vi.resetModules()
@@ -71,7 +80,16 @@ describe('getEngineFeatures (local)', () => {
 
   it('reports an engine older than 2.2 as supporting none of the new inputs', async () => {
     probeEngine.mockResolvedValue(helloOld)
-    expect(await features.getEngineFeatures()).toEqual({ preview: false, imageInput: false, control: false, references: false, hires: false, samplers: false, lora: true, values: {} })
+    expect(await features.getEngineFeatures()).toEqual({
+      preview: false,
+      imageInput: false,
+      control: false,
+      references: false,
+      hires: false,
+      samplers: false,
+      lora: true,
+      values: {},
+    })
   })
 
   it('is null without an engine, with a failed probe (not retried at once) or another protocol', async () => {
@@ -91,11 +109,22 @@ describe('getEngineFeatures (local)', () => {
 
 describe('getEngineFeatures (CLI engines)', () => {
   const engine = (kind: 'cuda' | 'vulkan' | 'hip') => ({
-    deviceUuid: 'x', package: kind === 'cuda' ? { kind, flavour: 'cu13', arch: 'standard', runtime: 'bundled' } : { kind },
-    packageId: kind, binaryPath: `/e/${kind}`, installDir: '/e', version: 'v2.2.0',
+    deviceUuid: 'x',
+    package: kind === 'cuda' ? { kind, flavour: 'cu13', arch: 'standard', runtime: 'bundled' } : { kind },
+    packageId: kind,
+    binaryPath: `/e/${kind}`,
+    installDir: '/e',
+    version: 'v2.2.0',
   })
   const cliFeatures = (kind: 'vulkan' | 'hip') => ({
-    preview: false, imageInput: false, control: false, references: false, hires: false, samplers: false, lora: false, cli: kind,
+    preview: false,
+    imageInput: false,
+    control: false,
+    references: false,
+    hires: false,
+    samplers: false,
+    lora: false,
+    cli: kind,
     values: { sampler: ['euler'], scheduler: ['moss'] },
   })
 
@@ -121,10 +150,16 @@ describe('getEngineFeatures (CLI engines)', () => {
     expect(resolveDeviceEngine).toHaveBeenLastCalledWith('vk-8086-56a0-0')
 
     getSettings.mockReturnValue({ gpuSelection: 'auto' })
-    deviceEngines.mockReturnValue([{ gpu: {}, engine: engine('hip') }, { gpu: {}, engine: null }])
+    deviceEngines.mockReturnValue([
+      { gpu: {}, engine: engine('hip') },
+      { gpu: {}, engine: null },
+    ])
     expect(await features.getEngineFeatures()).toEqual(cliFeatures('hip'))
     // One CUDA GPU on the machine: auto may pick it, so the server's answer stands.
-    deviceEngines.mockReturnValue([{ gpu: {}, engine: engine('vulkan') }, { gpu: {}, engine: engine('cuda') }])
+    deviceEngines.mockReturnValue([
+      { gpu: {}, engine: engine('vulkan') },
+      { gpu: {}, engine: engine('cuda') },
+    ])
     expect(await features.getEngineFeatures()).toEqual(all)
   })
 

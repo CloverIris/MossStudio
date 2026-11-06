@@ -26,14 +26,38 @@ describe('studio/canvases creation', () => {
   })
 
   it('carries the current settings over to the next canvas', () => {
-    const current = canvas({ width: 1280, height: 720, steps: 8, cfg: 1, modelBundleId: 'rl', seedLocked: true, seed: 5, adapters: [{ id: 'style', strength: 0.5 }] })
+    const current = canvas({
+      width: 1280,
+      height: 720,
+      steps: 8,
+      cfg: 1,
+      modelBundleId: 'rl',
+      seedLocked: true,
+      seed: 5,
+      adapters: [{ id: 'style', strength: 0.5 }],
+    })
     const next = createLayoutCanvas([current], settingsFrom(current), 'n')
-    expect(next).toMatchObject({ title: '画面 2', width: 1280, height: 720, steps: 8, cfg: 1, modelBundleId: 'rl', seedLocked: true, seed: 5 })
+    expect(next).toMatchObject({
+      title: '画面 2',
+      width: 1280,
+      height: 720,
+      steps: 8,
+      cfg: 1,
+      modelBundleId: 'rl',
+      seedLocked: true,
+      seed: 5,
+    })
     expect(next.adapters).toEqual([{ id: 'style', strength: 0.5 }])
   })
 
   it('copies any canvas into an editable layout with fresh region ids', () => {
-    const source = canvas({ kind: 'result', prompt: 'p', layers: [layer()], backgroundPath: '/bg.png', outputs: [{ path: '/o.png', width: 1, height: 1, seed: 1 }] })
+    const source = canvas({
+      kind: 'result',
+      prompt: 'p',
+      layers: [layer()],
+      backgroundPath: '/bg.png',
+      outputs: [{ path: '/o.png', width: 1, height: 1, seed: 1 }],
+    })
     const copy = copyAsLayout(source, [source], 'copy')
     expect(copy).toMatchObject({ id: 'copy', kind: 'layout', prompt: 'p', backgroundPath: '/bg.png' })
     expect(copy.outputs).toBeUndefined()
@@ -98,9 +122,22 @@ describe('studio/canvases regions', () => {
 })
 
 describe('studio/canvases reuse from 作品', () => {
-  const library: AdapterEntry[] = [{
-    id: 'ink-style', name: 'Ink', provider: 'local', repo: '', revision: '', kind: 'lora', license: '', files: ['loras/ink_v2.safetensors'], sizeBytes: 1, tags: [], installed: true, installedBytes: 1,
-  }]
+  const library: AdapterEntry[] = [
+    {
+      id: 'ink-style',
+      name: 'Ink',
+      provider: 'local',
+      repo: '',
+      revision: '',
+      kind: 'lora',
+      license: '',
+      files: ['loras/ink_v2.safetensors'],
+      sizeBytes: 1,
+      tags: [],
+      installed: true,
+      installedBytes: 1,
+    },
+  ]
 
   it('matches LoRA files by name, then by id in the path', () => {
     expect(matchAdapterPath('C:\\models\\ink_v2.safetensors', library)?.id).toBe('ink-style')
@@ -109,18 +146,55 @@ describe('studio/canvases reuse from 作品', () => {
   })
 
   it('builds a new canvas with the image parameters and a locked seed', () => {
-    const { canvas: created, missingAdapters } = canvasFromReuse({
-      id: 'r', createdAt: '', sourcePath: '/o.png', prompt: 'a cat', negativePrompt: 'blurry', width: 1000, height: 760, seed: 77, steps: 8, cfg: 1,
-      modelBundleId: 'rl', adapters: [{ path: '/x/ink_v2.safetensors', strength: 0.7 }, { path: '/x/unknown.safetensors', strength: 1 }],
-    }, [], defaultSettings(), library, 'reuse')
-    expect(created).toMatchObject({ id: 'reuse', kind: 'layout', prompt: 'a cat', negative: 'blurry', width: 1008, height: 768, seed: 77, seedLocked: true, steps: 8, cfg: 1, modelBundleId: 'rl' })
+    const { canvas: created, missingAdapters } = canvasFromReuse(
+      {
+        id: 'r',
+        createdAt: '',
+        sourcePath: '/o.png',
+        prompt: 'a cat',
+        negativePrompt: 'blurry',
+        width: 1000,
+        height: 760,
+        seed: 77,
+        steps: 8,
+        cfg: 1,
+        modelBundleId: 'rl',
+        adapters: [
+          { path: '/x/ink_v2.safetensors', strength: 0.7 },
+          { path: '/x/unknown.safetensors', strength: 1 },
+        ],
+      },
+      [],
+      defaultSettings(),
+      library,
+      'reuse',
+    )
+    expect(created).toMatchObject({
+      id: 'reuse',
+      kind: 'layout',
+      prompt: 'a cat',
+      negative: 'blurry',
+      width: 1008,
+      height: 768,
+      seed: 77,
+      seedLocked: true,
+      steps: 8,
+      cfg: 1,
+      modelBundleId: 'rl',
+    })
     expect(created.summary.caption).toBe('a cat')
     expect(created.adapters).toEqual([{ id: 'ink-style', strength: 0.7 }])
     expect(missingAdapters).toEqual(['unknown.safetensors'])
   })
 
   it('keeps defaults for anything the image did not record', () => {
-    const { canvas: created } = canvasFromReuse({ id: 'r', createdAt: '', sourcePath: '/o.png', prompt: 'p' }, [], defaultSettings(), [], 'x')
+    const { canvas: created } = canvasFromReuse(
+      { id: 'r', createdAt: '', sourcePath: '/o.png', prompt: 'p' },
+      [],
+      defaultSettings(),
+      [],
+      'x',
+    )
     expect(created).toMatchObject({ width: 1024, height: 1024, steps: 20, seedLocked: false })
   })
 })
@@ -143,19 +217,37 @@ describe('studio/canvases inputs and pictures', () => {
     const source = canvas({ id: 'src', kind: 'image', imagePath: '/a.png', seedLocked: false })
     const list = migrateCanvases([
       source,
-      canvas({ id: 'a', seedLocked: false, inputs: { init: { link: { canvasId: 'src' }, strength: 3 }, references: { links: [{ canvasId: 'gone' }, { canvasId: 'src' }] } }, sampling: { sampler: '' } }),
-      canvas({ id: 'b', seedLocked: false, inputs: { mask: { path: '/m.png' }, control: { adapterId: 'x', images: [{ kind: 'depth', link: { canvasId: 'src' }, strength: 99, start: 0.7, end: 0.2 }] } } }),
+      canvas({
+        id: 'a',
+        seedLocked: false,
+        inputs: { init: { link: { canvasId: 'src' }, strength: 3 }, references: { links: [{ canvasId: 'gone' }, { canvasId: 'src' }] } },
+        sampling: { sampler: '' },
+      }),
+      canvas({
+        id: 'b',
+        seedLocked: false,
+        inputs: {
+          mask: { path: '/m.png' },
+          control: { adapterId: 'x', images: [{ kind: 'depth', link: { canvasId: 'src' }, strength: 99, start: 0.7, end: 0.2 }] },
+        },
+      }),
     ])
     expect(list[1]!.inputs).toEqual({ init: { link: { canvasId: 'src' }, strength: 1 }, references: { links: [{ canvasId: 'src' }] } })
     expect('sampling' in list[1]!).toBe(false)
-    expect(list[2]!.inputs).toEqual({ control: { adapterId: 'x', images: [{ kind: 'depth', link: { canvasId: 'src' }, strength: 10, start: 0.7, end: 0.7 }] } })
+    expect(list[2]!.inputs).toEqual({
+      control: { adapterId: 'x', images: [{ kind: 'depth', link: { canvasId: 'src' }, strength: 10, start: 0.7, end: 0.7 }] },
+    })
     // Old canvases without inputs come through untouched.
     const plain = canvas({ seedLocked: true })
     expect(migrateCanvases([plain])[0]).toBe(plain)
   })
 
   it('copies keep their inputs and sampling; the links still point at the same sources', () => {
-    const source = canvas({ id: 's', inputs: { init: { link: { canvasId: 'img' }, strength: 0.4 }, mask: { path: '/m.png' } }, sampling: { sampler: 'euler', hires: { width: 2048, height: 2048 } } })
+    const source = canvas({
+      id: 's',
+      inputs: { init: { link: { canvasId: 'img' }, strength: 0.4 }, mask: { path: '/m.png' } },
+      sampling: { sampler: 'euler', hires: { width: 2048, height: 2048 } },
+    })
     const copy = copyAsLayout(source, [source], 'copy')
     expect(copy.inputs).toEqual(source.inputs)
     expect(copy.inputs).not.toBe(source.inputs)
@@ -163,19 +255,47 @@ describe('studio/canvases inputs and pictures', () => {
   })
 
   it('a copy of a 高清修复 result starts again at the first-pass size', () => {
-    const result = canvas({ id: 'r', kind: 'result', width: 2048, height: 2048, baseSize: { width: 1024, height: 1024 }, sampling: { hires: { width: 2048, height: 2048 } } })
-    expect(copyAsLayout(result, [result], 'c')).toMatchObject({ width: 1024, height: 1024, sampling: { hires: { width: 2048, height: 2048 } } })
+    const result = canvas({
+      id: 'r',
+      kind: 'result',
+      width: 2048,
+      height: 2048,
+      baseSize: { width: 1024, height: 1024 },
+      sampling: { hires: { width: 2048, height: 2048 } },
+    })
+    expect(copyAsLayout(result, [result], 'c')).toMatchObject({
+      width: 1024,
+      height: 1024,
+      sampling: { hires: { width: 2048, height: 2048 } },
+    })
     expect(settingsFrom(result)).toMatchObject({ width: 1024, height: 1024 })
     // New canvases inherit sampler choices, not the costly second pass.
-    expect(settingsFrom(canvas({ sampling: { sampler: 'heun', hires: { width: 2048, height: 2048 } } })).sampling).toEqual({ sampler: 'heun' })
+    expect(settingsFrom(canvas({ sampling: { sampler: 'heun', hires: { width: 2048, height: 2048 } } })).sampling).toEqual({
+      sampler: 'heun',
+    })
   })
 
   it('a picture card copies as another picture card and gives no settings to new canvases', async () => {
     const { createImageCanvas } = await import('@renderer/pages/studio/canvases')
     const card = createImageCanvas([], { path: '/assets/photo.final.jpg', width: 3000, height: 2000 }, undefined, 'img')
-    expect(card).toMatchObject({ id: 'img', kind: 'image', imagePath: '/assets/photo.final.jpg', title: 'photo.final', width: 1024, height: 683, imageSize: { width: 3000, height: 2000 } })
+    expect(card).toMatchObject({
+      id: 'img',
+      kind: 'image',
+      imagePath: '/assets/photo.final.jpg',
+      title: 'photo.final',
+      width: 1024,
+      height: 683,
+      imageSize: { width: 3000, height: 2000 },
+    })
     // The copy keeps the real pixel size, not the card size.
-    expect(copyAsLayout(card, [card], 'img2')).toMatchObject({ id: 'img2', kind: 'image', imagePath: '/assets/photo.final.jpg', width: 1024, height: 683, imageSize: { width: 3000, height: 2000 } })
+    expect(copyAsLayout(card, [card], 'img2')).toMatchObject({
+      id: 'img2',
+      kind: 'image',
+      imagePath: '/assets/photo.final.jpg',
+      width: 1024,
+      height: 683,
+      imageSize: { width: 3000, height: 2000 },
+    })
     expect(settingsFrom(card)).toEqual(defaultSettings())
   })
 
@@ -214,7 +334,10 @@ describe('studio/canvases inputs and pictures', () => {
     const { removeCanvasFrom } = await import('@renderer/pages/studio/canvases')
     const list = [
       canvas({ id: 'img', kind: 'image', imagePath: '/a.png' }),
-      canvas({ id: 'a', inputs: { init: { link: { canvasId: 'img' }, strength: 0.6 }, references: { links: [{ canvasId: 'img', output: 1 }] } } }),
+      canvas({
+        id: 'a',
+        inputs: { init: { link: { canvasId: 'img' }, strength: 0.6 }, references: { links: [{ canvasId: 'img', output: 1 }] } },
+      }),
       canvas({ id: 'b' }),
     ]
     const { canvases, removedLinks } = removeCanvasFrom(list, 'img')
@@ -226,12 +349,34 @@ describe('studio/canvases inputs and pictures', () => {
 
 describe('studio/canvases review fixes', () => {
   it('reuse carries the image sampling (高清修复 included) onto the new canvas', () => {
-    const { canvas: created } = canvasFromReuse({
-      id: 'r', createdAt: '', sourcePath: '/o.png', prompt: 'p', width: 1024, height: 1024, seed: 5,
+    const { canvas: created } = canvasFromReuse(
+      {
+        id: 'r',
+        createdAt: '',
+        sourcePath: '/o.png',
+        prompt: 'p',
+        width: 1024,
+        height: 1024,
+        seed: 5,
+        sampling: { sampler: 'euler', hires: { width: 2048, height: 2048, strength: 0.35 } },
+      },
+      [],
+      { ...defaultSettings(), sampling: { scheduler: 'karras' } },
+      [],
+      'x',
+    )
+    expect(created).toMatchObject({
+      width: 1024,
+      height: 1024,
       sampling: { sampler: 'euler', hires: { width: 2048, height: 2048, strength: 0.35 } },
-    }, [], { ...defaultSettings(), sampling: { scheduler: 'karras' } }, [], 'x')
-    expect(created).toMatchObject({ width: 1024, height: 1024, sampling: { sampler: 'euler', hires: { width: 2048, height: 2048, strength: 0.35 } } })
-    const { canvas: plain } = canvasFromReuse({ id: 'r', createdAt: '', sourcePath: '/o.png', prompt: 'p' }, [], { ...defaultSettings(), sampling: { scheduler: 'karras' } }, [], 'y')
+    })
+    const { canvas: plain } = canvasFromReuse(
+      { id: 'r', createdAt: '', sourcePath: '/o.png', prompt: 'p' },
+      [],
+      { ...defaultSettings(), sampling: { scheduler: 'karras' } },
+      [],
+      'y',
+    )
     expect(plain.sampling).toEqual({ scheduler: 'karras' })
   })
 

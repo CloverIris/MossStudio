@@ -12,7 +12,12 @@ const state = {
   realpath: {} as Record<string, string>,
   memory: 32 * GB,
   disk: { free: 200 * GB, total: 500 * GB },
-  network: { checkedAt: 'x', mode: 'auto', probes: [], selected: { git: 'https://ghproxy.net/', pip: 'https://pypi.tuna.tsinghua.edu.cn/simple', hf: 'https://hf-mirror.com', manifest: null } } as NetworkReport,
+  network: {
+    checkedAt: 'x',
+    mode: 'auto',
+    probes: [],
+    selected: { git: 'https://ghproxy.net/', pip: 'https://pypi.tuna.tsinghua.edu.cn/simple', hf: 'https://hf-mirror.com', manifest: null },
+  } as NetworkReport,
 }
 vi.mock('@main/lib/run', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@main/lib/run')>()),
@@ -32,7 +37,10 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   const promises = {
     ...actual.promises,
-    realpath: async (path: string) => { if (!(path in state.realpath)) throw new Error('ENOENT'); return state.realpath[path] },
+    realpath: async (path: string) => {
+      if (!(path in state.realpath)) throw new Error('ENOENT')
+      return state.realpath[path]
+    },
     statfs: async () => ({ blocks: state.disk.total / 4096, bavail: state.disk.free / 4096, bsize: 4096 }),
   }
   return { ...actual, promises, default: { ...actual, promises } }
@@ -46,7 +54,10 @@ beforeEach(() => {
   vi.resetModules()
   setPlatform('linux')
   state.commands = {
-    'lspci': { code: 0, stdout: '00:02.0 Host bridge: Intel\n01:00.0 VGA compatible controller: NVIDIA Corporation AD102 [GeForce RTX 4090] (rev a1)\n' },
+    lspci: {
+      code: 0,
+      stdout: '00:02.0 Host bridge: Intel\n01:00.0 VGA compatible controller: NVIDIA Corporation AD102 [GeForce RTX 4090] (rev a1)\n',
+    },
     '/bundled/git --version': { code: 0, stdout: 'git version 2.47.0\n' },
   }
   state.realpath = {}
@@ -91,7 +102,10 @@ describe('scanEnvironment', () => {
     Object.assign(state.commands, {
       'which python3': { code: 0, stdout: '/usr/bin/python3\n' },
       'which python': { code: 0, stdout: '/usr/bin/python\n' },
-      'uv python list': { code: 0, stdout: 'cpython-3.11.9-linux    /home/u/.local/share/uv/python/bin/python3.11\ncpython-3.13 <download available>\n' },
+      'uv python list': {
+        code: 0,
+        stdout: 'cpython-3.11.9-linux    /home/u/.local/share/uv/python/bin/python3.11\ncpython-3.13 <download available>\n',
+      },
       '/usr/bin/python3.12 --version': { code: 0, stdout: 'Python 3.12.3' },
       '/opt/custom/python --version': { code: 0, stdout: '', stderr: 'Python 3.10.1' },
       '/home/u/.local/share/uv/python/bin/python3.11 --version': { code: 0, stdout: 'Python 3.11.9' },
@@ -106,7 +120,10 @@ describe('scanEnvironment', () => {
     }
     const report = await scan({ pythonPath: '/opt/custom/python' })
     expect(report.pythons.map((python) => [python.version, python.source])).toEqual([
-      ['3.10.1', 'system'], ['3.12.3', 'system'], ['3.11.9', 'uv'], ['3.12.14', 'managed'],
+      ['3.10.1', 'system'],
+      ['3.12.3', 'system'],
+      ['3.11.9', 'uv'],
+      ['3.12.14', 'managed'],
     ])
     expect(check(report, 'python')).toMatchObject({ status: 'ok', value: '3.10.1 / 3.12.3 / 3.11.9 / 3.12.14' })
   })
@@ -114,7 +131,11 @@ describe('scanEnvironment', () => {
   it('warns about missing Python and errors on missing git', async () => {
     state.commands['/bundled/git --version'] = { code: 127, stdout: '' }
     const report = await scan()
-    expect(check(report, 'python')).toMatchObject({ status: 'warn', value: '未找到 3.10+', actions: [expect.objectContaining({ id: 'python' })] })
+    expect(check(report, 'python')).toMatchObject({
+      status: 'warn',
+      value: '未找到 3.10+',
+      actions: [expect.objectContaining({ id: 'python' })],
+    })
     expect(check(report, 'git')).toMatchObject({ status: 'error', value: '未安装' })
   })
 
@@ -122,7 +143,11 @@ describe('scanEnvironment', () => {
     state.disk = { free: 20 * GB, total: 100 * GB }
     state.memory = 8 * GB
     let report = await scan()
-    expect(check(report, 'disk')).toMatchObject({ status: 'error', value: '剩余 20.0 GB / 100.0 GB', actions: [expect.objectContaining({ payload: 'storage' })] })
+    expect(check(report, 'disk')).toMatchObject({
+      status: 'error',
+      value: '剩余 20.0 GB / 100.0 GB',
+      actions: [expect.objectContaining({ payload: 'storage' })],
+    })
     expect(check(report, 'memory').status).toBe('warn')
     state.disk = { free: 40 * GB, total: 100 * GB }
     vi.resetModules()
@@ -132,9 +157,20 @@ describe('scanEnvironment', () => {
 
   it('summarises the selected mirrors and reports progress for every section', async () => {
     const events: string[] = []
-    const report = await (await import('@main/services/env')).scanEnvironment(settingsFixture(), (event) => events.push(`${event.section}:${event.status}`))
-    expect(check(report, 'network')).toMatchObject({ status: 'ok', value: 'git ghproxy.net · pip pypi.tuna.tsinghua.edu.cn · hf hf-mirror.com' })
-    expect(events.filter((event) => event.endsWith(':done')).sort()).toEqual(['accelerator:done', 'memory:done', 'network:done', 'system:done', 'tools:done'])
+    const report = await (
+      await import('@main/services/env')
+    ).scanEnvironment(settingsFixture(), (event) => events.push(`${event.section}:${event.status}`))
+    expect(check(report, 'network')).toMatchObject({
+      status: 'ok',
+      value: 'git ghproxy.net · pip pypi.tuna.tsinghua.edu.cn · hf hf-mirror.com',
+    })
+    expect(events.filter((event) => event.endsWith(':done')).sort()).toEqual([
+      'accelerator:done',
+      'memory:done',
+      'network:done',
+      'system:done',
+      'tools:done',
+    ])
     state.network = { ...state.network, selected: { git: null, pip: null, hf: null, manifest: null } }
     vi.resetModules()
     expect(check(await scan(), 'network')).toMatchObject({ status: 'warn', value: 'git 直连 · pip 默认 · hf 直连' })
@@ -142,16 +178,41 @@ describe('scanEnvironment', () => {
 
   it('reads Windows GPUs from PowerShell JSON', async () => {
     setPlatform('win32')
-    state.commands['powershell'] = { code: 0, stdout: JSON.stringify([{ Name: 'Microsoft Basic Display' }, { Name: 'AMD Radeon RX 7900', DriverVersion: '31.0' }]) }
+    state.commands['powershell'] = {
+      code: 0,
+      stdout: JSON.stringify([{ Name: 'Microsoft Basic Display' }, { Name: 'AMD Radeon RX 7900', DriverVersion: '31.0' }]),
+    }
     expect((await scan()).gpu).toEqual({ kind: 'amd', name: 'AMD Radeon RX 7900', driver: '31.0', available: true })
   })
 
   it('reads Apple GPUs from system_profiler on macOS', async () => {
     setPlatform('darwin')
-    state.commands['system_profiler'] = { code: 0, stdout: JSON.stringify({ SPDisplaysDataType: [{ sppci_model: 'Apple M3 Max', sppci_cores: '40', spdisplays_mtlgpufamilysupport: 'spdisplays_metal3', spdisplays_vram: '1536 MB' }] }) }
-    state.commands['vm_stat'] = { code: 0, stdout: 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:  1000.\nPages inactive:  1000.\n' }
+    state.commands['system_profiler'] = {
+      code: 0,
+      stdout: JSON.stringify({
+        SPDisplaysDataType: [
+          {
+            sppci_model: 'Apple M3 Max',
+            sppci_cores: '40',
+            spdisplays_mtlgpufamilysupport: 'spdisplays_metal3',
+            spdisplays_vram: '1536 MB',
+          },
+        ],
+      }),
+    }
+    state.commands['vm_stat'] = {
+      code: 0,
+      stdout: 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:  1000.\nPages inactive:  1000.\n',
+    }
     const report = await scan()
-    expect(report.gpu).toEqual({ kind: 'apple', name: 'Apple M3 Max', cores: 40, memoryBytes: 1536 * 1024 * 1024, metal: true, available: true })
+    expect(report.gpu).toEqual({
+      kind: 'apple',
+      name: 'Apple M3 Max',
+      cores: 40,
+      memoryBytes: 1536 * 1024 * 1024,
+      metal: true,
+      available: true,
+    })
     expect(report.device.memoryFree).toBe(2000 * 16384)
   })
 })

@@ -4,10 +4,23 @@ import { canConnect, hasPicture, linkMenu } from '@renderer/pages/studio/connect
 import { canvas } from './fixtures'
 
 const features = (patch: Partial<EngineFeatures> = {}): EngineFeatures => ({
-  preview: true, imageInput: true, control: true, references: true, hires: true, samplers: true, lora: true, values: {}, ...patch,
+  preview: true,
+  imageInput: true,
+  control: true,
+  references: true,
+  hires: true,
+  samplers: true,
+  lora: true,
+  values: {},
+  ...patch,
 })
 const adapter: ControlAdapterEntry = {
-  id: 'ctl', name: 'union', path: '/m/ctl.safetensors', sizeBytes: 1, controlKinds: ['depth', 'canny', 'scribble'], addedAt: '2026-11-05T00:00:00Z',
+  id: 'ctl',
+  name: 'union',
+  path: '/m/ctl.safetensors',
+  sizeBytes: 1,
+  controlKinds: ['depth', 'canny', 'scribble'],
+  addedAt: '2026-11-05T00:00:00Z',
 }
 const output = { path: '/o/1.png', width: 1024, height: 1024, seed: 1 }
 
@@ -43,18 +56,28 @@ describe('studio/connect canConnect', () => {
 })
 
 describe('studio/connect linkMenu', () => {
-  const items = (entries: ReturnType<typeof linkMenu>) => entries.map((entry) => entry.type === 'item' ? `${entry.label}${entry.disabled ? ' (off)' : ''}` : `[${entry.label}]`)
+  const items = (entries: ReturnType<typeof linkMenu>) =>
+    entries.map((entry) => (entry.type === 'item' ? `${entry.label}${entry.disabled ? ' (off)' : ''}` : `[${entry.label}]`))
 
   it('offers every role the engine supports, control kinds from the chosen adapter', () => {
     const target = canvas({ id: 't', inputs: { control: { adapterId: 'ctl', images: [] } } })
-    expect(items(linkMenu(target, 's', features(), [adapter]))).toEqual(['作为起始图', '[作为控制图]', '深度', '边缘', 'scribble', '作为参考图'])
+    expect(items(linkMenu(target, 's', features(), [adapter]))).toEqual([
+      '作为起始图',
+      '[作为控制图]',
+      '深度',
+      '边缘',
+      'scribble',
+      '作为参考图',
+    ])
   })
 
   it('leaves out roles the engine does not support', () => {
     const target = canvas({ id: 't' })
     expect(items(linkMenu(target, 's', features({ control: false, references: false }), []))).toEqual(['作为起始图'])
     expect(items(linkMenu(target, 's', features({ imageInput: false, control: false }), []))).toEqual(['作为参考图'])
-    expect(items(linkMenu(target, 's', features({ imageInput: false, control: false, references: false }), []))).toEqual(['[当前引擎不支持把图片接进来]'])
+    expect(items(linkMenu(target, 's', features({ imageInput: false, control: false, references: false }), []))).toEqual([
+      '[当前引擎不支持把图片接进来]',
+    ])
   })
 
   it('asks for a control adapter first', () => {

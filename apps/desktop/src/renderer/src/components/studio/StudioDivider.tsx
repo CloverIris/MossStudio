@@ -5,7 +5,13 @@ const MIN_WIDTH = 240
 const MAX_WIDTH = 480
 
 /** Invisible resize handle on a panel edge; only the cursor and focus ring show it. */
-export function StudioDivider({ label, value, direction, onChange, className }: {
+export function StudioDivider({
+  label,
+  value,
+  direction,
+  onChange,
+  className,
+}: {
   label: string
   value: number
   direction: 1 | -1
@@ -27,7 +33,9 @@ export function StudioDivider({ label, value, direction, onChange, className }: 
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
         event.preventDefault()
-        update(event.key === 'Home' ? MIN_WIDTH : event.key === 'End' ? MAX_WIDTH : value + (event.key === 'ArrowRight' ? 10 : -10) * direction)
+        update(
+          event.key === 'Home' ? MIN_WIDTH : event.key === 'End' ? MAX_WIDTH : value + (event.key === 'ArrowRight' ? 10 : -10) * direction,
+        )
       }}
       onPointerDown={(event) => {
         if (event.button !== 0) return
@@ -38,7 +46,10 @@ export function StudioDivider({ label, value, direction, onChange, className }: 
       onPointerMove={(event) => {
         const start = gesture.current
         if (!start || start.pointerId !== event.pointerId) return
-        if (!(event.buttons & 1)) { gesture.current = null; return }
+        if (!(event.buttons & 1)) {
+          gesture.current = null
+          return
+        }
         update(start.width + (event.clientX - start.x) * direction)
       }}
       onPointerUp={(event) => {
@@ -46,8 +57,12 @@ export function StudioDivider({ label, value, direction, onChange, className }: 
         gesture.current = null
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
       }}
-      onPointerCancel={() => { gesture.current = null }}
-      onLostPointerCapture={() => { gesture.current = null }}
+      onPointerCancel={() => {
+        gesture.current = null
+      }}
+      onLostPointerCapture={() => {
+        gesture.current = null
+      }}
     />
   )
 }

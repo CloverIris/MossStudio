@@ -198,7 +198,12 @@ async function openAIChat(
         stream: true,
         messages: openAIMessages(system, turns),
         ...(tools.length
-          ? { tools: tools.map((tool) => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } })) }
+          ? {
+              tools: tools.map((tool) => ({
+                type: 'function',
+                function: { name: tool.name, description: tool.description, parameters: tool.inputSchema },
+              })),
+            }
           : {}),
       }),
       signal: controller.signal,
@@ -209,7 +214,11 @@ async function openAIChat(
     }
     const contentType = response.headers.get('content-type') ?? ''
     if (!contentType.includes('event-stream') || !response.body) {
-      const body = (await response.json()) as { choices?: Array<{ message?: { content?: string; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }> }
+      const body = (await response.json()) as {
+        choices?: Array<{
+          message?: { content?: string; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> }
+        }>
+      }
       const message = body.choices?.[0]?.message
       const text = message?.content?.trim() ?? ''
       if (text) onDelta(text)
@@ -391,7 +400,19 @@ async function geminiChat(
         systemInstruction: { parts: [{ text: system }] },
         contents: geminiContents(turns),
         generationConfig: { temperature: provider.temperature, maxOutputTokens: 4096 },
-        ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.inputSchema })) }] } : {}),
+        ...(tools.length
+          ? {
+              tools: [
+                {
+                  functionDeclarations: tools.map((tool) => ({
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.inputSchema,
+                  })),
+                },
+              ],
+            }
+          : {}),
       }),
       signal: controller.signal,
     })

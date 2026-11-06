@@ -65,7 +65,11 @@ export function inputSshTerminal(id: string, data: string): void {
 export function closeSshTerminal(id: string): void {
   const session = sessions.get(id)
   if (!session) return
-  try { session.child.kill('SIGTERM') } catch { /* gone */ }
+  try {
+    session.child.kill('SIGTERM')
+  } catch {
+    /* gone */
+  }
 }
 
 export function closeAllSshTerminals(): void {

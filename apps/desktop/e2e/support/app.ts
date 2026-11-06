@@ -52,14 +52,21 @@ async function launch(): Promise<{ electron: ElectronApplication; page: Page }> 
   delete env['WAYLAND_DISPLAY']
   const electron = await _electron.launch({
     executablePath: electronPath,
-    args: [resolve(import.meta.dirname, '../electron/main.cjs'), `--e2e-app=${appDir}`, '--no-sandbox', ...(process.platform === 'linux' ? ['--ozone-platform=x11'] : [])],
+    args: [
+      resolve(import.meta.dirname, '../electron/main.cjs'),
+      `--e2e-app=${appDir}`,
+      '--no-sandbox',
+      ...(process.platform === 'linux' ? ['--ozone-platform=x11'] : []),
+    ],
     env,
     timeout: 60_000,
   })
   const page = await electron.firstWindow()
   // A missing element should fail the step quickly with Playwright's message, not the test timeout.
   page.setDefaultTimeout(8_000)
-  page.on('pageerror', (error) => { console.error(`[renderer] ${error.stack ?? error.message}`) })
+  page.on('pageerror', (error) => {
+    console.error(`[renderer] ${error.stack ?? error.message}`)
+  })
   page.on('console', (message) => {
     if (message.type() === 'error') console.error(`[renderer console] ${message.text()}`)
   })
@@ -67,11 +74,14 @@ async function launch(): Promise<{ electron: ElectronApplication; page: Page }> 
 }
 
 export async function setWindowSize(electron: ElectronApplication, width: number, height: number): Promise<void> {
-  await electron.evaluate(({ BrowserWindow }, size) => {
-    const win = BrowserWindow.getAllWindows()[0]!
-    win.setMinimumSize(1, 1)
-    win.setContentSize(size.width, size.height)
-  }, { width, height })
+  await electron.evaluate(
+    ({ BrowserWindow }, size) => {
+      const win = BrowserWindow.getAllWindows()[0]!
+      win.setMinimumSize(1, 1)
+      win.setContentSize(size.width, size.height)
+    },
+    { width, height },
+  )
 }
 
 /** One Electron app for the enclosing describe/file. */
@@ -127,8 +137,13 @@ export function useApp(): E2eApp {
     // Leave evidence: what the window showed and what the app said.
     const name = `FAILED-${context.task.name.replace(/[^\w\u4e00-\u9fff-]+/g, '_').slice(0, 80)}`
     await handle.page.screenshot({ path: join(SHOTS_DIR, `${name}.png`) }).catch(() => undefined)
-    const said = await handle.page.evaluate(() => [...document.querySelectorAll('[role="status"], [role="alert"], [aria-live]')]
-      .map((element) => element.textContent?.trim()).filter(Boolean)).catch(() => [])
+    const said = await handle.page
+      .evaluate(() =>
+        [...document.querySelectorAll('[role="status"], [role="alert"], [aria-live]')]
+          .map((element) => element.textContent?.trim())
+          .filter(Boolean),
+      )
+      .catch(() => [])
     console.error(`${name}: screenshot saved; live regions: ${JSON.stringify(said)}`)
   })
   afterAll(async () => {
@@ -143,12 +158,17 @@ export function useApp(): E2eApp {
  * fast that is is not what any test checks.
  */
 export async function waitForApp(page: Page): Promise<void> {
-  await page.waitForFunction(() => {
-    const root = document.getElementById('root')
-    // The setup and uninstall windows (data-standalone) never load settings.
-    const loaded = window.__mock.calls.some((call) => call.channel === 'settings:get') || Boolean(document.querySelector('[data-standalone]'))
-    return Boolean(root && root.children.length > 0 && loaded)
-  }, undefined, { timeout: 30_000 })
+  await page.waitForFunction(
+    () => {
+      const root = document.getElementById('root')
+      // The setup and uninstall windows (data-standalone) never load settings.
+      const loaded =
+        window.__mock.calls.some((call) => call.channel === 'settings:get') || Boolean(document.querySelector('[data-standalone]'))
+      return Boolean(root && root.children.length > 0 && loaded)
+    },
+    undefined,
+    { timeout: 30_000 },
+  )
   await settle(page)
 }
 

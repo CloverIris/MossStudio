@@ -24,7 +24,11 @@ export function archiveLegacyInferenceData(): { archived: boolean; archive?: str
     for (const [name, path] of present) {
       renameSync(path, join(archive, name))
     }
-    writeFileSync(join(archive, 'README.txt'), 'Archived by MossStudio after switching inference to MossInfer. Trainer data is stored under trainer/ and is not included.\n', 'utf8')
+    writeFileSync(
+      join(archive, 'README.txt'),
+      'Archived by MossStudio after switching inference to MossInfer. Trainer data is stored under trainer/ and is not included.\n',
+      'utf8',
+    )
     writeFileSync(marker, JSON.stringify({ archivedAt: new Date().toISOString(), archive }, null, 2), 'utf8')
     return { archived: true, archive }
   }
@@ -42,4 +46,3 @@ function holdsFile(path: string, depth = 0): boolean {
   }
   return entries.some((entry) => !entry.isDirectory() || holdsFile(join(path, entry.name), depth + 1))
 }
-

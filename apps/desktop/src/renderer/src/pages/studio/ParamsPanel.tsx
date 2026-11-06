@@ -10,7 +10,21 @@ import {
   formatAdapterStrength,
   normalizeCanvasAdapters,
 } from '@shared/adapters'
-import { Advanced, Button, EmptyState, IconButton, Input, Kbd, Modal, Segmented, Select, Spinner, Textarea, cn, useCopyText } from '../../components/ui'
+import {
+  Advanced,
+  Button,
+  EmptyState,
+  IconButton,
+  Input,
+  Kbd,
+  Modal,
+  Segmented,
+  Select,
+  Spinner,
+  Textarea,
+  cn,
+  useCopyText,
+} from '../../components/ui'
 import {
   QUALITY_PRESETS,
   SIZE_PRESETS,
@@ -38,7 +52,9 @@ function Label({ children, value, htmlFor }: { children: ReactNode; value?: Reac
   return (
     <div className="flex items-baseline justify-between gap-2">
       {htmlFor ? (
-        <label htmlFor={htmlFor} className="text-caption font-semibold text-ink-2">{children}</label>
+        <label htmlFor={htmlFor} className="text-caption font-semibold text-ink-2">
+          {children}
+        </label>
       ) : (
         <span className="text-caption font-semibold text-ink-2">{children}</span>
       )}
@@ -48,7 +64,15 @@ function Label({ children, value, htmlFor }: { children: ReactNode; value?: Reac
 }
 
 /** Commit-on-blur number field, so typing "1" on the way to "1024" is not clamped. */
-function DimensionInput({ label, value, onCommit }: { label: string; value: number; onCommit: (value: number) => void }): React.JSX.Element {
+function DimensionInput({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string
+  value: number
+  onCommit: (value: number) => void
+}): React.JSX.Element {
   const [draft, setDraft] = useState(String(value))
   useEffect(() => setDraft(String(value)), [value])
   const commit = (): void => {
@@ -63,7 +87,9 @@ function DimensionInput({ label, value, onCommit }: { label: string; value: numb
       value={draft}
       onChange={(event) => setDraft(event.target.value.replace(/[^\d]/g, ''))}
       onBlur={commit}
-      onKeyDown={(event) => { if (event.key === 'Enter') commit() }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') commit()
+      }}
       className="tabular text-center"
     />
   )
@@ -104,7 +130,11 @@ export function ParamsPanel(props: ParamsPanelProps): React.JSX.Element {
         <EmptyState
           title="还没有画面"
           description="新建一个画面，写一句描述就能开始生成。"
-          action={<Button tone="primary" size="md" onClick={props.onAddCanvas}>新建画面</Button>}
+          action={
+            <Button tone="primary" size="md" onClick={props.onAddCanvas}>
+              新建画面
+            </Button>
+          }
         />
       </div>
     )
@@ -148,24 +178,30 @@ function CanvasParams({
   // An engine without LoRA (兼容模式 / AMD 原生): nothing to add; rows already there stay so they can be removed.
   const loraUnsupported = inputs?.features ? !inputs.features.lora : false
   const remoteEnabled = settings?.remoteHostsEnabled === true
-  const remoteHost = remoteEnabled ? hosts.find((host) => host.id === remoteHostId) ?? null : null
+  const remoteHost = remoteEnabled ? (hosts.find((host) => host.id === remoteHostId) ?? null) : null
   const description = canvasDescription(canvas)
   const seedLocked = isSeedLocked(canvas)
 
   useEffect(() => setCustomSize(false), [canvas.id])
 
-  const defaultGpu = settings?.gpuSelection && settings.gpuSelection !== 'auto'
-    ? gpuInventory?.devices.find((device) => device.uuid === (settings.gpuSelection as { uuid: string }).uuid)?.name
-    : undefined
-  const boundMissing = Boolean(canvas.deviceUuid && gpuInventory && !gpuInventory.devices.some((device) => device.uuid === canvas.deviceUuid))
+  const defaultGpu =
+    settings?.gpuSelection && settings.gpuSelection !== 'auto'
+      ? gpuInventory?.devices.find((device) => device.uuid === (settings.gpuSelection as { uuid: string }).uuid)?.name
+      : undefined
+  const boundMissing = Boolean(
+    canvas.deviceUuid && gpuInventory && !gpuInventory.devices.some((device) => device.uuid === canvas.deviceUuid),
+  )
   const gpuName = canvas.deviceUuid ? gpuInventory?.devices.find((device) => device.uuid === canvas.deviceUuid)?.name : undefined
   const locationName = remoteHost ? remoteHost.name : '本机'
-  const advancedSummary = [seedLocked ? `种子 ${canvas.seed}` : '种子随机', locationName, gpuName, samplingSummary(canvas)].filter(Boolean).join(' · ')
+  const advancedSummary = [seedLocked ? `种子 ${canvas.seed}` : '种子随机', locationName, gpuName, samplingSummary(canvas)]
+    .filter(Boolean)
+    .join(' · ')
 
   const bundleOptions = [...installed]
   if (bundle.bundle && !bundleOptions.some((item) => item.id === bundle.bundle!.id)) bundleOptions.unshift(bundle.bundle)
 
-  const setAdapters = (next: ProjectCanvas['adapters']): void => onChange((current) => ({ ...current, adapters: normalizeCanvasAdapters(next) }))
+  const setAdapters = (next: ProjectCanvas['adapters']): void =>
+    onChange((current) => ({ ...current, adapters: normalizeCanvasAdapters(next) }))
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -201,22 +237,32 @@ function CanvasParams({
             >
               {bundleOptions.length === 0 ? <option value="">{catalog ? '还没有可用的模型' : '正在读取模型…'}</option> : null}
               {bundleOptions.map((item) => (
-                <option key={item.id} value={item.id}>{installed.some((entry) => entry.id === item.id) ? item.name : `${item.name}（未下载）`}</option>
+                <option key={item.id} value={item.id}>
+                  {installed.some((entry) => entry.id === item.id) ? item.name : `${item.name}（未下载）`}
+                </option>
               ))}
             </Select>
-            {loraUnsupported && !adapterRows.length ? null : <div className="flex items-center justify-between">
-              <span className="text-ui text-ink-2">LoRA</span>
-              {readOnly || loraUnsupported ? null : (
-                <Button tone="ghost" size="sm" className="-mr-2 h-[26px] px-2" onClick={onOpenAdapters} data-adapter-picker>
-                  <Plus className="size-3.5" aria-hidden="true" />添加
-                </Button>
-              )}
-            </div>}
+            {loraUnsupported && !adapterRows.length ? null : (
+              <div className="flex items-center justify-between">
+                <span className="text-ui text-ink-2">LoRA</span>
+                {readOnly || loraUnsupported ? null : (
+                  <Button tone="ghost" size="sm" className="-mr-2 h-[26px] px-2" onClick={onOpenAdapters} data-adapter-picker>
+                    <Plus className="size-3.5" aria-hidden="true" />
+                    添加
+                  </Button>
+                )}
+              </div>
+            )}
             {adapterRows.length ? (
               <ul className="flex flex-col gap-1">
                 {adapterRows.map(({ adapter, name, installed: present }) => (
                   <li key={adapter.id} data-adapter-row={adapter.id} className="flex items-center gap-2 rounded-lg bg-well py-1 pl-3 pr-1">
-                    <span className={cn('min-w-0 flex-1 truncate text-ui', present ? 'text-ink' : 'text-warn')} title={present ? name : `${name}（找不到文件）`}>{name}</span>
+                    <span
+                      className={cn('min-w-0 flex-1 truncate text-ui', present ? 'text-ink' : 'text-warn')}
+                      title={present ? name : `${name}（找不到文件）`}
+                    >
+                      {name}
+                    </span>
                     <input
                       type="range"
                       aria-label={`${name} 强度`}
@@ -224,12 +270,24 @@ function CanvasParams({
                       max={ADAPTER_STRENGTH_MAX}
                       step={ADAPTER_STRENGTH_STEP}
                       value={adapter.strength}
-                      onChange={(event) => setAdapters(adapters.map((item) => item.id === adapter.id ? { ...item, strength: clampAdapterStrength(Number(event.target.value)) } : item))}
+                      onChange={(event) =>
+                        setAdapters(
+                          adapters.map((item) =>
+                            item.id === adapter.id ? { ...item, strength: clampAdapterStrength(Number(event.target.value)) } : item,
+                          ),
+                        )
+                      }
                       className="w-[72px] shrink-0 accent-ink"
                     />
-                    <span className="tabular w-8 shrink-0 text-right text-caption text-ink-2">{formatAdapterStrength(adapter.strength)}</span>
+                    <span className="tabular w-8 shrink-0 text-right text-caption text-ink-2">
+                      {formatAdapterStrength(adapter.strength)}
+                    </span>
                     {readOnly ? null : (
-                      <IconButton label={`移除 ${name}`} className="size-7" onClick={() => setAdapters(adapters.filter((item) => item.id !== adapter.id))}>
+                      <IconButton
+                        label={`移除 ${name}`}
+                        className="size-7"
+                        onClick={() => setAdapters(adapters.filter((item) => item.id !== adapter.id))}
+                      >
                         <X className="size-3.5" />
                       </IconButton>
                     )}
@@ -254,14 +312,27 @@ function CanvasParams({
                 const preset = SIZE_PRESETS.find((item) => item.id === value)
                 if (preset) onChange((current) => resizeCanvas(current, preset.width, preset.height))
               }}
-              options={[...SIZE_PRESETS.map((preset) => ({ value: preset.id, label: preset.id, hint: `${preset.width} × ${preset.height}` })), { value: 'custom' as const, label: '自定义' }]}
+              options={[
+                ...SIZE_PRESETS.map((preset) => ({ value: preset.id, label: preset.id, hint: `${preset.width} × ${preset.height}` })),
+                { value: 'custom' as const, label: '自定义' },
+              ]}
               className="[&>button]:px-1"
             />
             {sizePreset === 'custom' && !readOnly ? (
               <div className="flex items-center gap-2">
-                <DimensionInput label="宽度" value={canvas.width} onCommit={(width) => onChange((current) => resizeCanvas(current, width, current.height))} />
-                <span aria-hidden="true" className="text-ink-2">×</span>
-                <DimensionInput label="高度" value={canvas.height} onCommit={(height) => onChange((current) => resizeCanvas(current, current.width, height))} />
+                <DimensionInput
+                  label="宽度"
+                  value={canvas.width}
+                  onCommit={(width) => onChange((current) => resizeCanvas(current, width, current.height))}
+                />
+                <span aria-hidden="true" className="text-ink-2">
+                  ×
+                </span>
+                <DimensionInput
+                  label="高度"
+                  value={canvas.height}
+                  onCommit={(height) => onChange((current) => resizeCanvas(current, current.width, height))}
+                />
               </div>
             ) : null}
           </section>
@@ -307,11 +378,15 @@ function CanvasParams({
                     {seedLocked ? <Lock className="size-4" /> : <LockOpen className="size-4" />}
                   </IconButton>
                 </div>
-                <p className="text-caption text-ink-2">{seedLocked ? '每次生成都用这个种子。' : '每次生成换一个新种子；锁定后保持不变。'}</p>
+                <p className="text-caption text-ink-2">
+                  {seedLocked ? '每次生成都用这个种子。' : '每次生成换一个新种子；锁定后保持不变。'}
+                </p>
               </section>
 
               <section className="flex flex-col gap-2">
-                <Label htmlFor="studio-cfg" value={canvas.cfg}>CFG</Label>
+                <Label htmlFor="studio-cfg" value={canvas.cfg}>
+                  CFG
+                </Label>
                 <input
                   id="studio-cfg"
                   type="range"
@@ -344,7 +419,9 @@ function CanvasParams({
                   <Select id="studio-location" value={remoteHost?.id ?? ''} onChange={(event) => onRemoteHostChange(event.target.value)}>
                     <option value="">这台电脑</option>
                     {hosts.map((host) => (
-                      <option key={host.id} value={host.id}>{host.status === 'error' ? `${host.name}（连接不上）` : host.name}</option>
+                      <option key={host.id} value={host.id}>
+                        {host.status === 'error' ? `${host.name}（连接不上）` : host.name}
+                      </option>
                     ))}
                   </Select>
                 </section>
@@ -354,27 +431,47 @@ function CanvasParams({
                 remoteHost.devices.length ? (
                   <section className="flex flex-col gap-2">
                     <Label htmlFor="studio-remote-gpu">GPU</Label>
-                    <Select id="studio-remote-gpu" value={canvas.deviceId ?? ''} onChange={(event) => onChange((current) => ({ ...current, deviceId: event.target.value || undefined }))}>
+                    <Select
+                      id="studio-remote-gpu"
+                      value={canvas.deviceId ?? ''}
+                      onChange={(event) => onChange((current) => ({ ...current, deviceId: event.target.value || undefined }))}
+                    >
                       <option value="">自动选择</option>
-                      {remoteHost.devices.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}
+                      {remoteHost.devices.map((device) => (
+                        <option key={device.id} value={device.id}>
+                          {device.name}
+                        </option>
+                      ))}
                     </Select>
                   </section>
                 ) : null
               ) : (
                 <section className="flex flex-col gap-2">
                   <Label htmlFor="studio-gpu">GPU</Label>
-                  <Select id="studio-gpu" value={canvas.deviceUuid ?? ''} onChange={(event) => onChange((current) => ({ ...current, deviceUuid: event.target.value || undefined }))}>
+                  <Select
+                    id="studio-gpu"
+                    value={canvas.deviceUuid ?? ''}
+                    onChange={(event) => onChange((current) => ({ ...current, deviceUuid: event.target.value || undefined }))}
+                  >
                     <option value="">{defaultGpu ? `跟随默认（${defaultGpu}）` : '跟随默认'}</option>
-                    {boundMissing ? <option value={canvas.deviceUuid} disabled>之前选的 GPU 现在找不到</option> : null}
+                    {boundMissing ? (
+                      <option value={canvas.deviceUuid} disabled>
+                        之前选的 GPU 现在找不到
+                      </option>
+                    ) : null}
                     {(gpuInventory?.devices ?? []).map((device) => (
-                      <option key={device.uuid} value={device.uuid}>{device.name} · GPU {device.index}</option>
+                      <option key={device.uuid} value={device.uuid}>
+                        {device.name} · GPU {device.index}
+                      </option>
                     ))}
                   </Select>
                   {boundMissing ? <p className="text-caption text-warn">之前选的 GPU 现在找不到，生成前请换一个或改回默认。</p> : null}
                 </section>
               )}
 
-              <Button tone="ghost" size="sm" className="self-start" onClick={() => setPromptOpen(true)}>查看最终提示词</Button>
+              <Button tone="ghost" size="sm" className="self-start" onClick={() => setPromptOpen(true)}>
+                查看最终提示词
+              </Button>
             </div>
           </Advanced>
         </fieldset>
@@ -382,7 +479,9 @@ function CanvasParams({
 
       <div className="flex shrink-0 flex-col gap-2.5 px-5 pb-4 pt-3">
         {readOnly ? (
-          <Button tone="primary" size="lg" block onClick={onCopyAsLayout}>复制为新画面</Button>
+          <Button tone="primary" size="lg" block onClick={onCopyAsLayout}>
+            复制为新画面
+          </Button>
         ) : (
           <>
             {blockers.length ? (
@@ -395,7 +494,7 @@ function CanvasParams({
                         tone="secondary"
                         size="sm"
                         className="h-7 px-2.5"
-                        onClick={() => blocker.action!.opens === 'update' ? openUpdate(true) : onNavigate(blocker.action!.to)}
+                        onClick={() => (blocker.action!.opens === 'update' ? openUpdate(true) : onNavigate(blocker.action!.to))}
                       >
                         {blocker.action.label}
                       </Button>
@@ -428,15 +527,28 @@ function CanvasParams({
         title="最终提示词"
         description="这是生成时实际发送给模型的内容，由描述和可见的区域组成。"
         width="max-w-3xl"
-        footer={(
+        footer={
           <>
-            <Button tone="ghost" size="md" onClick={() => setPromptOpen(false)}>关闭</Button>
-            <Button tone="secondary" size="md" disabled={!prompt?.ok} onClick={() => { if (prompt?.ok) void copyText(prompt.prompt, '已复制最终提示词') }}>复制</Button>
+            <Button tone="ghost" size="md" onClick={() => setPromptOpen(false)}>
+              关闭
+            </Button>
+            <Button
+              tone="secondary"
+              size="md"
+              disabled={!prompt?.ok}
+              onClick={() => {
+                if (prompt?.ok) void copyText(prompt.prompt, '已复制最终提示词')
+              }}
+            >
+              复制
+            </Button>
           </>
-        )}
+        }
       >
         {prompt?.ok ? (
-          <pre className="selectable max-h-[52vh] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-well p-3 font-mono text-caption text-ink">{prompt.preview}</pre>
+          <pre className="selectable max-h-[52vh] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-well p-3 font-mono text-caption text-ink">
+            {prompt.preview}
+          </pre>
         ) : (
           <p className="text-control text-ink-2">{prompt?.errors[0] ?? '描述还不完整'}</p>
         )}

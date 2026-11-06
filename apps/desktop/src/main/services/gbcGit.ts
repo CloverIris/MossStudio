@@ -41,7 +41,9 @@ async function fetchMirror(settings: Settings): Promise<void> {
     if (clone.code !== 0) throw new Error(`GBC 克隆失败：${tail(clone.stderr) || firstLine(clone.stdout)}`)
     return
   }
-  const fetch = await run(gitBinary(), ['-C', mirror(settings), 'fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { timeoutMs: 180_000 })
+  const fetch = await run(gitBinary(), ['-C', mirror(settings), 'fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], {
+    timeoutMs: 180_000,
+  })
   if (fetch.code !== 0 && !existsSync(join(m, 'refs', 'heads', 'main'))) {
     throw new Error(`GBC 更新失败：${tail(fetch.stderr) || firstLine(fetch.stdout)}`)
   }
@@ -49,25 +51,35 @@ async function fetchMirror(settings: Settings): Promise<void> {
 
 export async function listGbcBranches(settings: Settings): Promise<BranchInfo[]> {
   await fetchMirror(settings)
-  const result = await run(gitBinary(), ['-C', mirror(settings), 'for-each-ref', '--format=%(refname:short)|%(objectname)', 'refs/heads'], { timeoutMs: 15_000 })
-  if (result.code !== 0) throw new Error(`读取 GBC 分支失败：${tail(result.stderr)}`)
-  const rows = result.stdout.split(/\r?\n/).filter(Boolean).map((line) => {
-    const [name = '', sha = ''] = line.split('|')
-    return { name, sha, isDefault: name === 'main', isStable: name === 'main' }
+  const result = await run(gitBinary(), ['-C', mirror(settings), 'for-each-ref', '--format=%(refname:short)|%(objectname)', 'refs/heads'], {
+    timeoutMs: 15_000,
   })
+  if (result.code !== 0) throw new Error(`读取 GBC 分支失败：${tail(result.stderr)}`)
+  const rows = result.stdout
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const [name = '', sha = ''] = line.split('|')
+      return { name, sha, isDefault: name === 'main', isStable: name === 'main' }
+    })
   if (!rows.length) throw new Error('GBC 镜像没有可用分支')
   return rows.sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name))
 }
 
 export async function listGbcCommits(settings: Settings, branch: string, limit = 60): Promise<CommitInfo[]> {
   const safe = branch.replace(/[^A-Za-z0-9._/-]/g, '')
-  const result = await run(gitBinary(), ['-C', mirror(settings), 'log', `-n${limit}`, '--format=%H%x1f%h%x1f%ct%x1f%s%x1f%an', safe], { timeoutMs: 15_000 })
-  if (result.code !== 0) throw new Error(`读取 GBC 提交失败：${tail(result.stderr)}`)
-  return result.stdout.split('\n').filter(Boolean).map((line) => {
-    const [sha = '', short = '', date = '', subject = '', author = ''] = line.split('\u001f')
-    const timestamp = Number.parseInt(date, 10) || 0
-    return { sha, short, date: new Date(timestamp * 1000).toISOString(), subject, author }
+  const result = await run(gitBinary(), ['-C', mirror(settings), 'log', `-n${limit}`, '--format=%H%x1f%h%x1f%ct%x1f%s%x1f%an', safe], {
+    timeoutMs: 15_000,
   })
+  if (result.code !== 0) throw new Error(`读取 GBC 提交失败：${tail(result.stderr)}`)
+  return result.stdout
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [sha = '', short = '', date = '', subject = '', author = ''] = line.split('\u001f')
+      const timestamp = Number.parseInt(date, 10) || 0
+      return { sha, short, date: new Date(timestamp * 1000).toISOString(), subject, author }
+    })
 }
 
 export async function listGbcVersions(settings: Settings): Promise<GbcVersion[]> {
@@ -75,7 +87,11 @@ export async function listGbcVersions(settings: Settings): Promise<GbcVersion[]>
   const files = (await readdir(versionsRoot(settings))).filter((file) => file.endsWith('.json'))
   const rows: GbcVersion[] = []
   for (const file of files) {
-    try { rows.push(JSON.parse(await readFile(join(versionsRoot(settings), file), 'utf8')) as GbcVersion) } catch { /* ignore corrupt */ }
+    try {
+      rows.push(JSON.parse(await readFile(join(versionsRoot(settings), file), 'utf8')) as GbcVersion)
+    } catch {
+      /* ignore corrupt */
+    }
   }
   return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
@@ -90,9 +106,15 @@ export async function createGbcVersion(settings: Settings, branch: string, sha: 
   const result = await run(gitBinary(), ['-C', mirror(settings), 'worktree', 'add', '--detach', destination, full], { timeoutMs: 120_000 })
   if (result.code !== 0) throw new Error(`创建 GBC 版本失败：${tail(result.stderr)}`)
   const version: GbcVersion = {
-    id, name: name?.trim() || `GBC ${short}`, branch, commit: full, shortCommit: short,
-    subject, commitDate: new Date((Number.parseInt(stamp, 10) || 0) * 1000).toISOString(),
-    path: destination, createdAt: new Date().toISOString(),
+    id,
+    name: name?.trim() || `GBC ${short}`,
+    branch,
+    commit: full,
+    shortCommit: short,
+    subject,
+    commitDate: new Date((Number.parseInt(stamp, 10) || 0) * 1000).toISOString(),
+    path: destination,
+    createdAt: new Date().toISOString(),
   }
   await writeFile(metaPath(settings, id), JSON.stringify(version, null, 2), 'utf8')
   return version

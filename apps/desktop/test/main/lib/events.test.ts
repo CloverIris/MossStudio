@@ -6,7 +6,7 @@ let BrowserWindow: typeof BrowserWindowType
 
 beforeEach(async () => {
   vi.resetModules()
-  BrowserWindow = (await import('electron') as unknown as typeof import('@test/mocks/electron')).BrowserWindow
+  BrowserWindow = ((await import('electron')) as unknown as typeof import('@test/mocks/electron')).BrowserWindow
   BrowserWindow.reset()
 })
 afterEach(() => BrowserWindow.reset())
@@ -36,7 +36,9 @@ describe('emit', () => {
   it('notifies listeners, swallows listener errors and supports unsubscribe', async () => {
     const { emit, onEmit } = await import('@main/lib/events')
     const calls: Array<[string, unknown]> = []
-    onEmit(() => { throw new Error('boom') })
+    onEmit(() => {
+      throw new Error('boom')
+    })
     const off = onEmit((channel, payload) => calls.push([channel, payload]))
     expect(() => emit('event:a', 1)).not.toThrow()
     expect(calls).toEqual([['event:a', 1]])
@@ -48,7 +50,9 @@ describe('emit', () => {
   it('still delivers to later listeners after one throws', async () => {
     const { emit, onEmit } = await import('@main/lib/events')
     const later = vi.fn()
-    onEmit(() => { throw new Error('first fails') })
+    onEmit(() => {
+      throw new Error('first fails')
+    })
     onEmit(later)
     emit('event:c', 'x')
     expect(later).toHaveBeenCalledWith('event:c', 'x')

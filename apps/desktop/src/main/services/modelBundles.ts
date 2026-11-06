@@ -10,10 +10,7 @@ export function bundleBinding(bundle: ModelBundle): ModelBinding {
   return { bundleId: bundle.id, ...bundle.components }
 }
 
-export async function validateBinding(
-  binding: ModelBinding,
-  settings: Settings,
-): Promise<ModelBundle> {
+export async function validateBinding(binding: ModelBinding, settings: Settings): Promise<ModelBundle> {
   const catalog = await getCatalog(settings)
   const bundle = catalog.bundles.find((b) => b.id === binding.bundleId)
   if (!bundle) throw new Error('模型组合不存在，请重新选择')
@@ -23,12 +20,7 @@ export async function validateBinding(
     ['vae', 'vae'],
   ] as const) {
     const model = catalog.models.find((m) => m.id === binding[key])
-    if (
-      !model ||
-      model.role !== role ||
-      model.format !== 'diffusers' ||
-      model.family !== 'moss-image'
-    ) {
+    if (!model || model.role !== role || model.format !== 'diffusers' || model.family !== 'moss-image') {
       throw new Error('请选择与 MOSS 兼容的 Diffusers 组件；ComfyUI 单文件仅支持下载')
     }
   }
@@ -49,16 +41,11 @@ export interface PreparedModelSource {
  * `dit_file` / `text_encoder_file` / `vae_file`; nothing is copied or linked, so
  * the 27 GB set keeps living where the user installed it.
  */
-export async function prepareModelSource(
-  binding: ModelBinding,
-  settings: Settings,
-): Promise<PreparedModelSource> {
+export async function prepareModelSource(binding: ModelBinding, settings: Settings): Promise<PreparedModelSource> {
   const catalog = await getCatalog(settings)
   const bundle = catalog.bundles.find((b) => b.id === binding.bundleId)
   if (!bundle) throw new Error('模型组合不存在，请重新选择')
-  const entries = [binding.dit, binding.textEncoder, binding.vae].map((id) =>
-    catalog.models.find((model) => model.id === id),
-  )
+  const entries = [binding.dit, binding.textEncoder, binding.vae].map((id) => catalog.models.find((model) => model.id === id))
   const localCount = entries.filter((entry) => entry?.provider === 'local').length
   if (localCount > 0) {
     if (localCount !== 3) {
@@ -78,10 +65,7 @@ export async function prepareModelSource(
   return { model: await prepareModelBundle(binding, settings) }
 }
 
-export async function prepareModelBundle(
-  binding: ModelBinding,
-  settings: Settings,
-): Promise<string> {
+export async function prepareModelBundle(binding: ModelBinding, settings: Settings): Promise<string> {
   const bundle = await validateBinding(binding, settings)
   const requests = [binding.dit, binding.textEncoder, binding.vae, bundle.support]
   const components = await Promise.all(requests.map((id) => componentSnapshot(id, settings)))
@@ -109,29 +93,21 @@ export async function prepareModelBundle(
       else {
         const prefix = model.subfolder ? `${model.subfolder}/` : ''
         if (!file.path.startsWith(prefix)) continue
-        const folder =
-          model.role === 'dit' ? 'transformer' : model.role === 'vae' ? 'vae' : 'text_encoder'
+        const folder = model.role === 'dit' ? 'transformer' : model.role === 'vae' ? 'vae' : 'text_encoder'
         path = `${folder}/${file.path.slice(prefix.length)}`
       }
       expected.push({ source: safePath(snapshot, file.path), path, ...(local ? { local } : {}) })
     }
   }
   const candidates = await readdir(root).catch(() => [] as string[])
-  for (const name of candidates.filter(
-    (name) => (name === key || name.startsWith(`${key}-`)) && !name.includes('.tmp-'),
-  )) {
+  for (const name of candidates.filter((name) => (name === key || name.startsWith(`${key}-`)) && !name.includes('.tmp-'))) {
     const candidate = join(root, name)
     try {
       if (
         (await readFile(join(candidate, 'clover_model.json'), 'utf8')) === text &&
-        (
-          await Promise.all(
-            expected.map(
-              async (f) =>
-                (await fileSize(safePath(candidate, f.path))) === (await fileSize(f.source)),
-            ),
-          )
-        ).every(Boolean)
+        (await Promise.all(expected.map(async (f) => (await fileSize(safePath(candidate, f.path))) === (await fileSize(f.source))))).every(
+          Boolean,
+        )
       )
         return candidate
     } catch {
@@ -152,9 +128,7 @@ export async function prepareModelBundle(
     } catch (error) {
       if ((await fileSize(join(target, 'clover_model.json'))) < 0) throw error
       if ((await readFile(join(target, 'clover_model.json'), 'utf8')) !== text) throw error
-      for (const file of expected)
-        if ((await fileSize(safePath(target, file.path))) !== (await fileSize(file.source)))
-          throw error
+      for (const file of expected) if ((await fileSize(safePath(target, file.path))) !== (await fileSize(file.source))) throw error
     }
     return target
   } finally {

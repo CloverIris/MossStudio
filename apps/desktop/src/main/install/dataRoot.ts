@@ -50,10 +50,13 @@ export function setupScratchRoot(): string {
  */
 export function recordedDataRoot(context: RunContext, fresh: RunContext['record'] = context.record): string | null {
   if (!context.root) return null
-  return contextDataRoot({ ...context, record: fresh ?? context.record }, {
-    userData: () => pathFor(context.platform).join(context.root!, 'data'),
-    scratch: () => pathFor(context.platform).join(context.root!, 'data'),
-  })
+  return contextDataRoot(
+    { ...context, record: fresh ?? context.record },
+    {
+      userData: () => pathFor(context.platform).join(context.root!, 'data'),
+      scratch: () => pathFor(context.platform).join(context.root!, 'data'),
+    },
+  )
 }
 
 /**

@@ -5,8 +5,12 @@ const GB = 1024 ** 3
 
 describe('uninstall wording', () => {
   it('shows the data size and place, and that it is kept unless ticked', () => {
-    expect(dataChoiceText({ dataBytes: 8.5 * GB, dataRoot: 'C:\\MossStudio\\data' })).toBe('共 8.5 GB，位于 C:\\MossStudio\\data。不勾选的话会保留，重新安装后可以继续使用。')
-    expect(dataChoiceText({ dataBytes: null, dataRoot: '/home/小明/.local/share/MossStudio/data' })).toBe('位于 /home/小明/.local/share/MossStudio/data。不勾选的话会保留，重新安装后可以继续使用。')
+    expect(dataChoiceText({ dataBytes: 8.5 * GB, dataRoot: 'C:\\MossStudio\\data' })).toBe(
+      '共 8.5 GB，位于 C:\\MossStudio\\data。不勾选的话会保留，重新安装后可以继续使用。',
+    )
+    expect(dataChoiceText({ dataBytes: null, dataRoot: '/home/小明/.local/share/MossStudio/data' })).toBe(
+      '位于 /home/小明/.local/share/MossStudio/data。不勾选的话会保留，重新安装后可以继续使用。',
+    )
     expect(dataChoiceText({ dataBytes: 0, dataRoot: null })).toBe('不勾选的话会保留，重新安装后可以继续使用。')
   })
 
@@ -26,12 +30,18 @@ describe('uninstallEntry (设置 › 关于)', () => {
   })
 
   it('points to 系统设置 › 应用 on Windows unless the app can start it', () => {
-    expect(uninstallEntry({ platform: 'win32', info: installed, inAppOnWindows: false })).toMatchObject({ kind: 'system', text: expect.stringContaining('设置 › 应用') })
+    expect(uninstallEntry({ platform: 'win32', info: installed, inAppOnWindows: false })).toMatchObject({
+      kind: 'system',
+      text: expect.stringContaining('设置 › 应用'),
+    })
     expect(uninstallEntry({ platform: 'win32', info: installed, inAppOnWindows: true })).toEqual({ kind: 'button' })
   })
 
   it('explains portable copies and shows nothing for dev builds', () => {
-    expect(uninstallEntry({ platform: 'win32', info: { portable: true }, inAppOnWindows: true })).toMatchObject({ kind: 'portable', text: expect.stringContaining('便携版') })
+    expect(uninstallEntry({ platform: 'win32', info: { portable: true }, inAppOnWindows: true })).toMatchObject({
+      kind: 'portable',
+      text: expect.stringContaining('便携版'),
+    })
     expect(uninstallEntry({ platform: 'linux', info: null, inAppOnWindows: true })).toEqual({ kind: 'none' })
   })
 })

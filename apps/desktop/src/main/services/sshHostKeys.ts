@@ -12,10 +12,7 @@ const knownHosts = (): string => join(directory(), 'known_hosts')
 
 export function hostKeyArgs(): string[] {
   const file = sshLocalPath(knownHosts()).replace(/\\/g, '/').replace(/"/g, '\\"')
-  return [
-    '-o', 'StrictHostKeyChecking=yes',
-    '-o', `UserKnownHostsFile=~/.ssh/known_hosts ~/.ssh/known_hosts2 "${file}"`,
-  ]
+  return ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=~/.ssh/known_hosts ~/.ssh/known_hosts2 "${file}"`]
 }
 
 /** Ask only for unknown hosts; a changed/revoked key must keep failing strict checking. */
@@ -26,7 +23,9 @@ export async function trustUnknownHost(host: TrainingHost, error: unknown): Prom
     throw new Error('不是有效的 SSH 主机地址')
   }
   const port = host.port ?? 22
-  const result = await run(getSshTools().keyscan, ['-T', '8', '-p', String(port), '-t', 'ed25519,ecdsa,rsa', host.host], { timeoutMs: 30_000 })
+  const result = await run(getSshTools().keyscan, ['-T', '8', '-p', String(port), '-t', 'ed25519,ecdsa,rsa', host.host], {
+    timeoutMs: 30_000,
+  })
   const keys = new Map<string, { type: string; fingerprint: string }>()
   for (const line of result.stdout.split(/\r?\n/)) {
     const match = line.match(/^\S+ (ssh-ed25519|ecdsa-sha2-nistp(?:256|384|521)|ssh-rsa) ([A-Za-z0-9+/]+={0,2})$/)

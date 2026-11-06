@@ -75,7 +75,9 @@ export function UpdatesSection(): React.JSX.Element {
       <Section title="通知">
         <Group>
           <Row title="桌面通知" description="生成或下载完成、出错、有新版本时，用系统通知提醒你。">
-            <Button tone="ghost" disabled={!settings.desktopNotifications} onClick={() => void testNotification()}>发送测试通知</Button>
+            <Button tone="ghost" disabled={!settings.desktopNotifications} onClick={() => void testNotification()}>
+              发送测试通知
+            </Button>
             <Switch
               aria-label="桌面通知"
               checked={settings.desktopNotifications}
@@ -89,21 +91,33 @@ export function UpdatesSection(): React.JSX.Element {
         <Group>
           <Row
             title={`MossStudio ${current ?? ''}`.trim()}
-            description={update ? (
-              <span data-update-status>
-                {settingsStatus(update)}
-                {supported ? <span title={checkedTitle(update.checkedAt)}> · {checkedLabel(update.checkedAt)}</span> : null}
-              </span>
-            ) : '正在读取更新状态…'}
+            description={
+              update ? (
+                <span data-update-status>
+                  {settingsStatus(update)}
+                  {supported ? <span title={checkedTitle(update.checkedAt)}> · {checkedLabel(update.checkedAt)}</span> : null}
+                </span>
+              ) : (
+                '正在读取更新状态…'
+              )
+            }
           >
             {supported && update?.phase === 'available' ? (
-              <Button tone="primary" onClick={() => void attempt(download)}>下载更新</Button>
+              <Button tone="primary" onClick={() => void attempt(download)}>
+                下载更新
+              </Button>
             ) : supported && ready ? (
-              <Button tone="primary" onClick={() => void attempt(async () => {
-                const feedback = restartFeedback(await restart(), 'restart')
-                if (feedback) toast.push(feedback.text, feedback.tone)
-              })}>
-                <RotateCw className="size-4" />重启以更新
+              <Button
+                tone="primary"
+                onClick={() =>
+                  void attempt(async () => {
+                    const feedback = restartFeedback(await restart(), 'restart')
+                    if (feedback) toast.push(feedback.text, feedback.tone)
+                  })
+                }
+              >
+                <RotateCw className="size-4" />
+                重启以更新
               </Button>
             ) : supported ? (
               <Button onClick={() => void check()} disabled={checking || update?.phase === 'checking'}>
@@ -128,12 +142,18 @@ export function UpdatesSection(): React.JSX.Element {
                 />
               </Row>
               {update.failedVersion ? (
-                <Row title={failedUpdateText(update.failedVersion, update.current).title} description={failedUpdateText(update.failedVersion, update.current).detail}>
+                <Row
+                  title={failedUpdateText(update.failedVersion, update.current).title}
+                  description={failedUpdateText(update.failedVersion, update.current).detail}
+                >
                   <Button onClick={() => void attempt(retryFailed)}>再试一次</Button>
                 </Row>
               ) : null}
               {update.skippedVersion ? (
-                <Row title={`已跳过 ${update.skippedVersion}`} description="你回到了上一个版本，所以不再提示这个版本和更早的版本。想再试时可以重新安装。">
+                <Row
+                  title={`已跳过 ${update.skippedVersion}`}
+                  description="你回到了上一个版本，所以不再提示这个版本和更早的版本。想再试时可以重新安装。"
+                >
                   <Button onClick={() => void attempt(unskip)}>安装 {update.skippedVersion}</Button>
                 </Row>
               ) : null}
@@ -146,7 +166,8 @@ export function UpdatesSection(): React.JSX.Element {
           ) : null}
           <Row title="更新说明" description="每个版本改了什么。">
             <Button tone="ghost" onClick={() => void call(Ipc.openExternal, { url: notesLink(update) })}>
-              查看<ExternalLink className="size-4" />
+              查看
+              <ExternalLink className="size-4" />
             </Button>
           </Row>
         </Group>

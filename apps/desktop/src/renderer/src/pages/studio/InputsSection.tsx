@@ -123,14 +123,29 @@ function AddButton({
           aria-haspopup={props['aria-haspopup']}
           onClick={props.toggle}
         >
-          <Plus className="size-3.5" aria-hidden="true" />添加
+          <Plus className="size-3.5" aria-hidden="true" />
+          添加
         </Button>
       )}
     >
       {(close) => (
         <>
-          <MenuItem onSelect={() => { close(); wiring.onPickTarget({ canvasId: canvas.id, role, ...(kind ? { kind } : {}) }) }}>从画板选择</MenuItem>
-          <MenuItem onSelect={() => { close(); wiring.onAddFromFile(role, kind) }}>从文件…</MenuItem>
+          <MenuItem
+            onSelect={() => {
+              close()
+              wiring.onPickTarget({ canvasId: canvas.id, role, ...(kind ? { kind } : {}) })
+            }}
+          >
+            从画板选择
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              close()
+              wiring.onAddFromFile(role, kind)
+            }}
+          >
+            从文件…
+          </MenuItem>
         </>
       )}
     </Popover>
@@ -154,7 +169,15 @@ function SlotHeader({ title, hint, children }: { title: string; hint?: string; c
  * card on the board (drawn as a wire). Rows the engine cannot do are hidden;
  * with no usable engine they are shown disabled with the reason.
  */
-export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCanvas; onChange: Change; wiring: InputsWiring }): React.JSX.Element | null {
+export function InputsSection({
+  canvas,
+  onChange,
+  wiring,
+}: {
+  canvas: ProjectCanvas
+  onChange: Change
+  wiring: InputsWiring
+}): React.JSX.Element | null {
   const { features, canvases } = wiring
   const inputs = canvas.inputs
   const known = Boolean(features)
@@ -165,14 +188,19 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
   const showReferences = !known || features!.references || Boolean(inputs?.references?.links.length)
   // A CLI engine (兼容模式 / AMD 原生) only does text to image: say so quietly where the inputs would be.
   const cliNote = features?.cli ? (
-    <p className="text-caption text-ink-2" data-cli-engine-note>{cliEngineNote(features.cli)}</p>
+    <p className="text-caption text-ink-2" data-cli-engine-note>
+      {cliEngineNote(features.cli)}
+    </p>
   ) : null
   if (!showInit && !showControl && !showReferences) return cliNote
 
   const picking = wiring.pickTarget?.canvasId === canvas.id ? wiring.pickTarget : null
   const adapter = inputs?.control ? wiring.controlAdapters.find((item) => item.id === inputs.control!.adapterId) : undefined
   const controlKinds = adapter
-    ? [...adapter.controlKinds, ...(inputs?.control?.images ?? []).map((image) => image.kind).filter((kind) => !adapter.controlKinds.includes(kind))]
+    ? [
+        ...adapter.controlKinds,
+        ...(inputs?.control?.images ?? []).map((image) => image.kind).filter((kind) => !adapter.controlKinds.includes(kind)),
+      ]
     : (inputs?.control?.images ?? []).map((image) => image.kind)
   const resizeValues = enumValues(features, 'resize')
   const referenceLinks = inputs?.references?.links ?? []
@@ -186,14 +214,20 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
       {cliNote}
       {picking ? (
         <p role="status" className="rounded-lg bg-accent-soft px-3 py-2 text-caption text-ink">
-          在画板上点一张有图片的卡片作为{picking.role === 'control' ? `控制图 · ${controlKindLabel(picking.kind ?? '')}` : roleLabel(picking.role)}，按 Esc 取消
+          在画板上点一张有图片的卡片作为
+          {picking.role === 'control' ? `控制图 · ${controlKindLabel(picking.kind ?? '')}` : roleLabel(picking.role)}，按 Esc 取消
         </p>
       ) : null}
 
       {showInit ? (
         <div className="flex flex-col gap-1.5">
           {inputs?.init ? (
-            <SourceRow link={inputs.init.link} canvases={canvases} label="起始图" onRemove={() => onChange((current) => removeLink(current, 'init'))}>
+            <SourceRow
+              link={inputs.init.link}
+              canvases={canvases}
+              label="起始图"
+              onRemove={() => onChange((current) => removeLink(current, 'init'))}
+            >
               <SliderField
                 label="重绘幅度"
                 value={inputs.init.strength}
@@ -211,13 +245,18 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
           )}
           {inputs?.init && (!known || features!.imageInput) ? (
             <div className="flex items-center justify-between gap-2 px-2" data-mask-row>
-              <span className="flex min-w-0 flex-1 items-baseline gap-2" title={inputs.mask ? '只重画涂过的地方' : '没有遮罩时整张图都会重画'}>
+              <span
+                className="flex min-w-0 flex-1 items-baseline gap-2"
+                title={inputs.mask ? '只重画涂过的地方' : '没有遮罩时整张图都会重画'}
+              >
                 <span className="shrink-0 text-ui text-ink">遮罩</span>
                 <span className="truncate text-caption text-ink-2">{inputs.mask ? '已画' : '未画'}</span>
               </span>
               <span className="flex shrink-0 items-center gap-1">
                 {inputs.mask ? (
-                  <Button tone="ghost" size="sm" className="h-[26px] px-2" onClick={() => onChange(clearMask)}>清除</Button>
+                  <Button tone="ghost" size="sm" className="h-[26px] px-2" onClick={() => onChange(clearMask)}>
+                    清除
+                  </Button>
                 ) : null}
                 <Button
                   tone={wiring.maskTool ? 'primary' : 'secondary'}
@@ -227,7 +266,8 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
                   disabled={disabled}
                   onClick={wiring.onToggleMask}
                 >
-                  <Brush className="size-3.5" aria-hidden="true" />{wiring.maskTool ? '完成' : '画遮罩'}
+                  <Brush className="size-3.5" aria-hidden="true" />
+                  {wiring.maskTool ? '完成' : '画遮罩'}
                 </Button>
               </span>
             </div>
@@ -254,14 +294,28 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
                 onChange={(event) => onChange((current) => setControlAdapter(current, event.target.value))}
               >
                 <option value="">{inputs?.control?.adapterId ? '不使用控制' : '选择控制适配器'}</option>
-                {wiring.controlAdapters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                {inputs?.control?.adapterId && !adapter ? <option value={inputs.control.adapterId} disabled>找不到的适配器</option> : null}
+                {wiring.controlAdapters.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+                {inputs?.control?.adapterId && !adapter ? (
+                  <option value={inputs.control.adapterId} disabled>
+                    找不到的适配器
+                  </option>
+                ) : null}
               </Select>
               {controlKinds.map((kind) => {
                 const image = inputs?.control?.images.find((item) => item.kind === kind)
                 const label = `控制图 · ${controlKindLabel(kind)}`
                 return image ? (
-                  <SourceRow key={kind} link={image.link} canvases={canvases} label={label} onRemove={() => onChange((current) => removeLink(current, 'control', kind))}>
+                  <SourceRow
+                    key={kind}
+                    link={image.link}
+                    canvases={canvases}
+                    label={label}
+                    onRemove={() => onChange((current) => removeLink(current, 'control', kind))}
+                  >
                     <SliderField
                       label="强度"
                       value={image.strength}
@@ -319,7 +373,9 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
             ) : null}
             {inputs?.control?.adapterId ? (
               <section className="flex flex-col gap-2">
-                <FieldLabel value={inputs.control.loraStrength === undefined ? '默认' : times(inputs.control.loraStrength)}>适配器强度</FieldLabel>
+                <FieldLabel value={inputs.control.loraStrength === undefined ? '默认' : times(inputs.control.loraStrength)}>
+                  适配器强度
+                </FieldLabel>
                 <SliderField
                   label="适配器强度"
                   value={inputs.control.loraStrength ?? 1}
@@ -330,15 +386,38 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
                   onChange={(loraStrength) => onChange((current) => patchControl(current, { loraStrength }))}
                 />
                 {inputs.control.loraStrength !== undefined ? (
-                  <Button tone="ghost" size="sm" className="self-start" onClick={() => onChange((current) => patchControl(current, { loraStrength: undefined }))}>恢复默认</Button>
+                  <Button
+                    tone="ghost"
+                    size="sm"
+                    className="self-start"
+                    onClick={() => onChange((current) => patchControl(current, { loraStrength: undefined }))}
+                  >
+                    恢复默认
+                  </Button>
                 ) : null}
               </section>
             ) : null}
             {(inputs?.control?.images ?? []).map((image) => (
               <section key={image.kind} className="flex flex-col gap-1.5">
                 <FieldLabel value={`${pct(image.start)} – ${pct(image.end)}`}>{controlKindLabel(image.kind)}起止</FieldLabel>
-                <SliderField label="开始" value={image.start} min={0} max={1} step={0.05} format={pct} onChange={(start) => onChange((current) => patchControlImage(current, image.kind, { start }))} />
-                <SliderField label="结束" value={image.end} min={0} max={1} step={0.05} format={pct} onChange={(end) => onChange((current) => patchControlImage(current, image.kind, { end }))} />
+                <SliderField
+                  label="开始"
+                  value={image.start}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  format={pct}
+                  onChange={(start) => onChange((current) => patchControlImage(current, image.kind, { start }))}
+                />
+                <SliderField
+                  label="结束"
+                  value={image.end}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  format={pct}
+                  onChange={(end) => onChange((current) => patchControlImage(current, image.kind, { end }))}
+                />
               </section>
             ))}
             {referenceLinks.length ? (
@@ -348,7 +427,7 @@ export function InputsSection({ canvas, onChange, wiring }: { canvas: ProjectCan
                   id="studio-reference-edge"
                   label="参考图最长边"
                   value={inputs?.references?.maxEdge}
-                  parse={(value) => Number.isFinite(value) ? Math.min(2048, Math.max(16, Math.round(value))) : null}
+                  parse={(value) => (Number.isFinite(value) ? Math.min(2048, Math.max(16, Math.round(value))) : null)}
                   onCommit={(maxEdge) => onChange((current) => patchReferences(current, { maxEdge }))}
                 />
                 <p className="text-caption text-ink-2">16 到 2048 像素；留空由引擎决定。</p>

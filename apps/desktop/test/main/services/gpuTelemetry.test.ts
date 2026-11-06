@@ -27,8 +27,16 @@ vi.mock('@main/lib/events', () => ({ emit: (_channel: string, payload: GpuTeleme
 
 const [rtx4090, rtx3060] = [gpuDeviceFixture(), GPU_RTX_3060()]
 const MiB = 1024 * 1024
-const window = (visible: boolean, focused = visible) => Object.assign(new EventEmitter(), { isDestroyed: () => false, isVisible: () => visible, isMinimized: () => false, isFocused: () => focused })
-const flush = async () => { for (let index = 0; index < 5; index += 1) await Promise.resolve() }
+const window = (visible: boolean, focused = visible) =>
+  Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    isVisible: () => visible,
+    isMinimized: () => false,
+    isFocused: () => focused,
+  })
+const flush = async () => {
+  for (let index = 0; index < 5; index += 1) await Promise.resolve()
+}
 let stop: (() => void) | undefined
 
 beforeEach(() => {
@@ -37,7 +45,11 @@ beforeEach(() => {
   powerMonitor.removeAllListeners()
   app.removeAllListeners()
   Object.assign(state, {
-    inventory: gpuInventoryFixture([rtx4090, rtx3060]), counts: {}, smi: { stdout: '', error: null, stderr: '' }, emitted: [], windows: [],
+    inventory: gpuInventoryFixture([rtx4090, rtx3060]),
+    counts: {},
+    smi: { stdout: '', error: null, stderr: '' },
+    emitted: [],
+    windows: [],
   })
 })
 afterEach(() => {
@@ -59,9 +71,22 @@ describe('startGpuTelemetry', () => {
     const [snapshot] = state.emitted
     expect(snapshot!.status).toBe('ok')
     expect(snapshot!.recommendedGpuUuid).toBe(state.inventory.recommendedGpuUuid)
-    expect(snapshot!.devices[0]).toMatchObject({ uuid: rtx4090.uuid, memoryUsedBytes: 2048 * MiB, memoryFreeBytes: 20000 * MiB, utilizationPercent: 37, runningTasks: 1, queuedTasks: 2 })
+    expect(snapshot!.devices[0]).toMatchObject({
+      uuid: rtx4090.uuid,
+      memoryUsedBytes: 2048 * MiB,
+      memoryFreeBytes: 20000 * MiB,
+      utilizationPercent: 37,
+      runningTasks: 1,
+      queuedTasks: 2,
+    })
     // Unparseable values keep the inventory numbers instead of becoming NaN.
-    expect(snapshot!.devices[1]).toMatchObject({ memoryUsedBytes: undefined, memoryFreeBytes: rtx3060.memoryFreeBytes, utilizationPercent: rtx3060.utilizationPercent, runningTasks: 0, queuedTasks: 0 })
+    expect(snapshot!.devices[1]).toMatchObject({
+      memoryUsedBytes: undefined,
+      memoryFreeBytes: rtx3060.memoryFreeBytes,
+      utilizationPercent: rtx3060.utilizationPercent,
+      runningTasks: 0,
+      queuedTasks: 0,
+    })
   })
 
   it('passes through an unavailable inventory', async () => {

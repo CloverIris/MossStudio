@@ -21,13 +21,23 @@ function deps(patch: Partial<EngineAutoUpdateDeps> = {}, initial: EngineAutoUpda
   const value: EngineAutoUpdateDeps = {
     getSettings: () => settingsFixture({ engineAutoUpdate: true }),
     engineReady: async () => true,
-    versions: () => [{ id: 'stable-v1.0.3-cu13-sm75-system-cuda', name: 'stable-v1.0.3-cu13-sm75-system-cuda', path: '/e/bin/moss-server', current: true, source: 'managed' }],
+    versions: () => [
+      {
+        id: 'stable-v1.0.3-cu13-sm75-system-cuda',
+        name: 'stable-v1.0.3-cu13-sm75-system-cuda',
+        path: '/e/bin/moss-server',
+        current: true,
+        source: 'managed',
+      },
+    ],
     releases: async () => [release('v1.1.0'), release('v1.0.3')],
     jobs: async () => [],
     downloadState: () => null,
     install,
     readState: () => state,
-    writeState: (next) => { state = next },
+    writeState: (next) => {
+      state = next
+    },
     now: () => 10 * DAY,
     ...patch,
   }
@@ -38,9 +48,12 @@ describe('runEngineAutoUpdate', () => {
   it('installs the newer release with the build options of the engine in use', async () => {
     const { deps: d, install } = deps()
     await expect(runEngineAutoUpdate(d)).resolves.toBe('updated')
-    expect(install).toHaveBeenCalledWith(expect.objectContaining({
-      packages: [{ kind: 'cuda', flavour: 'cu13', arch: 'sm75', runtime: 'system-cuda' }], releaseTag: 'v1.1.0',
-    }))
+    expect(install).toHaveBeenCalledWith(
+      expect.objectContaining({
+        packages: [{ kind: 'cuda', flavour: 'cu13', arch: 'sm75', runtime: 'system-cuda' }],
+        releaseTag: 'v1.1.0',
+      }),
+    )
   })
 
   it('keeps every installed package kind in use current, once each', async () => {
@@ -75,7 +88,9 @@ describe('runEngineAutoUpdate', () => {
   })
 
   it('does nothing when the setting is off, before Setup installed an engine, or for a custom engine', async () => {
-    await expect(runEngineAutoUpdate(deps({ getSettings: () => settingsFixture({ engineAutoUpdate: false }) }).deps)).resolves.toBe('disabled')
+    await expect(runEngineAutoUpdate(deps({ getSettings: () => settingsFixture({ engineAutoUpdate: false }) }).deps)).resolves.toBe(
+      'disabled',
+    )
     await expect(runEngineAutoUpdate(deps({ engineReady: async () => false }).deps)).resolves.toBe('not-installed')
     const custom = deps({ versions: () => [{ id: 'external:/x', name: 'x · 外部', path: '/x', current: true, source: 'external' }] })
     await expect(runEngineAutoUpdate(custom.deps)).resolves.toBe('unmanaged')
@@ -88,15 +103,25 @@ describe('runEngineAutoUpdate', () => {
 
   it('waits while jobs run or another install is in progress', async () => {
     await expect(runEngineAutoUpdate(deps({ jobs: async () => [jobFixture({ state: 'running' })] }).deps)).resolves.toBe('busy')
-    await expect(runEngineAutoUpdate(deps({ downloadState: () => engineDownloadFixture({ phase: 'downloading' }) }).deps)).resolves.toBe('busy')
+    await expect(runEngineAutoUpdate(deps({ downloadState: () => engineDownloadFixture({ phase: 'downloading' }) }).deps)).resolves.toBe(
+      'busy',
+    )
     // Training and remote jobs do not use the local engine.
-    await expect(runEngineAutoUpdate(deps({ jobs: async () => [jobFixture({ state: 'running', kind: 'training' }), jobFixture({ state: 'running', hostId: 'ssh-gpu' })] }).deps)).resolves.toBe('updated')
+    await expect(
+      runEngineAutoUpdate(
+        deps({
+          jobs: async () => [jobFixture({ state: 'running', kind: 'training' }), jobFixture({ state: 'running', hostId: 'ssh-gpu' })],
+        }).deps,
+      ),
+    ).resolves.toBe('updated')
   })
 
   it('does not switch engines under a job that started during the download', async () => {
     let jobs: JobRecord[] = []
     const switched = vi.fn(async () => '/new/bin/moss-server')
-    const sleep = vi.fn(async () => { jobs = [jobFixture({ state: 'succeeded' })] })
+    const sleep = vi.fn(async () => {
+      jobs = [jobFixture({ state: 'succeeded' })]
+    })
     const install = vi.fn(async (request: InstallRequest) => {
       // Mid-download a job starts…
       jobs = [jobFixture({ state: 'running' })]
@@ -112,7 +137,10 @@ describe('runEngineAutoUpdate', () => {
   })
 
   it('skips a release the person pinned by rolling back', async () => {
-    const pinned = deps({ versions: () => [{ id: 'stable-v1.0.3-cu13', name: 'stable-v1.0.3-cu13', path: '/e', current: true, source: 'managed' }] }, { pinnedTag: 'v1.0.3' })
+    const pinned = deps(
+      { versions: () => [{ id: 'stable-v1.0.3-cu13', name: 'stable-v1.0.3-cu13', path: '/e', current: true, source: 'managed' }] },
+      { pinnedTag: 'v1.0.3' },
+    )
     await expect(runEngineAutoUpdate(pinned.deps)).resolves.toBe('pinned')
     expect(pinned.install).not.toHaveBeenCalled()
   })

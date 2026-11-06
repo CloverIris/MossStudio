@@ -9,7 +9,10 @@ import { linksOf, type LinkRole } from './links'
  * board pixels, so the wire layer pans and zooms with the cards.
  */
 
-export interface Point { x: number; y: number }
+export interface Point {
+  x: number
+  y: number
+}
 
 /** Vertical distance between stacked input ports. */
 export const PORT_SPACING = 22
@@ -46,7 +49,12 @@ export interface Wire {
   chip?: ChipRect
 }
 
-export interface ChipRect { x: number; y: number; w: number; h: number }
+export interface ChipRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
 
 /** Estimated chip width in screen pixels (text-micro: CJK ≈ 11px, digits and latin ≈ 6.5px, padding 16px). */
 export function chipWidth(label: string): number {
@@ -146,7 +154,16 @@ export function boardWires(canvases: readonly ProjectCanvas[], zoom = 1): Wire[]
     if (canvas.kind === 'result') {
       const source = canvas.sourceCanvasId ? byId.get(canvas.sourceCanvasId) : undefined
       if (source) {
-        wires.push(wire({ id: `lineage:${canvas.id}`, kind: 'lineage', sourceId: source.id, targetId: canvas.id, from: outputPort(source), to: inputPort(canvas, 0, 1) }))
+        wires.push(
+          wire({
+            id: `lineage:${canvas.id}`,
+            kind: 'lineage',
+            sourceId: source.id,
+            targetId: canvas.id,
+            from: outputPort(source),
+            to: inputPort(canvas, 0, 1),
+          }),
+        )
       }
       continue
     }
@@ -157,19 +174,25 @@ export function boardWires(canvases: readonly ProjectCanvas[], zoom = 1): Wire[]
       const source = byId.get(entry.link.canvasId)
       if (!source || source.id === canvas.id) return
       const at = entry.role === 'control' ? entry.kind : entry.index
-      into.push(wire({
-        id: `input:${canvas.id}:${entry.role}:${at ?? ''}`,
-        kind: 'input',
-        sourceId: source.id,
-        targetId: canvas.id,
-        role: entry.role,
-        at,
-        label: entry.label,
-        from: outputPort(source),
-        to: inputPort(canvas, index, entries.length, minSpacing),
-      }))
+      into.push(
+        wire({
+          id: `input:${canvas.id}:${entry.role}:${at ?? ''}`,
+          kind: 'input',
+          sourceId: source.id,
+          targetId: canvas.id,
+          role: entry.role,
+          at,
+          label: entry.label,
+          from: outputPort(source),
+          to: inputPort(canvas, index, entries.length, minSpacing),
+        }),
+      )
     })
-    const chips = stackChips(into.map((item) => item.to), into.map((item) => item.label ?? ''), zoom)
+    const chips = stackChips(
+      into.map((item) => item.to),
+      into.map((item) => item.label ?? ''),
+      zoom,
+    )
     into.forEach((item, index) => wires.push({ ...item, chip: chips[index] }))
   }
   return wires

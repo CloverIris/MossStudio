@@ -154,9 +154,12 @@ describe('normalizeCanvasAdapters', () => {
   })
 
   it('trims ids and treats the trimmed id as the dedupe key', () => {
-    expect(normalizeCanvasAdapters([{ id: '  style-a  ', strength: 1 }, { id: 'style-a', strength: 0.5 }])).toEqual([
-      { id: 'style-a', strength: 1 },
-    ])
+    expect(
+      normalizeCanvasAdapters([
+        { id: '  style-a  ', strength: 1 },
+        { id: 'style-a', strength: 0.5 },
+      ]),
+    ).toEqual([{ id: 'style-a', strength: 1 }])
   })
 
   it('ignores non-string ids and blank or non-string paths', () => {
@@ -205,7 +208,11 @@ describe('adapterStatuses', () => {
 
   it('flags adapters that left the library', () => {
     const statuses = adapterStatuses(
-      [{ id: 'style-a', strength: 0.8 }, { id: 'style-b', strength: 1 }, { id: 'gone', strength: 1 }],
+      [
+        { id: 'style-a', strength: 0.8 },
+        { id: 'style-b', strength: 1 },
+        { id: 'gone', strength: 1 },
+      ],
       catalog,
     )
     expect(statuses.map((item) => [item.name, item.kind, item.installed])).toEqual([
@@ -216,7 +223,10 @@ describe('adapterStatuses', () => {
   })
 
   it('keeps the selected adapter object and order', () => {
-    const selection = [{ id: 'dmd8-sft', strength: 0.3 }, { id: 'style-a', strength: 1 }]
+    const selection = [
+      { id: 'dmd8-sft', strength: 0.3 },
+      { id: 'style-a', strength: 1 },
+    ]
     const statuses = adapterStatuses(selection, catalog)
     expect(statuses[0]?.adapter).toBe(selection[0])
     expect(statuses.map((item) => item.adapter.id)).toEqual(['dmd8-sft', 'style-a'])
@@ -260,7 +270,13 @@ describe('resolveAdapterSelection', () => {
 
   it('keeps order and strength', async () => {
     await expect(
-      resolveAdapterSelection([{ id: 'style-c', strength: 0.4 }, { id: 'style-a', strength: 1.5 }], resolver),
+      resolveAdapterSelection(
+        [
+          { id: 'style-c', strength: 0.4 },
+          { id: 'style-a', strength: 1.5 },
+        ],
+        resolver,
+      ),
     ).resolves.toEqual([
       { path: '/models/adapters/style-c/c.safetensors', strength: 0.4 },
       { path: '/models/adapters/style-a/a.safetensors', strength: 1.5 },
@@ -311,19 +327,23 @@ describe('resolveAdapterSelection', () => {
         throw new Error('catalog unavailable')
       },
     }
-    await expect(resolveAdapterSelection([{ id: 'style-z', strength: 1 }], noName)).rejects.toThrow(
-      AdapterResolutionError,
-    )
+    await expect(resolveAdapterSelection([{ id: 'style-z', strength: 1 }], noName)).rejects.toThrow(AdapterResolutionError)
     await expect(resolveAdapterSelection([{ id: 'style-z', strength: 1 }], noName)).rejects.toThrow('「style-z」')
   })
 
   it('only asks for names of the adapters that failed', async () => {
     const nameOf = vi.fn(async (id: string) => id)
     await expect(
-      resolveAdapterSelection([{ id: 'style-a', strength: 1 }, { id: 'gone', strength: 1 }], {
-        resolveFile: resolver.resolveFile,
-        nameOf,
-      }),
+      resolveAdapterSelection(
+        [
+          { id: 'style-a', strength: 1 },
+          { id: 'gone', strength: 1 },
+        ],
+        {
+          resolveFile: resolver.resolveFile,
+          nameOf,
+        },
+      ),
     ).rejects.toThrow(AdapterResolutionError)
     expect(nameOf.mock.calls).toEqual([['gone']])
   })

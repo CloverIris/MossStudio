@@ -11,24 +11,65 @@ function detail(patch: Partial<GalleryDetail> = {}): GalleryDetail {
 describe('lib/studioReuse buildReuseRequest', () => {
   it('copies loose image metadata when there is no generation record', () => {
     const request = buildReuseRequest(detail({ prompt: '  a cat  ', negativePrompt: 'blurry', seed: 9 }), { id: 'r', now })
-    expect(request).toEqual({ id: 'r', createdAt: now.toISOString(), sourcePath: '/fixture/outputs/moss_0003.png', prompt: 'a cat', negativePrompt: 'blurry', width: 1024, height: 1024, seed: 9 })
+    expect(request).toEqual({
+      id: 'r',
+      createdAt: now.toISOString(),
+      sourcePath: '/fixture/outputs/moss_0003.png',
+      prompt: 'a cat',
+      negativePrompt: 'blurry',
+      width: 1024,
+      height: 1024,
+      seed: 9,
+    })
   })
 
   it('prefers generation details over loose metadata and copies adapters', () => {
     const adapters = [{ path: '/lora.safetensors', strength: 0.8 }]
-    const request = buildReuseRequest(detail({
-      seed: 1, width: 512, projectId: 'loose',
-      generation: { seed: 77, width: 768, height: 1344, steps: 8, cfg: 1, modelBundleId: 'moss-sft', modelName: 'SFT', adapters, projectId: 'p1' },
-    }), { id: 'r', now })
-    expect(request).toMatchObject({ seed: 77, width: 768, height: 1344, steps: 8, cfg: 1, modelBundleId: 'moss-sft', modelName: 'SFT', projectId: 'p1', adapters })
+    const request = buildReuseRequest(
+      detail({
+        seed: 1,
+        width: 512,
+        projectId: 'loose',
+        generation: {
+          seed: 77,
+          width: 768,
+          height: 1344,
+          steps: 8,
+          cfg: 1,
+          modelBundleId: 'moss-sft',
+          modelName: 'SFT',
+          adapters,
+          projectId: 'p1',
+        },
+      }),
+      { id: 'r', now },
+    )
+    expect(request).toMatchObject({
+      seed: 77,
+      width: 768,
+      height: 1344,
+      steps: 8,
+      cfg: 1,
+      modelBundleId: 'moss-sft',
+      modelName: 'SFT',
+      projectId: 'p1',
+      adapters,
+    })
     expect(request.adapters![0]).not.toBe(adapters[0])
   })
 
   it('drops invalid numbers, blank strings and empty adapter lists', () => {
-    const request = buildReuseRequest(detail({
-      prompt: undefined, negativePrompt: '   ', width: -1, height: 0, seed: null,
-      generation: { seed: -3, steps: 2.5, cfg: Number.POSITIVE_INFINITY, modelBundleId: ' ', adapters: [] },
-    }), { id: 'r', now })
+    const request = buildReuseRequest(
+      detail({
+        prompt: undefined,
+        negativePrompt: '   ',
+        width: -1,
+        height: 0,
+        seed: null,
+        generation: { seed: -3, steps: 2.5, cfg: Number.POSITIVE_INFINITY, modelBundleId: ' ', adapters: [] },
+      }),
+      { id: 'r', now },
+    )
     expect(request).toEqual({ id: 'r', createdAt: now.toISOString(), sourcePath: '/fixture/outputs/moss_0003.png', prompt: '' })
   })
 
@@ -84,7 +125,15 @@ describe('lib/studioReuse 用作起始图', () => {
   it('asks for a start picture, carrying the description and size but not the seed', async () => {
     const { buildStartPictureRequest } = await import('@renderer/lib/studioReuse')
     const request = buildStartPictureRequest(detail({ prompt: 'a cat', seed: 9 }), { id: 's', now })
-    expect(request).toEqual({ id: 's', createdAt: now.toISOString(), sourcePath: '/fixture/outputs/moss_0003.png', prompt: 'a cat', width: 1024, height: 1024, useAs: 'start' })
+    expect(request).toEqual({
+      id: 's',
+      createdAt: now.toISOString(),
+      sourcePath: '/fixture/outputs/moss_0003.png',
+      prompt: 'a cat',
+      width: 1024,
+      height: 1024,
+      useAs: 'start',
+    })
     expect(isStudioReuseRequest(request)).toBe(true)
   })
 

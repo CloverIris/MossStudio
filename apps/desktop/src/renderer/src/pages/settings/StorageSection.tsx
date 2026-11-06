@@ -55,19 +55,28 @@ export function StorageSection(): React.JSX.Element {
       <Section
         title="作品来源"
         description="作品页默认显示生成的图片；也可以加入其他文件夹里的图片。"
-        actions={<Button onClick={() => void addGalleryRoot()}><Plus className="size-4" />添加文件夹</Button>}
+        actions={
+          <Button onClick={() => void addGalleryRoot()}>
+            <Plus className="size-4" />
+            添加文件夹
+          </Button>
+        }
       >
         <Group>
           {galleryRoots.length === 0 ? (
             <Row title="只显示生成的图片" description="还没有添加其他文件夹。" />
-          ) : galleryRoots.map((root) => (
-            <Row key={root} title={<span className="font-mono text-caption">{root}</span>}>
-              <IconButton label="在文件管理器中打开" onClick={() => openPath(root)}><FolderOpen className="size-4" /></IconButton>
-              <IconButton label="移除这个来源" onClick={() => void save({ galleryRoots: galleryRoots.filter((item) => item !== root) })}>
-                <Trash2 className="size-4" />
-              </IconButton>
-            </Row>
-          ))}
+          ) : (
+            galleryRoots.map((root) => (
+              <Row key={root} title={<span className="font-mono text-caption">{root}</span>}>
+                <IconButton label="在文件管理器中打开" onClick={() => openPath(root)}>
+                  <FolderOpen className="size-4" />
+                </IconButton>
+                <IconButton label="移除这个来源" onClick={() => void save({ galleryRoots: galleryRoots.filter((item) => item !== root) })}>
+                  <Trash2 className="size-4" />
+                </IconButton>
+              </Row>
+            ))
+          )}
         </Group>
       </Section>
 
@@ -87,10 +96,7 @@ export function StorageSection(): React.JSX.Element {
                 onChange={(path) => save({ modelDirectories: { ...modelDirectories, [id]: path } })}
               />
             ))}
-            <Row
-              title="磁盘空间检查"
-              description="下载模型、LoRA 和引擎前，会先检查目标磁盘的可用空间；空间不够时不会开始下载。"
-            >
+            <Row title="磁盘空间检查" description="下载模型、LoRA 和引擎前，会先检查目标磁盘的可用空间；空间不够时不会开始下载。">
               <span className="text-ui text-ink-2">自动</span>
             </Row>
           </div>

@@ -79,7 +79,14 @@ export function RegionLayer({
       event.stopPropagation()
       onSelectRegion(layer.id)
       if (layer.locked) return
-      gestureRef.current = { owner: target, kind: resizeId ? 'resize' : 'move', pointerId: event.pointerId, id: layer.id, start: at, origin: [...layer.bbox] }
+      gestureRef.current = {
+        owner: target,
+        kind: resizeId ? 'resize' : 'move',
+        pointerId: event.pointerId,
+        id: layer.id,
+        start: at,
+        origin: [...layer.bbox],
+      }
       return
     }
     if (tool !== 'draw') return
@@ -95,13 +102,18 @@ export function RegionLayer({
     const at = point(event)
     if (gesture.kind === 'draw') {
       gesture.current = at
-      setPreview([Math.min(gesture.start[0], at[0]), Math.min(gesture.start[1], at[1]), Math.max(gesture.start[0], at[0]), Math.max(gesture.start[1], at[1])])
+      setPreview([
+        Math.min(gesture.start[0], at[0]),
+        Math.min(gesture.start[1], at[1]),
+        Math.max(gesture.start[0], at[0]),
+        Math.max(gesture.start[1], at[1]),
+      ])
       return
     }
     const dx = at[0] - gesture.start[0]
     const dy = at[1] - gesture.start[1]
     const bbox = gesture.kind === 'move' ? moveBox(gesture.origin, dx, dy, canvas) : resizeBox(gesture.origin, dx, dy, canvas)
-    onChangeLayers((layers) => layers.map((layer) => layer.id === gesture.id ? { ...layer, bbox } : layer))
+    onChangeLayers((layers) => layers.map((layer) => (layer.id === gesture.id ? { ...layer, bbox } : layer)))
   }
 
   const finish = (event: React.PointerEvent<HTMLDivElement>): void => {
@@ -138,7 +150,12 @@ export function RegionLayer({
             key={layer.id}
             data-region-id={layer.id}
             title={`${KIND_LABEL[layer.kind]} · ${layer.caption || '还没有描述'}`}
-            onDoubleClick={(event) => { if (interactive) { event.stopPropagation(); onOpenRegion(layer.id) } }}
+            onDoubleClick={(event) => {
+              if (interactive) {
+                event.stopPropagation()
+                onOpenRegion(layer.id)
+              }
+            }}
             className={cn(
               'absolute rounded-[3px]',
               interactive && tool !== 'pan' && 'pointer-events-auto',
@@ -156,13 +173,21 @@ export function RegionLayer({
               <span className="pointer-events-none absolute inset-1 overflow-hidden text-micro text-ink">{layer.text}</span>
             ) : null}
             {selected && !layer.locked ? (
-              <span data-resize-id={layer.id} aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 size-3 cursor-nwse-resize rounded-[3px] bg-accent" />
+              <span
+                data-resize-id={layer.id}
+                aria-hidden="true"
+                className="absolute -bottom-1.5 -right-1.5 size-3 cursor-nwse-resize rounded-[3px] bg-accent"
+              />
             ) : null}
           </div>
         )
       })}
       {preview ? (
-        <div aria-hidden="true" className="pointer-events-none absolute rounded-[3px] bg-accent-soft outline-2 outline-accent" style={percentBox(preview, canvas)} />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute rounded-[3px] bg-accent-soft outline-2 outline-accent"
+          style={percentBox(preview, canvas)}
+        />
       ) : null}
     </div>
   )

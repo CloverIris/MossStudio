@@ -3,7 +3,19 @@
  * drives it (--moss-silent --moss-install-to), and fake OS executors for reg.exe, shortcuts
  * and ditto. Runs the Windows integration on Windows and the Linux one elsewhere.
  */
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -29,7 +41,13 @@ function host(): HostInfo {
   return {
     platform,
     home: join(w, 'home'),
-    env: { LOCALAPPDATA: join(w, 'local'), APPDATA: join(w, 'roaming'), XDG_CONFIG_HOME: join(w, 'config'), XDG_DATA_HOME: join(w, 'share'), SystemRoot: 'C:\\Windows' },
+    env: {
+      LOCALAPPDATA: join(w, 'local'),
+      APPDATA: join(w, 'roaming'),
+      XDG_CONFIG_HOME: join(w, 'config'),
+      XDG_DATA_HOME: join(w, 'share'),
+      SystemRoot: 'C:\\Windows',
+    },
   }
 }
 
@@ -138,8 +156,16 @@ describe('silent install (first install)', () => {
     // Record and locator
     const record = installRecordSchema.parse(JSON.parse(readFileSync(join(root, 'install.json'), 'utf8')))
     expect(record).toMatchObject({
-      schema: 1, platform: platform === 'win32' ? 'win32-x64' : 'linux-x64', root, dataRoot: join(root, 'data'), portable: false,
-      channel: 'stable', current: '2.0.0', failed: [], confirmed: false, installedAt: '2026-11-05T08:00:00.000Z',
+      schema: 1,
+      platform: platform === 'win32' ? 'win32-x64' : 'linux-x64',
+      root,
+      dataRoot: join(root, 'data'),
+      portable: false,
+      channel: 'stable',
+      current: '2.0.0',
+      failed: [],
+      confirmed: false,
+      installedAt: '2026-11-05T08:00:00.000Z',
     })
     expect(record.previous).toBeUndefined()
     expect(readLocator(locatorPath(h.env.host))).toEqual({ schema: 1, root, dataRoot: join(root, 'data'), version: '2.0.0' })
@@ -147,7 +173,18 @@ describe('silent install (first install)', () => {
     // Integration
     if (platform === 'win32') {
       const adds = h.regCalls.filter((args) => args[0] === 'add')
-      expect(adds.map((args) => args[3])).toEqual(['DisplayName', 'DisplayVersion', 'Publisher', 'InstallLocation', 'DisplayIcon', 'UninstallString', 'QuietUninstallString', 'EstimatedSize', 'NoModify', 'NoRepair'])
+      expect(adds.map((args) => args[3])).toEqual([
+        'DisplayName',
+        'DisplayVersion',
+        'Publisher',
+        'InstallLocation',
+        'DisplayIcon',
+        'UninstallString',
+        'QuietUninstallString',
+        'EstimatedSize',
+        'NoModify',
+        'NoRepair',
+      ])
       expect(adds.find((args) => args[3] === 'UninstallString')?.[7]).toBe(`"${join(root, launcherFile)}" --uninstall`)
       expect(h.shortcuts.map((item) => item.options.appUserModelId)).toEqual(['com.cloveriris.mossstudio', 'com.cloveriris.mossstudio'])
       expect(h.shortcuts.every((item) => item.options.target === join(root, launcherFile))).toBe(true)
@@ -194,7 +231,10 @@ describe('later installs (locator found)', () => {
     const root = join(work(), 'R 安装')
     await silentInstall(harness('2.0.0', root))
     const recordFile = join(root, 'install.json')
-    writeFileSync(recordFile, JSON.stringify({ ...readJsonObject(recordFile), confirmed: true, failed: ['2.1.0'], launcherState: { tries: 1 } }))
+    writeFileSync(
+      recordFile,
+      JSON.stringify({ ...readJsonObject(recordFile), confirmed: true, failed: ['2.1.0'], launcherState: { tries: 1 } }),
+    )
 
     const h = harness('2.1.0', root)
     const { controller } = await silentInstall(h)
@@ -202,7 +242,13 @@ describe('later installs (locator found)', () => {
     expect(controller.state.launcherLogPath).toBeNull()
     expect(controller.state.installed).toEqual({ root, dataRoot: join(root, 'data'), version: '2.0.0' })
     const record = readInstallRecord(recordFile)!
-    expect(record).toMatchObject({ current: '2.1.0', previous: '2.0.0', confirmed: false, failed: [], installedAt: '2026-11-05T08:00:00.000Z' })
+    expect(record).toMatchObject({
+      current: '2.1.0',
+      previous: '2.0.0',
+      confirmed: false,
+      failed: [],
+      installedAt: '2026-11-05T08:00:00.000Z',
+    })
     expect(readJsonObject(recordFile)?.['launcherState']).toEqual({ tries: 1 })
     expect(existsSync(join(root, 'app-2.0.0'))).toBe(true)
     expect(existsSync(join(root, 'app-2.1.0'))).toBe(true)
@@ -270,7 +316,12 @@ describe('roots that are not ours', () => {
     mkdirSync(foreign)
     writeFileSync(join(foreign, 'install.json'), JSON.stringify({ name: 'some other app' }))
     const f = await SetupController.create(harness('2.0.0', foreign).env)
-    expect(f.state.location).toMatchObject({ ok: false, kind: 'occupied', problem: { code: 'E_NOT_EMPTY' }, suggestion: join(foreign, 'MossStudio') })
+    expect(f.state.location).toMatchObject({
+      ok: false,
+      kind: 'occupied',
+      problem: { code: 'E_NOT_EMPTY' },
+      suggestion: join(foreign, 'MossStudio'),
+    })
     expect(() => f.start(f.silentStartInput())).toThrow(expect.objectContaining({ code: 'E_NOT_EMPTY' }))
     expect(JSON.parse(readFileSync(join(foreign, 'install.json'), 'utf8'))).toEqual({ name: 'some other app' })
   })
@@ -278,7 +329,15 @@ describe('roots that are not ours', () => {
   it('performInstall itself refuses them too (no location check in between)', async () => {
     const h = harness('2.0.0', join(work(), 'x'))
     const deps = { ...h.env.install, progress: () => undefined }
-    const request = { host: h.env.host, platformKey: h.env.context.platformKey!, version: '2.0.0', payloadDir: h.env.context.setup!.payloadDir, sourceBundle: null, dataRoot: null, legacy: null }
+    const request = {
+      host: h.env.host,
+      platformKey: h.env.context.platformKey!,
+      version: '2.0.0',
+      payloadDir: h.env.context.setup!.payloadDir,
+      sourceBundle: null,
+      dataRoot: null,
+      legacy: null,
+    }
     const portable = join(work(), 'p')
     mkdirSync(portable)
     writeFileSync(join(portable, 'portable.json'), JSON.stringify({ schema: 1, version: '2.0.0' }))
@@ -362,7 +421,9 @@ describe('old 1.0.x install', () => {
   it('refuses a legacy choice that is not an old install', async () => {
     const root = join(work(), 'R')
     const controller = await SetupController.create(harness('2.0.0', root).env)
-    expect(() => controller.start({ root, legacy: { root: join(work(), 'nothing'), mode: 'reuse' } })).toThrow(expect.objectContaining({ code: 'E_NOT_LEGACY' }))
+    expect(() => controller.start({ root, legacy: { root: join(work(), 'nothing'), mode: 'reuse' } })).toThrow(
+      expect.objectContaining({ code: 'E_NOT_LEGACY' }),
+    )
   })
 })
 
@@ -377,7 +438,15 @@ describe('reinstall after an uninstall that kept the data', () => {
     writeFileSync(join(result.dataRoot, 'logs', 'launcher.log'), 'started')
     writeFileSync(join(result.dataRoot, 'settings.json'), '{"theme":"dark"}')
     writeFileSync(join(result.dataRoot, 'outputs', '作品 1.png'), 'png')
-    const target = { host: h.env.host, platformKey: h.env.context.platformKey!, root, dataRoot: result.dataRoot, portable: false, desktopDir: join(work(), 'Desktop'), profileDir: null }
+    const target = {
+      host: h.env.host,
+      platformKey: h.env.context.platformKey!,
+      root,
+      dataRoot: result.dataRoot,
+      portable: false,
+      desktopDir: join(work(), 'Desktop'),
+      profileDir: null,
+    }
     const plan = buildUninstallPlan(target, false, listRoot(root))
     for (const path of plan.remove) rmSync(path, { recursive: true, force: true })
     noteKeptData(target, '2.0.0', new Date('2026-11-05T09:00:00.000Z'))
@@ -431,7 +500,10 @@ describe('reinstall after an uninstall that kept the data', () => {
     const h = host()
     expect(keptDataInstall(h)).toBeNull()
     const data = join(work(), 'gone', 'data')
-    noteKeptData({ host: h, platformKey: 'linux-x64', root: join(work(), 'gone'), dataRoot: data, portable: false, desktopDir: '', profileDir: null }, '2.0.0')
+    noteKeptData(
+      { host: h, platformKey: 'linux-x64', root: join(work(), 'gone'), dataRoot: data, portable: false, desktopDir: '', profileDir: null },
+      '2.0.0',
+    )
     expect(keptDataInstall(h)).toBeNull()
     mkdirSync(data, { recursive: true })
     writeFileSync(join(data, 'photo.jpg'), '')
@@ -543,12 +615,35 @@ describe('macOS install', () => {
       progress: () => undefined,
     }
     const macHost: HostInfo = { platform: 'darwin', home: join(w, 'home'), env: {} }
-    const result = await performInstall({ host: macHost, platformKey: 'darwin-arm64', version: '2.0.0', payloadDir: null, sourceBundle: source, root: folder, dataRoot: null, legacy: null }, deps)
+    const result = await performInstall(
+      {
+        host: macHost,
+        platformKey: 'darwin-arm64',
+        version: '2.0.0',
+        payloadDir: null,
+        sourceBundle: source,
+        root: folder,
+        dataRoot: null,
+        legacy: null,
+      },
+      deps,
+    )
     expect(calls).toEqual([{ file: '/usr/bin/ditto', args: ['-V', '--noqtn', source, join(folder, '.MossStudio-2.0.0.app.partial')] }])
     expect(readFileSync(join(folder, 'MossStudio.app', 'Contents', 'MacOS', 'MossStudio'), 'utf8')).toBe('bundle 2.0.0')
     expect(readdirSync(folder).sort()).toEqual(['.MossStudio-old.app.previous', 'MossStudio.app'])
     expect(result.recordPath.replace(/\\/g, '/')).toBe(join(dataRoot, 'install.json').replace(/\\/g, '/'))
-    expect(readInstallRecord(result.recordPath)).toMatchObject({ platform: 'darwin-arm64', root: folder, appPath: join(folder, 'MossStudio.app'), dataRoot, current: '2.0.0' })
-    expect(readLocator(locatorPath(macHost))).toMatchObject({ root: folder, appPath: join(folder, 'MossStudio.app'), dataRoot, version: '2.0.0' })
+    expect(readInstallRecord(result.recordPath)).toMatchObject({
+      platform: 'darwin-arm64',
+      root: folder,
+      appPath: join(folder, 'MossStudio.app'),
+      dataRoot,
+      current: '2.0.0',
+    })
+    expect(readLocator(locatorPath(macHost))).toMatchObject({
+      root: folder,
+      appPath: join(folder, 'MossStudio.app'),
+      dataRoot,
+      version: '2.0.0',
+    })
   })
 })

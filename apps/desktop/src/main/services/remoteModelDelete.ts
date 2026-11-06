@@ -96,6 +96,7 @@ export function assertSafeSteps(steps: readonly RemoteDeleteStep[], root: string
   }
   for (const step of steps) {
     if (posix.normalize(step.path) !== step.path) throw new Error('删除路径无效，已取消删除')
-    if (!bases.some((base) => step.path === base || step.path.startsWith(`${base}/`))) throw new Error('删除路径不在模型文件夹中，已取消删除')
+    if (!bases.some((base) => step.path === base || step.path.startsWith(`${base}/`)))
+      throw new Error('删除路径不在模型文件夹中，已取消删除')
   }
 }

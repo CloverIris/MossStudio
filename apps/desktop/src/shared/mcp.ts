@@ -28,8 +28,7 @@ export const STUDIO_TOOLS: AiToolDefinition[] = [
   },
   {
     name: 'studio_set_sampler',
-    description:
-      'Update sampler values on the selected layout Canvas. Only pass the fields you want to change.',
+    description: 'Update sampler values on the selected layout Canvas. Only pass the fields you want to change.',
     inputSchema: {
       type: 'object',
       properties: {

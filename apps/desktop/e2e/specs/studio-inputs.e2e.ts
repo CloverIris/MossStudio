@@ -29,22 +29,38 @@ interface StudioSetup {
 /** A project with a picture card (img-1, generated) and a layout canvas (canvas-1, selected). */
 async function openStudio(app: E2eApp, setup: StudioSetup = {}): Promise<Page> {
   const page = await app.open({ scenario: 'ready', route: '/studio', defer: true, theme: setup.theme })
-  await page.evaluate((options) => {
-    const { canvasFixture, projectFixture, engineFeaturesFixture, controlAdapterFixture } = window.__mock.fixtures
-    const picture = canvasFixture({
-      id: 'img-1', kind: 'image', title: '小猫照片', imagePath: '/fixture/projects/project-1/assets/cat.png', x: 0, y: 0, width: 1024, height: 768, steps: 1,
-    })
-    const layout = canvasFixture({
-      id: 'canvas-1', title: '画面 1', prompt: '一只橘猫坐在窗台上', x: 420, y: 0, seedLocked: false,
-      ...(options.inputs ? { inputs: options.inputs } : {}),
-      ...(options.sampling ? { sampling: options.sampling } : {}),
-    })
-    const canvases = [picture, layout]
-    if (options.emptySource) canvases.push(canvasFixture({ id: 'canvas-2', title: '画面 2', prompt: '草图', x: 840, y: 0 }))
-    window.__mock.state.projects = [projectFixture({ id: 'project-1', name: '小猫', canvases, selectedCanvasId: 'canvas-1' })]
-    window.__mock.state.engineFeatures = options.features === null ? null : engineFeaturesFixture(options.features ?? {})
-    window.__mock.state.controlAdapters = options.adapters ? [controlAdapterFixture()] : []
-  }, { inputs: setup.inputs, sampling: setup.sampling, features: setup.features, adapters: setup.adapters, emptySource: setup.emptySource })
+  await page.evaluate(
+    (options) => {
+      const { canvasFixture, projectFixture, engineFeaturesFixture, controlAdapterFixture } = window.__mock.fixtures
+      const picture = canvasFixture({
+        id: 'img-1',
+        kind: 'image',
+        title: '小猫照片',
+        imagePath: '/fixture/projects/project-1/assets/cat.png',
+        x: 0,
+        y: 0,
+        width: 1024,
+        height: 768,
+        steps: 1,
+      })
+      const layout = canvasFixture({
+        id: 'canvas-1',
+        title: '画面 1',
+        prompt: '一只橘猫坐在窗台上',
+        x: 420,
+        y: 0,
+        seedLocked: false,
+        ...(options.inputs ? { inputs: options.inputs } : {}),
+        ...(options.sampling ? { sampling: options.sampling } : {}),
+      })
+      const canvases = [picture, layout]
+      if (options.emptySource) canvases.push(canvasFixture({ id: 'canvas-2', title: '画面 2', prompt: '草图', x: 840, y: 0 }))
+      window.__mock.state.projects = [projectFixture({ id: 'project-1', name: '小猫', canvases, selectedCanvasId: 'canvas-1' })]
+      window.__mock.state.engineFeatures = options.features === null ? null : engineFeaturesFixture(options.features ?? {})
+      window.__mock.state.controlAdapters = options.adapters ? [controlAdapterFixture()] : []
+    },
+    { inputs: setup.inputs, sampling: setup.sampling, features: setup.features, adapters: setup.adapters, emptySource: setup.emptySource },
+  )
   await app.start()
   await page.locator('[data-project-switcher]').waitFor()
   await page.locator('article[data-canvas-card="canvas-1"]').waitFor()
@@ -53,7 +69,10 @@ async function openStudio(app: E2eApp, setup: StudioSetup = {}): Promise<Page> {
 }
 
 async function submitted(page: Page, count: number): Promise<JobBody[]> {
-  await page.waitForFunction(([channel, n]) => window.__mock.callsTo(channel as string).length >= (n as number), [ENGINE_JOBS, count] as const)
+  await page.waitForFunction(([channel, n]) => window.__mock.callsTo(channel as string).length >= (n as number), [
+    ENGINE_JOBS,
+    count,
+  ] as const)
   return page.evaluate((channel) => window.__mock.callsTo(channel) as JobBody[], ENGINE_JOBS)
 }
 
@@ -128,7 +147,12 @@ describe('studio inputs', () => {
   })
 
   it('uses a control adapter: choose it, link a depth picture, strength reaches the job', async () => {
-    const page = await openStudio(app, { adapters: true, inputs: { control: { adapterId: 'control-union', images: [{ kind: 'depth', link: { canvasId: 'img-1' }, strength: 1, start: 0, end: 1 }] } } })
+    const page = await openStudio(app, {
+      adapters: true,
+      inputs: {
+        control: { adapterId: 'control-union', images: [{ kind: 'depth', link: { canvasId: 'img-1' }, strength: 1, start: 0, end: 1 }] },
+      },
+    })
     const row = inputs(page).locator('[data-input-row="控制图 · 深度"]')
     await expect.poll(() => row.getByText('小猫照片').isVisible()).toBe(true)
     await row.getByRole('slider', { name: '强度' }).fill('0.5')
@@ -149,7 +173,9 @@ describe('studio inputs', () => {
   })
 
   it('hides what the engine cannot do', async () => {
-    const page = await openStudio(app, { features: { imageInput: false, control: false, references: false, samplers: false, hires: false } })
+    const page = await openStudio(app, {
+      features: { imageInput: false, control: false, references: false, samplers: false, hires: false },
+    })
     await page.getByRole('button', { name: /高级/ }).first().click()
     await page.locator('[data-sampling-section]').waitFor()
     expect(await inputs(page).count()).toBe(0)
@@ -181,13 +207,22 @@ describe('studio inputs', () => {
     // First run renders in place; the second gets a result card.
     await generate(page).click()
     const [first] = await submitted(page, 1)
-    expect(first!.sampling).toEqual({ sampler: 'dpmpp_2m', scheduler: 'karras', hires: { width: 1536, height: 1536, strength: 0.35 }, stepCache: 'fbcache', cfgTruncation: 0.6 })
+    expect(first!.sampling).toEqual({
+      sampler: 'dpmpp_2m',
+      scheduler: 'karras',
+      hires: { width: 1536, height: 1536, strength: 0.35 },
+      stepCache: 'fbcache',
+      cfgTruncation: 0.6,
+    })
     expect([first!.width, first!.height]).toEqual([1024, 1024])
     await page.evaluate(() => window.__mock.finishJob(window.__mock.state.jobs[0]!.id))
     await expect.poll(() => generate(page).isEnabled()).toBe(true)
     await generate(page).click()
     const [, second] = await submitted(page, 2)
-    const result = await page.evaluate((id) => window.__mock.state.projects[0]!.canvases.find((canvas) => canvas.id === id), second!.canvasId)
+    const result = await page.evaluate(
+      (id) => window.__mock.state.projects[0]!.canvases.find((canvas) => canvas.id === id),
+      second!.canvasId,
+    )
     expect(result).toMatchObject({ kind: 'result', width: 1536, height: 1536, baseSize: { width: 1024, height: 1024 } })
   })
 
@@ -235,7 +270,9 @@ describe('模型 › 控制适配器', () => {
 
   it('is hidden when the engine cannot use control adapters', async () => {
     const page = await app.open({ scenario: 'ready', route: '/models', defer: true })
-    await page.evaluate(() => { window.__mock.state.engineFeatures = window.__mock.fixtures.engineFeaturesFixture({ control: false }) })
+    await page.evaluate(() => {
+      window.__mock.state.engineFeatures = window.__mock.fixtures.engineFeaturesFixture({ control: false })
+    })
     await app.start()
     await page.getByRole('heading', { name: '存储位置' }).waitFor()
     await settle(page, 150)

@@ -7,5 +7,13 @@
  */
 export { getRunContext, type RunContext, type RunMode } from './runContext'
 export { confirmHealth } from './app'
-export { readInstallRecord, updateInstallRecord, writeInstallRecord, readLocator, writeLocator, writeJsonAtomic, readJsonObject } from './record'
+export {
+  readInstallRecord,
+  updateInstallRecord,
+  writeInstallRecord,
+  readLocator,
+  writeLocator,
+  writeJsonAtomic,
+  readJsonObject,
+} from './record'
 export { APP_USER_MODEL_ID, appDirName, versionOfAppDir, launcherName, appExecutableName } from './layout'

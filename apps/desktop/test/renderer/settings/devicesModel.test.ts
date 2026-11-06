@@ -16,7 +16,16 @@ import {
 import { RELEASE_220, enginePlanFor, inventoryDevicesFor, machineFixture } from '@test/mocks/backend/machines'
 import { planLines } from '@renderer/lib/engineInstall'
 import type { EngineGpuProbeSnapshot, LocalEngineVersion, RemoteEngineInfo } from '@shared/types'
-import { FIXTURE_NOW, GPU_RTX_3060, engineMissingFixture, engineReadyFixture, gpuDeviceFixture, gpuInventoryFixture, gpuTelemetryFixture, sshHostFixture } from '@test/mocks/backend/fixtures'
+import {
+  FIXTURE_NOW,
+  GPU_RTX_3060,
+  engineMissingFixture,
+  engineReadyFixture,
+  gpuDeviceFixture,
+  gpuInventoryFixture,
+  gpuTelemetryFixture,
+  sshHostFixture,
+} from '@test/mocks/backend/fixtures'
 
 const rtx4090 = gpuDeviceFixture()
 const rtx3060 = GPU_RTX_3060()
@@ -24,8 +33,15 @@ const inventory = gpuInventoryFixture([rtx4090, rtx3060])
 
 function probe(statuses: Record<string, 'supported' | 'unsupported' | 'unknown'>, reason?: string): EngineGpuProbeSnapshot {
   return {
-    enginePath: '/e', checkedAt: FIXTURE_NOW,
-    devices: Object.entries(statuses).map(([uuid, status], index) => ({ uuid, index, name: uuid, status, reason: status === 'unsupported' ? reason : undefined })),
+    enginePath: '/e',
+    checkedAt: FIXTURE_NOW,
+    devices: Object.entries(statuses).map(([uuid, status], index) => ({
+      uuid,
+      index,
+      name: uuid,
+      status,
+      reason: status === 'unsupported' ? reason : undefined,
+    })),
   }
 }
 
@@ -47,8 +63,20 @@ describe('gpuRows', () => {
   it('marks the default and the engine status of each GPU', () => {
     const rows = gpuRows(inventory, probe({ [rtx4090.uuid]: 'supported', [rtx3060.uuid]: 'unsupported' }, 'SM86 不在构建里'), null, 'auto')
     expect(rows).toHaveLength(2)
-    expect(rows[0]).toMatchObject({ name: 'NVIDIA GeForce RTX 4090', isDefault: true, status: 'ok', statusLabel: '正常', detail: '24 GB · 默认（自动选择）' })
-    expect(rows[1]).toMatchObject({ isDefault: false, status: 'error', statusLabel: '不能使用', reason: 'SM86 不在构建里', detail: '12 GB' })
+    expect(rows[0]).toMatchObject({
+      name: 'NVIDIA GeForce RTX 4090',
+      isDefault: true,
+      status: 'ok',
+      statusLabel: '正常',
+      detail: '24 GB · 默认（自动选择）',
+    })
+    expect(rows[1]).toMatchObject({
+      isDefault: false,
+      status: 'error',
+      statusLabel: '不能使用',
+      reason: 'SM86 不在构建里',
+      detail: '12 GB',
+    })
   })
 
   it('shows 待检测 before the engine probe and a fixed default', () => {
@@ -67,7 +95,9 @@ describe('gpuRows', () => {
     expect(gpuRows(null, null, null, 'auto')).toEqual([])
     expect(gpuEmptyMessage(null)).toMatch(/正在检测/)
     expect(gpuEmptyMessage(gpuInventoryFixture([]))).toMatch(/没有找到能运行引擎的显卡/)
-    expect(gpuEmptyMessage({ scannedAt: FIXTURE_NOW, status: 'error', devices: [], error: 'nvidia-smi failed' })).toMatch(/nvidia-smi failed/)
+    expect(gpuEmptyMessage({ scannedAt: FIXTURE_NOW, status: 'error', devices: [], error: 'nvidia-smi failed' })).toMatch(
+      /nvidia-smi failed/,
+    )
   })
 })
 
@@ -83,7 +113,7 @@ describe('engine per GPU', () => {
     ],
   })
 
-  it('shows which engine each GPU runs, with the plan\'s tips', () => {
+  it("shows which engine each GPU runs, with the plan's tips", () => {
     const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(multi)), null, null, 'auto', gpuEngineInfo(readiness, plan()))
     expect(rows.map((row) => row.engine)).toEqual(['CUDA 13', undefined, '兼容模式 · 只能文生图'])
     expect(rows[2]).toMatchObject({ status: 'ok', statusLabel: '正常', tip: expect.stringContaining('ROCm 7') })
@@ -91,11 +121,20 @@ describe('engine per GPU', () => {
     expect(rows[0]!.statusLabel).toBe('待检测')
   })
 
-  it('marks a GPU nothing runs on as unusable, with the plan\'s reason', () => {
+  it("marks a GPU nothing runs on as unusable, with the plan's reason", () => {
     const intel = machineFixture('intel')
-    const broken = { ...intel, gpus: [{ ...intel.gpus[0]!, vulkan: { index: 0, usable: false, discrete: true, reason: 'no shaderInt64' } }] }
+    const broken = {
+      ...intel,
+      gpus: [{ ...intel.gpus[0]!, vulkan: { index: 0, usable: false, discrete: true, reason: 'no shaderInt64' } }],
+    }
     const unusable = enginePlanFor(broken, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, [])
-    const [row] = gpuRows(gpuInventoryFixture(inventoryDevicesFor(broken)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), unusable))
+    const [row] = gpuRows(
+      gpuInventoryFixture(inventoryDevicesFor(broken)),
+      null,
+      null,
+      'auto',
+      gpuEngineInfo(engineMissingFixture(), unusable),
+    )
     expect(row).toMatchObject({ status: 'error', statusLabel: '不能使用', reason: expect.stringContaining('no shaderInt64') })
   })
 
@@ -112,7 +151,12 @@ describe('engine per GPU', () => {
 
   it('an integrated GPU next to a discrete one is quietly unused, not broken', () => {
     const base = machineFixture('nvidia')
-    const igpu = { id: 'vk-8086-46a6-0', name: 'Intel(R) UHD Graphics', vendor: 'intel' as const, vulkan: { index: 1, usable: true, discrete: false } }
+    const igpu = {
+      id: 'vk-8086-46a6-0',
+      name: 'Intel(R) UHD Graphics',
+      vendor: 'intel' as const,
+      vulkan: { index: 1, usable: true, discrete: false },
+    }
     const laptop = { ...base, gpus: [...base.gpus, igpu] }
     const p = enginePlanFor(laptop, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, [])
     const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(laptop)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), p))
@@ -129,7 +173,12 @@ describe('engine per GPU', () => {
 
   it('offers 自动 plus only the packages that run on that GPU', () => {
     const p = plan()
-    expect(engineOverrideOptions(p, multi.gpus[1]!.id).map((option) => option.value)).toEqual(['auto', 'cu12-sm70', 'cu12-sm70-system-cuda', 'vulkan'])
+    expect(engineOverrideOptions(p, multi.gpus[1]!.id).map((option) => option.value)).toEqual([
+      'auto',
+      'cu12-sm70',
+      'cu12-sm70-system-cuda',
+      'vulkan',
+    ])
     expect(engineOverrideOptions(p, multi.gpus[2]!.id)).toEqual([
       { value: 'auto', label: '自动' },
       { value: 'vulkan', label: '兼容模式（Vulkan）', description: expect.stringContaining('只能文生图') },
@@ -137,7 +186,7 @@ describe('engine per GPU', () => {
     expect(engineOverrideOptions(null, 'x')).toEqual([{ value: 'auto', label: '自动' }])
   })
 
-  it('stores and clears one GPU\'s choice', () => {
+  it("stores and clears one GPU's choice", () => {
     const one = applyEngineOverride({}, 'GPU-a', 'vulkan')
     expect(one).toEqual({ 'GPU-a': 'vulkan' })
     expect(applyEngineOverride(one, 'GPU-a', 'auto')).toEqual({})
@@ -163,14 +212,42 @@ describe('applyGpuOverride', () => {
 
 describe('remote hosts', () => {
   it('summarises a reachable host with its GPU and engine', () => {
-    const host = sshHostFixture({ devices: [{ id: 'cuda:0', hostId: 'ssh-gpu', hostName: 'Linux GPU', name: 'RTX 4090', kind: 'cuda', detail: '', available: true, source: 'remote' }] })
-    const engine: RemoteEngineInfo = { online: true, available: true, version: '1.0.3', path: '', root: '', gpu: 'RTX 4090', checkedAt: FIXTURE_NOW }
-    expect(hostSummary(host, engine)).toEqual({ status: 'ok', statusLabel: '在线', detail: 'moss@gpu.example.test · RTX 4090 · 引擎 1.0.3 已安装' })
+    const host = sshHostFixture({
+      devices: [
+        {
+          id: 'cuda:0',
+          hostId: 'ssh-gpu',
+          hostName: 'Linux GPU',
+          name: 'RTX 4090',
+          kind: 'cuda',
+          detail: '',
+          available: true,
+          source: 'remote',
+        },
+      ],
+    })
+    const engine: RemoteEngineInfo = {
+      online: true,
+      available: true,
+      version: '1.0.3',
+      path: '',
+      root: '',
+      gpu: 'RTX 4090',
+      checkedAt: FIXTURE_NOW,
+    }
+    expect(hostSummary(host, engine)).toEqual({
+      status: 'ok',
+      statusLabel: '在线',
+      detail: 'moss@gpu.example.test · RTX 4090 · 引擎 1.0.3 已安装',
+    })
   })
 
   it('shows the connection error of a failing host', () => {
-    expect(hostSummary(sshHostFixture({ status: 'error', error: 'Permission denied', port: 2222 }), undefined))
-      .toEqual({ status: 'error', statusLabel: '连接失败', detail: 'moss@gpu.example.test:2222 · Permission denied' })
+    expect(hostSummary(sshHostFixture({ status: 'error', error: 'Permission denied', port: 2222 }), undefined)).toEqual({
+      status: 'error',
+      statusLabel: '连接失败',
+      detail: 'moss@gpu.example.test:2222 · Permission denied',
+    })
     expect(hostSummary(sshHostFixture({ status: 'unchecked' }), undefined).statusLabel).toBe('未测试')
   })
 

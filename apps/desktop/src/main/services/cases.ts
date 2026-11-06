@@ -39,12 +39,20 @@ function ensure(): LaunchCase[] {
       return cases
     }
     const parsed = JSON.parse(readFileSync(FILE(), 'utf8')) as StoredCase[]
-    const migrated = Array.isArray(parsed)
-      ? parsed.map(migrate).filter((item): item is LaunchCase => item !== null)
-      : []
+    const migrated = Array.isArray(parsed) ? parsed.map(migrate).filter((item): item is LaunchCase => item !== null) : []
     cases = migrated
     // Rewrite once so old `backend`/`port`/`extraArgs` fields do not linger.
-    if (Array.isArray(parsed) && parsed.some((item) => 'backend' in item || 'port' in item || 'extraArgs' in item || 'gradio' in item || (item as { workspace?: unknown }).workspace === 'official')) {
+    if (
+      Array.isArray(parsed) &&
+      parsed.some(
+        (item) =>
+          'backend' in item ||
+          'port' in item ||
+          'extraArgs' in item ||
+          'gradio' in item ||
+          (item as { workspace?: unknown }).workspace === 'official',
+      )
+    ) {
       persist()
     }
   } catch {
@@ -67,9 +75,7 @@ export function listCases(): LaunchCase[] {
     .sort((a, b) => (b.lastUsedAt ?? b.createdAt).localeCompare(a.lastUsedAt ?? a.createdAt))
 }
 
-export async function saveCase(
-  input: Omit<LaunchCase, 'id' | 'createdAt' | 'lastUsedAt'> & { id?: string },
-): Promise<LaunchCase> {
+export async function saveCase(input: Omit<LaunchCase, 'id' | 'createdAt' | 'lastUsedAt'> & { id?: string }): Promise<LaunchCase> {
   const instance = await getInstance(input.instanceId)
   if (!instance) throw new Error('实例不存在')
   const current = ensure()

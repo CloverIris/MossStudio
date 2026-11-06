@@ -24,16 +24,9 @@ const canvas = (id: string, sourceCanvasId?: string, overrides: Partial<ProjectC
 // activeCanvasBranchIds only reads `id` and `state`; the rest of JobRecord is irrelevant.
 const job = (id: string, state: JobState) => ({ id, state }) as JobRecord
 
-const canvases = [
-  canvas('root'),
-  canvas('child', 'root'),
-  canvas('grandchild', 'child'),
-  canvas('sibling', 'root'),
-  canvas('other-root'),
-]
+const canvases = [canvas('root'), canvas('child', 'root'), canvas('grandchild', 'child'), canvas('sibling', 'root'), canvas('other-root')]
 
-const withJob = (id: string, extra: Partial<ProjectCanvas>) =>
-  canvases.map((item) => (item.id === id ? { ...item, ...extra } : item))
+const withJob = (id: string, extra: Partial<ProjectCanvas>) => canvases.map((item) => (item.id === id ? { ...item, ...extra } : item))
 
 describe('activeCanvasBranchIds', () => {
   it('locks an active descendant and its ancestors, not a sibling result', () => {
@@ -121,6 +114,8 @@ describe('canvasBranchesConflict', () => {
 
   it('only looks at source ids, not shared ancestors', () => {
     // Two results of the same root share `root` in their paths but neither contains the other.
-    expect(canvasBranchesConflict({ sourceId: 'x', path: new Set(['x', 'root']) }, { sourceId: 'y', path: new Set(['y', 'root']) })).toBe(false)
+    expect(canvasBranchesConflict({ sourceId: 'x', path: new Set(['x', 'root']) }, { sourceId: 'y', path: new Set(['y', 'root']) })).toBe(
+      false,
+    )
   })
 })

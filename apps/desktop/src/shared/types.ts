@@ -2,12 +2,7 @@ import type { EngineMachine, EnginePlan } from './engineChoice'
 
 export type CheckStatus = 'ok' | 'warn' | 'error' | 'unknown'
 
-export type CheckActionKind =
-  | 'rescan'
-  | 'open-settings'
-  | 'open-url'
-  | 'install-python'
-  | 'switch-mirror'
+export type CheckActionKind = 'rescan' | 'open-settings' | 'open-url' | 'install-python' | 'switch-mirror'
 
 export interface CheckAction {
   id: string
@@ -39,7 +34,7 @@ export interface DeviceInfo {
   diskTotal: number
   diskFree: number
   dataPath: string
-    enginePath?: string
+  enginePath?: string
   modelsPath: string
 }
 
@@ -273,7 +268,13 @@ export interface RemoteCudaProbe {
   durationMs: number
   driverVersion?: string
   computeCapabilities: string[]
-  libraries: Array<{ path: string; major: 12 | 13; versionText?: string; dependencyCheck: 'passed' | 'failed' | 'unavailable'; error?: string }>
+  libraries: Array<{
+    path: string
+    major: 12 | 13
+    versionText?: string
+    dependencyCheck: 'passed' | 'failed' | 'unavailable'
+    error?: string
+  }>
   flavours: Array<'cu12' | 'cu13'>
   foundFlavours?: Array<'cu12' | 'cu13'>
   recommendedFlavour?: 'cu12' | 'cu13'
@@ -427,9 +428,7 @@ export type InstanceChannel = 'stable' | 'experimental' | 'custom'
 export type RuntimeMode = 'shared' | 'isolated'
 export type RuntimeState = 'missing' | 'created' | 'installing' | 'ready' | 'error'
 
-export type InstancePlacement =
-  | { kind: 'local' }
-  | { kind: 'ssh'; hostId: string; hostName?: string; root: string }
+export type InstancePlacement = { kind: 'local' } | { kind: 'ssh'; hostId: string; hostName?: string; root: string }
 
 export interface InstanceInfo {
   id: string
@@ -1036,9 +1035,9 @@ export interface AppInfo {
   platform: string
   arch: string
   dataPath: string
-    enginePath?: string
+  enginePath?: string
   modelsPath: string
-    modelDirectories: Record<ModelDirectoryId, string>
+  modelDirectories: Record<ModelDirectoryId, string>
   acrylic: boolean
   backend?: BackendInfo
 }

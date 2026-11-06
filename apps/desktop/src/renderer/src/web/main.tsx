@@ -7,7 +7,9 @@ import { LayoutEditor } from './LayoutEditor'
 import '../styles.css'
 
 const dark = window.matchMedia('(prefers-color-scheme: dark)')
-const applyTheme = (): void => { document.documentElement.dataset.theme = dark.matches ? 'dark' : 'light' }
+const applyTheme = (): void => {
+  document.documentElement.dataset.theme = dark.matches ? 'dark' : 'light'
+}
 applyTheme()
 dark.addEventListener('change', applyTheme)
 
@@ -151,7 +153,9 @@ function App(): React.JSX.Element {
       return
     }
     const timer = setInterval(() => {
-      void api<JobRecord>(token, `/api/jobs/${encodeURIComponent(job.id)}`).then(setJob).catch(() => undefined)
+      void api<JobRecord>(token, `/api/jobs/${encodeURIComponent(job.id)}`)
+        .then(setJob)
+        .catch(() => undefined)
     }, 1800)
     return () => clearInterval(timer)
   }, [job, token])
@@ -231,9 +235,7 @@ function App(): React.JSX.Element {
       <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 bg-surface px-4 text-ink">
         <div>
           <h1 className="text-title font-semibold">连接到电脑</h1>
-          <p className="mt-2 text-ui text-ink-2">
-            {error || '请输入电脑端「设置 › 功能 › 局域网访问」里显示的访问码。'}
-          </p>
+          <p className="mt-2 text-ui text-ink-2">{error || '请输入电脑端「设置 › 功能 › 局域网访问」里显示的访问码。'}</p>
         </div>
         <Input
           value={token}
@@ -242,7 +244,14 @@ function App(): React.JSX.Element {
           aria-label="访问码"
           className="h-11"
         />
-        <Button tone="primary" size="lg" block onClick={() => { void load() }}>
+        <Button
+          tone="primary"
+          size="lg"
+          block
+          onClick={() => {
+            void load()
+          }}
+        >
           连接
         </Button>
       </main>
@@ -272,12 +281,18 @@ function App(): React.JSX.Element {
         <Field label="项目">
           <Select
             value={projectId}
-            onChange={(event) => { setProjectId(event.target.value); void openProject(event.target.value) }}
+            onChange={(event) => {
+              setProjectId(event.target.value)
+              void openProject(event.target.value)
+            }}
             className="h-11"
           >
             <option value="">新草稿</option>
             {bootstrap?.projects.map((project) => (
-              <option key={project.id} value={project.id}>{project.name}{project.page ? ` · 第${project.page}页` : ''} · {project.layerCount} 层</option>
+              <option key={project.id} value={project.id}>
+                {project.name}
+                {project.page ? ` · 第${project.page}页` : ''} · {project.layerCount} 层
+              </option>
             ))}
           </Select>
         </Field>
@@ -288,20 +303,36 @@ function App(): React.JSX.Element {
           <Button
             size="md"
             className="h-11 flex-1"
-            onClick={() => { setProjectId(''); setProjectName('MossStudio Project'); setSeriesId(''); setPage(1); setPrompt(''); setNegative(''); setDraft(exampleDraft()) }}
+            onClick={() => {
+              setProjectId('')
+              setProjectName('MossStudio Project')
+              setSeriesId('')
+              setPage(1)
+              setPrompt('')
+              setNegative('')
+              setDraft(exampleDraft())
+            }}
           >
             新建
           </Button>
-          <Button size="md" className="h-11 flex-1" onClick={() => void saveProject()}>保存</Button>
+          <Button size="md" className="h-11 flex-1" onClick={() => void saveProject()}>
+            保存
+          </Button>
         </div>
       </Card>
 
       <Card tone="panel" className="flex flex-col gap-3 p-4">
         <Field label="使用哪台引擎">
           <Select value={instanceId} onChange={(event) => setInstanceId(event.target.value)} className="h-11">
-            {bootstrap?.instances.length ? bootstrap.instances.map((instance) => (
-              <option key={instance.id} value={instance.id}>{instance.name} · {instance.commit.slice(0, 7)}</option>
-            )) : <option value="">电脑上还没有可用的引擎</option>}
+            {bootstrap?.instances.length ? (
+              bootstrap.instances.map((instance) => (
+                <option key={instance.id} value={instance.id}>
+                  {instance.name} · {instance.commit.slice(0, 7)}
+                </option>
+              ))
+            ) : (
+              <option value="">电脑上还没有可用的引擎</option>
+            )}
           </Select>
         </Field>
 
@@ -316,7 +347,7 @@ function App(): React.JSX.Element {
         <LayoutEditor
           draft={draft}
           onChange={setDraft}
-          onInsertPrompt={(layout) => setPrompt((previous) => previous.trim() ? `${previous.trim()}\n\n${layout}` : layout)}
+          onInsertPrompt={(layout) => setPrompt((previous) => (previous.trim() ? `${previous.trim()}\n\n${layout}` : layout))}
           onSaveProject={() => void saveProject()}
         />
 
@@ -335,14 +366,28 @@ function App(): React.JSX.Element {
               }}
               className="h-11"
             >
-              {SIZES.map(([label, w, h]) => <option key={label} value={`${w}x${h}`}>{label}</option>)}
+              {SIZES.map(([label, w, h]) => (
+                <option key={label} value={`${w}x${h}`}>
+                  {label}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label="随机种子">
-            <Input value={seed} onChange={(event) => setSeed(Number(event.target.value) || 0)} inputMode="numeric" className="tabular h-11" />
+            <Input
+              value={seed}
+              onChange={(event) => setSeed(Number(event.target.value) || 0)}
+              inputMode="numeric"
+              className="tabular h-11"
+            />
           </Field>
           <Field label="步数">
-            <Input value={steps} onChange={(event) => setSteps(Number(event.target.value) || 1)} inputMode="numeric" className="tabular h-11" />
+            <Input
+              value={steps}
+              onChange={(event) => setSteps(Number(event.target.value) || 1)}
+              inputMode="numeric"
+              className="tabular h-11"
+            />
           </Field>
           <Field label="贴合度">
             <Input value={cfg} onChange={(event) => setCfg(Number(event.target.value) || 0)} inputMode="decimal" className="tabular h-11" />
@@ -350,7 +395,13 @@ function App(): React.JSX.Element {
         </div>
 
         <Button tone="primary" size="lg" block onClick={() => void generate()} disabled={busy || Boolean(active)}>
-          {busy || active ? <><Spinner /> 生成中…</> : '开始生成'}
+          {busy || active ? (
+            <>
+              <Spinner /> 生成中…
+            </>
+          ) : (
+            '开始生成'
+          )}
         </Button>
       </Card>
 
@@ -358,11 +409,15 @@ function App(): React.JSX.Element {
         <Card tone="panel" className="flex flex-col gap-2 p-4">
           <div className="flex items-center justify-between">
             <span className="text-control font-medium">生成进度</span>
-            <Pill tone={job.state === 'failed' ? 'danger' : job.state === 'succeeded' ? 'ok' : 'neutral'}>{stateText[job.state] ?? job.state}</Pill>
+            <Pill tone={job.state === 'failed' ? 'danger' : job.state === 'succeeded' ? 'ok' : 'neutral'}>
+              {stateText[job.state] ?? job.state}
+            </Pill>
           </div>
           <ProgressBar label="生成进度" value={job.progress?.percent ?? 0} />
           <div className="tabular flex justify-between gap-2 text-caption text-ink-2">
-            <span>{job.stage} · {job.progress?.current ?? 0}/{job.progress?.total ?? steps}</span>
+            <span>
+              {job.stage} · {job.progress?.current ?? 0}/{job.progress?.total ?? steps}
+            </span>
             <span className="text-danger">{job.error?.message ?? ''}</span>
           </div>
         </Card>
@@ -371,7 +426,9 @@ function App(): React.JSX.Element {
       <Card tone="panel" className="flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between">
           <span className="text-control font-medium">最近作品</span>
-          <Button tone="ghost" onClick={() => void refreshGallery()}>刷新</Button>
+          <Button tone="ghost" onClick={() => void refreshGallery()}>
+            刷新
+          </Button>
         </div>
         {gallery.length === 0 ? (
           <EmptyState title="还没有作品" description="生成成功后会出现在这里。" className="py-8" />
@@ -380,7 +437,15 @@ function App(): React.JSX.Element {
             {gallery.map((item) => {
               const src = `/api/gallery/file?path=${encodeURIComponent(item.path)}&token=${encodeURIComponent(token)}`
               return (
-                <a key={item.id} href={src} target="_blank" rel="noreferrer" aria-label={item.name} className="block overflow-hidden rounded-lg bg-well" style={{ aspectRatio: '1 / 1' }}>
+                <a
+                  key={item.id}
+                  href={src}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={item.name}
+                  className="block overflow-hidden rounded-lg bg-well"
+                  style={{ aspectRatio: '1 / 1' }}
+                >
                   <img src={src} alt={item.name} loading="lazy" className="size-full object-cover" />
                 </a>
               )
@@ -393,7 +458,9 @@ function App(): React.JSX.Element {
         <Field label="项目名称" hint={`电脑上共有 ${bootstrap?.projects.length ?? 0} 个项目；手机上保存为单画布草稿。`}>
           <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="h-11" />
         </Field>
-        <Button size="md" className="h-11" onClick={() => void saveProject()}>保存项目</Button>
+        <Button size="md" className="h-11" onClick={() => void saveProject()}>
+          保存项目
+        </Button>
       </Card>
     </main>
   )

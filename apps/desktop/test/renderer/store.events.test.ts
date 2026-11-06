@@ -33,30 +33,56 @@ afterEach(() => {
 
 describe('Events.download', () => {
   it('updates a known task in place and appends unknown tasks, never reordering', async () => {
-    const { backend, store } = await ready(scenario('ready', {
-      downloads: ['a', 'b', 'c'].map((id) => downloadFixture({ id: `model:${id}`, targetId: id, state: 'queued' })),
-    }))
+    const { backend, store } = await ready(
+      scenario('ready', {
+        downloads: ['a', 'b', 'c'].map((id) => downloadFixture({ id: `model:${id}`, targetId: id, state: 'queued' })),
+      }),
+    )
     backend.emit(Events.download, downloadFixture({ id: 'model:c', targetId: 'c', state: 'running', bytes: 10 }))
     backend.emit(Events.download, downloadFixture({ id: 'model:a', targetId: 'a', state: 'paused' }))
     backend.emit(Events.download, downloadFixture({ id: 'adapter:x', kind: 'adapter', targetId: 'x', state: 'queued' }))
     expect(store().downloads.map((task) => `${task.id}=${task.state}`)).toEqual([
-      'model:a=paused', 'model:b=queued', 'model:c=running', 'adapter:x=queued',
+      'model:a=paused',
+      'model:b=queued',
+      'model:c=running',
+      'adapter:x=queued',
     ])
   })
 
   // Ported from tools/test-download-queue.mjs (renderer half).
   it('keeps the initial queue order through every state change and later downloads', async () => {
-    const initial = ['a', 'b', 'c'].map((id) => downloadFixture({ id: `model:${id}`, targetId: id, label: id, totalBytes: 1000, filesTotal: 2 }))
-    const { backend, store } = await ready(scenario('ready', {
-      settings: settingsFixture({ onboardingState: 'completed' }),
-      downloads: initial,
-      catalog: { ...scenario('ready').catalog, models: [], adapters: [] },
-    }))
+    const initial = ['a', 'b', 'c'].map((id) =>
+      downloadFixture({ id: `model:${id}`, targetId: id, label: id, totalBytes: 1000, filesTotal: 2 }),
+    )
+    const { backend, store } = await ready(
+      scenario('ready', {
+        settings: settingsFixture({ onboardingState: 'completed' }),
+        downloads: initial,
+        catalog: { ...scenario('ready').catalog, models: [], adapters: [] },
+      }),
+    )
     const ids = () => store().downloads.map((item) => item.id)
     const expected = initial.map((item) => item.id)
     expect(ids()).toEqual(expected)
-    for (const [id, state] of [['b', 'running'], ['a', 'running'], ['c', 'running'], ['b', 'paused'], ['b', 'running'], ['c', 'error'], ['a', 'done']] as const) {
-      const update = downloadFixture({ id: `model:${id}`, targetId: id, label: id, state, bytes: 500, totalBytes: 1000, filesTotal: 2, updatedAt: '2099-01-01T00:00:00.000Z' })
+    for (const [id, state] of [
+      ['b', 'running'],
+      ['a', 'running'],
+      ['c', 'running'],
+      ['b', 'paused'],
+      ['b', 'running'],
+      ['c', 'error'],
+      ['a', 'done'],
+    ] as const) {
+      const update = downloadFixture({
+        id: `model:${id}`,
+        targetId: id,
+        label: id,
+        state,
+        bytes: 500,
+        totalBytes: 1000,
+        filesTotal: 2,
+        updatedAt: '2099-01-01T00:00:00.000Z',
+      })
       backend.emit(Events.download, update)
       expect(ids()).toEqual(expected)
       expect(store().downloads.find((item) => item.id === update.id)).toEqual(update)
@@ -164,10 +190,15 @@ describe('Events.job', () => {
     ['failed', 'failed'],
   ] as const)('maps job state %s onto its launch row as %s and persists it', async (jobState, rowState) => {
     vi.useFakeTimers()
-    const { backend, useApp, store } = await ready(scenario('ready', { launchRows: [launchRowFixture({ id: 'row', jobId: 'j', state: 'running' })] }))
+    const { backend, useApp, store } = await ready(
+      scenario('ready', { launchRows: [launchRowFixture({ id: 'row', jobId: 'j', state: 'running' })] }),
+    )
     const startNextQueued = vi.fn(async (_deviceId: string) => undefined)
     useApp.setState({ startNextQueued })
-    backend.emit(Events.job, jobFixture({ id: 'j', state: jobState, error: jobState === 'failed' ? { code: 'E', message: 'boom' } : undefined }))
+    backend.emit(
+      Events.job,
+      jobFixture({ id: 'j', state: jobState, error: jobState === 'failed' ? { code: 'E', message: 'boom' } : undefined }),
+    )
     await vi.advanceTimersByTimeAsync(0)
     expect(store().launchRows[0]).toMatchObject({ id: 'row', state: rowState })
     expect(backend.callsTo(Ipc.launchQueueUpsert)).toEqual([expect.objectContaining({ id: 'row', state: rowState })])
@@ -177,7 +208,9 @@ describe('Events.job', () => {
   })
 
   it('keeps the previous launch-row error when the job carries none', async () => {
-    const { backend, store } = await ready(scenario('ready', { launchRows: [launchRowFixture({ jobId: 'j', state: 'running', error: 'earlier' })] }))
+    const { backend, store } = await ready(
+      scenario('ready', { launchRows: [launchRowFixture({ jobId: 'j', state: 'running', error: 'earlier' })] }),
+    )
     backend.emit(Events.job, jobFixture({ id: 'j', state: 'running' }))
     expect(store().launchRows[0]!.error).toBe('earlier')
   })
@@ -293,9 +326,13 @@ describe('Events.updateState', () => {
     const { backend, store } = await ready()
     backend.emit(Events.updateState, updateFailedFixture('1.1.0'))
     backend.emit(Events.updateState, updateFailedFixture('1.1.0'))
-    expect(store().notifications).toMatchObject([{
-      tone: 'warning', title: '新版本没能启动', message: 'MossStudio 1.1.0 没能正常启动，已经自动回到 1.0.3。你的作品、模型和设置都没有受影响。',
-    }])
+    expect(store().notifications).toMatchObject([
+      {
+        tone: 'warning',
+        title: '新版本没能启动',
+        message: 'MossStudio 1.1.0 没能正常启动，已经自动回到 1.0.3。你的作品、模型和设置都没有受影响。',
+      },
+    ])
     expect(store().updatePopoverOpen).toBe(true)
     store().setUpdatePopoverOpen(false)
     // Without the notice (told before, or dismissed) the version stays quiet.
@@ -330,7 +367,11 @@ describe('Events.mossInferDownload', () => {
     await flush()
     expect(store().engineReadiness).toEqual(engineReadyFixture())
     expect(store().notifications).toHaveLength(1)
-    expect(store().notifications[0]).toMatchObject({ tone: 'success', title: 'MossInfer 引擎已就绪', message: 'v2.1.1 已安装并设为当前版本' })
+    expect(store().notifications[0]).toMatchObject({
+      tone: 'success',
+      title: 'MossInfer 引擎已就绪',
+      message: 'v2.1.1 已安装并设为当前版本',
+    })
   })
 
   it('uses a generic success message when the version is unknown', async () => {
@@ -352,7 +393,11 @@ describe('Events.mossInferDownload', () => {
     const { backend, store } = await ready('ready')
     backend.emit(Events.mossInferDownload, engineDownloadFixture({ phase: 'error', error: '校验失败' }))
     await flush()
-    expect(store().notifications[0]).toMatchObject({ tone: 'warning', title: 'MossInfer 引擎更新失败', message: '当前引擎仍可用 · 校验失败' })
+    expect(store().notifications[0]).toMatchObject({
+      tone: 'warning',
+      title: 'MossInfer 引擎更新失败',
+      message: '当前引擎仍可用 · 校验失败',
+    })
   })
 
   it('falls back to the cached readiness when the refresh fails', async () => {

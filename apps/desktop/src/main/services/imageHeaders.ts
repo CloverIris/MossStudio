@@ -55,8 +55,14 @@ function jpegSize(data: Buffer): ImageHeader | null {
     if (data[offset] !== 0xff) return null
     const marker = data[offset + 1]!
     // Fill bytes and stand-alone markers carry no length.
-    if (marker === 0xff) { offset += 1; continue }
-    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { offset += 2; continue }
+    if (marker === 0xff) {
+      offset += 1
+      continue
+    }
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      offset += 2
+      continue
+    }
     if (marker === 0xd9 || marker === 0xda) return null
     const length = data.readUInt16BE(offset + 2)
     if (length < 2 || offset + 2 + length > data.length) return null

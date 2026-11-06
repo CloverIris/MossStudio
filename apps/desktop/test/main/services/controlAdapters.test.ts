@@ -23,8 +23,18 @@ const hello = (capabilities: Record<string, boolean> = { inspect: true }) => ({ 
 
 /** What moss-server 2.2's inspect answers for a control adapter (main.cpp inspect_json). */
 const controlReport = (path: string) => ({
-  path, kind: 'control_adapter', loadable: true, file_bytes: 1234, tensors: 300, note: '',
-  control_kinds: ['depth', 'canny', 'pose'], base_model: 'moss-image', adapter_types: ['lora'], lora_rank: 64, lora_adapters: 120, lora_unknown_keys: 0,
+  path,
+  kind: 'control_adapter',
+  loadable: true,
+  file_bytes: 1234,
+  tensors: 300,
+  note: '',
+  control_kinds: ['depth', 'canny', 'pose'],
+  base_model: 'moss-image',
+  adapter_types: ['lora'],
+  lora_rank: 64,
+  lora_adapters: 120,
+  lora_unknown_keys: 0,
 })
 
 function file(name: string): string {
@@ -45,12 +55,20 @@ beforeEach(async () => {
 describe('control adapter registry', () => {
   it('registers a file the engine calls a control adapter, with its kinds and base model', async () => {
     const path = file('union.safetensors')
-    requestEngineOnce.mockImplementation(async (_server: string, method: string, params: { path: string }) => ({ hello: hello(), result: { ...controlReport(params.path), method } }))
+    requestEngineOnce.mockImplementation(async (_server: string, method: string, params: { path: string }) => ({
+      hello: hello(),
+      result: { ...controlReport(params.path), method },
+    }))
     const entry = await registry.addControlAdapter({ path })
     expect(requestEngineOnce).toHaveBeenCalledWith('/engine/bin/moss-server', 'inspect', { path })
     expect(entry).toEqual({
-      id: expect.stringMatching(/^control-[0-9a-f]{12}$/), name: 'union.safetensors', path, sizeBytes: 1234,
-      controlKinds: ['depth', 'canny', 'pose'], baseModel: 'moss-image', addedAt: expect.any(String),
+      id: expect.stringMatching(/^control-[0-9a-f]{12}$/),
+      name: 'union.safetensors',
+      path,
+      sizeBytes: 1234,
+      controlKinds: ['depth', 'canny', 'pose'],
+      baseModel: 'moss-image',
+      addedAt: expect.any(String),
     })
     expect(registry.listControlAdapters()).toEqual([entry])
     expect(JSON.parse(readFileSync(join(dataRoot(), 'control-adapters.json'), 'utf8'))).toEqual([entry])
@@ -67,7 +85,10 @@ describe('control adapter registry', () => {
 
   it('adding the same file again (also through a link) updates the one entry', async () => {
     const path = file('union.safetensors')
-    requestEngineOnce.mockImplementation(async (_s: string, _m: string, params: { path: string }) => ({ hello: hello(), result: controlReport(params.path) }))
+    requestEngineOnce.mockImplementation(async (_s: string, _m: string, params: { path: string }) => ({
+      hello: hello(),
+      result: controlReport(params.path),
+    }))
     const first = await registry.addControlAdapter({ path })
     // A file symlink needs a privilege on Windows; the same path is the same file there.
     const link = join(models(), 'link.safetensors')
@@ -86,7 +107,10 @@ describe('control adapter registry', () => {
     ['unknown', '这个文件不是控制适配器（not a safetensors file）'],
   ])('refuses a %s file and says where it belongs', async (kind, message) => {
     const path = file('x.safetensors')
-    requestEngineOnce.mockResolvedValue({ hello: hello(), result: { path, kind, loadable: true, note: kind === 'unknown' ? 'not a safetensors file' : '' } })
+    requestEngineOnce.mockResolvedValue({
+      hello: hello(),
+      result: { path, kind, loadable: true, note: kind === 'unknown' ? 'not a safetensors file' : '' },
+    })
     await expect(registry.addControlAdapter({ path })).rejects.toMatchObject({ code: 'E_NOT_CONTROL_ADAPTER', message })
     expect(registry.listControlAdapters()).toEqual([])
     expect(emit).not.toHaveBeenCalled()
@@ -102,14 +126,20 @@ describe('control adapter registry', () => {
     await expect(registry.addControlAdapter({ path: join(models(), 'gone.safetensors') })).rejects.toMatchObject({ code: 'E_INPUT_PATH' })
     const path = file('x.safetensors')
     localServerPath.mockReturnValue(null)
-    await expect(registry.addControlAdapter({ path })).rejects.toMatchObject({ code: 'E_ENGINE', message: '需要先准备 MossInfer 引擎，才能识别控制适配器' })
+    await expect(registry.addControlAdapter({ path })).rejects.toMatchObject({
+      code: 'E_ENGINE',
+      message: '需要先准备 MossInfer 引擎，才能识别控制适配器',
+    })
     localServerPath.mockReturnValue('/engine/bin/moss-server')
     requestEngineOnce.mockRejectedValue(new Error('method_not_found: unknown method "inspect"'))
     await expect(registry.addControlAdapter({ path })).rejects.toMatchObject({ code: 'E_NOT_SUPPORTED' })
     requestEngineOnce.mockResolvedValue({ hello: hello({ inspect: false }), result: {} })
     await expect(registry.addControlAdapter({ path })).rejects.toMatchObject({ code: 'E_NOT_SUPPORTED' })
     requestEngineOnce.mockRejectedValue(new Error('io: cannot read x.safetensors'))
-    await expect(registry.addControlAdapter({ path })).rejects.toMatchObject({ code: 'E_INSPECT', message: '无法读取这个文件：cannot read x.safetensors' })
+    await expect(registry.addControlAdapter({ path })).rejects.toMatchObject({
+      code: 'E_INSPECT',
+      message: '无法读取这个文件：cannot read x.safetensors',
+    })
   })
 
   it('removes an entry by id and tells the renderer; an unknown id changes nothing', async () => {
@@ -127,7 +157,10 @@ describe('control adapter registry', () => {
   it('reads a damaged registry as empty and skips malformed entries', () => {
     writeFileSync(join(dataRoot(), 'control-adapters.json'), '{')
     expect(registry.listControlAdapters()).toEqual([])
-    writeFileSync(join(dataRoot(), 'control-adapters.json'), JSON.stringify([{ id: 'x' }, { id: 'ok', name: 'a', path: '/a', sizeBytes: 1, controlKinds: ['depth'], addedAt: 't' }]))
+    writeFileSync(
+      join(dataRoot(), 'control-adapters.json'),
+      JSON.stringify([{ id: 'x' }, { id: 'ok', name: 'a', path: '/a', sizeBytes: 1, controlKinds: ['depth'], addedAt: 't' }]),
+    )
     expect(registry.listControlAdapters().map((entry) => entry.id)).toEqual(['ok'])
   })
 })

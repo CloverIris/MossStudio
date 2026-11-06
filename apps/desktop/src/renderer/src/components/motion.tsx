@@ -1,10 +1,4 @@
-import {
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ComponentProps,
-} from 'react'
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react'
 
 type MotionPreset = 'page' | 'fade' | 'flyout' | 'dialog' | 'sheet' | 'toast'
 
@@ -125,13 +119,15 @@ function playMotion(
   return () => {
     if (!finished) {
       finished = true
-      interrupted.current = new Map(animations.map(({ target, closed }) => {
-        const current = getComputedStyle(target)
-        const frame: Keyframe = {}
-        if (closed.opacity !== undefined) frame.opacity = current.opacity
-        if (closed.transform !== undefined) frame.transform = current.transform
-        return [target, frame]
-      }))
+      interrupted.current = new Map(
+        animations.map(({ target, closed }) => {
+          const current = getComputedStyle(target)
+          const frame: Keyframe = {}
+          if (closed.opacity !== undefined) frame.opacity = current.opacity
+          if (closed.transform !== undefined) frame.transform = current.transform
+          return [target, frame]
+        }),
+      )
     }
     window.clearTimeout(timer)
     for (const { animation } of animations) animation.cancel()
@@ -210,7 +206,11 @@ export function MotionPanel({
   }, [transitionKey, enabled])
   // Only the current page is mounted: no overlapping forms, duplicated effects,
   // delayed navigation or stale outgoing page that can still receive input.
-  return <div {...props} ref={ref}>{children}</div>
+  return (
+    <div {...props} ref={ref}>
+      {children}
+    </div>
+  )
 }
 
 export function Collapse({

@@ -4,14 +4,7 @@ import { existsSync } from 'node:fs'
 import { appendFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Events } from '@shared/channels'
-import type {
-  JobLogLine,
-  JobParams,
-  JobRecord,
-  JobStage,
-  ModelBinding,
-  GpuInventoryDevice,
-} from '@shared/types'
+import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, GpuInventoryDevice } from '@shared/types'
 import { cliUnsupported } from '../lib/cliProtocol'
 import { codedError } from '../lib/codedError'
 import { emit } from '../lib/events'
@@ -34,19 +27,10 @@ import { resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
 import { probeLocalEngineGpuCompatibility } from './engines'
 import { getTrainingHost } from './trainingHosts'
 import { cancelRemoteEngineJob, runRemoteEngineJob } from './remoteEngine'
-import {
-  remoteAbsolute,
-} from './ssh'
+import { remoteAbsolute } from './ssh'
 import { pushDiagnostic } from './diagnostics'
 import { pushLocalNotification } from './desktopNotifications'
-import {
-  LineSplitter,
-  exitRule,
-  loadRules,
-  matchRule,
-  stripAnsi,
-  toDiagnostic,
-} from './parsers'
+import { LineSplitter, exitRule, loadRules, matchRule, stripAnsi, toDiagnostic } from './parsers'
 import { waitForEngineActivation } from '../lib/engineActivation'
 import { jobPreviewPath, previewsDir, PreviewThrottle, queuePositions } from './jobPreview'
 import { jobInputFiles } from './generateParams'
@@ -92,9 +76,7 @@ async function loadJobs(): Promise<void> {
   // Live previews belong to running jobs; whatever a previous run left is stale.
   await rm(previewsDir(), { recursive: true, force: true }).catch(() => undefined)
   try {
-    const raw = JSON.parse(await readFile(join(jobsDir(), 'jobs.json'), 'utf8')) as Array<
-      JobRecord & { backend?: unknown }
-    >
+    const raw = JSON.parse(await readFile(join(jobsDir(), 'jobs.json'), 'utf8')) as Array<JobRecord & { backend?: unknown }>
     for (const stored of raw) {
       const { backend: _legacyBackend, ...rest } = stored
       const job: JobRecord = {
@@ -131,22 +113,13 @@ function update(job: JobRecord, patch: Partial<JobRecord>): void {
   const previousState = job.state
   Object.assign(job, patch)
   emit(Events.job, snapshot(job))
-  if (
-    previousState !== job.state &&
-    job.mode !== 'simulate' &&
-    (job.state === 'succeeded' || job.state === 'failed')
-  ) {
+  if (previousState !== job.state && job.mode !== 'simulate' && (job.state === 'succeeded' || job.state === 'failed')) {
     const training = job.kind === 'training' || job.mode === 'training'
     const label = training ? '训练' : '生成'
-    const target = training
-      ? job.trainerRunName ?? job.instanceName
-      : job.caseName ?? job.instanceName
+    const target = training ? (job.trainerRunName ?? job.instanceName) : (job.caseName ?? job.instanceName)
     pushLocalNotification({
       title: job.state === 'succeeded' ? `${label}完成` : `${label}失败`,
-      body:
-        job.state === 'succeeded'
-          ? `${target} · 点击查看终端`
-          : `${target} · ${job.error?.message ?? '查看诊断了解原因'}`,
+      body: job.state === 'succeeded' ? `${target} · 点击查看终端` : `${target} · ${job.error?.message ?? '查看诊断了解原因'}`,
       windowKind: 'studio',
       route: job.state === 'succeeded' ? undefined : '/diagnostics',
     })
@@ -183,9 +156,6 @@ function recordError(job: JobRecord, raw: string, rule = matchRule(raw)): void {
   const diagnostic = toDiagnostic(rule, raw, job.id)
   pushDiagnostic(diagnostic)
 }
-
-
-
 
 function envFor(job: JobRecord): NodeJS.ProcessEnv {
   return {
@@ -401,8 +371,7 @@ function handleRunnerEvent(job: JobRecord, runningJob: RunningJob, payload: stri
   if (type === 'error') {
     const code = String(event['code'] ?? 'E_INTERNAL')
     const message = String(event['message'] ?? '运行失败')
-    const rule =
-      loadRules().find((candidate) => candidate.id === code) ??
+    const rule = loadRules().find((candidate) => candidate.id === code) ??
       matchRule(`${code} ${message}`) ?? {
         id: code,
         match: null,
@@ -479,7 +448,10 @@ async function hipIndexOf(engine: DeviceEngine, gpu: GpuInventoryDevice): Promis
   const ordinal = same.findIndex((device) => device.uuid === gpu.uuid)
   // Not in the inventory with this gfx target: only a lone card of it can be told apart.
   if (ordinal < 0 && same.length > 1) {
-    return { ok: false, message: `分不清 ${gpu.name} 是 ${same.length} 张 ${gfxTarget} 显卡中的哪一张，请到 设置 › 设备 重新检测显卡后再试` }
+    return {
+      ok: false,
+      message: `分不清 ${gpu.name} 是 ${same.length} 张 ${gfxTarget} 显卡中的哪一张，请到 设置 › 设备 重新检测显卡后再试`,
+    }
   }
   return hipDeviceIndex(engine.binaryPath, { name: gpu.name, gfxTarget }, Math.max(0, ordinal), engine.env)
 }
@@ -532,7 +504,9 @@ function engineSlotKey(job: { deviceUuid?: string; hostId?: string }): string | 
 }
 
 function scheduleEngineQueue(slot: string): void {
-  setTimeout(() => { void pumpEngineQueue(slot) }, 0)
+  setTimeout(() => {
+    void pumpEngineQueue(slot)
+  }, 0)
 }
 
 async function pumpEngineQueue(slot: string): Promise<void> {
@@ -577,15 +551,23 @@ async function resolveLocalGpu(
       try {
         probe = await probeLocalEngineGpuCompatibility()
       } catch (error) {
-        throw new Error(`自动分配无法验证引擎与 GPU 的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备，或手动指定 GPU。`)
+        throw new Error(
+          `自动分配无法验证引擎与 GPU 的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备，或手动指定 GPU。`,
+        )
       }
-      cudaUuids = new Set(cudaGpus
-        .filter((device) => probe.helloFor(device.uuid) && judgeEngineSupport(
-          probe.helloFor(device.uuid)!,
-          { index: device.index, name: device.name },
-          { inventoryCapability: device.computeCapability },
-        ).ok)
-        .map((device) => device.uuid))
+      cudaUuids = new Set(
+        cudaGpus
+          .filter(
+            (device) =>
+              probe.helloFor(device.uuid) &&
+              judgeEngineSupport(
+                probe.helloFor(device.uuid)!,
+                { index: device.index, name: device.name },
+                { inventoryCapability: device.computeCapability },
+              ).ok,
+          )
+          .map((device) => device.uuid),
+      )
     }
     // Automatic assignment prefers the full engine: CLI GPUs only on a machine without a CUDA one,
     // and only for plain text to image; integrated GPUs only when there is no discrete one.
@@ -621,10 +603,7 @@ async function resolveLocalGpu(
     }
     const automatic = selectAutomaticGpu(inventory.devices, compatibleUuids, loads)
     if (automatic) {
-      pendingAutoGpuAssignments.set(
-        automatic.uuid,
-        (pendingAutoGpuAssignments.get(automatic.uuid) ?? 0) + 1,
-      )
+      pendingAutoGpuAssignments.set(automatic.uuid, (pendingAutoGpuAssignments.get(automatic.uuid) ?? 0) + 1)
       return automatic
     }
     if (inventory.devices.length && !compatibleUuids.size) {
@@ -653,15 +632,13 @@ async function resolveLocalGpu(
     try {
       probe = await probeLocalEngineGpuCompatibility()
     } catch (error) {
-      throw new Error(`无法确认所选 GPU 与当前引擎的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备后重试。`)
+      throw new Error(
+        `无法确认所选 GPU 与当前引擎的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备后重试。`,
+      )
     }
     const hello = probe.helloFor(device.uuid)
     if (!hello) throw new Error(`没有为 ${device.name} 安装可用的引擎；请在引擎页安装引擎后重试。`)
-    const verdict = judgeEngineSupport(
-      hello,
-      { index: device.index, name: device.name },
-      { inventoryCapability: device.computeCapability },
-    )
+    const verdict = judgeEngineSupport(hello, { index: device.index, name: device.name }, { inventoryCapability: device.computeCapability })
     if (!verdict.ok) {
       throw new Error(`当前引擎不支持 ${device.name}：${verdict.reason ?? 'probe 未提供原因'}。请选择其他 GPU 或切换兼容引擎。`)
     }
@@ -685,8 +662,7 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
   if (!input.prompt.trim()) throw new Error('提示词不能为空')
   if (
     input.canvasLineage !== undefined &&
-    (!Array.isArray(input.canvasLineage) ||
-      input.canvasLineage.some((id) => typeof id !== 'string' || id.trim().length === 0))
+    (!Array.isArray(input.canvasLineage) || input.canvasLineage.some((id) => typeof id !== 'string' || id.trim().length === 0))
   ) {
     throw new Error('Canvas 来源链无效，请重新加载 Project 后重试。')
   }
@@ -695,21 +671,17 @@ export async function startEngineJob(input: StartEngineJobInput): Promise<JobRec
     const lineage = [...new Set([input.canvasId, ...(input.canvasLineage ?? [])])]
     const sourceId = input.canvasLineage?.[0] ?? input.canvasId
     const branch = { sourceId, path: new Set(lineage) }
-    const activeCanvasJob = [...jobs.values()].find((job) =>
-      job.projectId === input.projectId &&
-      job.canvasId !== undefined &&
-      canvasBranchesConflict(
-        branch,
-        {
+    const activeCanvasJob = [...jobs.values()].find(
+      (job) =>
+        job.projectId === input.projectId &&
+        job.canvasId !== undefined &&
+        canvasBranchesConflict(branch, {
           sourceId: job.canvasLineage?.[0] ?? job.canvasId,
           path: new Set([job.canvasId, ...(job.canvasLineage ?? [])]),
-        },
-      ) &&
-      (job.state === 'queued' || job.state === 'starting' || job.state === 'running'),
+        }) &&
+        (job.state === 'queued' || job.state === 'starting' || job.state === 'running'),
     )
-    const hasConflictingReservation = [...canvasReservations.values()].some((reservation) =>
-      canvasBranchesConflict(branch, reservation),
-    )
+    const hasConflictingReservation = [...canvasReservations.values()].some((reservation) => canvasBranchesConflict(branch, reservation))
     if (activeCanvasJob || hasConflictingReservation) {
       const state = activeCanvasJob?.state
       throw new Error(`此 Canvas 已有任务${state === 'queued' ? '排队' : '正在运行'}，请等待完成或先取消该任务。`)
@@ -843,10 +815,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
         vaeFile: source.vaeFile,
       }
     } else {
-      modelPath =
-        (await resolveLegacyModelPath(
-          join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'),
-        )) ?? undefined
+      modelPath = (await resolveLegacyModelPath(join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'))) ?? undefined
     }
     if (!modelPath && !modelFiles.ditFile) {
       throw new Error('模型权重尚未就绪，请先在模型库下载 MOSS-Image，或扫描本地模型文件')
@@ -865,9 +834,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     if (!serverPath || !existsSync(serverPath)) throw new Error('未找到 moss-server；请先在引擎页下载或配置引擎')
   }
   const resolvedDeviceId = localGpu ? `cuda:${localGpu.index}` : input.deviceId
-  const gpuProfile = localGpu
-    ? queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu)
-    : undefined
+  const gpuProfile = localGpu ? (queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu)) : undefined
   const executionSettings = gpuProfile ? settingsForGpuProfile(settings, gpuProfile) : settings
 
   if (input.hostId) {
@@ -922,7 +889,14 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
         update(job, { state: 'failed', error: { code: 'E_TIMEOUT', message: '远端引擎启动超时' } })
       }
     }, 180_000)
-    const runningJob: RunningJob = { child: undefined, out: new LineSplitter(), err: new LineSplitter(), readyTimer, lastLines: [], cancelRequested: false }
+    const runningJob: RunningJob = {
+      child: undefined,
+      out: new LineSplitter(),
+      err: new LineSplitter(),
+      readyTimer,
+      lastLines: [],
+      cancelRequested: false,
+    }
     running.set(job.id, runningJob)
     void runRemoteEngineJob(
       host,
@@ -943,7 +917,11 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
         done: (code) => finish(job, runningJob, code),
       },
     ).catch((error: unknown) => {
-      handleRunnerEvent(job, runningJob, JSON.stringify({ type: 'error', code: 'E_REMOTE', message: String(error instanceof Error ? error.message : error), fatal: true }))
+      handleRunnerEvent(
+        job,
+        runningJob,
+        JSON.stringify({ type: 'error', code: 'E_REMOTE', message: String(error instanceof Error ? error.message : error), fatal: true }),
+      )
       finish(job, runningJob, -1)
     })
     return snapshot(job)
@@ -1006,7 +984,10 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
         severity: 'error',
         title: '启动超时',
         explain: 'moss-server 在 180 秒内没有就绪，通常是引擎启动或模型加载失败。',
-        solutions: [{ label: '查看日志', action: 'open_log' }, { label: '打开引擎', action: 'open_settings' }],
+        solutions: [
+          { label: '查看日志', action: 'open_log' },
+          { label: '打开引擎', action: 'open_settings' },
+        ],
         raw: 'ready timeout',
         signature: `E_TIMEOUT:${job.id}`,
       })
@@ -1054,23 +1035,32 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
         finish(job, runningJob, 130)
         return
       }
-      await runCliJob(job, params, {
-        kind: cliEngine.kind,
-        binary: cliEngine.binaryPath,
-        version: cliEngine.version,
-        model: modelPath ?? '',
-        output,
-        deviceUuid: gpu.uuid,
-        cliDeviceIndex,
-        // Vulkan prints the name its own --list-devices gave that index; HIP its own name, checked with the gfx target.
-        expectedDevice: {
-          name: (cliEngine.kind === 'vulkan' ? cliEngine.expectedVulkanName : undefined) ?? gpu.name,
-          ...(gfxTarget ? { gfxTarget } : {}),
+      await runCliJob(
+        job,
+        params,
+        {
+          kind: cliEngine.kind,
+          binary: cliEngine.binaryPath,
+          version: cliEngine.version,
+          model: modelPath ?? '',
+          output,
+          deviceUuid: gpu.uuid,
+          cliDeviceIndex,
+          // Vulkan prints the name its own --list-devices gave that index; HIP its own name, checked with the gfx target.
+          expectedDevice: {
+            name: (cliEngine.kind === 'vulkan' ? cliEngine.expectedVulkanName : undefined) ?? gpu.name,
+            ...(gfxTarget ? { gfxTarget } : {}),
+          },
+          ...(cliEngine.env ? { env: cliEngine.env } : {}),
         },
-        ...(cliEngine.env ? { env: cliEngine.env } : {}),
-      }, sink)
+        sink,
+      )
     })().catch((error: unknown) => {
-      handleRunnerEvent(job, runningJob, JSON.stringify({ type: 'error', code: 'E_ENGINE', message: String(error instanceof Error ? error.message : error), fatal: true }))
+      handleRunnerEvent(
+        job,
+        runningJob,
+        JSON.stringify({ type: 'error', code: 'E_ENGINE', message: String(error instanceof Error ? error.message : error), fatal: true }),
+      )
       finish(job, runningJob, -1)
     })
     return snapshot(job)
@@ -1105,7 +1095,6 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
   })
   return snapshot(job)
 }
-
 
 export interface StartTrainingJobInput {
   versionId: string

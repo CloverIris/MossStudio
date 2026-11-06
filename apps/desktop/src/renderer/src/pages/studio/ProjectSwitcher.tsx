@@ -35,16 +35,47 @@ export function ProjectSwitcher({ project }: { project: StudioProject }): React.
       >
         {(close) => (
           <>
-            <MenuItem onSelect={() => { close(); void project.newProject() }}>新建项目</MenuItem>
-            <MenuItem onSelect={() => { close(); setRenameDraft(project.projectName); setRenaming(true) }}>重命名</MenuItem>
-            <MenuItem tone="danger" disabled={!project.projectId} onSelect={() => { close(); setDeleting(true) }}>删除项目</MenuItem>
+            <MenuItem
+              onSelect={() => {
+                close()
+                void project.newProject()
+              }}
+            >
+              新建项目
+            </MenuItem>
+            <MenuItem
+              onSelect={() => {
+                close()
+                setRenameDraft(project.projectName)
+                setRenaming(true)
+              }}
+            >
+              重命名
+            </MenuItem>
+            <MenuItem
+              tone="danger"
+              disabled={!project.projectId}
+              onSelect={() => {
+                close()
+                setDeleting(true)
+              }}
+            >
+              删除项目
+            </MenuItem>
             {others.length ? (
               <>
                 <MenuGap />
                 <div className="px-2.5 pb-1 text-caption font-medium text-ink-2">切换到</div>
                 <div className="flex max-h-[320px] flex-col gap-0.5 overflow-y-auto">
                   {others.map((item) => (
-                    <MenuItem key={item.id} hint={relative(item.updatedAt)} onSelect={() => { close(); void project.openProject(item.id) }}>
+                    <MenuItem
+                      key={item.id}
+                      hint={relative(item.updatedAt)}
+                      onSelect={() => {
+                        close()
+                        void project.openProject(item.id)
+                      }}
+                    >
                       {item.name}
                     </MenuItem>
                   ))}
@@ -54,7 +85,11 @@ export function ProjectSwitcher({ project }: { project: StudioProject }): React.
           </>
         )}
       </Popover>
-      <span role="status" title={project.saveError ?? undefined} className={project.saveStatus === 'error' ? 'text-caption text-danger' : 'text-caption text-ink-2'}>
+      <span
+        role="status"
+        title={project.saveError ?? undefined}
+        className={project.saveStatus === 'error' ? 'text-caption text-danger' : 'text-caption text-ink-2'}
+      >
         {STATUS_TEXT[project.saveStatus]}
       </span>
 
@@ -63,14 +98,34 @@ export function ProjectSwitcher({ project }: { project: StudioProject }): React.
         onClose={() => setRenaming(false)}
         title="重命名项目"
         width="max-w-md"
-        footer={(
+        footer={
           <>
-            <Button tone="ghost" size="md" onClick={() => setRenaming(false)}>取消</Button>
-            <Button tone="primary" size="md" disabled={!renameDraft.trim()} onClick={() => { project.rename(renameDraft); setRenaming(false) }}>保存</Button>
+            <Button tone="ghost" size="md" onClick={() => setRenaming(false)}>
+              取消
+            </Button>
+            <Button
+              tone="primary"
+              size="md"
+              disabled={!renameDraft.trim()}
+              onClick={() => {
+                project.rename(renameDraft)
+                setRenaming(false)
+              }}
+            >
+              保存
+            </Button>
           </>
-        )}
+        }
       >
-        <form onSubmit={(event) => { event.preventDefault(); if (renameDraft.trim()) { project.rename(renameDraft); setRenaming(false) } }}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (renameDraft.trim()) {
+              project.rename(renameDraft)
+              setRenaming(false)
+            }
+          }}
+        >
           <Field label="名称">
             <Input data-dialog-initial-focus value={renameDraft} maxLength={200} onChange={(event) => setRenameDraft(event.target.value)} />
           </Field>

@@ -23,9 +23,7 @@ export interface LocalInstallOptions {
   all?: boolean
 }
 
-export type InstallOutcome =
-  | { kind: 'started' }
-  | { kind: 'failed'; message: string }
+export type InstallOutcome = { kind: 'started' } | { kind: 'failed'; message: string }
 
 /**
  * Local engine state for 设置 › 设备与引擎: installed versions, the release
@@ -47,11 +45,17 @@ export function useEngine(inventory: GpuInventorySnapshot | null) {
   const probedKey = useRef<string | null>(null)
 
   const refreshVersions = useCallback(async () => {
-    try { setVersions(await call<LocalEngineVersion[]>(Ipc.engineVersions)) } catch { /* keep the last list */ }
+    try {
+      setVersions(await call<LocalEngineVersion[]>(Ipc.engineVersions))
+    } catch {
+      /* keep the last list */
+    }
   }, [])
 
   // The list changes when an install finishes or another version becomes current.
-  useEffect(() => { void refreshVersions() }, [refreshVersions, readiness?.path, download?.phase])
+  useEffect(() => {
+    void refreshVersions()
+  }, [refreshVersions, readiness?.path, download?.phase])
 
   const loadReleases = useCallback(async (): Promise<MossInferRelease[] | null> => {
     setLoadingReleases(true)
@@ -112,29 +116,46 @@ export function useEngine(inventory: GpuInventorySnapshot | null) {
   }, [])
   // Which package each GPU gets changes with installs and with the per-GPU choice in 高级.
   const overrides = useApp((state) => JSON.stringify(state.settings?.engineDeviceOverrides ?? {}))
-  useEffect(() => { void loadPlan() }, [loadPlan, readiness?.path, download?.phase, overrides])
+  useEffect(() => {
+    void loadPlan()
+  }, [loadPlan, readiness?.path, download?.phase, overrides])
 
-  const install = useCallback(async (options: LocalInstallOptions): Promise<InstallOutcome> => {
-    try {
-      const pending = call<MossInferDownloadState>(Ipc.mossInferDownload, {
-        channel: options.channel,
-        ...(options.packages?.length ? { packages: options.packages } : {}),
-        ...(options.all ? { all: true } : {}),
-        ...(options.channel === 'stable' && options.releaseTag ? { releaseTag: options.releaseTag } : {}),
-      })
-      // Progress arrives through events; the call itself resolves when the install ends.
-      void pending.then((state) => { setDownload(state); void refreshReadiness(); void refreshVersions(); void loadPlan() }, () => undefined)
-      return { kind: 'started' }
-    } catch (error) {
-      return { kind: 'failed', message: errorText(error) }
-    }
-  }, [loadPlan, refreshReadiness, refreshVersions, setDownload])
+  const install = useCallback(
+    async (options: LocalInstallOptions): Promise<InstallOutcome> => {
+      try {
+        const pending = call<MossInferDownloadState>(Ipc.mossInferDownload, {
+          channel: options.channel,
+          ...(options.packages?.length ? { packages: options.packages } : {}),
+          ...(options.all ? { all: true } : {}),
+          ...(options.channel === 'stable' && options.releaseTag ? { releaseTag: options.releaseTag } : {}),
+        })
+        // Progress arrives through events; the call itself resolves when the install ends.
+        void pending.then(
+          (state) => {
+            setDownload(state)
+            void refreshReadiness()
+            void refreshVersions()
+            void loadPlan()
+          },
+          () => undefined,
+        )
+        return { kind: 'started' }
+      } catch (error) {
+        return { kind: 'failed', message: errorText(error) }
+      }
+    },
+    [loadPlan, refreshReadiness, refreshVersions, setDownload],
+  )
 
   /** 安装引擎 / 更新: whatever each GPU of this computer is missing, from the latest release. */
   const installRecommended = useCallback((): Promise<InstallOutcome> => install({ channel: 'stable' }), [install])
 
   const cancelInstall = useCallback(async () => {
-    try { await call(Ipc.mossInferDownloadCancel) } catch { /* already finished */ }
+    try {
+      await call(Ipc.mossInferDownloadCancel)
+    } catch {
+      /* already finished */
+    }
   }, [])
 
   return {
@@ -142,8 +163,10 @@ export function useEngine(inventory: GpuInventorySnapshot | null) {
     download,
     versions,
     // Several installs can be in use (one per kind of GPU): the moss-server one names the version.
-    current: versions.find((version) => version.current && parseEngineStamp(version.name)?.package.kind === 'cuda')
-      ?? versions.find((version) => version.current) ?? null,
+    current:
+      versions.find((version) => version.current && parseEngineStamp(version.name)?.package.kind === 'cuda') ??
+      versions.find((version) => version.current) ??
+      null,
     releases,
     releasesError,
     loadingReleases,

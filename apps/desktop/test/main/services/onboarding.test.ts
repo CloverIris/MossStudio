@@ -23,16 +23,19 @@ interface Options {
 const state: { options: Options } = { options: {} }
 
 vi.mock('@main/services/devices', () => ({
-  listDevices: (): LaunchDevice[] => state.options.noGpu
-    ? [{ id: 'mps', name: 'Apple', kind: 'mps', detail: '', available: true }]
-    : [{ id: 'cuda:0', name: 'NVIDIA', kind: 'cuda', detail: '', available: true }],
-  cachedGpuInventory: () => state.options.amd
-    ? { scannedAt: '', status: 'ok', devices: [{ uuid: 'vk-1002-744c-0', index: 0, name: 'AMD Radeon RX 7900 XTX', vendor: 'amd' }] }
-    : null,
+  listDevices: (): LaunchDevice[] =>
+    state.options.noGpu
+      ? [{ id: 'mps', name: 'Apple', kind: 'mps', detail: '', available: true }]
+      : [{ id: 'cuda:0', name: 'NVIDIA', kind: 'cuda', detail: '', available: true }],
+  cachedGpuInventory: () =>
+    state.options.amd
+      ? { scannedAt: '', status: 'ok', devices: [{ uuid: 'vk-1002-744c-0', index: 0, name: 'AMD Radeon RX 7900 XTX', vendor: 'amd' }] }
+      : null,
 }))
 vi.mock('@main/services/engineInstalls', () => ({ localEngineKinds: () => state.options.kinds ?? ['cuda'] }))
 vi.mock('@main/services/models', () => ({
-  getCatalog: async (): Promise<Catalog> => catalogFixture({ installed: state.options.installed, partial: state.options.partial ? [state.options.partial] : [] }),
+  getCatalog: async (): Promise<Catalog> =>
+    catalogFixture({ installed: state.options.installed, partial: state.options.partial ? [state.options.partial] : [] }),
 }))
 vi.mock('@main/services/modelReadiness', () => ({ legacyModelReady: async () => state.options.legacy ?? false }))
 vi.mock('@main/services/engineReadiness', () => ({
@@ -43,7 +46,11 @@ vi.mock('@main/services/trainingHosts', () => ({
     id === 'ssh-a' ? { id, name: 'Remote', kind: 'ssh', trainerRoot: '~', status: 'ok' } : undefined,
 }))
 vi.mock('@main/services/remoteEngine', () => ({
-  remoteEngineStatus: async () => ({ online: !state.options.offline, available: state.options.engine ?? false, gpu: state.options.noGpu ? '' : 'NVIDIA' }),
+  remoteEngineStatus: async () => ({
+    online: !state.options.offline,
+    available: state.options.engine ?? false,
+    gpu: state.options.noGpu ? '' : 'NVIDIA',
+  }),
 }))
 vi.mock('@main/services/remoteModels', () => ({
   scanRemoteModels: async (_host: unknown, catalog: Catalog) => ({
@@ -97,7 +104,9 @@ describe('getOnboardingStatus (local)', () => {
     expect(step(result, 'model').status).toBe('partial')
     expect(step(result, 'model').detail).toMatch(/2\/4/)
     const catalog = catalogFixture()
-    const expected = catalog.models.filter((model) => ['moss-sft-dit', 'moss-pipeline'].includes(model.id)).reduce((sum, model) => sum + model.sizeBytes, 0)
+    const expected = catalog.models
+      .filter((model) => ['moss-sft-dit', 'moss-pipeline'].includes(model.id))
+      .reduce((sum, model) => sum + model.sizeBytes, 0)
     expect(step(result, 'model').sizeBytes).toBe(expected)
   })
 

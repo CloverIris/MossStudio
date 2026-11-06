@@ -70,7 +70,9 @@ export function UpdateChip(): React.JSX.Element | null {
   }, [open, setOpen])
 
   // Nothing to offer any more (e.g. the check found nothing): close.
-  useEffect(() => { if (!view && open) setOpen(false) }, [view, open, setOpen])
+  useEffect(() => {
+    if (!view && open) setOpen(false)
+  }, [view, open, setOpen])
 
   if (!state || !view) return null
   const panel = popoverView(state, busy)
@@ -90,8 +92,7 @@ export function UpdateChip(): React.JSX.Element | null {
       else if (action === 'dismiss-failed') {
         await dismissFailed()
         setOpen(false)
-      }
-      else if (action === 'retry') {
+      } else if (action === 'retry') {
         if (state?.available) await download()
         else await check()
       } else if (action === 'restart') {
@@ -117,7 +118,11 @@ export function UpdateChip(): React.JSX.Element | null {
         aria-label={view.description}
         title={view.description}
         onClick={() => setOpen(!open)}
-        className={cn('relative flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption transition-[background-color,opacity]', CHIP_TONE[view.tone], open && view.tone === 'quiet' && 'bg-raised')}
+        className={cn(
+          'relative flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption transition-[background-color,opacity]',
+          CHIP_TONE[view.tone],
+          open && view.tone === 'quiet' && 'bg-raised',
+        )}
       >
         <ChipIcon view={view} />
         <span className="whitespace-nowrap">{view.label}</span>
@@ -134,7 +139,9 @@ export function UpdateChip(): React.JSX.Element | null {
           {panel.required ? (
             <p className="flex items-start gap-2 rounded-lg bg-warn-soft px-3 py-2.5 text-ui text-ink">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden="true" />
-              <span><span className="font-semibold">必须更新。</span>这个版本已停止支持生成，更新后才能继续生成图片。</span>
+              <span>
+                <span className="font-semibold">必须更新。</span>这个版本已停止支持生成，更新后才能继续生成图片。
+              </span>
             </p>
           ) : null}
 
@@ -145,8 +152,15 @@ export function UpdateChip(): React.JSX.Element | null {
 
           {panel.status ? (
             <div className="flex flex-col gap-2" role="status">
-              <p className={cn('text-ui', panel.statusTone === 'danger' ? 'text-danger' : panel.statusTone === 'warn' ? 'text-ink' : 'text-ink-2')}>
-                {panel.statusTone === 'warn' ? <AlertTriangle className="mr-1.5 inline size-4 -translate-y-px text-warn" aria-hidden="true" /> : null}
+              <p
+                className={cn(
+                  'text-ui',
+                  panel.statusTone === 'danger' ? 'text-danger' : panel.statusTone === 'warn' ? 'text-ink' : 'text-ink-2',
+                )}
+              >
+                {panel.statusTone === 'warn' ? (
+                  <AlertTriangle className="mr-1.5 inline size-4 -translate-y-px text-warn" aria-hidden="true" />
+                ) : null}
                 {panel.status}
               </p>
               {panel.progress !== undefined ? (
@@ -167,7 +181,8 @@ export function UpdateChip(): React.JSX.Element | null {
                   className="flex items-center gap-1 self-start rounded-md px-1 text-caption text-ink-2 transition-colors hover:text-ink"
                   onClick={() => void call(Ipc.openExternal, { url: panel.notesUrl })}
                 >
-                  完整更新说明<ExternalLink className="size-3.5" aria-hidden="true" />
+                  完整更新说明
+                  <ExternalLink className="size-3.5" aria-hidden="true" />
                 </button>
               ) : null}
             </div>
@@ -177,12 +192,14 @@ export function UpdateChip(): React.JSX.Element | null {
             <div className="flex items-center justify-end gap-2">
               {panel.secondary ? (
                 <Button tone="ghost" size="md" disabled={working !== null} onClick={() => void run(panel.secondary!)}>
-                  {working === panel.secondary ? <Spinner /> : null}{ACTION_LABEL[panel.secondary]}
+                  {working === panel.secondary ? <Spinner /> : null}
+                  {ACTION_LABEL[panel.secondary]}
                 </Button>
               ) : null}
               {panel.primary ? (
                 <Button tone="primary" size="md" disabled={working !== null} onClick={() => void run(panel.primary!)}>
-                  {working === panel.primary ? <Spinner /> : null}{ACTION_LABEL[panel.primary]}
+                  {working === panel.primary ? <Spinner /> : null}
+                  {ACTION_LABEL[panel.primary]}
                 </Button>
               ) : null}
             </div>

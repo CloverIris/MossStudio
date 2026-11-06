@@ -31,9 +31,10 @@ export function engineDownloadActive(download: MossInferDownloadState | null | u
 export function engineDownloadLabel(download: MossInferDownloadState): string {
   const label = PHASE_LABELS[download.phase]
   // Several packages (one per kind of GPU): say which one, e.g. "兼容模式（2/2）· 正在下载".
-  const step = download.step && download.step.count > 1 && engineDownloadActive(download)
-    ? `${packageLabel(download.step.packageId) ?? download.step.packageId}（${download.step.index + 1}/${download.step.count}）· `
-    : ''
+  const step =
+    download.step && download.step.count > 1 && engineDownloadActive(download)
+      ? `${packageLabel(download.step.packageId) ?? download.step.packageId}（${download.step.index + 1}/${download.step.count}）· `
+      : ''
   if (download.phase === 'downloading' && download.totalBytes > 0) {
     // Nothing received yet is 0, not 未知: the size is known from the release.
     return `${step}${label} ${download.bytes > 0 ? bytes(download.bytes) : '0 MB'} / ${bytes(download.totalBytes)}`
@@ -80,15 +81,14 @@ export function planLines(plan: EnginePlanView): PlanLine[] {
     if (choice.integratedSkipped) return { ...base, detail: '不使用（已有独立显卡）', supported: false, skipped: true }
     if (!choice.package || !choice.packageId) return { ...base, detail: choice.reason, supported: false }
     // The small system-CUDA package needs the computer's CUDA libraries: say so.
-    const title = choice.package.kind === 'cuda'
-      ? `${enginePackageTitle(choice.package)} 引擎${choice.package.runtime === 'system-cuda' ? '（使用系统 CUDA 运行库）' : ''}`
-      : enginePackageTitle(choice.package)
+    const title =
+      choice.package.kind === 'cuda'
+        ? `${enginePackageTitle(choice.package)} 引擎${choice.package.runtime === 'system-cuda' ? '（使用系统 CUDA 运行库）' : ''}`
+        : enginePackageTitle(choice.package)
     const shared = firstUser.get(choice.packageId)
     if (!shared) firstUser.set(choice.packageId, choice.gpuName)
     const missing = plan.missing.includes(choice.packageId)
-    const size = shared
-      ? `与 ${shared} 共用`
-      : missing ? (choice.asset?.size ? bytes(choice.asset.size) : '待下载') : '已安装'
+    const size = shared ? `与 ${shared} 共用` : missing ? (choice.asset?.size ? bytes(choice.asset.size) : '待下载') : '已安装'
     return {
       ...base,
       detail: `${title} · ${size}`,

@@ -98,7 +98,16 @@ describe('lib/agentTools executeStudioTool', () => {
   })
 
   it('reports unknown tools and converts thrown errors into failures', async () => {
-    registerStudioTools(api({ readContext: () => { throw new Error('canvas gone') }, generate: async () => { throw 'plain' } }))
+    registerStudioTools(
+      api({
+        readContext: () => {
+          throw new Error('canvas gone')
+        },
+        generate: async () => {
+          throw 'plain'
+        },
+      }),
+    )
     expect(parse((await run('rm_rf')).content).error).toBe('未知工具 rm_rf')
     expect(parse((await run('studio_read_context')).content).error).toBe('canvas gone')
     expect(parse((await run('studio_generate')).content).error).toBe('plain')
@@ -113,7 +122,9 @@ describe('lib/agentTools installStudioToolBridge', () => {
     const off = installStudioToolBridge()
     backend.emit(Events.aiToolCall, { callId: 'call-9', name: 'studio_read_context', arguments: '' })
     await flush()
-    expect(backend.callsTo(Ipc.aiToolResult)).toEqual([{ callId: 'call-9', result: { ok: true, content: JSON.stringify({ prompt: 'p' }) } }])
+    expect(backend.callsTo(Ipc.aiToolResult)).toEqual([
+      { callId: 'call-9', result: { ok: true, content: JSON.stringify({ prompt: 'p' }) } },
+    ])
     off()
     backend.emit(Events.aiToolCall, { callId: 'call-10', name: 'studio_read_context', arguments: '' })
     await flush()
@@ -157,19 +168,19 @@ describe('lib/agentTools snapshot helpers', () => {
 
   it('formatStudioContext describes the canvas, its description and regions', () => {
     expect(formatStudioContext(null)).toBeUndefined()
-    expect(formatStudioContext(snapshot({ description: '  ' }))).toBe([
-      'The user is working on the Studio canvas "Poster" (1024×768).',
-      'Its description is empty.',
-      'It has no regions.',
-    ].join('\n'))
-    const text = formatStudioContext(snapshot({
-      description: '  A cat poster  ',
-      regions: [
-        { kind: 'text', caption: 'title', text: 'MEOW', visible: true },
-        { kind: 'object', caption: ' ', visible: false },
-        { kind: 'text', caption: 'empty text', visible: true },
-      ],
-    }))!
+    expect(formatStudioContext(snapshot({ description: '  ' }))).toBe(
+      ['The user is working on the Studio canvas "Poster" (1024×768).', 'Its description is empty.', 'It has no regions.'].join('\n'),
+    )
+    const text = formatStudioContext(
+      snapshot({
+        description: '  A cat poster  ',
+        regions: [
+          { kind: 'text', caption: 'title', text: 'MEOW', visible: true },
+          { kind: 'object', caption: ' ', visible: false },
+          { kind: 'text', caption: 'empty text', visible: true },
+        ],
+      }),
+    )!
     expect(text.split('\n')).toEqual([
       'The user is working on the Studio canvas "Poster" (1024×768).',
       'Its description currently reads:',

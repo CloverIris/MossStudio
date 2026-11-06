@@ -188,5 +188,11 @@ export const updaterApi = {
 /** For logs and smoke runs. */
 export function updaterSummary(): Pick<UpdaterState, 'supported' | 'unsupportedReason' | 'current' | 'phase' | 'channel'> {
   const state = getRuntime().getState()
-  return { supported: state.supported, unsupportedReason: state.unsupportedReason, current: state.current, phase: state.phase, channel: state.channel }
+  return {
+    supported: state.supported,
+    unsupportedReason: state.unsupportedReason,
+    current: state.current,
+    phase: state.phase,
+    channel: state.channel,
+  }
 }

@@ -14,7 +14,11 @@ describe('lib/features', () => {
 
   it('reads each toggle independently', () => {
     expect(featureVisibility(settingsFixture({ trainingEnabled: true }))).toEqual({ remoteHosts: false, training: true, lan: false })
-    expect(featureVisibility(settingsFixture({ remoteHostsEnabled: true, lanWebEnabled: true }))).toEqual({ remoteHosts: true, training: false, lan: true })
+    expect(featureVisibility(settingsFixture({ remoteHostsEnabled: true, lanWebEnabled: true }))).toEqual({
+      remoteHosts: true,
+      training: false,
+      lan: true,
+    })
   })
 
   it('treats missing settings as everything off', () => {

@@ -50,9 +50,14 @@ export function parseA1111(text: string): A1111Parameters | null {
   const head = lines.slice(0, settingsIndex)
   const negativeIndex = head.findIndex((line) => line.startsWith('Negative prompt:'))
   const prompt = (negativeIndex >= 0 ? head.slice(0, negativeIndex) : head).join('\n').trim()
-  const negativePrompt = negativeIndex >= 0
-    ? head.slice(negativeIndex).join('\n').replace(/^Negative prompt:\s*/, '').trim() || undefined
-    : undefined
+  const negativePrompt =
+    negativeIndex >= 0
+      ? head
+          .slice(negativeIndex)
+          .join('\n')
+          .replace(/^Negative prompt:\s*/, '')
+          .trim() || undefined
+      : undefined
   const settings = new Map<string, string>()
   for (const match of lines[settingsIndex]!.matchAll(/([A-Za-z][A-Za-z0-9 ]*?):\s*("(?:[^"\\]|\\.)*"|[^,]*)(?:,|$)/g)) {
     settings.set(match[1]!.trim().toLowerCase(), match[2]!.trim().replace(/^"|"$/g, ''))
@@ -117,7 +122,9 @@ export function generationFromJob(
 }
 
 /** The image inputs and sampling choices of a job, copied (absent ones left out). */
-function inputsOf(params: JobParams): Pick<GalleryGeneration, 'baseWidth' | 'baseHeight' | 'initImage' | 'mask' | 'control' | 'references' | 'sampling'> {
+function inputsOf(
+  params: JobParams,
+): Pick<GalleryGeneration, 'baseWidth' | 'baseHeight' | 'initImage' | 'mask' | 'control' | 'references' | 'sampling'> {
   const copy = <T>(value: T | undefined): T | undefined => (value === undefined ? undefined : structuredClone(value))
   const out = {
     baseWidth: params.sampling?.hires ? params.width : undefined,
@@ -176,7 +183,9 @@ const objectOf = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 
 /** `jobInputsSidecar` read back; anything malformed is skipped, never guessed. */
-function inputsFromSidecar(sidecar: Record<string, unknown>): Pick<GalleryGeneration, 'baseWidth' | 'baseHeight' | 'initImage' | 'mask' | 'control' | 'references' | 'sampling'> {
+function inputsFromSidecar(
+  sidecar: Record<string, unknown>,
+): Pick<GalleryGeneration, 'baseWidth' | 'baseHeight' | 'initImage' | 'mask' | 'control' | 'references' | 'sampling'> {
   const out: Pick<GalleryGeneration, 'baseWidth' | 'baseHeight' | 'initImage' | 'mask' | 'control' | 'references' | 'sampling'> = {}
   const baseWidth = num(sidecar['base_width'])
   const baseHeight = num(sidecar['base_height'])
@@ -220,10 +229,14 @@ function inputsFromSidecar(sidecar: Record<string, unknown>): Pick<GalleryGenera
     sampler: str(sidecar['sampler']),
     scheduler: str(sidecar['scheduler']),
     shift: num(sidecar['shift']),
-    hires: hires && hiresWidth !== undefined && hiresHeight !== undefined
-      ? Object.fromEntries(Object.entries({ width: hiresWidth, height: hiresHeight, steps: num(hires['steps']), strength: num(hires['strength']) })
-        .filter(([, value]) => value !== undefined)) as { width: number; height: number; steps?: number; strength?: number }
-      : undefined,
+    hires:
+      hires && hiresWidth !== undefined && hiresHeight !== undefined
+        ? (Object.fromEntries(
+            Object.entries({ width: hiresWidth, height: hiresHeight, steps: num(hires['steps']), strength: num(hires['strength']) }).filter(
+              ([, value]) => value !== undefined,
+            ),
+          ) as { width: number; height: number; steps?: number; strength?: number })
+        : undefined,
     stepCache: str(sidecar['step_cache']),
     cfgTruncation: num(sidecar['cfg_truncation']),
   }
@@ -315,10 +328,7 @@ export function sidecarRecord(
 }
 
 /** Adds the missing keys of `extra` to `existing`; existing values win. */
-export function mergeSidecar(
-  existing: Record<string, unknown> | null,
-  extra: Record<string, unknown>,
-): Record<string, unknown> {
+export function mergeSidecar(existing: Record<string, unknown> | null, extra: Record<string, unknown>): Record<string, unknown> {
   return { ...extra, ...(existing ?? {}) }
 }
 
@@ -340,8 +350,7 @@ export function assertTrashable(file: string, roots: readonly string[]): string 
   return root
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
 /** Written by MossStudio or its engine (not, say, a ComfyUI workflow that shares the name). */
 export function isMossSidecar(value: unknown): boolean {
@@ -372,11 +381,7 @@ export function mergeSidecars(own: unknown, stem: unknown): Record<string, unkno
  * to it. `image.json` only when MossStudio wrote it and no other image shares
  * the name, so an unrelated file in a user's folder is never trashed.
  */
-export function sidecarsToTrash(
-  file: string,
-  exists: (path: string) => boolean,
-  read: (path: string) => unknown,
-): string[] {
+export function sidecarsToTrash(file: string, exists: (path: string) => boolean, read: (path: string) => unknown): string[] {
   const own = `${file}.json`
   const shared = sidecarPath(file)
   const stem = join(dirname(file), basename(file, extname(file)))

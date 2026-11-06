@@ -27,7 +27,10 @@ const trainerRoot = useTempDir('trainer-')
 const settings = (patch = {}) => settingsFixture({ trainerRoot: trainerRoot(), ...patch })
 const SOURCE = 'https://github.com/KohakuBlueleaf/KohakuMossTrainer'
 const mirror = () => join(trainerRoot(), 'git', 'kohaku-trainer.git')
-const haveMirror = () => { mkdirSync(mirror(), { recursive: true }); writeFileSync(join(mirror(), 'HEAD'), 'x') }
+const haveMirror = () => {
+  mkdirSync(mirror(), { recursive: true })
+  writeFileSync(join(mirror(), 'HEAD'), 'x')
+}
 
 beforeEach(() => {
   vi.resetModules()
@@ -62,7 +65,11 @@ describe('ensureTrainerMirror', () => {
     expect(state.calls[0]).toEqual(['-C', mirror(), 'fetch', '--prune', '--tags', 'origin', '+refs/heads/*:refs/heads/*'])
     vi.resetModules()
     state.calls = []
-    state.health = [{ healthy: false, branches: 0 }, { healthy: false, branches: 0 }, { healthy: true, branches: 1 }]
+    state.health = [
+      { healthy: false, branches: 0 },
+      { healthy: false, branches: 0 },
+      { healthy: true, branches: 1 },
+    ]
     await (await load()).ensureTrainerMirror(settings())
     expect(state.calls.map((args) => (args[0] === 'clone' ? 'clone' : args[2]))).toEqual(['fetch', 'clone'])
     expect(readdirSync(join(trainerRoot(), 'git')).some((name) => name.startsWith('kohaku-trainer.git.broken-'))).toBe(true)
@@ -92,7 +99,8 @@ describe('branches, commits and tags', () => {
 
   it('has no stable branch without the tag and rejects empty mirrors', async () => {
     haveMirror()
-    state.handler = (args) => (args.includes('for-each-ref') ? { stdout: 'main|111\n' } : args.includes('rev-parse') ? { code: 128 } : undefined)
+    state.handler = (args) =>
+      args.includes('for-each-ref') ? { stdout: 'main|111\n' } : args.includes('rev-parse') ? { code: 128 } : undefined
     const { listTrainerBranches, trainerTagSha } = await load()
     expect((await listTrainerBranches(settings()))[0]!.isStable).toBe(false)
     expect(await trainerTagSha(settings())).toBeNull()
@@ -104,7 +112,13 @@ describe('branches, commits and tags', () => {
     haveMirror()
     state.handler = (args) => (args.includes('log') ? { stdout: 'a\u001fb\u001f2\u001fs\u001fx\n' } : undefined)
     const { listTrainerCommits } = await load()
-    expect((await listTrainerCommits(settings(), 'main'))[0]).toEqual({ sha: 'a', short: 'b', date: new Date(2000).toISOString(), subject: 's', author: 'x' })
+    expect((await listTrainerCommits(settings(), 'main'))[0]).toEqual({
+      sha: 'a',
+      short: 'b',
+      date: new Date(2000).toISOString(),
+      subject: 's',
+      author: 'x',
+    })
     state.handler = () => ({ stdout: '' })
     await expect(listTrainerCommits(settings(), 'main')).rejects.toThrow('训练器分支 main 没有可用提交')
   })

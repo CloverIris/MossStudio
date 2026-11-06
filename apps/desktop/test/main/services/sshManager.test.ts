@@ -137,7 +137,9 @@ describe('host key trust', () => {
     expect(await hostKeys.trustUnknownHost(host, unknown)).toBe(false)
     expect(existsSync(join(root(), 'ssh/known_hosts'))).toBe(false)
     const dialogCount = state.dialogs.length
-    expect(await hostKeys.trustUnknownHost(host, new Error('WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! Host key verification failed.'))).toBe(false)
+    expect(
+      await hostKeys.trustUnknownHost(host, new Error('WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! Host key verification failed.')),
+    ).toBe(false)
     expect(state.dialogs).toHaveLength(dialogCount)
     state.scan = ''
     await expect(hostKeys.trustUnknownHost(host, unknown)).rejects.toThrow(/无法读取 SSH 主机密钥/)
@@ -149,7 +151,12 @@ describe('authentication methods', () => {
   it('survive reloads, edits that omit the method and failed connection tests', async () => {
     const { hosts } = await modules()
     for (const authMethod of ['identityFile', 'password', 'none'] as const) {
-      const saved = hosts.saveTrainingHost({ ...input, authMethod, password: authMethod === 'password' ? 'secret' : undefined, identityFile: '/fixture/key' })
+      const saved = hosts.saveTrainingHost({
+        ...input,
+        authMethod,
+        password: authMethod === 'password' ? 'secret' : undefined,
+        identityFile: '/fixture/key',
+      })
       expect((await reloadHosts()).listTrainingHosts(settings).find((item) => item.id === saved.id)!.authMethod).toBe(authMethod)
       const current = await import('@main/services/trainingHosts')
       const edited = current.saveTrainingHost({ ...input, id: saved.id, name: 'Renamed' })

@@ -55,14 +55,18 @@ export function trainerApi(call: Call, hostId: string): TrainerApi {
       branches: () => call<BranchInfo[]>(Ipc.trainerBranches),
       commits: (branch) => call<CommitInfo[]>(Ipc.trainerCommits, { branch, limit: 1 }),
       create: (branch, commit) => call<TrainerVersion>(Ipc.trainerCreate, { branch, commit }),
-      install: async (version) => { await call(Ipc.trainerInstall, { id: version.id }) },
+      install: async (version) => {
+        await call(Ipc.trainerInstall, { id: version.id })
+      },
     }
   }
   return {
     branches: () => call<BranchInfo[]>(Ipc.trainerRemoteBranches, { hostId }),
     commits: (branch) => call<CommitInfo[]>(Ipc.trainerRemoteCommits, { hostId, branch, limit: 1 }),
     create: (branch, commit) => call<TrainerVersion>(Ipc.trainerRemoteCreate, { hostId, branch, commit }),
-    install: async (version) => { await call(Ipc.trainerRemoteInstall, { hostId, versionId: version.id }) },
+    install: async (version) => {
+      await call(Ipc.trainerRemoteInstall, { hostId, versionId: version.id })
+    },
   }
 }
 

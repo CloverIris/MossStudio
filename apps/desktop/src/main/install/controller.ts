@@ -99,15 +99,16 @@ export function legacyView(legacy: LegacyInstall | null, platform: HostInfo['pla
     }
   }
   const where = `旧版 MossStudio（${legacy.root}）`
-  const warnings = platform === 'win32'
-    ? {
-        reuse: `${where}会从“设置 › 应用”的列表里消失，但新版本会继续使用它文件夹里的 data：请不要删除这个文件夹。`,
-        fresh: `${where}会从“设置 › 应用”的列表里消失，它的文件和数据仍留在原处，不会被删除；不再需要时可以手动删除这个文件夹。`,
-      }
-    : {
-        reuse: `新版本会继续使用${where}文件夹里的 data：请不要删除这个文件夹。`,
-        fresh: `${where}的文件和数据仍留在原处，不会被删除；不再需要时可以手动删除这个文件夹。`,
-      }
+  const warnings =
+    platform === 'win32'
+      ? {
+          reuse: `${where}会从“设置 › 应用”的列表里消失，但新版本会继续使用它文件夹里的 data：请不要删除这个文件夹。`,
+          fresh: `${where}会从“设置 › 应用”的列表里消失，它的文件和数据仍留在原处，不会被删除；不再需要时可以手动删除这个文件夹。`,
+        }
+      : {
+          reuse: `新版本会继续使用${where}文件夹里的 data：请不要删除这个文件夹。`,
+          fresh: `${where}的文件和数据仍留在原处，不会被删除；不再需要时可以手动删除这个文件夹。`,
+        }
   return { ...legacy, warnings }
 }
 
@@ -116,7 +117,11 @@ export class SetupController {
   private legacy: LegacyInstall | null
   private running: Promise<InstallResult> | null = null
 
-  private constructor(private readonly env: SetupEnvironment, state: SetupState, legacy: LegacyInstall | null) {
+  private constructor(
+    private readonly env: SetupEnvironment,
+    state: SetupState,
+    legacy: LegacyInstall | null,
+  ) {
     this.state = state
     this.legacy = legacy
   }
@@ -141,9 +146,10 @@ export class SetupController {
       dataRoot: platform === 'darwin' ? macSupportDir(host) : null,
     }
     // An old 1.0.x install first; else data a keep-data uninstall left behind.
-    const legacy = kind === 'first' && platform !== 'darwin'
-      ? (await findLegacyInstall({ host, registry: env.registry })) ?? keptDataInstall(host)
-      : null
+    const legacy =
+      kind === 'first' && platform !== 'darwin'
+        ? ((await findLegacyInstall({ host, registry: env.registry })) ?? keptDataInstall(host))
+        : null
     const proposed = env.context.setup?.installTo ?? installed?.root ?? defaults.root
     const locationContext = (): LocationContext => ({
       host,
@@ -168,7 +174,8 @@ export class SetupController {
       error: null,
       canEject: platform === 'darwin' && Boolean(context.setup?.volume),
       logPath: env.logPath,
-      launcherLogPath: installed && existsSync(join(installed.dataRoot, 'logs', 'launcher.log')) ? join(installed.dataRoot, 'logs', 'launcher.log') : null,
+      launcherLogPath:
+        installed && existsSync(join(installed.dataRoot, 'logs', 'launcher.log')) ? join(installed.dataRoot, 'logs', 'launcher.log') : null,
     }
     const controller = new SetupController(env, state, legacy)
     if (legacy) void controller.measureLegacy()
@@ -284,7 +291,13 @@ export class SetupController {
         this.state = {
           ...this.state,
           phase: 'done',
-          result: { root: result.root, dataRoot: result.dataRoot, version: result.version, appPath: result.appPath, warnings: result.warnings },
+          result: {
+            root: result.root,
+            dataRoot: result.dataRoot,
+            version: result.version,
+            appPath: result.appPath,
+            warnings: result.warnings,
+          },
         }
         this.env.emit('done', this.state.result)
       },

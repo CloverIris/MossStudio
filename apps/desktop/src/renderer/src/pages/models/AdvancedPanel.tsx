@@ -5,7 +5,20 @@ import { importFolderMessage, type ImportFolderResult } from '../../lib/modelFol
 import type { Catalog, DownloadTask, ModelEntry } from '@shared/types'
 import { call } from '../../lib/api'
 import { ModelDirectoriesCard } from '../../components/ModelDirectoriesCard'
-import { Button, ConfirmDialog, Field, Group, IconButton, Input, ProgressBar, Row, Section, Spinner, cn, useToast } from '../../components/ui'
+import {
+  Button,
+  ConfirmDialog,
+  Field,
+  Group,
+  IconButton,
+  Input,
+  ProgressBar,
+  Row,
+  Section,
+  Spinner,
+  cn,
+  useToast,
+} from '../../components/ui'
 import { ROLE_LABEL, bundlesUsing, isOfferedComponent, itemState, sizeText, taskFor } from './logic'
 import type { ModelLocation } from './useModelLocation'
 
@@ -56,7 +69,11 @@ function PartsList({ catalog, location }: { catalog: Catalog; location: ModelLoc
         {parts.map((model) => {
           const task = taskFor(location.tasks, 'model', model.id)
           // installState describes this computer's files; a remote host only has its inventory.
-          const state = itemState(location.kind === 'remote' ? { ...model, installState: undefined } : model, location.isModelInstalled(model), task)
+          const state = itemState(
+            location.kind === 'remote' ? { ...model, installState: undefined } : model,
+            location.isModelInstalled(model),
+            task,
+          )
           const format = model.provider === 'local' ? '本地文件' : model.format === 'comfyui' ? '单文件' : null
           return (
             <Row
@@ -64,13 +81,28 @@ function PartsList({ catalog, location }: { catalog: Catalog; location: ModelLoc
               title={model.name}
               description={
                 <span className="flex flex-col gap-1.5">
-                  <span>{[ROLE_LABEL[model.role], format, model.precision.toUpperCase(), sizeText(model.sizeBytes)].filter(Boolean).join(' · ')}</span>
-                  {state.percent !== null ? <ProgressBar value={state.percent} label={`${model.name} 下载进度`} className="max-w-64" /> : null}
+                  <span>
+                    {[ROLE_LABEL[model.role], format, model.precision.toUpperCase(), sizeText(model.sizeBytes)].filter(Boolean).join(' · ')}
+                  </span>
+                  {state.percent !== null ? (
+                    <ProgressBar value={state.percent} label={`${model.name} 下载进度`} className="max-w-64" />
+                  ) : null}
                 </span>
               }
             >
               {!(state.action === 'download' && state.actionLabel === '下载') ? (
-                <span className={cn('tabular text-caption', state.tone === 'ok' ? 'text-ok' : state.tone === 'danger' ? 'text-danger' : state.tone === 'warn' ? 'text-warn' : 'text-ink-2')}>
+                <span
+                  className={cn(
+                    'tabular text-caption',
+                    state.tone === 'ok'
+                      ? 'text-ok'
+                      : state.tone === 'danger'
+                        ? 'text-danger'
+                        : state.tone === 'warn'
+                          ? 'text-warn'
+                          : 'text-ink-2',
+                  )}
+                >
                   {state.text}
                 </span>
               ) : null}
@@ -79,8 +111,20 @@ function PartsList({ catalog, location }: { catalog: Catalog; location: ModelLoc
                   <Trash2 className="size-4" strokeWidth={1.6} />
                 </IconButton>
               ) : state.action ? (
-                <Button tone="secondary" disabled={busy !== null} onClick={() => void act(model, state.action as 'download' | 'resume' | 'pause', task)}>
-                  {busy === model.id ? <Spinner /> : state.action === 'pause' ? <Pause className="size-4" strokeWidth={1.6} /> : state.action === 'resume' ? <Play className="size-4" strokeWidth={1.6} /> : <ArrowDownToLine className="size-4" strokeWidth={1.6} />}
+                <Button
+                  tone="secondary"
+                  disabled={busy !== null}
+                  onClick={() => void act(model, state.action as 'download' | 'resume' | 'pause', task)}
+                >
+                  {busy === model.id ? (
+                    <Spinner />
+                  ) : state.action === 'pause' ? (
+                    <Pause className="size-4" strokeWidth={1.6} />
+                  ) : state.action === 'resume' ? (
+                    <Play className="size-4" strokeWidth={1.6} />
+                  ) : (
+                    <ArrowDownToLine className="size-4" strokeWidth={1.6} />
+                  )}
                   {state.action === 'download' && state.actionLabel === '下载' ? `下载 · ${sizeText(model.sizeBytes)}` : state.actionLabel}
                 </Button>
               ) : null}
@@ -140,10 +184,12 @@ function RemoteFolders({ location }: { location: ModelLocation }): React.JSX.Ele
                 tone="secondary"
                 size="md"
                 disabled={busy !== null || !root.trim()}
-                onClick={() => void run('root', async () => {
-                  await call(Ipc.hostsUpdatePaths, { id: hostId, modelsRoot: root.trim() })
-                  return '已保存'
-                })}
+                onClick={() =>
+                  void run('root', async () => {
+                    await call(Ipc.hostsUpdatePaths, { id: hostId, modelsRoot: root.trim() })
+                    return '已保存'
+                  })
+                }
               >
                 保存
               </Button>
@@ -151,18 +197,29 @@ function RemoteFolders({ location }: { location: ModelLocation }): React.JSX.Ele
           </Field>
           <Field label="生成时使用的模型文件夹" hint="留空时按上面的目录自动查找。">
             <div className="flex gap-2">
-              <Input value={modelPath} onChange={(event) => setModelPath(event.target.value)} placeholder="例如 ~/.mossstudio/models/…/snapshots/…" className="min-w-0 flex-1" />
+              <Input
+                value={modelPath}
+                onChange={(event) => setModelPath(event.target.value)}
+                placeholder="例如 ~/.mossstudio/models/…/snapshots/…"
+                className="min-w-0 flex-1"
+              />
               <Button
                 tone="secondary"
                 size="md"
                 disabled={busy !== null}
-                onClick={() => void run('find', async () => {
-                  const result = await call<{ found?: string; message: string }>(Ipc.remoteResourceInspect, { hostId, kind: 'models', path: root.trim() || '~/.mossstudio/models' })
-                  if (!result.found) throw new Error(result.message)
-                  setModelPath(result.found)
-                  await call(Ipc.hostsUpdatePaths, { id: hostId, modelPath: result.found })
-                  return result.message
-                })}
+                onClick={() =>
+                  void run('find', async () => {
+                    const result = await call<{ found?: string; message: string }>(Ipc.remoteResourceInspect, {
+                      hostId,
+                      kind: 'models',
+                      path: root.trim() || '~/.mossstudio/models',
+                    })
+                    if (!result.found) throw new Error(result.message)
+                    setModelPath(result.found)
+                    await call(Ipc.hostsUpdatePaths, { id: hostId, modelPath: result.found })
+                    return result.message
+                  })
+                }
               >
                 自动查找
               </Button>
@@ -170,10 +227,12 @@ function RemoteFolders({ location }: { location: ModelLocation }): React.JSX.Ele
                 tone="secondary"
                 size="md"
                 disabled={busy !== null}
-                onClick={() => void run('path', async () => {
-                  await call(Ipc.hostsUpdatePaths, { id: hostId, modelPath: modelPath.trim() })
-                  return '已保存'
-                })}
+                onClick={() =>
+                  void run('path', async () => {
+                    await call(Ipc.hostsUpdatePaths, { id: hostId, modelPath: modelPath.trim() })
+                    return '已保存'
+                  })
+                }
               >
                 保存
               </Button>
@@ -184,18 +243,22 @@ function RemoteFolders({ location }: { location: ModelLocation }): React.JSX.Ele
           <Button
             tone="secondary"
             disabled={busy !== null}
-            onClick={() => void run('prepare', async () => {
-              await call(Ipc.hostsUpdatePaths, { id: hostId, modelsRoot: root.trim() || undefined })
-              await call<DownloadTask>(Ipc.enginePrepareRemoteModel, { hostId })
-              return '已开始下载，进度在「下载」里'
-            })}
+            onClick={() =>
+              void run('prepare', async () => {
+                await call(Ipc.hostsUpdatePaths, { id: hostId, modelsRoot: root.trim() || undefined })
+                await call<DownloadTask>(Ipc.enginePrepareRemoteModel, { hostId })
+                return '已开始下载，进度在「下载」里'
+              })
+            }
           >
             {busy === 'prepare' ? <Spinner /> : null}下载
           </Button>
         </Row>
         {modelPath ? (
           <Row title="删除生成用的模型文件夹" description={modelPath}>
-            <Button tone="ghost" className="text-danger" disabled={busy !== null} onClick={() => setConfirmRemove(true)}>删除</Button>
+            <Button tone="ghost" className="text-danger" disabled={busy !== null} onClick={() => setConfirmRemove(true)}>
+              删除
+            </Button>
           </Row>
         ) : null}
       </Group>
@@ -237,7 +300,10 @@ function ImportFolderRow(): React.JSX.Element {
   }
   return (
     <Group>
-      <Row title="在原位置使用这个模型文件夹" description="选一个已有的模型文件夹（例如从别的电脑拷来的 MOSS-Image）。文件留在原处，不复制、不移动。">
+      <Row
+        title="在原位置使用这个模型文件夹"
+        description="选一个已有的模型文件夹（例如从别的电脑拷来的 MOSS-Image）。文件留在原处，不复制、不移动。"
+      >
         <Button tone="secondary" disabled={busy} onClick={() => void importFolder()}>
           {busy ? <Spinner /> : <FolderInput className="size-4" strokeWidth={1.6} />}选择文件夹
         </Button>

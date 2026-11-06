@@ -31,7 +31,11 @@ class FakeServer extends EventEmitter {
   requests: Request[] = []
   killed: string[] = []
   closed = false
-  constructor(public reply: Reply, public args: string[], public env: Record<string, string>) {
+  constructor(
+    public reply: Reply,
+    public args: string[],
+    public env: Record<string, string>,
+  ) {
     super()
     let buffer = ''
     this.stdin.on('data', (chunk: Buffer) => {
@@ -63,7 +67,9 @@ class FakeServer extends EventEmitter {
 }
 
 const helloResult = (devices: unknown[] = [{ index: 0, name: 'GPU', supported: true, compute_capability: '8.9' }], protocol = 2) => ({
-  protocol_version: protocol, version: '2.1.1', probe: { devices },
+  protocol_version: protocol,
+  version: '2.1.1',
+  probe: { devices },
 })
 
 /** Default behaviour: hello, load, generate with progress and an ok result, shutdown. */
@@ -84,8 +90,15 @@ const happy: Reply = (request, server) => {
     server.send({ event: 'progress', id: 'someone-else', phase: 'denoise', step: 3, total_steps: 4 })
     server.send({ id, result: {} })
     server.send({
-      event: 'done', id, status: 'ok', warnings: ['clamped cfg'],
-      report: { seed_used: 77, quality: { tier: 'high' }, timings_s: { dit_load: 1.5, encode: 0.25, denoise: 2, decode: 0.5, total: 4.25 } },
+      event: 'done',
+      id,
+      status: 'ok',
+      warnings: ['clamped cfg'],
+      report: {
+        seed_used: 77,
+        quality: { tier: 'high' },
+        timings_s: { dit_load: 1.5, encode: 0.25, denoise: 2, decode: 0.5, total: 4.25 },
+      },
     })
   }
 }
@@ -132,11 +145,24 @@ function run(id: string, patch: Record<string, unknown> = {}): Sink {
   const events: Array<Record<string, unknown>> = []
   const stderr: string[] = []
   let resolveDone: (code: number) => void = () => undefined
-  const done = new Promise<number>((resolve) => { resolveDone = resolve })
-  void mossInfer.runMossInferJob({ id } as JobRecord, params, {
-    model: join(dataRoot(), 'bundle'), device: 0, deviceUuid: 'GPU-a', systemDeviceIndex: 1, loras: [],
-    output: join(dataRoot(), `${id}.png`), settings, ...patch,
-  }, { event: (payload) => events.push(payload), stderr: (line) => stderr.push(line), done: resolveDone })
+  const done = new Promise<number>((resolve) => {
+    resolveDone = resolve
+  })
+  void mossInfer.runMossInferJob(
+    { id } as JobRecord,
+    params,
+    {
+      model: join(dataRoot(), 'bundle'),
+      device: 0,
+      deviceUuid: 'GPU-a',
+      systemDeviceIndex: 1,
+      loras: [],
+      output: join(dataRoot(), `${id}.png`),
+      settings,
+      ...patch,
+    },
+    { event: (payload) => events.push(payload), stderr: (line) => stderr.push(line), done: resolveDone },
+  )
   return { events, stderr, done }
 }
 
@@ -157,7 +183,9 @@ describe('resolveServerPath', () => {
   it('returns null when nothing exists, including a PATH hit that vanished', () => {
     spawnSync.mockReturnValue({ status: 0, stdout: join(dataRoot(), 'gone') })
     expect(mossInfer.resolveServerPath({ ...settings, mossInferServerPath: null })).toBeNull()
-    spawnSync.mockImplementation(() => { throw new Error('which missing') })
+    spawnSync.mockImplementation(() => {
+      throw new Error('which missing')
+    })
     expect(mossInfer.resolveServerPath({ ...settings, mossInferServerPath: null })).toBeNull()
   })
 })
@@ -170,10 +198,25 @@ describe('runMossInferJob', () => {
     expect(server!.env).toEqual({ CUDA_VISIBLE_DEVICES: 'GPU-a' })
     expect(server!.args).toEqual(['--parent-pid', String(process.pid)])
     expect(server!.methods()).toEqual(['hello', 'load', 'generate'])
-    expect(server!.requests[1]!.params).toEqual({ mode: 'balanced', device: 0, tier: 'high', cache_dir: join(dataRoot(), 'cache', 'mossinfer'), model: join(dataRoot(), 'bundle') })
+    expect(server!.requests[1]!.params).toEqual({
+      mode: 'balanced',
+      device: 0,
+      tier: 'high',
+      cache_dir: join(dataRoot(), 'cache', 'mossinfer'),
+      model: join(dataRoot(), 'bundle'),
+    })
     expect(server!.requests[2]).toMatchObject({
       id: 'job-1',
-      params: { prompt: 'a cat', negative_prompt: 'blurry', width: 512, height: 768, steps: 4, cfg: 1, seed: 5, loras: [{ path: '/l.safetensors', strength: 0.5 }] },
+      params: {
+        prompt: 'a cat',
+        negative_prompt: 'blurry',
+        width: 512,
+        height: 768,
+        steps: 4,
+        cfg: 1,
+        seed: 5,
+        loras: [{ path: '/l.safetensors', strength: 0.5 }],
+      },
     })
 
     expect(s.events).toEqual([
@@ -194,7 +237,13 @@ describe('runMossInferJob', () => {
       },
     ])
     expect(JSON.parse(readFileSync(join(dataRoot(), 'job-1.json'), 'utf8'))).toEqual({
-      prompt: 'a cat', negative_prompt: 'blurry', seed: 77, width: 512, height: 768, engine: 'mossinfer', tier: 'high',
+      prompt: 'a cat',
+      negative_prompt: 'blurry',
+      seed: 77,
+      width: 512,
+      height: 768,
+      engine: 'mossinfer',
+      tier: 'high',
     })
   })
 
@@ -238,7 +287,8 @@ describe('runMossInferJob', () => {
   })
 
   it('fails a job on an incompatible protocol and still serves the next one after a fix', async () => {
-    reply = (request, server) => request.method === 'hello' ? server.send({ id: request.id, result: helloResult(undefined, 1) }) : happy(request, server)
+    reply = (request, server) =>
+      request.method === 'hello' ? server.send({ id: request.id, result: helloResult(undefined, 1) }) : happy(request, server)
     const s = run('a')
     expect(await s.done).toBe(1)
     expect(s.events.at(-1)).toMatchObject({ type: 'error', code: 'E_ENGINE', fatal: true, message: expect.stringContaining('protocol 1') })
@@ -247,7 +297,10 @@ describe('runMossInferJob', () => {
   it('refuses a GPU the engine marks unsupported with E_DEVICE', async () => {
     reply = (request, server) =>
       request.method === 'hello'
-        ? server.send({ id: request.id, result: helloResult([{ index: 0, name: 'GPU', supported: false, unsupported_reason: 'sm_75 needs the SM75 build' }]) })
+        ? server.send({
+            id: request.id,
+            result: helloResult([{ index: 0, name: 'GPU', supported: false, unsupported_reason: 'sm_75 needs the SM75 build' }]),
+          })
         : happy(request, server)
     const s = run('a')
     expect(await s.done).toBe(1)
@@ -257,7 +310,13 @@ describe('runMossInferJob', () => {
   it('picks the first supported device for an automatic (-1) device', async () => {
     reply = (request, server) =>
       request.method === 'hello'
-        ? server.send({ id: request.id, result: helloResult([{ index: 0, name: 'a', supported: false }, { index: 1, name: 'b', supported: true }]) })
+        ? server.send({
+            id: request.id,
+            result: helloResult([
+              { index: 0, name: 'a', supported: false },
+              { index: 1, name: 'b', supported: true },
+            ]),
+          })
         : happy(request, server)
     expect(await run('a', { device: -1 }).done).toBe(0)
     expect(servers[0]!.requests.find((r) => r.method === 'load')!.params['device']).toBe(1)
@@ -393,42 +452,70 @@ describe('image inputs, sampling and live previews', () => {
   function runWith(id: string, jobParams: JobParams, patch: Record<string, unknown> = {}): Sink {
     const events: Array<Record<string, unknown>> = []
     let resolveDone: (code: number) => void = () => undefined
-    const done = new Promise<number>((resolve) => { resolveDone = resolve })
-    void mossInfer.runMossInferJob({ id } as JobRecord, jobParams, {
-      model: join(dataRoot(), 'bundle'), device: 0, deviceUuid: 'GPU-a', systemDeviceIndex: 0, loras: [],
-      output: join(dataRoot(), `${id}.png`), settings, ...patch,
-    }, { event: (payload) => events.push(payload), stderr: () => undefined, done: resolveDone })
+    const done = new Promise<number>((resolve) => {
+      resolveDone = resolve
+    })
+    void mossInfer.runMossInferJob(
+      { id } as JobRecord,
+      jobParams,
+      {
+        model: join(dataRoot(), 'bundle'),
+        device: 0,
+        deviceUuid: 'GPU-a',
+        systemDeviceIndex: 0,
+        loras: [],
+        output: join(dataRoot(), `${id}.png`),
+        settings,
+        ...patch,
+      },
+      { event: (payload) => events.push(payload), stderr: () => undefined, done: resolveDone },
+    )
     return { events, stderr: [], done }
   }
 
-  const previewing = (capabilities: Record<string, boolean>): Reply => (request, server) => {
-    if (request.method === 'hello') return server.send({ id: request.id, result: { ...helloResult(), capabilities } })
-    if (request.method !== 'generate') return happy(request, server)
-    const id = request.id
-    const image = request.params['preview_output']
-    server.send({ id, result: { accepted: true } })
-    server.send({ event: 'progress', id, phase: 'denoise', step: 0, total_steps: 4 })
-    if (image) {
-      server.send({ event: 'preview', id, step: 1, total_steps: 4, image, width: 64, height: 64 })
-      server.send({ event: 'preview', id: 'someone-else', step: 1, total_steps: 4, image: '/elsewhere.png' })
-      server.send({ event: 'preview', id, step: 2, total_steps: 4, image, width: 64, height: 64 })
+  const previewing =
+    (capabilities: Record<string, boolean>): Reply =>
+    (request, server) => {
+      if (request.method === 'hello') return server.send({ id: request.id, result: { ...helloResult(), capabilities } })
+      if (request.method !== 'generate') return happy(request, server)
+      const id = request.id
+      const image = request.params['preview_output']
+      server.send({ id, result: { accepted: true } })
+      server.send({ event: 'progress', id, phase: 'denoise', step: 0, total_steps: 4 })
+      if (image) {
+        server.send({ event: 'preview', id, step: 1, total_steps: 4, image, width: 64, height: 64 })
+        server.send({ event: 'preview', id: 'someone-else', step: 1, total_steps: 4, image: '/elsewhere.png' })
+        server.send({ event: 'preview', id, step: 2, total_steps: 4, image, width: 64, height: 64 })
+      }
+      server.send({ event: 'done', id, status: 'ok', report: { seed_used: 9 } })
     }
-    server.send({ event: 'done', id, status: 'ok', report: { seed_used: 9 } })
-  }
 
   it('sends the inputs in the engine spelling and reports the hires size as the result size', async () => {
     const s = runWith('img', withInputs)
     expect(await s.done).toBe(0)
     const generate = servers[0]!.requests.find((r) => r.method === 'generate')!
     expect(generate.params).toMatchObject({
-      init_image: '/assets/init.png', denoise_strength: 0.6, resize: 'crop', mask: '/assets/mask.png', mask_encoding: 'u8',
-      references: { images: ['/assets/ref.png'] }, sampler: 'heun', hires: { width: 768, height: 1152, strength: 0.3 },
+      init_image: '/assets/init.png',
+      denoise_strength: 0.6,
+      resize: 'crop',
+      mask: '/assets/mask.png',
+      mask_encoding: 'u8',
+      references: { images: ['/assets/ref.png'] },
+      sampler: 'heun',
+      hires: { width: 768, height: 1152, strength: 0.3 },
     })
     expect(s.events.find((e) => e['type'] === 'result')).toMatchObject({ images: [{ width: 768, height: 1152, seed: 77 }] })
     const sidecar = JSON.parse(readFileSync(join(dataRoot(), 'img.json'), 'utf8')) as Record<string, unknown>
     expect(sidecar).toMatchObject({
-      width: 768, height: 1152, init_image: '/assets/init.png', denoise_strength: 0.6, resize: 'crop',
-      mask: '/assets/mask.png', references: { images: ['/assets/ref.png'] }, sampler: 'heun', hires: { width: 768, height: 1152, strength: 0.3 },
+      width: 768,
+      height: 1152,
+      init_image: '/assets/init.png',
+      denoise_strength: 0.6,
+      resize: 'crop',
+      mask: '/assets/mask.png',
+      references: { images: ['/assets/ref.png'] },
+      sampler: 'heun',
+      hires: { width: 768, height: 1152, strength: 0.3 },
     })
   })
 
@@ -465,13 +552,17 @@ describe('runningEngineHello / requestRunningEngine', () => {
 
   it('answers from the running sidecar without starting another one', async () => {
     reply = (request, server) => {
-      if (request.method === 'inspect') return server.send({ id: request.id, result: { kind: 'control_adapter', path: request.params['path'] } })
+      if (request.method === 'inspect')
+        return server.send({ id: request.id, result: { kind: 'control_adapter', path: request.params['path'] } })
       happy(request, server)
     }
     await run('a').done
     expect(mossInfer.runningEngineHello('GPU-a')?.version).toBe('2.1.1')
     expect(mossInfer.runningEngineHello('GPU-other')?.version).toBe('2.1.1')
-    await expect(mossInfer.requestRunningEngine('inspect', { path: '/m/c.safetensors' })).resolves.toEqual({ kind: 'control_adapter', path: '/m/c.safetensors' })
+    await expect(mossInfer.requestRunningEngine('inspect', { path: '/m/c.safetensors' })).resolves.toEqual({
+      kind: 'control_adapter',
+      path: '/m/c.safetensors',
+    })
     expect(servers).toHaveLength(1)
   })
 
@@ -495,7 +586,9 @@ describe('a GPU that switches engines', () => {
     expect(await run('job-a').done).toBe(0)
     expect(await run('job-b', { deviceUuid: 'GPU-b' }).done).toBe(0)
     const [a, b] = servers
-    resolveDeviceEngine.mockImplementation((uuid: string) => (uuid === 'GPU-a' ? { package: { kind: 'vulkan' }, binaryPath: '/e/moss-infer-vulkan' } : null))
+    resolveDeviceEngine.mockImplementation((uuid: string) =>
+      uuid === 'GPU-a' ? { package: { kind: 'vulkan' }, binaryPath: '/e/moss-infer-vulkan' } : null,
+    )
     expect(await mossInfer.releaseStaleMossInferRuntimes()).toEqual(['GPU-a'])
     expect(a!.methods()).toContain('shutdown')
     expect(a!.closed).toBe(true)

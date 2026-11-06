@@ -17,7 +17,10 @@ export function isImageFile(file: { type: string; name: string }): boolean {
  * import returned them): the first card is centred on the point, the rest
  * follow to its right.
  */
-export function dropPositions(pictures: ReadonlyArray<{ width: number; height: number }>, at: { x: number; y: number }): Array<{ x: number; y: number }> {
+export function dropPositions(
+  pictures: ReadonlyArray<{ width: number; height: number }>,
+  at: { x: number; y: number },
+): Array<{ x: number; y: number }> {
   const sizes = pictures.map(imageNodeSize)
   let x = at.x - (sizes[0] ? cardWidth(sizes[0]) / 2 : 0)
   return sizes.map((size) => {

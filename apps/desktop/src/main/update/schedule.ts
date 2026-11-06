@@ -50,7 +50,8 @@ export class UpdateScheduler {
   run(reason: CheckReason): Promise<unknown> {
     if (this.running) return this.running
     this.lastCheck = this.now()
-    this.running = this.deps.check(reason)
+    this.running = this.deps
+      .check(reason)
       .catch(() => undefined)
       .finally(() => {
         this.running = null

@@ -60,18 +60,35 @@ describe('mock backend: setup window', () => {
     expect((await invoke(backend, Ipc.installStart, { root: 'x', allowDowngrade: true })).ok).toBe(true)
 
     const first = createMockBackend()
-    first.state.install.checks['D:\\'] = locationCheckFixture({ path: 'D:\\', ok: false, problem: { code: 'E_DRIVE_ROOT', message: 'root' }, suggestion: 'D:\\MossStudio' })
-    expect(await invoke(first, Ipc.installValidate, { path: 'D:\\', purpose: 'install' })).toMatchObject({ ok: true, data: { ok: false, suggestion: 'D:\\MossStudio' } })
-    expect(await invoke(first, Ipc.installValidate, { path: 'relative', purpose: 'install' })).toMatchObject({ ok: true, data: { problem: { code: 'E_NOT_ABSOLUTE' } } })
+    first.state.install.checks['D:\\'] = locationCheckFixture({
+      path: 'D:\\',
+      ok: false,
+      problem: { code: 'E_DRIVE_ROOT', message: 'root' },
+      suggestion: 'D:\\MossStudio',
+    })
+    expect(await invoke(first, Ipc.installValidate, { path: 'D:\\', purpose: 'install' })).toMatchObject({
+      ok: true,
+      data: { ok: false, suggestion: 'D:\\MossStudio' },
+    })
+    expect(await invoke(first, Ipc.installValidate, { path: 'relative', purpose: 'install' })).toMatchObject({
+      ok: true,
+      data: { problem: { code: 'E_NOT_ABSOLUTE' } },
+    })
     expect(await invoke(first, Ipc.installStart, { root: 'D:\\' })).toMatchObject({ ok: false, error: { code: 'E_DRIVE_ROOT' } })
   })
 
   it('serves folder picks and old installs from state', async () => {
     const backend = createMockBackend()
     backend.state.install.legacyAt['D:\\Old'] = legacyInstallFixture({ root: 'D:\\Old', source: 'picked' })
-    expect(await invoke(backend, Ipc.installChooseFolder, { purpose: 'install' })).toEqual({ ok: true, data: { canceled: true, path: null, check: null, legacy: null } })
+    expect(await invoke(backend, Ipc.installChooseFolder, { purpose: 'install' })).toEqual({
+      ok: true,
+      data: { canceled: true, path: null, check: null, legacy: null },
+    })
     backend.state.install.folderChoice = { purpose: 'legacy', path: 'D:\\Old' }
-    expect(await invoke(backend, Ipc.installChooseFolder, { purpose: 'legacy' })).toMatchObject({ ok: true, data: { path: 'D:\\Old', legacy: { root: 'D:\\Old' } } })
+    expect(await invoke(backend, Ipc.installChooseFolder, { purpose: 'legacy' })).toMatchObject({
+      ok: true,
+      data: { path: 'D:\\Old', legacy: { root: 'D:\\Old' } },
+    })
     expect(await invoke(backend, Ipc.installInspectLegacy, { path: 'D:\\Nope' })).toEqual({ ok: true, data: null })
   })
 
@@ -87,7 +104,10 @@ describe('mock backend: setup window', () => {
     const events = collect(backend)
     backend.state.install.setup = setupScenario('update')
     backend.state.install.appRunning = true
-    expect(await invoke(backend, Ipc.installStart, { root: 'x' })).toMatchObject({ ok: true, data: { phase: 'failed', error: { code: 'E_APP_RUNNING' } } })
+    expect(await invoke(backend, Ipc.installStart, { root: 'x' })).toMatchObject({
+      ok: true,
+      data: { phase: 'failed', error: { code: 'E_APP_RUNNING' } },
+    })
     await settle()
     expect(events.failed).toEqual([expect.objectContaining({ code: 'E_APP_RUNNING' })])
     backend.state.install.uninstall = { ...backend.state.install.uninstall, running: true }

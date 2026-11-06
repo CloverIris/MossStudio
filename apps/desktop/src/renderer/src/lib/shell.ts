@@ -23,11 +23,12 @@ export const useShell = create<ShellState>((set) => ({
   activityTab: 'jobs',
   focusedJobId: null,
   titlebarSlot: null,
-  openActivity: (tab, jobId) => set((state) => ({
-    activityOpen: true,
-    activityTab: tab ?? state.activityTab,
-    focusedJobId: jobId === undefined ? state.focusedJobId : jobId,
-  })),
+  openActivity: (tab, jobId) =>
+    set((state) => ({
+      activityOpen: true,
+      activityTab: tab ?? state.activityTab,
+      focusedJobId: jobId === undefined ? state.focusedJobId : jobId,
+    })),
   closeActivity: () => set({ activityOpen: false }),
   toggleActivity: () => set((state) => ({ activityOpen: !state.activityOpen })),
   setActivityTab: (activityTab) => set({ activityTab }),

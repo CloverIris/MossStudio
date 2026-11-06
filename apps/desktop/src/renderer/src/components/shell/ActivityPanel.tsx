@@ -87,20 +87,19 @@ function JobsTab(): React.JSX.Element {
     return (
       <div key={job.id} data-job-row={job.id} className={cn('flex flex-col gap-2 rounded-lg px-3 py-2.5', open && 'bg-surface')}>
         <div className="flex items-start gap-3">
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={() => focusJob(open ? null : job.id)}
-            className="min-w-0 flex-1 text-left"
-          >
+          <button type="button" aria-expanded={open} onClick={() => focusJob(open ? null : job.id)} className="min-w-0 flex-1 text-left">
             <div className="truncate text-ui font-medium text-ink">{jobTitle(job)}</div>
-            <div className={cn('tabular mt-0.5 truncate text-caption', job.state === 'failed' ? 'text-danger' : 'text-ink-2')}>{jobSummary(job)}</div>
+            <div className={cn('tabular mt-0.5 truncate text-caption', job.state === 'failed' ? 'text-danger' : 'text-ink-2')}>
+              {jobSummary(job)}
+            </div>
           </button>
           {running ? (
             <Button
               tone="ghost"
               onClick={() => {
-                void cancelJob(job.id).catch((error: unknown) => toast.push(error instanceof Error ? error.message : String(error), 'error'))
+                void cancelJob(job.id).catch((error: unknown) =>
+                  toast.push(error instanceof Error ? error.message : String(error), 'error'),
+                )
               }}
             >
               取消
@@ -224,10 +223,14 @@ function ProblemsTab(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex justify-end px-1 pb-1">
-        <Button tone="ghost" onClick={() => void clearDiagnostics()}>全部清除</Button>
+        <Button tone="ghost" onClick={() => void clearDiagnostics()}>
+          全部清除
+        </Button>
       </div>
       {diagnostics.map((diagnostic) => {
-        const solutions = diagnostic.solutions.filter((solution) => solutionTarget(solution) && (!solutionTarget(solution)?.job || diagnostic.jobId))
+        const solutions = diagnostic.solutions.filter(
+          (solution) => solutionTarget(solution) && (!solutionTarget(solution)?.job || diagnostic.jobId),
+        )
         return (
           <div key={diagnostic.id} data-problem={diagnostic.id} className="flex flex-col gap-2 rounded-lg bg-surface px-3.5 py-3">
             <div className="flex items-start gap-3">
@@ -238,7 +241,8 @@ function ProblemsTab(): React.JSX.Element {
                 <div className="text-ui font-medium text-ink">{diagnostic.title}</div>
                 <p className="mt-0.5 text-caption text-ink-2 [overflow-wrap:anywhere]">{diagnostic.explain}</p>
                 <p className="tabular mt-1 text-caption text-ink-3">
-                  {diagnostic.count > 1 ? `出现 ${diagnostic.count} 次 · ` : ''}{relative(diagnostic.lastAt)}
+                  {diagnostic.count > 1 ? `出现 ${diagnostic.count} 次 · ` : ''}
+                  {relative(diagnostic.lastAt)}
                 </p>
               </div>
               <IconButton label="忽略" className="-mr-1 -mt-1 size-7" onClick={() => void dismissDiagnostic(diagnostic.id)}>
@@ -248,7 +252,11 @@ function ProblemsTab(): React.JSX.Element {
             {solutions.length ? (
               <div className="flex flex-wrap gap-2 pl-7">
                 {solutions.map((solution, index) => (
-                  <Button key={`${solution.action}-${index}`} tone={index === 0 ? 'primary' : 'secondary'} onClick={() => void apply(diagnostic, solution)}>
+                  <Button
+                    key={`${solution.action}-${index}`}
+                    tone={index === 0 ? 'primary' : 'secondary'}
+                    onClick={() => void apply(diagnostic, solution)}
+                  >
                     {solution.label}
                   </Button>
                 ))}
@@ -294,7 +302,9 @@ export function ActivityPanel(): React.JSX.Element | null {
     >
       <div className="flex items-center justify-between px-5 pb-3 pt-4">
         <h2 className="text-section font-semibold">活动</h2>
-        <IconButton label="关闭活动" onClick={close}><X className="size-4" /></IconButton>
+        <IconButton label="关闭活动" onClick={close}>
+          <X className="size-4" />
+        </IconButton>
       </div>
       <Tabs<ActivityTab>
         label="活动类型"

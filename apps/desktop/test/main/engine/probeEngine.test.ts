@@ -63,7 +63,11 @@ describe('probeEngine', () => {
     proc.stdout.write(`${JSON.stringify(hello).slice(20)}\r\n`)
     const result = await pending
     expect(result).toMatchObject({ protocol: 2, server: 'moss-server', version: '2.1.1' })
-    const lines = proc.written.join('').trim().split('\n').map((line) => JSON.parse(line))
+    const lines = proc.written
+      .join('')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
     expect(lines[0]).toMatchObject({ id: 'probe', method: 'hello', params: { client: 'MossStudio', protocol_version: 2, devices: true } })
     expect(lines.at(-1)).toEqual({ id: 'bye', method: 'shutdown' })
   })
@@ -116,7 +120,9 @@ describe('probeEngine', () => {
 })
 
 describe('requestEngineOnce', () => {
-  const answer = (message: Record<string, unknown>): void => { proc.stdout.write(`${JSON.stringify(message)}\n`) }
+  const answer = (message: Record<string, unknown>): void => {
+    proc.stdout.write(`${JSON.stringify(message)}\n`)
+  }
 
   it('sends hello then the request, answers with both, then asks the server to exit', async () => {
     const pending = requestEngineOnce('/engine/moss-server', 'inspect', { path: '/m/c.safetensors' })
@@ -126,8 +132,16 @@ describe('requestEngineOnce', () => {
     const { hello, result } = await pending
     expect(hello.capabilities).toEqual({ inspect: true })
     expect(result).toEqual({ kind: 'control_adapter' })
-    const lines = proc.written.join('').trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>)
-    expect(lines.map((line) => [line['id'], line['method']])).toEqual([['once-hello', 'hello'], ['once-request', 'inspect'], ['bye', 'shutdown']])
+    const lines = proc.written
+      .join('')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+    expect(lines.map((line) => [line['id'], line['method']])).toEqual([
+      ['once-hello', 'hello'],
+      ['once-request', 'inspect'],
+      ['bye', 'shutdown'],
+    ])
     expect(lines[1]!['params']).toEqual({ path: '/m/c.safetensors' })
   })
 

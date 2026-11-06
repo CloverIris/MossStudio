@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { BOARD_GAP, cardHeight, cardWidth, imageNodeSize, IMAGE_NODE_MAX_EDGE, IMAGE_NODE_MIN_EDGE, toBoardPoint } from '@renderer/pages/studio/boardLayout'
+import {
+  BOARD_GAP,
+  cardHeight,
+  cardWidth,
+  imageNodeSize,
+  IMAGE_NODE_MAX_EDGE,
+  IMAGE_NODE_MIN_EDGE,
+  toBoardPoint,
+} from '@renderer/pages/studio/boardLayout'
 import { dropPositions, isImageFile } from '@renderer/pages/studio/imageNodes'
 
 describe('studio/image nodes', () => {
@@ -18,7 +26,10 @@ describe('studio/image nodes', () => {
   })
 
   it('centres the first dropped picture on the drop point and lines up the rest', () => {
-    const pictures = [{ width: 800, height: 600 }, { width: 512, height: 512 }]
+    const pictures = [
+      { width: 800, height: 600 },
+      { width: 512, height: 512 },
+    ]
     const [first, second] = dropPositions(pictures, { x: 1000, y: 500 })
     const size = imageNodeSize(pictures[0]!)
     expect(first).toEqual({ x: 1000 - cardWidth(size) / 2, y: Math.round(500 - cardHeight(size) / 2) })

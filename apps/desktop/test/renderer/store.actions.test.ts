@@ -205,7 +205,7 @@ describe('updates', () => {
     expect(store().update).toMatchObject({ phase: 'available', progress: null })
   })
 
-  it('downloadUpdate rejects with main\'s message', async () => {
+  it("downloadUpdate rejects with main's message", async () => {
     const { backend, store } = await ready()
     backend.fail(Ipc.updateDownload, { message: '没有可以下载的新版本' })
     await expect(store().downloadUpdate()).rejects.toThrow('没有可以下载的新版本')
@@ -219,10 +219,12 @@ describe('updates', () => {
   })
 
   it('restartToUpdate asks in the popover when work would be interrupted, and 空闲后自动重启 arms it', async () => {
-    const { backend, store } = await ready(scenario('ready', {
-      update: updateReadyFixture('1.1.0'),
-      jobs: [jobFixture({ id: 'job-live', state: 'running' })],
-    }))
+    const { backend, store } = await ready(
+      scenario('ready', {
+        update: updateReadyFixture('1.1.0'),
+        jobs: [jobFixture({ id: 'job-live', state: 'running' })],
+      }),
+    )
     const result = await store().restartToUpdate()
     expect(result).toMatchObject({ status: 'busy', busy: [{ kind: 'inference', count: 1 }] })
     expect(store().updatePopoverOpen).toBe(true)
@@ -272,9 +274,11 @@ describe('updates', () => {
   })
 
   it('dismissAnnouncement records the dismissal and refreshes the update state', async () => {
-    const { backend, store } = await ready(scenario('ready', {
-      update: updaterStateFixture({ announcements: [{ id: 'a1', level: 'info', title: 'A', body: '' }] }),
-    }))
+    const { backend, store } = await ready(
+      scenario('ready', {
+        update: updaterStateFixture({ announcements: [{ id: 'a1', level: 'info', title: 'A', body: '' }] }),
+      }),
+    )
     await store().dismissAnnouncement('a1')
     expect(backend.callsTo(Ipc.announcementsDismiss)).toEqual([{ id: 'a1' }])
     expect(store().update!.announcements).toEqual([])
@@ -286,16 +290,29 @@ describe('downloads and models', () => {
     const { backend, store } = await ready('engineInstalledModelMissing')
     await store().downloadModel('moss-sft-dit')
     await store().downloadAdapter('dmd8-sft')
-    expect(backend.callsTo(Ipc.modelDownload)).toEqual([{ kind: 'model', id: 'moss-sft-dit' }, { kind: 'adapter', id: 'dmd8-sft' }])
+    expect(backend.callsTo(Ipc.modelDownload)).toEqual([
+      { kind: 'model', id: 'moss-sft-dit' },
+      { kind: 'adapter', id: 'dmd8-sft' },
+    ])
     expect(store().downloads.map((task) => task.id)).toEqual(['model:moss-sft-dit', 'adapter:dmd8-sft'])
   })
 
   it('downloadModel replaces an existing task in place', async () => {
-    const { backend, store } = await ready(scenario('engineInstalledModelMissing', {
-      downloads: [downloadFixture({ id: 'model:a', targetId: 'a' }), downloadFixture({ id: 'model:moss-sft-dit', state: 'error' }), downloadFixture({ id: 'model:c', targetId: 'c' })],
-    }))
+    const { backend, store } = await ready(
+      scenario('engineInstalledModelMissing', {
+        downloads: [
+          downloadFixture({ id: 'model:a', targetId: 'a' }),
+          downloadFixture({ id: 'model:moss-sft-dit', state: 'error' }),
+          downloadFixture({ id: 'model:c', targetId: 'c' }),
+        ],
+      }),
+    )
     await store().downloadModel('moss-sft-dit')
-    expect(store().downloads.map((task) => `${task.id}=${task.state}`)).toEqual(['model:a=queued', 'model:moss-sft-dit=queued', 'model:c=queued'])
+    expect(store().downloads.map((task) => `${task.id}=${task.state}`)).toEqual([
+      'model:a=queued',
+      'model:moss-sft-dit=queued',
+      'model:c=queued',
+    ])
     expect(backend.state.downloads).toHaveLength(3)
   })
 
@@ -306,10 +323,12 @@ describe('downloads and models', () => {
   })
 
   it('downloadBundle queues every missing component and returns the tasks', async () => {
-    const { backend, store } = await ready(scenario('engineInstalledModelMissing', {
-      catalog: catalogFixture({ installed: ['qwen35-encoder'] }),
-      downloads: [downloadFixture({ id: 'model:other', targetId: 'other' })],
-    }))
+    const { backend, store } = await ready(
+      scenario('engineInstalledModelMissing', {
+        catalog: catalogFixture({ installed: ['qwen35-encoder'] }),
+        downloads: [downloadFixture({ id: 'model:other', targetId: 'other' })],
+      }),
+    )
     const tasks = await store().downloadBundle('moss-sft')
     expect(backend.callsTo(Ipc.modelBundleInstall)).toEqual([{ id: 'moss-sft' }])
     expect(tasks.map((task) => task.targetId)).toEqual(SFT_BUNDLE_IDS.filter((id) => id !== 'qwen35-encoder'))
@@ -401,7 +420,9 @@ describe('jobs', () => {
 
 describe('diagnostics', () => {
   it('dismissDiagnostic removes only after main confirms', async () => {
-    const { backend, store } = await ready(scenario('ready', { diagnostics: [diagnosticFixture({ id: 'a' }), diagnosticFixture({ id: 'b' })] }))
+    const { backend, store } = await ready(
+      scenario('ready', { diagnostics: [diagnosticFixture({ id: 'a' }), diagnosticFixture({ id: 'b' })] }),
+    )
     backend.fail(Ipc.diagnosticsDismiss, {}, { times: 1 })
     await expect(store().dismissDiagnostic('a')).rejects.toBeTruthy()
     expect(store().diagnostics).toHaveLength(2)
@@ -420,7 +441,9 @@ describe('diagnostics', () => {
 describe('launch queue', () => {
   it('startLaunch is retired and always rejects', async () => {
     const { store } = await ready()
-    await expect(store().startLaunch({ instanceId: 'i', workspace: 'clover', deviceId: 'cuda:0', profile: 'base' })).rejects.toThrow(/唯一创作入口/)
+    await expect(store().startLaunch({ instanceId: 'i', workspace: 'clover', deviceId: 'cuda:0', profile: 'base' })).rejects.toThrow(
+      /唯一创作入口/,
+    )
   })
 
   it('stopLaunch ignores unknown rows', async () => {
@@ -430,10 +453,12 @@ describe('launch queue', () => {
   })
 
   it('stopLaunch cancels the job of a running row and persists it as stopped', async () => {
-    const { backend, store } = await ready(scenario('ready', {
-      jobs: [jobFixture({ id: 'j', state: 'running' })],
-      launchRows: [launchRowFixture({ id: 'r', jobId: 'j', state: 'running' })],
-    }))
+    const { backend, store } = await ready(
+      scenario('ready', {
+        jobs: [jobFixture({ id: 'j', state: 'running' })],
+        launchRows: [launchRowFixture({ id: 'r', jobId: 'j', state: 'running' })],
+      }),
+    )
     await store().stopLaunch('r')
     await flush()
     expect(backend.callsTo(Ipc.jobCancel)).toEqual([{ id: 'j' }])
@@ -442,7 +467,9 @@ describe('launch queue', () => {
   })
 
   it('stopLaunch removes a queued row, tolerates a failing remove and schedules the next row', async () => {
-    const { backend, store, useApp } = await ready(scenario('ready', { launchRows: [launchRowFixture({ id: 'r', deviceId: 'cuda:3' }), launchRowFixture({ id: 'keep' })] }))
+    const { backend, store, useApp } = await ready(
+      scenario('ready', { launchRows: [launchRowFixture({ id: 'r', deviceId: 'cuda:3' }), launchRowFixture({ id: 'keep' })] }),
+    )
     const startNextQueued = vi.fn(async (_deviceId: string) => undefined)
     useApp.setState({ startNextQueued })
     backend.fail(Ipc.launchQueueRemove)

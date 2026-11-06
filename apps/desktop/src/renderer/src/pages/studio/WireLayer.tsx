@@ -37,67 +37,66 @@ export function WireLayer({
   const setHovered = onHover
 
   return (
-      <svg aria-hidden="true" className="pointer-events-none absolute left-0 top-0 overflow-visible" width="1" height="1">
-        {wires.map((wire) => {
-          const selected = wire.id === selectedWireId
-          const atSelection = wire.sourceId === selectedCanvasId || wire.targetId === selectedCanvasId
-          const flow = flowing.has(wire.targetId)
-          const accent = selected || atSelection || flow
-          const lineage = wire.kind === 'lineage'
-          return (
-            <g
-              key={wire.id}
-              data-wire={wire.id}
-              data-wire-kind={wire.kind}
-              data-wire-state={selected ? 'selected' : flow ? 'flowing' : atSelection ? 'selected-end' : 'rest'}
-              data-board-ui={lineage ? undefined : true}
-            >
-              {lineage ? null : (
-                <path
-                  d={wire.path}
-                  fill="none"
-                  stroke="transparent"
-                  strokeWidth={14}
-                  vectorEffect="non-scaling-stroke"
-                  className="cursor-pointer"
-                  style={{ pointerEvents: 'stroke' }}
-                  onPointerEnter={() => setHovered(wire.id)}
-                  onPointerLeave={() => setHovered((value) => value === wire.id ? null : value)}
-                  onClick={(event) => { event.stopPropagation(); onSelect(wire.id) }}
-                />
-              )}
+    <svg aria-hidden="true" className="pointer-events-none absolute left-0 top-0 overflow-visible" width="1" height="1">
+      {wires.map((wire) => {
+        const selected = wire.id === selectedWireId
+        const atSelection = wire.sourceId === selectedCanvasId || wire.targetId === selectedCanvasId
+        const flow = flowing.has(wire.targetId)
+        const accent = selected || atSelection || flow
+        const lineage = wire.kind === 'lineage'
+        return (
+          <g
+            key={wire.id}
+            data-wire={wire.id}
+            data-wire-kind={wire.kind}
+            data-wire-state={selected ? 'selected' : flow ? 'flowing' : atSelection ? 'selected-end' : 'rest'}
+            data-board-ui={lineage ? undefined : true}
+          >
+            {lineage ? null : (
               <path
                 d={wire.path}
                 fill="none"
-                strokeWidth={selected ? 2.5 : 1.5}
-                strokeLinecap="round"
+                stroke="transparent"
+                strokeWidth={14}
                 vectorEffect="non-scaling-stroke"
-                className={cn(
-                  accent ? 'stroke-accent' : 'stroke-ink-3',
-                  lineage && !accent && 'opacity-50',
-                  flow && 'studio-wire-flow',
-                )}
+                className="cursor-pointer"
+                style={{ pointerEvents: 'stroke' }}
+                onPointerEnter={() => setHovered(wire.id)}
+                onPointerLeave={() => setHovered((value) => (value === wire.id ? null : value))}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onSelect(wire.id)
+                }}
               />
-              {lineage ? null : (
-                <circle cx={wire.to.x} cy={wire.to.y} r={3.5 * chipScale} className={accent ? 'fill-accent' : 'fill-ink-3'} />
-              )}
-            </g>
-          )
-        })}
-        {draft ? (
-          <g data-wire-draft>
+            )}
             <path
-              d={wirePath(draft.from, draft.to)}
+              d={wire.path}
               fill="none"
-              strokeWidth={2}
-              strokeDasharray="5 4"
+              strokeWidth={selected ? 2.5 : 1.5}
+              strokeLinecap="round"
               vectorEffect="non-scaling-stroke"
-              className={draft.ok ? 'stroke-accent' : 'stroke-ink-3'}
+              className={cn(accent ? 'stroke-accent' : 'stroke-ink-3', lineage && !accent && 'opacity-50', flow && 'studio-wire-flow')}
             />
-            <circle cx={draft.to.x} cy={draft.to.y} r={4 * chipScale} className={draft.ok ? 'fill-accent' : 'fill-ink-3'} />
+            {lineage ? null : (
+              <circle cx={wire.to.x} cy={wire.to.y} r={3.5 * chipScale} className={accent ? 'fill-accent' : 'fill-ink-3'} />
+            )}
           </g>
-        ) : null}
-      </svg>
+        )
+      })}
+      {draft ? (
+        <g data-wire-draft>
+          <path
+            d={wirePath(draft.from, draft.to)}
+            fill="none"
+            strokeWidth={2}
+            strokeDasharray="5 4"
+            vectorEffect="non-scaling-stroke"
+            className={draft.ok ? 'stroke-accent' : 'stroke-ink-3'}
+          />
+          <circle cx={draft.to.x} cy={draft.to.y} r={4 * chipScale} className={draft.ok ? 'fill-accent' : 'fill-ink-3'} />
+        </g>
+      ) : null}
+    </svg>
   )
 }
 
@@ -142,13 +141,16 @@ export function WireChips({
             className="absolute left-0 top-0 z-[6] flex origin-top-left flex-row-reverse items-center gap-0.5"
             style={{ transform: `translate(${chip.x + chip.w}px, ${chip.y + chip.h / 2}px) scale(${chipScale}) translate(-100%, -50%)` }}
             onPointerEnter={() => setHovered(wire.id)}
-            onPointerLeave={() => setHovered((value) => value === wire.id ? null : value)}
+            onPointerLeave={() => setHovered((value) => (value === wire.id ? null : value))}
           >
             <button
               type="button"
               aria-pressed={selected}
               aria-label={`连线：${wire.label}`}
-              onClick={(event) => { event.stopPropagation(); onSelect(wire.id) }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onSelect(wire.id)
+              }}
               className={cn(
                 'tabular h-5 whitespace-nowrap rounded-full px-2 text-micro font-medium transition-colors',
                 selected ? 'bg-accent text-on-accent' : 'bg-raised text-ink-2 hover:text-ink',
@@ -161,7 +163,10 @@ export function WireChips({
                 type="button"
                 aria-label={`断开 ${wire.label}`}
                 title="断开这条连线（Delete）"
-                onClick={(event) => { event.stopPropagation(); onRemove(wire) }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onRemove(wire)
+                }}
                 className="inline-flex size-5 items-center justify-center rounded-full bg-raised text-ink-2 hover:bg-danger-soft hover:text-danger"
               >
                 <X className="size-3" aria-hidden="true" />

@@ -20,7 +20,9 @@ export async function withEngineActivation<T>(fn: () => Promise<T>): Promise<T> 
   // Check and take the lock in the same tick, so two callers can never both hold it.
   while (pending) await pending
   let release!: () => void
-  pending = new Promise<void>((resolve) => { release = resolve })
+  pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
   try {
     return await fn()
   } finally {
@@ -57,9 +59,14 @@ export async function activateWhenAllowed<T>(activate: () => Promise<T>, gate?: 
   let announced = false
   for (;;) {
     if (gate.signal?.aborted) throw new Error('已取消')
-    const result = await withEngineActivation(async () => (await gate.canActivate()) ? { done: true as const, value: await activate() } : { done: false as const })
+    const result = await withEngineActivation(async () =>
+      (await gate.canActivate()) ? { done: true as const, value: await activate() } : { done: false as const },
+    )
     if (result.done) return result.value
-    if (!announced) { announced = true; gate.onWaiting?.() }
+    if (!announced) {
+      announced = true
+      gate.onWaiting?.()
+    }
     if (now() >= deadline) throw new ActivationTimeoutError('一直有任务在运行，没有切换到新版本引擎；稍后会再试')
     await sleep(gate.retryMs ?? 30_000)
   }

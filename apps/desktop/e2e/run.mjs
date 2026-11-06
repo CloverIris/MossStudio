@@ -17,8 +17,8 @@ delete env.ELECTRON_RUN_AS_NODE
 
 const xvfb = process.platform === 'linux' && !process.env.E2E_HEADED && ['/usr/bin/xvfb-run', '/bin/xvfb-run'].find(existsSync)
 const [command, commandArgs] = xvfb
-  // 1920×1200 so the 1600×1000 window fits without the screen clamping it.
-  ? [xvfb, ['-a', '-s', '-screen 0 1920x1200x24', vitest, ...args]]
+  ? // 1920×1200 so the 1600×1000 window fits without the screen clamping it.
+    [xvfb, ['-a', '-s', '-screen 0 1920x1200x24', vitest, ...args]]
   : [vitest, args]
 const result = spawnSync(command, commandArgs, { cwd: desktop, env, stdio: 'inherit' })
 if (result.error) throw result.error

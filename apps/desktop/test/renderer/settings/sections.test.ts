@@ -3,7 +3,15 @@ import { SETTINGS_SECTIONS, isCanonicalSectionPath, sectionFromPath, sectionLabe
 
 describe('settings sections', () => {
   it('lists the seven sections in order', () => {
-    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'devices', 'storage', 'network', 'features', 'updates', 'about'])
+    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual([
+      'general',
+      'devices',
+      'storage',
+      'network',
+      'features',
+      'updates',
+      'about',
+    ])
   })
 
   it('reads the section from the URL', () => {

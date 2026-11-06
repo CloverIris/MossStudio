@@ -40,7 +40,13 @@ vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async ()
 const dataRoot = useTempDataRoot()
 let supervisor: typeof import('@main/services/supervisor')
 
-const gpu: GpuInventoryDevice = { uuid: 'GPU-a', index: 0, name: 'RTX Test', computeCapability: { major: 8, minor: 9 }, driverVersion: '590.48.01' }
+const gpu: GpuInventoryDevice = {
+  uuid: 'GPU-a',
+  index: 0,
+  name: 'RTX Test',
+  computeCapability: { major: 8, minor: 9 },
+  driverVersion: '590.48.01',
+}
 
 /** The sink of every job handed to the engine, by job id. */
 let sinks: Map<string, MossInferSink>
@@ -58,10 +64,12 @@ beforeEach(async () => {
   getTrainingHost.mockReset().mockReturnValue({ id: 'h1', name: 'Lab', kind: 'ssh', host: 'gpu.lab', user: 'me', outputRoot: '/out' })
   sinks = new Map()
   starts = []
-  runMossInferJob.mockReset().mockImplementation(async (job: JobRecord, params: JobRecord['params'], opts: Record<string, unknown>, sink: MossInferSink) => {
-    starts.push({ job, params, opts })
-    sinks.set(job.id, sink)
-  })
+  runMossInferJob
+    .mockReset()
+    .mockImplementation(async (job: JobRecord, params: JobRecord['params'], opts: Record<string, unknown>, sink: MossInferSink) => {
+      starts.push({ job, params, opts })
+      sinks.set(job.id, sink)
+    })
   // What downloadMossInfer leaves behind: <engine root>/stable-<tag>-<package>/bin/moss-server, nothing in settings.
   // Named for the OS the test runs on (moss-server.exe on Windows), like the real package.
   const server = join(dataRoot(), 'mossinfer', 'stable-v2.2.0-cu13', 'bin', engineBinaryName('cuda', process.platform))
@@ -72,20 +80,32 @@ beforeEach(async () => {
   writeFileSync(join(bundle, 'clover_model.json'), JSON.stringify({ bundleId: 'b' }))
   prepareModelSource.mockReset().mockResolvedValue({ model: bundle })
   refreshGpuInventory.mockReset().mockResolvedValue({ devices: [gpu] })
-  const hello = decodeEngineHello({ protocol_version: 2, probe: { devices: [{ index: 0, name: 'RTX Test', supported: true, compute_capability: '8.9' }] } })
+  const hello = decodeEngineHello({
+    protocol_version: 2,
+    probe: { devices: [{ index: 0, name: 'RTX Test', supported: true, compute_capability: '8.9' }] },
+  })
   probeLocalEngineGpuCompatibility.mockReset().mockResolvedValue({ hello, helloFor: () => hello })
   supervisor = await import('@main/services/supervisor')
 })
 
-const request = (prompt: string, patch: Record<string, unknown> = {}) => ({
-  prompt, width: 1024, height: 1024, steps: 20, cfg: 4, seed: 1, deviceUuid: 'GPU-a', modelBinding: { bundleId: 'b' }, ...patch,
-}) as Parameters<typeof supervisor.startEngineJob>[0]
+const request = (prompt: string, patch: Record<string, unknown> = {}) =>
+  ({
+    prompt,
+    width: 1024,
+    height: 1024,
+    steps: 20,
+    cfg: 4,
+    seed: 1,
+    deviceUuid: 'GPU-a',
+    modelBinding: { bundleId: 'b' },
+    ...patch,
+  }) as Parameters<typeof supervisor.startEngineJob>[0]
 
 /** Every job update emitted for `id`, in order. */
 const updates = (id: string): JobRecord[] =>
   emit.mock.calls.filter(([channel, job]) => channel === Events.job && (job as JobRecord).id === id).map(([, job]) => job as JobRecord)
 
-describe('engine jobs: the moss-server of the GPU\'s own install', () => {
+describe("engine jobs: the moss-server of the GPU's own install", () => {
   it('starts on a managed install with no moss-server path in settings, and says so when there is none', async () => {
     const { getSettings } = await import('@main/services/settings')
     expect(getSettings().mossInferServerPath).toBeNull()
@@ -102,15 +122,19 @@ describe('engine jobs: the moss-server of the GPU\'s own install', () => {
 
 describe('engine jobs: inputs', () => {
   it('carries the image inputs into the job params and to the engine', async () => {
-    const job = await supervisor.startEngineJob(request('with inputs', {
+    const job = await supervisor.startEngineJob(
+      request('with inputs', {
+        initImage: { path: '/assets/init.png', strength: 0.5 },
+        mask: { path: '/assets/mask.png' },
+        references: { paths: ['/assets/ref.png'], maxEdge: 512 },
+        sampling: { sampler: 'heun' },
+      }),
+    )
+    expect(job.params).toMatchObject({
       initImage: { path: '/assets/init.png', strength: 0.5 },
       mask: { path: '/assets/mask.png' },
       references: { paths: ['/assets/ref.png'], maxEdge: 512 },
       sampling: { sampler: 'heun' },
-    }))
-    expect(job.params).toMatchObject({
-      initImage: { path: '/assets/init.png', strength: 0.5 }, mask: { path: '/assets/mask.png' },
-      references: { paths: ['/assets/ref.png'], maxEdge: 512 }, sampling: { sampler: 'heun' },
     })
     expect(job.params).not.toHaveProperty('control')
     expect(starts[0]!.params).toEqual(job.params)
@@ -154,7 +178,10 @@ describe('engine jobs: live previews', () => {
     sink.event({ type: 'stage', name: 'denoise' })
     for (let step = 1; step <= 5; step += 1) sink.event({ type: 'preview', path: file, step, total: 20 })
 
-    const previews = () => updates(job.id).map((item) => item.preview).filter(Boolean)
+    const previews = () =>
+      updates(job.id)
+        .map((item) => item.preview)
+        .filter(Boolean)
     // The first write shows at once; the burst behind it collapses into its latest frame.
     expect(previews()).toEqual([{ path: file, step: 1, total: 20, seq: 1 }])
     await vi.waitFor(() => expect(previews().at(-1)).toEqual({ path: file, step: 5, total: 20, seq: 5 }), { timeout: 2000 })
@@ -177,7 +204,9 @@ describe('engine jobs: cancel', () => {
   it('cancels a remote job over its own session and never touches the local engines', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout'] })
     try {
-      const job = await supervisor.startEngineJob(request('remote', { deviceUuid: undefined, hostId: 'h1', remoteModelPath: '/models/moss' }))
+      const job = await supervisor.startEngineJob(
+        request('remote', { deviceUuid: undefined, hostId: 'h1', remoteModelPath: '/models/moss' }),
+      )
       expect(runRemoteEngineJob).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ jobId: job.id }), expect.anything())
       await supervisor.cancelJob(job.id)
       expect(cancelRemoteEngineJob).toHaveBeenCalledWith(job.id)

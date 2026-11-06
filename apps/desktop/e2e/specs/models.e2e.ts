@@ -23,7 +23,12 @@ describe('models', () => {
 
     await page.evaluate(() => {
       for (const task of window.__mock.state.downloads) {
-        window.__mock.emit(window.__mock.Events.download, { ...task, state: 'running', bytes: Math.floor(task.totalBytes / 2), speedBps: 40_000_000 })
+        window.__mock.emit(window.__mock.Events.download, {
+          ...task,
+          state: 'running',
+          bytes: Math.floor(task.totalBytes / 2),
+          speedBps: 40_000_000,
+        })
       }
     })
     await expect.poll(() => card.getByText(/下载中 \d+%/).isVisible()).toBe(true)
@@ -31,7 +36,9 @@ describe('models', () => {
     expect(await card.getByRole('button', { name: '暂停' }).isVisible()).toBe(true)
     await app.screenshot('models-downloading-light')
 
-    await page.evaluate(() => { for (const task of [...window.__mock.state.downloads]) window.__mock.playDownload(task) })
+    await page.evaluate(() => {
+      for (const task of [...window.__mock.state.downloads]) window.__mock.playDownload(task)
+    })
     await expect.poll(() => card.getByText('可以使用').isVisible()).toBe(true)
     await expect.poll(() => card.getByRole('button', { name: '去创作' }).isVisible()).toBe(true)
   })
@@ -42,7 +49,12 @@ describe('models', () => {
     await card.getByRole('button', { name: '下载' }).click()
     await page.evaluate(() => {
       for (const task of window.__mock.state.downloads) {
-        window.__mock.emit(window.__mock.Events.download, { ...task, state: 'running', bytes: Math.floor(task.totalBytes / 3), speedBps: 1 })
+        window.__mock.emit(window.__mock.Events.download, {
+          ...task,
+          state: 'running',
+          bytes: Math.floor(task.totalBytes / 3),
+          speedBps: 1,
+        })
       }
     })
     await card.getByRole('button', { name: '暂停' }).click()
@@ -63,7 +75,11 @@ describe('models', () => {
     const page = await app.open({ scenario: 'ready', route: '/models', theme: 'light' })
     const textEncoder = await page.evaluate(() => window.__mock.state.catalog.models.find((model) => model.role === 'text_encoder')!.name)
     // Collapsed 高级 keeps its content inert and out of the accessibility tree.
-    const hidden = (text: string) => page.getByText(text, { exact: true }).first().evaluate((element) => Boolean(element.closest('[inert][aria-hidden="true"]')))
+    const hidden = (text: string) =>
+      page
+        .getByText(text, { exact: true })
+        .first()
+        .evaluate((element) => Boolean(element.closest('[inert][aria-hidden="true"]')))
     await expect.poll(() => hidden('单独的部件')).toBe(true)
     expect(await hidden(textEncoder)).toBe(true)
     await page.getByRole('button', { name: /高级/ }).click()
@@ -76,7 +92,11 @@ describe('models', () => {
   it('高级: uses an existing model folder where it is (no copy), and says so', async () => {
     const page = await app.open({ scenario: 'engineInstalledModelMissing', route: '/models', theme: 'light', defer: true })
     await page.evaluate(() => {
-      window.__mock.state.localModelFolder = { path: '/workspace/Models/MOSS-Image/sft', name: 'MOSS-Image SFT（sft）', bundleId: 'moss-sft' }
+      window.__mock.state.localModelFolder = {
+        path: '/workspace/Models/MOSS-Image/sft',
+        name: 'MOSS-Image SFT（sft）',
+        bundleId: 'moss-sft',
+      }
     })
     await app.start()
     await page.getByRole('button', { name: /高级/ }).click()

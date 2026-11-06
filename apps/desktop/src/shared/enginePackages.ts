@@ -25,9 +25,7 @@ export type CudaArch = 'standard' | 'sm75' | 'sm70'
 export type CudaRuntime = 'system-cuda' | 'bundled'
 
 export type EnginePackage =
-  | { kind: 'cuda'; flavour: CudaFlavour; arch: CudaArch; runtime: CudaRuntime }
-  | { kind: 'vulkan' }
-  | { kind: 'hip' }
+  { kind: 'cuda'; flavour: CudaFlavour; arch: CudaArch; runtime: CudaRuntime } | { kind: 'vulkan' } | { kind: 'hip' }
 
 export type EnginePackageKind = EnginePackage['kind']
 export type EngineOs = 'windows' | 'linux' | 'macos'
@@ -95,8 +93,11 @@ export function releaseAssetVersion(tag: string, assetNames: string[]): string {
 
 /** Every package a release publishes for this OS (CUDA flavours × archs × runtimes, Vulkan, HIP). */
 export function allEnginePackages(os: EngineOs): EnginePackage[] {
-  const cuda = (['cu13', 'cu12'] as const).flatMap((flavour) => (['standard', 'sm75', 'sm70'] as const).flatMap((arch) =>
-    (['bundled', 'system-cuda'] as const).map((runtime): EnginePackage => ({ kind: 'cuda', flavour, arch, runtime }))))
+  const cuda = (['cu13', 'cu12'] as const).flatMap((flavour) =>
+    (['standard', 'sm75', 'sm70'] as const).flatMap((arch) =>
+      (['bundled', 'system-cuda'] as const).map((runtime): EnginePackage => ({ kind: 'cuda', flavour, arch, runtime })),
+    ),
+  )
   const cli: EnginePackage[] = [{ kind: 'vulkan' }, { kind: 'hip' }]
   return [...cuda, ...cli].filter((pkg) => packageExistsFor(pkg, os))
 }

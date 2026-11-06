@@ -123,7 +123,11 @@ describe('saveProject', () => {
   })
 
   it('falls back to the first canvas when no layout exists and ignores an unknown selection', () => {
-    const saved = saveProject({ name: 'x', canvases: [canvas({ id: 'r1', kind: 'result' }), canvas({ id: 'r2', kind: 'result' })], selectedCanvasId: 'missing' })
+    const saved = saveProject({
+      name: 'x',
+      canvases: [canvas({ id: 'r1', kind: 'result' }), canvas({ id: 'r2', kind: 'result' })],
+      selectedCanvasId: 'missing',
+    })
     expect(saved.selectedCanvasId).toBe('r1')
   })
 
@@ -181,7 +185,12 @@ describe('listProjects', () => {
   it('returns summaries newest first and skips unreadable entries', () => {
     const a = saveProject({ name: 'A', canvases: [canvas({ width: 640, height: 480, layers: [layer, { ...layer, id: 'l2' }] })] })
     vi.setSystemTime(new Date('2026-03-05T00:00:00.000Z'))
-    const b = saveProject({ name: 'B', canvases: [canvas({ id: 'r', kind: 'result', width: 100, height: 200, layers: [layer] })], seriesId: 's', page: 2 })
+    const b = saveProject({
+      name: 'B',
+      canvases: [canvas({ id: 'r', kind: 'result', width: 100, height: 200, layers: [layer] })],
+      seriesId: 's',
+      page: 2,
+    })
     mkdirSync(join(projectsRoot(), 'broken'), { recursive: true })
     writeFileSync(join(projectsRoot(), 'broken', 'project.json'), '{')
     mkdirSync(join(projectsRoot(), 'empty-dir'), { recursive: true })

@@ -64,10 +64,39 @@ describe('pushDiagnostic', () => {
 
 describe('loading', () => {
   it('re-renders stored placeholder titles with the current rule', async () => {
-    writeFileSync(file(), JSON.stringify([
-      { id: '1', ruleId: 'E_MODULE', severity: 'error', title: '缺少 {1}', explain: '{1}', raw: "No module named 'xformers'", signature: 's', count: 1, firstAt: 'a', lastAt: 'a', toast: false, solutions: [] },
-      { id: '2', ruleId: 'GONE', severity: 'error', title: 'keep {1}', explain: '', raw: '', signature: 's2', count: 1, firstAt: 'a', lastAt: 'a', toast: false, solutions: [] },
-    ]))
+    writeFileSync(
+      file(),
+      JSON.stringify([
+        {
+          id: '1',
+          ruleId: 'E_MODULE',
+          severity: 'error',
+          title: '缺少 {1}',
+          explain: '{1}',
+          raw: "No module named 'xformers'",
+          signature: 's',
+          count: 1,
+          firstAt: 'a',
+          lastAt: 'a',
+          toast: false,
+          solutions: [],
+        },
+        {
+          id: '2',
+          ruleId: 'GONE',
+          severity: 'error',
+          title: 'keep {1}',
+          explain: '',
+          raw: '',
+          signature: 's2',
+          count: 1,
+          firstAt: 'a',
+          lastAt: 'a',
+          toast: false,
+          solutions: [],
+        },
+      ]),
+    )
     const list = (await load()).listDiagnostics()
     // The fallback E_MODULE rule has no placeholder, so its fixed title replaces the stale template.
     expect(list[0]).toMatchObject({ title: '缺少 Python 包', explain: expect.not.stringContaining('{1}') })
@@ -81,7 +110,10 @@ describe('loading', () => {
     writeFileSync(file(), JSON.stringify({}))
     expect((await load()).listDiagnostics()).toEqual([])
     vi.resetModules()
-    writeFileSync(file(), JSON.stringify(Array.from({ length: 250 }, (_, index) => ({ id: String(index), title: '', explain: '', signature: String(index) }))))
+    writeFileSync(
+      file(),
+      JSON.stringify(Array.from({ length: 250 }, (_, index) => ({ id: String(index), title: '', explain: '', signature: String(index) }))),
+    )
     expect((await load()).listDiagnostics()).toHaveLength(200)
   })
 })

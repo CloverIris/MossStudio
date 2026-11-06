@@ -45,7 +45,9 @@ describe.runIf(posix)('MAC_TRASH_HELPER', () => {
     const app = spawn('/bin/sh', ['-c', 'sleep 1'])
     const script = join(temp(), 'trash.sh')
     writeFileSync(script, MAC_TRASH_HELPER, { mode: 0o700 })
-    const helper = spawn('/bin/sh', [script, String(app.pid), bundle], { env: { ...process.env, HOME: home, PATH: process.env.PATH ?? '' } })
+    const helper = spawn('/bin/sh', [script, String(app.pid), bundle], {
+      env: { ...process.env, HOME: home, PATH: process.env.PATH ?? '' },
+    })
     await new Promise((resolve) => setTimeout(resolve, 400))
     expect(existsSync(bundle)).toBe(true)
     const code = await new Promise<number | null>((resolve) => helper.once('exit', resolve))
@@ -63,7 +65,13 @@ describe('trashBundleAfterExit', () => {
       tempDir: temp(),
       spawn: (command, args, options) => {
         calls.push({ command, args, detached: options.detached })
-        return { pid: 77, unref: () => undefined, once: (event: string, listener: () => void) => { if (event === 'spawn') queueMicrotask(listener) } } as never
+        return {
+          pid: 77,
+          unref: () => undefined,
+          once: (event: string, listener: () => void) => {
+            if (event === 'spawn') queueMicrotask(listener)
+          },
+        } as never
       },
     })
     expect(pid).toBe(77)

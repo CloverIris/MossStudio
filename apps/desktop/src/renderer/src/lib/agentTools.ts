@@ -60,9 +60,7 @@ export function formatStudioContext(snapshot: StudioSnapshot | null): string | u
   if (!snapshot) return undefined
   const lines = [
     `The user is working on the Studio canvas "${snapshot.title}" (${snapshot.width}×${snapshot.height}).`,
-    snapshot.description.trim()
-      ? `Its description currently reads:\n${snapshot.description.trim()}`
-      : 'Its description is empty.',
+    snapshot.description.trim() ? `Its description currently reads:\n${snapshot.description.trim()}` : 'Its description is empty.',
   ]
   if (snapshot.regions.length) {
     lines.push('Its regions, in order:')
@@ -129,9 +127,10 @@ export async function executeStudioTool(call_: AiToolCall): Promise<AiToolResult
         const caption = typeof args.caption === 'string' ? args.caption.trim() : ''
         if (!caption) return fail('caption 不能为空')
         const raw = args.bbox as { x?: number; y?: number; w?: number; h?: number } | undefined
-        const bbox = raw && ['x', 'y', 'w', 'h'].every((key) => typeof raw[key as keyof typeof raw] === 'number')
-          ? { x: raw.x as number, y: raw.y as number, w: raw.w as number, h: raw.h as number }
-          : undefined
+        const bbox =
+          raw && ['x', 'y', 'w', 'h'].every((key) => typeof raw[key as keyof typeof raw] === 'number')
+            ? { x: raw.x as number, y: raw.y as number, w: raw.w as number, h: raw.h as number }
+            : undefined
         return ok(api.addLayer({ label, caption, bbox }))
       }
       case 'studio_generate': {

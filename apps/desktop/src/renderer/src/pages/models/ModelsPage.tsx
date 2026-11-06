@@ -38,7 +38,9 @@ function StorageRow({ location }: { location: ModelLocation }): React.JSX.Elemen
   const [modelsPath, setModelsPath] = useState<string | null>(null)
   useEffect(() => {
     if (location.kind !== 'local') return
-    call<AppInfo>(Ipc.appInfo).then((info) => setModelsPath(info.modelsPath)).catch(() => undefined)
+    call<AppInfo>(Ipc.appInfo)
+      .then((info) => setModelsPath(info.modelsPath))
+      .catch(() => undefined)
   }, [location.kind, settings?.modelsRoot])
 
   if (location.kind === 'remote') {
@@ -55,12 +57,18 @@ function StorageRow({ location }: { location: ModelLocation }): React.JSX.Elemen
         {modelsPath ? (
           <IconButton
             label="打开模型文件夹"
-            onClick={() => void call(Ipc.openPath, { path: modelsPath }).catch((cause: unknown) => toast.push(cause instanceof Error ? cause.message : String(cause), 'error'))}
+            onClick={() =>
+              void call(Ipc.openPath, { path: modelsPath }).catch((cause: unknown) =>
+                toast.push(cause instanceof Error ? cause.message : String(cause), 'error'),
+              )
+            }
           >
             <FolderOpen className="size-4" strokeWidth={1.6} />
           </IconButton>
         ) : null}
-        <Button tone="ghost" onClick={() => navigate('/settings/storage')}>在 设置 › 存储 中更改</Button>
+        <Button tone="ghost" onClick={() => navigate('/settings/storage')}>
+          在 设置 › 存储 中更改
+        </Button>
       </Row>
     </Group>
   )
@@ -95,15 +103,22 @@ function ModelsTab({
     <div className="flex flex-col gap-8">
       {location.kind === 'remote' && location.scanError ? (
         <Group>
-          <Row title={`读不到 ${location.host?.name ?? '远程主机'} 上的模型`} description={`${location.scanError}。检查这台主机是否在线，然后重试。`}>
-            <Button tone="secondary" onClick={location.rescan}>重试</Button>
+          <Row
+            title={`读不到 ${location.host?.name ?? '远程主机'} 上的模型`}
+            description={`${location.scanError}。检查这台主机是否在线，然后重试。`}
+          >
+            <Button tone="secondary" onClick={location.rescan}>
+              重试
+            </Button>
           </Row>
         </Group>
       ) : null}
 
       {!location.ready ? (
         location.scanning ? (
-          <div className="flex items-center gap-2 px-1 text-ui text-ink-2"><Spinner /> 正在查看 {location.host?.name} 上已有的模型</div>
+          <div className="flex items-center gap-2 px-1 text-ui text-ink-2">
+            <Spinner /> 正在查看 {location.host?.name} 上已有的模型
+          </div>
         ) : null
       ) : featuredView ? (
         <FeaturedModel view={featuredView} location={location} deletable={deletable(featuredView.bundle)} onDelete={setDeleting} />
@@ -156,7 +171,9 @@ function DownloadsTab({ location }: { location: ModelLocation }): React.JSX.Elem
     <div className="flex flex-col gap-3">
       {location.kind === 'remote' ? (
         <div className="flex items-center justify-between gap-4 px-1">
-          <p className="text-caption text-ink-2">关闭 MossStudio 后，{location.host?.name ?? '远程主机'} 上的下载仍会继续，重新连接后显示最新进度。</p>
+          <p className="text-caption text-ink-2">
+            关闭 MossStudio 后，{location.host?.name ?? '远程主机'} 上的下载仍会继续，重新连接后显示最新进度。
+          </p>
           <IconButton
             label="刷新下载进度"
             onClick={() => location.host && void call(Ipc.remoteDownloadsRefresh, { hostId: location.host.id }).catch(() => undefined)}
@@ -220,7 +237,13 @@ export function ModelsPage(): React.JSX.Element {
       locationOptions.length <= 4 ? (
         <Segmented label="模型所在的电脑" value={host ? host.id : 'local'} options={locationOptions} onChange={setLocationId} />
       ) : (
-        <Select aria-label="模型所在的电脑" value={host ? host.id : 'local'} options={locationOptions} onValueChange={setLocationId} className="w-48" />
+        <Select
+          aria-label="模型所在的电脑"
+          value={host ? host.id : 'local'}
+          options={locationOptions}
+          onValueChange={setLocationId}
+          className="w-48"
+        />
       )
     ) : null
 
@@ -261,7 +284,9 @@ export function ModelsPage(): React.JSX.Element {
       />
 
       {!catalog ? (
-        <div className="flex justify-center py-16"><Spinner /></div>
+        <div className="flex justify-center py-16">
+          <Spinner />
+        </div>
       ) : tab === 'models' ? (
         <ModelsTab catalog={catalog} location={location} preferredBundleId={preferredBundleId} componentFocus={componentFocus} />
       ) : tab === 'lora' ? (

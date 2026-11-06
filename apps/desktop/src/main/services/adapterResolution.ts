@@ -1,10 +1,5 @@
 import type { Settings } from '@shared/types'
-import {
-  AdapterResolutionError,
-  normalizeCanvasAdapters,
-  resolveAdapterSelection,
-  type ResolvedLora,
-} from '@shared/adapters'
+import { AdapterResolutionError, normalizeCanvasAdapters, resolveAdapterSelection, type ResolvedLora } from '@shared/adapters'
 import { findAdapterName, resolveAdapterFile } from './models'
 
 export { AdapterResolutionError }

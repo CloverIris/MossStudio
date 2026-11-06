@@ -11,16 +11,15 @@ export function canvasBranchesConflict(first: CanvasBranch, second: CanvasBranch
   return first.path.has(second.sourceId) || second.path.has(first.sourceId)
 }
 
-export function activeCanvasBranchIds(
-  canvases: ProjectCanvas[],
-  jobs: JobRecord[],
-): Set<string> {
+export function activeCanvasBranchIds(canvases: ProjectCanvas[], jobs: JobRecord[]): Set<string> {
   const byId = new Map(canvases.map((canvas) => [canvas.id, canvas]))
   const activeIds = new Set(
-    canvases.filter((canvas) => {
-      const job = canvas.jobId ? jobs.find((item) => item.id === canvas.jobId) : undefined
-      return ACTIVE_STATES.has(job?.state ?? canvas.jobState ?? '')
-    }).map((canvas) => canvas.id),
+    canvases
+      .filter((canvas) => {
+        const job = canvas.jobId ? jobs.find((item) => item.id === canvas.jobId) : undefined
+        return ACTIVE_STATES.has(job?.state ?? canvas.jobState ?? '')
+      })
+      .map((canvas) => canvas.id),
   )
   const busy = new Set<string>()
   for (const activeId of activeIds) {

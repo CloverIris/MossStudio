@@ -28,7 +28,9 @@ export const electronStudioClient: StudioClient = {
   listProjects: () => call<ProjectSummary[]>(Ipc.projectsList),
   getProject: (id) => call<ProjectDocument | null>(Ipc.projectGet, { id }),
   saveProject: (input) => call<ProjectDocument>(Ipc.projectSave, input),
-  deleteProject: async (id) => { await call(Ipc.projectDelete, { id }) },
+  deleteProject: async (id) => {
+    await call(Ipc.projectDelete, { id })
+  },
   backendInfo: () => call<BackendInfo>(Ipc.backendInfo),
 }
 

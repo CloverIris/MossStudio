@@ -18,12 +18,12 @@ select option {
    retaining labels, form events, keyboard navigation and disabled options.
    Unsupported web browsers keep their native picker. Listboxes stay native. */
 @supports (appearance: base-select) {
-  select:not([multiple]):is(:not([size]), [size="1"]),
-  select:not([multiple]):is(:not([size]), [size="1"])::picker(select) {
+  select:not([multiple]):is(:not([size]), [size='1']),
+  select:not([multiple]):is(:not([size]), [size='1'])::picker(select) {
     appearance: base-select;
   }
 
-  select:not([multiple]):is(:not([size]), [size="1"]) {
+  select:not([multiple]):is(:not([size]), [size='1']) {
     align-items: center;
     gap: 8px;
     padding-inline-end: 10px;
@@ -33,12 +33,12 @@ select option {
     text-overflow: ellipsis;
   }
 
-  select:where(:not([multiple]):is(:not([size]), [size="1"])):enabled {
+  select:where(:not([multiple]):is(:not([size]), [size='1'])):enabled {
     cursor: pointer;
   }
 
   select::picker-icon {
-    content: "";
+    content: '';
     flex: none;
     width: 7px;
     height: 7px;
@@ -78,7 +78,7 @@ select option {
     animation: dropdown-enter var(--motion-fast) var(--motion-ease);
   }
 
-  select:where(:not([multiple]):is(:not([size]), [size="1"])) option {
+  select:where(:not([multiple]):is(:not([size]), [size='1'])) option {
     position: relative;
     display: block;
     min-block-size: 32px;
@@ -95,46 +95,50 @@ select option {
     cursor: pointer;
   }
 
-  select:where(:not([multiple]):is(:not([size]), [size="1"])) option:checked {
+  select:where(:not([multiple]):is(:not([size]), [size='1'])) option:checked {
     background: var(--dropdown-selected);
     color: var(--dropdown-text-strong);
   }
 
-  select:where(:not([multiple]):is(:not([size]), [size="1"])) option:is(:hover, :focus-visible):not(:disabled) {
+  select:where(:not([multiple]):is(:not([size]), [size='1'])) option:is(:hover, :focus-visible):not(:disabled) {
     background: var(--dropdown-hover);
     color: var(--dropdown-text-strong);
   }
 
-  select:where(:not([multiple]):is(:not([size]), [size="1"])) option:focus-visible {
+  select:where(:not([multiple]):is(:not([size]), [size='1'])) option:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
 
-  select:where(:not([multiple]):is(:not([size]), [size="1"])) option::checkmark {
+  select:where(:not([multiple]):is(:not([size]), [size='1'])) option::checkmark {
     position: absolute;
     inset-inline-start: 10px;
     color: var(--accent);
     font-size: 13px;
   }
 
-  select:where(:not([multiple]):is(:not([size]), [size="1"])) option:disabled {
+  select:where(:not([multiple]):is(:not([size]), [size='1'])) option:disabled {
     background: transparent;
     color: var(--dropdown-disabled);
     cursor: not-allowed;
   }
 
-  html[data-ui-animation="off"] select::picker(select) {
+  html[data-ui-animation='off'] select::picker(select) {
     animation: none;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    html:not([data-ui-animation="on"]) select::picker(select) {
+    html:not([data-ui-animation='on']) select::picker(select) {
       animation: none;
     }
   }
 }
 
 @keyframes dropdown-enter {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

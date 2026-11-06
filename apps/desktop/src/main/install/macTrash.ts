@@ -81,7 +81,11 @@ log "could not move $bundle to the Trash"
 exit 1
 `
 
-export type TrashSpawnFn = (command: string, args: readonly string[], options: SpawnOptions) => {
+export type TrashSpawnFn = (
+  command: string,
+  args: readonly string[],
+  options: SpawnOptions,
+) => {
   pid?: number
   unref(): void
   once(event: 'spawn', listener: () => void): unknown

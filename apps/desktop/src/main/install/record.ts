@@ -8,7 +8,14 @@ import { randomBytes } from 'node:crypto'
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs'
 import { dirname, join, basename } from 'node:path'
 import type { ZodObject, ZodRawShape } from 'zod'
-import { installLocatorSchema, installRecordSchema, keptDataSchema, type InstallLocator, type InstallRecord, type KeptData } from '@shared/install'
+import {
+  installLocatorSchema,
+  installRecordSchema,
+  keptDataSchema,
+  type InstallLocator,
+  type InstallRecord,
+  type KeptData,
+} from '@shared/install'
 
 /** The JSON object in `file`, or null when it is missing or not a JSON object. */
 export function readJsonObject(file: string): Record<string, unknown> | null {

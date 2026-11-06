@@ -32,7 +32,10 @@ async function describeCanvas(page: Page, text: string): Promise<void> {
 }
 
 async function submitted(page: Page, count: number): Promise<JobPayload[]> {
-  await page.waitForFunction(([channel, n]) => window.__mock.callsTo(channel as string).length >= (n as number), [ENGINE_JOBS, count] as const)
+  await page.waitForFunction(([channel, n]) => window.__mock.callsTo(channel as string).length >= (n as number), [
+    ENGINE_JOBS,
+    count,
+  ] as const)
   return page.evaluate((channel) => window.__mock.callsTo(channel) as JobPayload[], ENGINE_JOBS)
 }
 
@@ -172,7 +175,10 @@ describe('studio', () => {
     // Once that run is done, 重新生成 repeats the first one exactly.
     await page.evaluate((jobId) => window.__mock.finishJob(jobId, { outputs: 1 }), await lastJobId(page))
     // 重新生成 on the first run's card repeats it exactly, seed included.
-    await page.locator(`article[data-canvas-card="${first!.canvasId}"]`).getByRole('button', { name: /^重新生成/ }).click()
+    await page
+      .locator(`article[data-canvas-card="${first!.canvasId}"]`)
+      .getByRole('button', { name: /^重新生成/ })
+      .click()
     const [, , same] = await submitted(page, 3)
     expect(same).toMatchObject({ prompt: first!.prompt, seed: first!.seed, steps: first!.steps })
   })
@@ -210,8 +216,14 @@ describe('studio', () => {
       const { canvasFixture, projectFixture } = window.__mock.fixtures
       const layer = { id: 'r1', kind: 'object', caption: '红色气球', bbox: [100, 100, 500, 500], visible: true } as const
       const canvas = canvasFixture({
-        id: 'canvas-1', title: '画面 1', prompt: '', summary: { caption: '节日海报', meta: [], canvas: 'single' },
-        layers: [layer as never], seed: 77, seedLocked: false, outputs: [{ path: '/fixture/outputs/old.png', width: 1024, height: 1024, seed: 77 }],
+        id: 'canvas-1',
+        title: '画面 1',
+        prompt: '',
+        summary: { caption: '节日海报', meta: [], canvas: 'single' },
+        layers: [layer as never],
+        seed: 77,
+        seedLocked: false,
+        outputs: [{ path: '/fixture/outputs/old.png', width: 1024, height: 1024, seed: 77 }],
       } as never)
       window.__mock.state.projects = [projectFixture({ id: 'project-1', name: '海报', canvases: [canvas], selectedCanvasId: 'canvas-1' })]
     })
@@ -241,7 +253,9 @@ describe('studio', () => {
     await name.fill('海报')
     await page.getByRole('dialog').getByRole('button', { name: '保存' }).click()
     await expect.poll(() => switcher.textContent()).toContain('海报')
-    await expect.poll(() => page.evaluate(() => window.__mock.state.projects.find((item) => item.name === '海报')?.id ?? null), { timeout: 10_000 }).not.toBeNull()
+    await expect
+      .poll(() => page.evaluate(() => window.__mock.state.projects.find((item) => item.name === '海报')?.id ?? null), { timeout: 10_000 })
+      .not.toBeNull()
 
     await switcher.click()
     await page.getByRole('menuitem', { name: '新建项目' }).click()

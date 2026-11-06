@@ -23,7 +23,15 @@ type Change = (update: (canvas: ProjectCanvas) => ProjectCanvas) => void
  * 高级. Everything starts unset (默认 = the engine decides); choices come from
  * the engine's own lists.
  */
-export function SamplingSection({ canvas, features, onChange }: { canvas: ProjectCanvas; features: EngineFeatures | null | undefined; onChange: Change }): React.JSX.Element {
+export function SamplingSection({
+  canvas,
+  features,
+  onChange,
+}: {
+  canvas: ProjectCanvas
+  features: EngineFeatures | null | undefined
+  onChange: Change
+}): React.JSX.Element {
   const sampling = canvas.sampling ?? {}
   const known = Boolean(features)
   const disabled = !known
@@ -70,7 +78,7 @@ export function SamplingSection({ canvas, features, onChange }: { canvas: Projec
           id="studio-shift"
           label="Shift"
           value={sampling.shift}
-          parse={(value) => Number.isFinite(value) && value > 0 && value <= 100 ? Math.round(value * 100) / 100 : null}
+          parse={(value) => (Number.isFinite(value) && value > 0 && value <= 100 ? Math.round(value * 100) / 100 : null)}
           onCommit={(shift) => onChange((current) => withSampling(current, { shift }))}
         />
         <p className="text-caption text-ink-2">噪声时间表的偏移，留空用模型默认值。</p>
@@ -87,7 +95,9 @@ export function SamplingSection({ canvas, features, onChange }: { canvas: Projec
               aria-label="高清修复"
               checked={Boolean(sampling.hires)}
               disabled={disabled}
-              onCheckedChange={(on) => onChange((current) => on ? withHiresScale(current, 2) : withSampling(current, { hires: undefined }))}
+              onCheckedChange={(on) =>
+                onChange((current) => (on ? withHiresScale(current, 2) : withSampling(current, { hires: undefined })))
+              }
             />
           </div>
           {sampling.hires ? (
@@ -97,7 +107,10 @@ export function SamplingSection({ canvas, features, onChange }: { canvas: Projec
                 label="高清修复尺寸"
                 value={shownChoice}
                 onChange={(value) => {
-                  if (value === 'custom') { setCustom(true); return }
+                  if (value === 'custom') {
+                    setCustom(true)
+                    return
+                  }
                   setCustom(false)
                   if (value !== 'off') onChange((current) => withHiresScale(current, Number(value)))
                 }}
@@ -114,21 +127,29 @@ export function SamplingSection({ canvas, features, onChange }: { canvas: Projec
                     value={sampling.hires.width}
                     placeholder=""
                     parse={(value) => clampHiresDimension(value, sampling.hires!.width)}
-                    onCommit={(width) => { if (width !== undefined) onChange((current) => withHiresPatch(current, { width })) }}
+                    onCommit={(width) => {
+                      if (width !== undefined) onChange((current) => withHiresPatch(current, { width }))
+                    }}
                     className="text-center"
                   />
-                  <span aria-hidden="true" className="text-ink-2">×</span>
+                  <span aria-hidden="true" className="text-ink-2">
+                    ×
+                  </span>
                   <OptionalNumberInput
                     label="高清修复高度"
                     value={sampling.hires.height}
                     placeholder=""
                     parse={(value) => clampHiresDimension(value, sampling.hires!.height)}
-                    onCommit={(height) => { if (height !== undefined) onChange((current) => withHiresPatch(current, { height })) }}
+                    onCommit={(height) => {
+                      if (height !== undefined) onChange((current) => withHiresPatch(current, { height }))
+                    }}
                     className="text-center"
                   />
                 </div>
               ) : (
-                <p className="tabular text-caption text-ink-2">输出 {sampling.hires.width} × {sampling.hires.height}</p>
+                <p className="tabular text-caption text-ink-2">
+                  输出 {sampling.hires.width} × {sampling.hires.height}
+                </p>
               )}
               <SliderField
                 label="重绘幅度"
@@ -140,13 +161,15 @@ export function SamplingSection({ canvas, features, onChange }: { canvas: Projec
                 onChange={(strength) => onChange((current) => withHiresPatch(current, { strength }))}
               />
               <div className="flex items-center gap-3 text-caption">
-                <label htmlFor="studio-hires-steps" className="w-14 shrink-0 text-ink-2">步数</label>
+                <label htmlFor="studio-hires-steps" className="w-14 shrink-0 text-ink-2">
+                  步数
+                </label>
                 <OptionalNumberInput
                   id="studio-hires-steps"
                   label="高清修复步数"
                   value={sampling.hires.steps}
                   placeholder="默认（同主步数）"
-                  parse={(value) => Number.isFinite(value) && value >= 1 ? Math.min(1000, Math.round(value)) : null}
+                  parse={(value) => (Number.isFinite(value) && value >= 1 ? Math.min(1000, Math.round(value)) : null)}
                   onCommit={(steps) => onChange((current) => withHiresPatch(current, { steps }))}
                 />
               </div>
@@ -169,17 +192,19 @@ export function SamplingSection({ canvas, features, onChange }: { canvas: Projec
         </section>
       ) : null}
 
-      {features?.cli && sampling.cfgTruncation === undefined ? null : <section className="flex flex-col gap-2">
-        <FieldLabel htmlFor="studio-cfg-truncation">CFG 截断</FieldLabel>
-        <OptionalNumberInput
-          id="studio-cfg-truncation"
-          label="CFG 截断"
-          value={sampling.cfgTruncation}
-          parse={(value) => Number.isFinite(value) && value >= 0 && value <= 1 ? Math.round(value * 100) / 100 : null}
-          onCommit={(cfgTruncation) => onChange((current) => withSampling(current, { cfgTruncation }))}
-        />
-        <p className="text-caption text-ink-2">0 到 1：在这个进度之后不再用 CFG，更快。CFG 为 1 时没有作用。</p>
-      </section>}
+      {features?.cli && sampling.cfgTruncation === undefined ? null : (
+        <section className="flex flex-col gap-2">
+          <FieldLabel htmlFor="studio-cfg-truncation">CFG 截断</FieldLabel>
+          <OptionalNumberInput
+            id="studio-cfg-truncation"
+            label="CFG 截断"
+            value={sampling.cfgTruncation}
+            parse={(value) => (Number.isFinite(value) && value >= 0 && value <= 1 ? Math.round(value * 100) / 100 : null)}
+            onCommit={(cfgTruncation) => onChange((current) => withSampling(current, { cfgTruncation }))}
+          />
+          <p className="text-caption text-ink-2">0 到 1：在这个进度之后不再用 CFG，更快。CFG 为 1 时没有作用。</p>
+        </section>
+      )}
     </div>
   )
 }

@@ -97,10 +97,22 @@ export function bundleView(
     return { ...base, status: 'downloading', stateText: `下载中 ${percent}%`, action: 'pause', actionLabel: '暂停' }
   }
   if (partTasks.some((task) => task.state === 'error')) {
-    return { ...base, status: 'failed', stateText: `下载没有完成 · 还差 ${sizeText(remainingBytes)}`, action: 'resume', actionLabel: '重试' }
+    return {
+      ...base,
+      status: 'failed',
+      stateText: `下载没有完成 · 还差 ${sizeText(remainingBytes)}`,
+      action: 'resume',
+      actionLabel: '重试',
+    }
   }
   if (partTasks.some((task) => task.state === 'paused')) {
-    return { ...base, status: 'paused', stateText: `已暂停 ${percent}% · 还差 ${sizeText(remainingBytes)}`, action: 'resume', actionLabel: '继续' }
+    return {
+      ...base,
+      status: 'paused',
+      stateText: `已暂停 ${percent}% · 还差 ${sizeText(remainingBytes)}`,
+      action: 'resume',
+      actionLabel: '继续',
+    }
   }
   if (missing.length < components.length) {
     return {
@@ -165,11 +177,7 @@ export function bundleDeletePlan(
 }
 
 /** Names of complete models (other than `exceptBundleId`) that include a part. */
-export function bundlesUsing(
-  id: string,
-  bundles: readonly ModelBundle[],
-  exceptBundleId?: string,
-): ModelBundle[] {
+export function bundlesUsing(id: string, bundles: readonly ModelBundle[], exceptBundleId?: string): ModelBundle[] {
   return bundles.filter((bundle) => bundle.id !== exceptBundleId && bundleComponentIds(bundle).includes(id))
 }
 
@@ -211,12 +219,20 @@ export function itemState(
   task: DownloadTask | undefined,
 ): ItemState {
   const percent = task && task.totalBytes > 0 ? Math.floor((Math.min(task.bytes, task.totalBytes) / task.totalBytes) * 100) : null
-  if (installed) return { text: entry.provider === 'local' ? '已添加' : '已下载', tone: 'ok', action: 'delete', actionLabel: '删除', percent: null }
+  if (installed)
+    return { text: entry.provider === 'local' ? '已添加' : '已下载', tone: 'ok', action: 'delete', actionLabel: '删除', percent: null }
   if (task && task.state === 'verifying') return { text: '正在校验', tone: 'neutral', action: null, actionLabel: '', percent }
   if (task && ACTIVE_STATES.has(task.state)) {
-    return { text: task.state === 'queued' ? '等待下载' : `下载中 ${percent ?? 0}%`, tone: 'neutral', action: 'pause', actionLabel: '暂停', percent: percent ?? 0 }
+    return {
+      text: task.state === 'queued' ? '等待下载' : `下载中 ${percent ?? 0}%`,
+      tone: 'neutral',
+      action: 'pause',
+      actionLabel: '暂停',
+      percent: percent ?? 0,
+    }
   }
-  if (task?.state === 'paused') return { text: `已暂停 ${percent ?? 0}%`, tone: 'neutral', action: 'resume', actionLabel: '继续', percent: percent ?? 0 }
+  if (task?.state === 'paused')
+    return { text: `已暂停 ${percent ?? 0}%`, tone: 'neutral', action: 'resume', actionLabel: '继续', percent: percent ?? 0 }
   if (task?.state === 'error') return { text: '下载失败', tone: 'danger', action: 'resume', actionLabel: '重试', percent }
   if (entry.provider === 'local') return { text: '找不到原文件', tone: 'warn', action: 'delete', actionLabel: '移除', percent: null }
   if (entry.installState === 'partial' || entry.installState === 'error') {
@@ -254,7 +270,12 @@ export function visibleTasks(tasks: readonly DownloadTask[]): DownloadTask[] {
 }
 
 /** Reads the deep-link query (`?bundle=…&component=…&hostId=…`). */
-export function parseModelsQuery(search: string): { bundleId: string | null; component: string | null; hostId: string | null; tab: 'models' | 'lora' | 'downloads' | null } {
+export function parseModelsQuery(search: string): {
+  bundleId: string | null
+  component: string | null
+  hostId: string | null
+  tab: 'models' | 'lora' | 'downloads' | null
+} {
   const query = new URLSearchParams(search)
   const tab = query.get('tab')
   const component = query.get('component')

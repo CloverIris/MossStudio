@@ -4,7 +4,15 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { APP_USER_MODEL_ID, PRODUCT_NAME, linuxDesktopFile, linuxIconFile, windowsDesktopShortcut, windowsStartMenuShortcut, type HostInfo } from './layout'
+import {
+  APP_USER_MODEL_ID,
+  PRODUCT_NAME,
+  linuxDesktopFile,
+  linuxIconFile,
+  windowsDesktopShortcut,
+  windowsStartMenuShortcut,
+  type HostInfo,
+} from './layout'
 
 /** Electron's shell.writeShortcutLink options (the subset used here). */
 export interface ShortcutOptions {
@@ -40,7 +48,8 @@ export function writeWindowsShortcuts(write: WriteShortcut, paths: string[], lau
   for (const path of paths) {
     try {
       mkdirSync(dirname(path), { recursive: true })
-      if (!write(path, 'replace', shortcutOptions(launcher, root)) && !write(path, 'create', shortcutOptions(launcher, root))) failed.push(path)
+      if (!write(path, 'replace', shortcutOptions(launcher, root)) && !write(path, 'create', shortcutOptions(launcher, root)))
+        failed.push(path)
     } catch {
       failed.push(path)
     }

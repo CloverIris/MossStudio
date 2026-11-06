@@ -40,10 +40,30 @@ const SUPPORT_SHA = '3'.repeat(40)
 const bigWeights = Buffer.alloc(256 * 1024, 7)
 const vae = rawModel({ id: 'vae-a', repo: 'org/vae', role: 'vae', subfolder: 'vae', files: ['vae/*'], size_bytes: 100 })
 const vaeBig = rawModel({ id: 'vae-big', repo: 'org/big', role: 'vae', subfolder: 'vae', files: ['vae/*'] })
-const support = rawModel({ id: 'support-a', repo: 'org/support', role: 'support', files: ['model_index.json', 'pipeline_moss_image.py', 'scheduler/*'] })
+const support = rawModel({
+  id: 'support-a',
+  repo: 'org/support',
+  role: 'support',
+  files: ['model_index.json', 'pipeline_moss_image.py', 'scheduler/*'],
+})
 const broken = rawModel({ id: 'vae-broken', repo: 'org/broken', role: 'vae', subfolder: 'vae', files: ['vae/*'] })
-const lora = { id: 'lora-a', name: 'Lora A', provider: 'hf', repo: 'org/lora', kind: 'lora', license: 'mit', files: ['a.safetensors'], size_bytes: 3 }
-const bundle = { id: 'b1', name: 'B1', description: '', support: 'support-a', components: { dit: 'vae-a', textEncoder: 'vae-a', vae: 'vae-a' } }
+const lora = {
+  id: 'lora-a',
+  name: 'Lora A',
+  provider: 'hf',
+  repo: 'org/lora',
+  kind: 'lora',
+  license: 'mit',
+  files: ['a.safetensors'],
+  size_bytes: 3,
+}
+const bundle = {
+  id: 'b1',
+  name: 'B1',
+  description: '',
+  support: 'support-a',
+  components: { dit: 'vae-a', textEncoder: 'vae-a', vae: 'vae-a' },
+}
 
 beforeEach(async () => {
   vi.resetModules()
@@ -51,7 +71,10 @@ beforeEach(async () => {
     'org/vae': { sha: VAE_SHA, files: { ...vaeFiles(), 'README.md': 'not selected' } },
     'org/big': { sha: VAE_SHA, files: { 'vae/config.json': '{}', 'vae/model.safetensors': bigWeights } },
     'org/broken': { sha: VAE_SHA, files: { 'vae/model.safetensors': 'weights without config' } },
-    'org/support': { sha: SUPPORT_SHA, files: { 'model_index.json': '{}', 'pipeline_moss_image.py': 'x', 'scheduler/scheduler_config.json': '{}' } },
+    'org/support': {
+      sha: SUPPORT_SHA,
+      files: { 'model_index.json': '{}', 'pipeline_moss_image.py': 'x', 'scheduler/scheduler_config.json': '{}' },
+    },
     'org/lora': { sha: LORA_SHA, files: { 'a.safetensors': 'abc' } },
   })
   contentDir.mockReset().mockImplementation(() => releaseDir())
@@ -61,7 +84,9 @@ beforeEach(async () => {
   models = await import('@main/services/models')
   const { onEmit } = await import('@main/lib/events')
   events = []
-  onEmit((channel, payload) => { if (channel === Events.download) events.push(payload as DownloadTask) })
+  onEmit((channel, payload) => {
+    if (channel === Events.download) events.push(payload as DownloadTask)
+  })
   settings = testSettings(DEFAULT_SETTINGS, { modelsRoot: modelsRoot(), hfEndpoint: `${hf.base}/` })
 })
 afterEach(async () => {
@@ -71,10 +96,13 @@ afterEach(async () => {
 
 /** Wait until the task reaches one of the given states. */
 async function settle(id: string, states: DownloadTask['state'][] = ['done', 'error', 'paused']): Promise<DownloadTask> {
-  await vi.waitFor(() => {
-    const task = models.listDownloads().find((item) => item.id === id)
-    if (!task || !states.includes(task.state)) throw new Error(`task ${id} is ${task?.state}`)
-  }, { timeout: 5000, interval: 5 })
+  await vi.waitFor(
+    () => {
+      const task = models.listDownloads().find((item) => item.id === id)
+      if (!task || !states.includes(task.state)) throw new Error(`task ${id} is ${task?.state}`)
+    },
+    { timeout: 5000, interval: 5 },
+  )
   return models.listDownloads().find((item) => item.id === id)!
 }
 
@@ -84,7 +112,15 @@ describe('model downloads', () => {
     expect(task).toMatchObject({ id: 'model:vae-a', kind: 'model', targetId: 'vae-a', state: 'queued', totalBytes: 100 })
     const done = await settle(task.id)
     const total = Object.values(vaeFiles()).reduce((n, body) => n + Buffer.byteLength(body), 0)
-    expect(done).toMatchObject({ state: 'done', filesTotal: 2, filesDone: 2, bytes: total, totalBytes: total, speedBps: 0, currentFile: undefined })
+    expect(done).toMatchObject({
+      state: 'done',
+      filesTotal: 2,
+      filesDone: 2,
+      bytes: total,
+      totalBytes: total,
+      speedBps: 0,
+      currentFile: undefined,
+    })
 
     // Only the selected files were fetched; README.md was not.
     expect(hf.requests.filter((r) => r.includes('/resolve/'))).toHaveLength(2)
@@ -148,10 +184,13 @@ describe('model downloads', () => {
       return true
     }
     const task = await models.startDownload('model', 'vae-big', settings)
-    await vi.waitFor(() => {
-      const blob = join(cacheDirFor(modelsRoot(), 'vae', 'org/big'), 'blobs', sha256(bigWeights))
-      if (!existsSync(`${blob}.part`) || readFileSync(`${blob}.part`).length < 1024) throw new Error('waiting for bytes')
-    }, { timeout: 5000, interval: 5 })
+    await vi.waitFor(
+      () => {
+        const blob = join(cacheDirFor(modelsRoot(), 'vae', 'org/big'), 'blobs', sha256(bigWeights))
+        if (!existsSync(`${blob}.part`) || readFileSync(`${blob}.part`).length < 1024) throw new Error('waiting for bytes')
+      },
+      { timeout: 5000, interval: 5 },
+    )
     models.pauseDownload(task.id)
     expect(models.listDownloads()[0]!.state).toBe('paused')
     const paused = await settle(task.id, ['paused'])
@@ -209,10 +248,16 @@ describe('model downloads', () => {
 
   it('refuses to start while a component is being deleted and to delete while installing', async () => {
     installOnDisk(modelsRoot(), { id: 'support-a', repo: 'org/support', role: 'support' }, SUPPORT_SHA, {
-      'model_index.json': '{}', 'pipeline_moss_image.py': 'x', 'scheduler/scheduler_config.json': '{}',
+      'model_index.json': '{}',
+      'pipeline_moss_image.py': 'x',
+      'scheduler/scheduler_config.json': '{}',
     })
     let unblock: () => void = () => undefined
-    listJobs.mockReturnValue(new Promise((resolve) => { unblock = () => resolve([]) }))
+    listJobs.mockReturnValue(
+      new Promise((resolve) => {
+        unblock = () => resolve([])
+      }),
+    )
     const deleting = models.deleteModel('model', 'support-a', settings)
     await vi.waitFor(() => expect(listJobs).toHaveBeenCalled())
     await expect(models.startDownload('model', 'vae-a', settings)).rejects.toThrow('组件正在删除')
@@ -231,7 +276,9 @@ describe('model downloads', () => {
 
   it('installBundle queues only the missing components, once each', async () => {
     installOnDisk(modelsRoot(), { id: 'support-a', repo: 'org/support', role: 'support' }, SUPPORT_SHA, {
-      'model_index.json': '{}', 'pipeline_moss_image.py': 'x', 'scheduler/scheduler_config.json': '{}',
+      'model_index.json': '{}',
+      'pipeline_moss_image.py': 'x',
+      'scheduler/scheduler_config.json': '{}',
     })
     const tasks = await models.installBundle('b1', settings)
     expect(tasks.map((t) => t.id)).toEqual(['model:vae-a', 'model:vae-a', 'model:vae-a'])

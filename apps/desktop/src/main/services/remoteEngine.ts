@@ -52,12 +52,18 @@ export async function remoteEngineStatus(host: TrainingHost, refreshCuda = false
   const promise = (async (): Promise<RemoteEngineStatus> => {
     const status = await probeRemoteCuda(host, !cached)
     if (status.cuda) cudaCache.set(key, { at: Date.now(), gpu: status.gpu, cuda: status.cuda })
-    else if (cached) { status.gpu = status.gpu || cached.gpu; status.cuda = cached.cuda }
+    else if (cached) {
+      status.gpu = status.gpu || cached.gpu
+      status.cuda = cached.cuda
+    }
     return status
   })()
   statusRequests.set(key, { promise, scansCuda: !cached })
-  try { return await promise }
-  finally { if (statusRequests.get(key)?.promise === promise) statusRequests.delete(key) }
+  try {
+    return await promise
+  } finally {
+    if (statusRequests.get(key)?.promise === promise) statusRequests.delete(key)
+  }
 }
 
 function hostKey(host: TrainingHost): string {
@@ -92,7 +98,9 @@ export async function remoteEngineHello(host: TrainingHost): Promise<EngineHello
       const lines = [
         { id: 'probe', method: 'hello', params: { client: 'MossStudio', protocol_version: ENGINE_PROTOCOL_VERSION } },
         { id: 'bye', method: 'shutdown', params: {} },
-      ].map((line) => JSON.stringify(line)).join('\n')
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n')
       const result = await sshExec(host, `cd ${posixQuote(root)} && exec ./bin/moss-server`, 45_000, `${lines}\n`)
       for (const line of result.stdout.split(/\r?\n/)) {
         if (!line.trim().startsWith('{')) continue
@@ -181,14 +189,14 @@ export function cancelRemoteEngineJob(jobId: string): boolean {
 }
 
 /** One SSH process per remote job; stdio is the sidecar JSON-lines protocol. */
-export async function runRemoteEngineJob(
-  host: TrainingHost,
-  opts: RemoteEngineOptions,
-  sink: RemoteEngineSink,
-): Promise<void> {
+export async function runRemoteEngineJob(host: TrainingHost, opts: RemoteEngineOptions, sink: RemoteEngineSink): Promise<void> {
   // A cancel may come while the session is still being set up.
   let cancelBeforeStart = false
-  const handle = { cancel: (): void => { cancelBeforeStart = true } }
+  const handle = {
+    cancel: (): void => {
+      cancelBeforeStart = true
+    },
+  }
   const jobKey = opts.jobId
   if (jobKey) remoteJobs.set(jobKey, handle)
   const forget = (): void => {
@@ -218,7 +226,10 @@ export async function runRemoteEngineJob(
   })
   const out = new LineSplitter()
   const err = new LineSplitter()
-  const pending = new Map<string, { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>()
+  const pending = new Map<
+    string,
+    { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+  >()
   let seq = 0
   let finished = false
   let phase = ''
@@ -243,7 +254,11 @@ export async function runRemoteEngineJob(
     if (finished) return
     sink.event({ type: 'canceled', at_stage: PHASE_TO_STAGE[phase] ?? 'idle' })
     finish(130)
-    try { child.kill('SIGKILL') } catch { /* already gone */ }
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      /* already gone */
+    }
   }
   const send = (line: Record<string, unknown>): void => {
     if (!child.stdin.writable) throw new Error('远端 moss-server 未连接')
@@ -293,7 +308,11 @@ export async function runRemoteEngineJob(
         const total = Number(message['total_steps'] ?? opts.params.steps)
         const stepSeconds = Number(message['step_seconds'] ?? 0)
         sink.event({
-          type: 'progress', stage, current: step, total, percent: total ? Math.round((step / total) * 1000) / 10 : 0,
+          type: 'progress',
+          stage,
+          current: step,
+          total,
+          percent: total ? Math.round((step / total) * 1000) / 10 : 0,
           eta_ms: stepSeconds > 0 ? Math.round((total - step) * stepSeconds * 1000) : undefined,
         })
       } else if (event === 'done') {
@@ -307,10 +326,19 @@ export async function runRemoteEngineJob(
               await mkdir(dirname(opts.localOutput), { recursive: true })
               await writeFile(opts.localOutput, Buffer.from(b64.stdout.replace(/\s/g, ''), 'base64'))
               const size = outputSizeOf(opts.params)
-              sink.event({ type: 'result', images: [{ path: opts.localOutput, width: size.width, height: size.height, seed: opts.params.seed }], timings: {} })
+              sink.event({
+                type: 'result',
+                images: [{ path: opts.localOutput, width: size.width, height: size.height, seed: opts.params.seed }],
+                timings: {},
+              })
               finish(0)
             } catch (error) {
-              sink.event({ type: 'error', code: 'E_REMOTE_OUTPUT', message: String(error instanceof Error ? error.message : error), fatal: true })
+              sink.event({
+                type: 'error',
+                code: 'E_REMOTE_OUTPUT',
+                message: String(error instanceof Error ? error.message : error),
+                fatal: true,
+              })
               finish(1)
             }
           })()
@@ -319,7 +347,12 @@ export async function runRemoteEngineJob(
           finish(130)
         } else {
           const error = (message['error'] ?? {}) as { code?: string; message?: string }
-          sink.event({ type: 'error', code: mapError(String(error.code ?? 'internal')), message: String(error.message ?? '远端生成失败'), fatal: true })
+          sink.event({
+            type: 'error',
+            code: mapError(String(error.code ?? 'internal')),
+            message: String(error.message ?? '远端生成失败'),
+            fatal: true,
+          })
           finish(1)
         }
       }
@@ -353,8 +386,12 @@ export async function runRemoteEngineJob(
 
   child.stdout.setEncoding('utf8')
   child.stderr.setEncoding('utf8')
-  child.stdout.on('data', (chunk: string) => { for (const line of out.push(chunk)) if (line.trim()) dispatch(line.trimEnd()) })
-  child.stderr.on('data', (chunk: string) => { for (const line of err.push(chunk)) if (line.trim()) sink.stderr(line.trimEnd()) })
+  child.stdout.on('data', (chunk: string) => {
+    for (const line of out.push(chunk)) if (line.trim()) dispatch(line.trimEnd())
+  })
+  child.stderr.on('data', (chunk: string) => {
+    for (const line of err.push(chunk)) if (line.trim()) sink.stderr(line.trimEnd())
+  })
   child.on('error', (error) => {
     sink.event({ type: 'error', code: 'E_REMOTE_SPAWN', message: String(error), fatal: true })
     finish(-1)
@@ -383,18 +420,29 @@ export async function runRemoteEngineJob(
       tier: opts.tier,
       cache_dir: `${root.replace(/\/$/, '')}/cache`,
     })
-    sink.event({ type: 'ready', device: opts.device === undefined ? 'cuda:auto' : `cuda:${opts.device}`, dtype: 'bf16', capabilities: ['progress', 'cancel'] })
+    sink.event({
+      type: 'ready',
+      device: opts.device === undefined ? 'cuda:auto' : `cuda:${opts.device}`,
+      dtype: 'bf16',
+      capabilities: ['progress', 'cancel'],
+    })
     // A job that ended mid-upload (canceled, server gone) already removed the folder:
     // remove it again once the last write settled, and do not generate.
     const params = inputsDir
-      ? await uploadJobInputs(host, opts.params, inputsDir, () => finished).finally(() => { if (finished) removeInputs() })
+      ? await uploadJobInputs(host, opts.params, inputsDir, () => finished).finally(() => {
+          if (finished) removeInputs()
+        })
       : opts.params
     if (finished) return
     await request('generate', buildGenerateParams(params, { output: remoteOutput }))
   } catch (error) {
     if (finished) return
     sink.event({ type: 'error', code: 'E_REMOTE', message: String(error instanceof Error ? error.message : error), fatal: true })
-    try { child.kill('SIGKILL') } catch { /* already gone */ }
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      /* already gone */
+    }
     finish(1)
   }
 }

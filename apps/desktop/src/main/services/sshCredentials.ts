@@ -15,8 +15,7 @@ export function hasSshPassword(id: string): boolean {
 }
 
 export function saveSshPassword(id: string, password: string): void {
-  if (!safeStorage.isEncryptionAvailable() ||
-    (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')) {
+  if (!safeStorage.isEncryptionAvailable() || (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')) {
     throw new Error('系统安全存储不可用，无法保存 SSH 密码')
   }
   const credentials = load()

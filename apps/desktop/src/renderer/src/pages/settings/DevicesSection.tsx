@@ -31,7 +31,9 @@ export function DevicesSection(): React.JSX.Element {
           <EngineAdvanced engine={engine} inventory={gpu.inventory} />
         </Advanced>
       </Group>
-      {remoteHosts ? <RemoteHosts /> : (
+      {remoteHosts ? (
+        <RemoteHosts />
+      ) : (
         <Section title="远程主机">
           <Group>
             <Row title="未开启" description="开启后可以把生成和训练放到 SSH 主机上运行。">
@@ -66,29 +68,38 @@ function GpuGroup({ gpu, engine }: { gpu: ReturnType<typeof useGpuInventory>; en
   return (
     <Section
       title="GPU"
-      description={rows.length > 1 ? (automatic ? '自动把任务交给空闲且更快的 GPU。也可以固定一块作为默认。' : '新的任务默认交给这块 GPU。') : undefined}
-      actions={(
+      description={
+        rows.length > 1
+          ? automatic
+            ? '自动把任务交给空闲且更快的 GPU。也可以固定一块作为默认。'
+            : '新的任务默认交给这块 GPU。'
+          : undefined
+      }
+      actions={
         <IconButton label="重新检测显卡" onClick={() => void redetect()} disabled={redetecting || gpu.refreshing}>
           <RefreshCw className={redetecting || gpu.refreshing ? 'size-4 animate-spin' : 'size-4'} />
         </IconButton>
-      )}
+      }
     >
       <Group>
         {rows.map((row) => (
           <Row
             key={row.uuid}
             title={row.name}
-            description={(
+            description={
               <span className="flex flex-col gap-0.5">
                 <span>{[row.detail, row.engine ? `引擎：${row.engine}` : null, row.reason].filter(Boolean).join(' · ')}</span>
                 {row.tip ? <span className="text-caption text-ink-2">{row.tip}</span> : null}
               </span>
-            )}
+            }
           >
             {row.isDefault || rows.length === 1 ? null : (
               <Button onClick={() => void save({ gpuSelection: { uuid: row.uuid } })}>设为默认</Button>
             )}
-            <span className="flex items-center gap-1.5 text-caption text-ink-2"><StatusDot status={row.status} />{row.statusLabel}</span>
+            <span className="flex items-center gap-1.5 text-caption text-ink-2">
+              <StatusDot status={row.status} />
+              {row.statusLabel}
+            </span>
           </Row>
         ))}
         {rows.length === 0 ? (
@@ -108,7 +119,9 @@ function GpuGroup({ gpu, engine }: { gpu: ReturnType<typeof useGpuInventory>; en
         ) : null}
         {engine.probeError && rows.length > 0 ? (
           <Row title="没能检测显卡兼容性" description={engine.probeError}>
-            <Button onClick={() => void engine.runProbe()} disabled={engine.probing}>{engine.probing ? <Spinner /> : null}重试</Button>
+            <Button onClick={() => void engine.runProbe()} disabled={engine.probing}>
+              {engine.probing ? <Spinner /> : null}重试
+            </Button>
           </Row>
         ) : null}
       </Group>
@@ -175,27 +188,54 @@ function EngineGroup({ engine }: { engine: EngineState }): React.JSX.Element {
   const missing = engine.plan?.missing ?? []
   let action: React.ReactNode
   if (installing) {
-    action = <IconButton label="取消安装" onClick={() => void engine.cancelInstall()}><X className="size-4" /></IconButton>
+    action = (
+      <IconButton label="取消安装" onClick={() => void engine.cancelInstall()}>
+        <X className="size-4" />
+      </IconButton>
+    )
   } else if (!ready) {
-    action = <Button onClick={() => void installNow()} disabled={starting || Boolean(engine.plan?.blocked)}>{starting ? <Spinner /> : null}安装引擎</Button>
+    action = (
+      <Button onClick={() => void installNow()} disabled={starting || Boolean(engine.plan?.blocked)}>
+        {starting ? <Spinner /> : null}安装引擎
+      </Button>
+    )
   } else if (missing.length > 0 && status?.kind !== 'available') {
-    action = <Button onClick={() => void installNow()} disabled={starting}>{starting ? <Spinner /> : null}安装缺少的引擎</Button>
+    action = (
+      <Button onClick={() => void installNow()} disabled={starting}>
+        {starting ? <Spinner /> : null}安装缺少的引擎
+      </Button>
+    )
   } else if (status?.kind === 'available') {
-    action = <Button onClick={() => void update()} disabled={starting}>{starting ? <Spinner /> : null}更新</Button>
+    action = (
+      <Button onClick={() => void update()} disabled={starting}>
+        {starting ? <Spinner /> : null}更新
+      </Button>
+    )
   } else {
-    action = <Button onClick={() => void check()} disabled={engine.loadingReleases}>{engine.loadingReleases ? <Spinner /> : null}检查更新</Button>
+    action = (
+      <Button onClick={() => void check()} disabled={engine.loadingReleases}>
+        {engine.loadingReleases ? <Spinner /> : null}检查更新
+      </Button>
+    )
   }
 
   return (
     <Section title="引擎">
       <Group>
         <div className="flex flex-col">
-          <Row title={ready ? `MossInfer${version ? ` ${version}` : ''}` : 'MossInfer 未安装'} description={engineDescription(engine, status)}>
+          <Row
+            title={ready ? `MossInfer${version ? ` ${version}` : ''}` : 'MossInfer 未安装'}
+            description={engineDescription(engine, status)}
+          >
             {action}
           </Row>
           {installing ? (
             <div className="px-3.5 pb-3">
-              {percent === null ? <ProgressBar value={100} tone="neutral" className="animate-pulse" label="正在安装引擎" /> : <ProgressBar value={percent} label="引擎下载进度" />}
+              {percent === null ? (
+                <ProgressBar value={100} tone="neutral" className="animate-pulse" label="正在安装引擎" />
+              ) : (
+                <ProgressBar value={percent} label="引擎下载进度" />
+              )}
             </div>
           ) : null}
         </div>

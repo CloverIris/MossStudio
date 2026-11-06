@@ -57,12 +57,12 @@ export function integerInRange(min: number, max: number, options: { optional?: b
 export const singleLineToken: Validator = (value) =>
   /[\r\n\0]/.test(value) ? 'Token 不能包含换行' : value.trim().length > 2048 ? 'Token 太长了' : null
 
-export const requiredText = (label: string): Validator => (value) => value.trim() ? null : `${label}不能为空`
+export const requiredText =
+  (label: string): Validator =>
+  (value) =>
+    value.trim() ? null : `${label}不能为空`
 
-export type TextCommit<T> =
-  | { kind: 'unchanged' }
-  | { kind: 'invalid'; message: string }
-  | { kind: 'save'; value: T }
+export type TextCommit<T> = { kind: 'unchanged' } | { kind: 'invalid'; message: string } | { kind: 'save'; value: T }
 
 /**
  * Decide what to do with a text field when it is committed (blur or Enter).
@@ -78,9 +78,7 @@ export function commitText<T = string | null>(
   if (message) return { kind: 'invalid', message }
   const text = raw.trim()
   const value = options.parse ? options.parse(text) : ((text || null) as T)
-  return Object.is(value, saved) || JSON.stringify(value) === JSON.stringify(saved)
-    ? { kind: 'unchanged' }
-    : { kind: 'save', value }
+  return Object.is(value, saved) || JSON.stringify(value) === JSON.stringify(saved) ? { kind: 'unchanged' } : { kind: 'save', value }
 }
 
 /** How a stored value is shown in its text field. */
@@ -105,8 +103,14 @@ export function createCommitGuard(): CommitGuard {
   let last: string | null = null
   return {
     shouldCommit: (draft) => draft !== last,
-    sent: (draft) => { last = draft },
-    failed: () => { last = null },
-    reset: () => { last = null },
+    sent: (draft) => {
+      last = draft
+    },
+    failed: () => {
+      last = null
+    },
+    reset: () => {
+      last = null
+    },
   }
 }

@@ -71,7 +71,16 @@ describe('recordJobOutputs', () => {
     put(join(outputs(), 'job-a-1.json'), JSON.stringify({ prompt: 'spring street', seed: 42, tier: 'high' }))
     await gallery.recordJobOutputs(job(image))
     const sidecar = JSON.parse(readFileSync(join(outputs(), 'job-a-1.json'), 'utf8')) as Record<string, unknown>
-    expect(sidecar).toMatchObject({ tier: 'high', seed: 42, steps: 20, cfg: 3, project_id: 'poster', job_id: 'job-a', model_name: 'MOSS-Image SFT', where: '本机' })
+    expect(sidecar).toMatchObject({
+      tier: 'high',
+      seed: 42,
+      steps: 20,
+      cfg: 3,
+      project_id: 'poster',
+      job_id: 'job-a',
+      model_name: 'MOSS-Image SFT',
+      where: '本机',
+    })
 
     const detail = await gallery.galleryDetail(image)
     expect(detail.generation).toMatchObject({ projectId: 'poster', steps: 20, cfg: 3, seed: 42, where: '本机' })
@@ -113,7 +122,10 @@ describe('recordJobOutputs', () => {
     expect(detail.generation).toMatchObject({ description: '春日街景', regions: 1 })
 
     const a1111 = put(join(outputs(), 'sd.png'), 'x')
-    put(join(outputs(), 'sd.json'), JSON.stringify({ parameters: 'a red bike\nNegative prompt: blurry\nSteps: 30, CFG scale: 6, Seed: 9, Size: 512x512' }))
+    put(
+      join(outputs(), 'sd.json'),
+      JSON.stringify({ parameters: 'a red bike\nNegative prompt: blurry\nSteps: 30, CFG scale: 6, Seed: 9, Size: 512x512' }),
+    )
     const sd = await gallery.galleryDetail(a1111)
     expect(sd.prompt).toBe('a red bike')
     expect(sd.negativePrompt).toBe('blurry')

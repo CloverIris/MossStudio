@@ -4,15 +4,35 @@ import { cn } from '../../components/ui'
 import { cloverUrl } from '../../lib/clover'
 import { pointInCanvas } from './boardLayout'
 import {
-  createMask, encodeMaskPng, invertMask, isEmptyMask, maskFromRgba, maskToCanvas, maskToPicture, pictureArea, placement, resampleMask, settleBands,
-  stampSegment, tintRgba,
-  type DirtyRect, type MaskRaster, type ResizeMode, type Size,
+  createMask,
+  encodeMaskPng,
+  invertMask,
+  isEmptyMask,
+  maskFromRgba,
+  maskToCanvas,
+  maskToPicture,
+  pictureArea,
+  placement,
+  resampleMask,
+  settleBands,
+  stampSegment,
+  tintRgba,
+  type DirtyRect,
+  type MaskRaster,
+  type ResizeMode,
+  type Size,
 } from './mask'
 
 export type MaskMode = 'paint' | 'erase'
-export interface MaskBrush { mode: MaskMode; size: number }
+export interface MaskBrush {
+  mode: MaskMode
+  size: number
+}
 /** A one-off command from the toolbar; `n` changes on every press. */
-export interface MaskCommand { type: 'clear' | 'invert'; n: number }
+export interface MaskCommand {
+  type: 'clear' | 'invert'
+  n: number
+}
 
 const SAVE_DELAY_MS = 600
 const TINT_ALPHA = 0.55
@@ -65,16 +85,26 @@ export function usePictureSize(path: string | undefined, known: Size | null): Si
     const image = new Image()
     image.crossOrigin = 'anonymous'
     image.src = cloverUrl(path)
-    image.decode()
-      .then(() => { if (alive && image.naturalWidth && image.naturalHeight) setRead({ path, size: { width: image.naturalWidth, height: image.naturalHeight } }) })
+    image
+      .decode()
+      .then(() => {
+        if (alive && image.naturalWidth && image.naturalHeight)
+          setRead({ path, size: { width: image.naturalWidth, height: image.naturalHeight } })
+      })
       .catch(() => undefined)
-    return () => { alive = false }
+    return () => {
+      alive = false
+    }
   }, [path, known])
   if (known) return known
   return read && read.path === path ? read.size : null
 }
 
-interface Basis { canvas: Size; picture: Size; mode: ResizeMode }
+interface Basis {
+  canvas: Size
+  picture: Size
+  mode: ResizeMode
+}
 
 /**
  * The repaint mask of a layout canvas, shown as an accent tint over its start
@@ -150,7 +180,9 @@ export function MaskLayer({
       return
     }
     const sentIn = generation.current
-    void encodeMaskPng(mask).then((png) => { if (generation.current === sentIn) onSaveRef.current(png) })
+    void encodeMaskPng(mask).then((png) => {
+      if (generation.current === sentIn) onSaveRef.current(png)
+    })
   }, [toPicture])
 
   const changed = useCallback(() => {
@@ -179,7 +211,10 @@ export function MaskLayer({
       saved.current = toPicture()
     }
     basis.current = next
-    raster.current = saved.current && !cleared ? maskToCanvas(resampleMask(saved.current, picture.width, picture.height), next.canvas, mode) : createMask(canvas.width, canvas.height)
+    raster.current =
+      saved.current && !cleared
+        ? maskToCanvas(resampleMask(saved.current, picture.width, picture.height), next.canvas, mode)
+        : createMask(canvas.width, canvas.height)
     draw()
     // Read the saved file only when this layer has no mask of its own yet: after
     // its own saves, what it holds is already what the file says.
@@ -194,7 +229,9 @@ export function MaskLayer({
       draw()
       if (fitted !== loaded) changed()
     })
-    return () => { alive = false }
+    return () => {
+      alive = false
+    }
   }, [canvas.id, canvas.width, canvas.height, picture.width, picture.height, mode, maskPath, draw, toPicture, changed])
 
   // Save right away when painting ends or the card goes away.
@@ -237,9 +274,12 @@ export function MaskLayer({
     if (!rect) return
     draw(rect)
     // A stroke along the picture's edge changes the band stretched from it.
-    const edge = place.bands === 'rows'
-      ? rect.y === inside.y || rect.y + rect.h === inside.y + inside.h
-      : place.bands === 'columns' ? rect.x === inside.x || rect.x + rect.w === inside.x + inside.w : false
+    const edge =
+      place.bands === 'rows'
+        ? rect.y === inside.y || rect.y + rect.h === inside.y + inside.h
+        : place.bands === 'columns'
+          ? rect.x === inside.x || rect.x + rect.w === inside.x + inside.w
+          : false
     if (edge) for (const band of settleBands(raster.current, place)) if (band.w > 0 && band.h > 0) draw(band)
   }
 
@@ -286,9 +326,16 @@ export function MaskLayer({
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
         changed()
       }}
-      onPointerCancel={() => { if (stroke.current) { stroke.current = null; changed() } }}
+      onPointerCancel={() => {
+        if (stroke.current) {
+          stroke.current = null
+          changed()
+        }
+      }}
       onPointerLeave={() => setCursor(null)}
-      onClick={(event) => { if (interactive) event.stopPropagation() }}
+      onClick={(event) => {
+        if (interactive) event.stopPropagation()
+      }}
     >
       <canvas
         ref={element}

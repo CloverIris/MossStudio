@@ -42,14 +42,33 @@ export function RemoteHosts(): React.JSX.Element {
     }
   }, [])
 
-  useEffect(() => { void refresh() }, [refresh])
-  useEffect(() => onEvent(Events.hostsChanged, () => { void refresh() }), [refresh])
-  useEffect(() => onEvent<EngineRemoteProgress>(Events.engineRemoteProgress, (next) => {
-    setProgress((current) => ({ ...current, [next.hostId]: next }))
-  }), [])
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+  useEffect(
+    () =>
+      onEvent(Events.hostsChanged, () => {
+        void refresh()
+      }),
+    [refresh],
+  )
+  useEffect(
+    () =>
+      onEvent<EngineRemoteProgress>(Events.engineRemoteProgress, (next) => {
+        setProgress((current) => ({ ...current, [next.hostId]: next }))
+      }),
+    [],
+  )
 
   // Look up each reachable host's engine once the list is known.
-  const reachable = useMemo(() => (hosts ?? []).filter((host) => host.status === 'ok').map((host) => host.id).join(','), [hosts])
+  const reachable = useMemo(
+    () =>
+      (hosts ?? [])
+        .filter((host) => host.status === 'ok')
+        .map((host) => host.id)
+        .join(','),
+    [hosts],
+  )
   useEffect(() => {
     for (const id of reachable.split(',').filter(Boolean)) void checkEngine(id)
   }, [reachable, checkEngine])
@@ -67,7 +86,7 @@ export function RemoteHosts(): React.JSX.Element {
     markBusy(host.id, '正在测试连接…')
     try {
       const next = await call<ManagedHost>(Ipc.hostsTest, { id: host.id })
-      setHosts((current) => current?.map((item) => item.id === next.id ? next : item) ?? [next])
+      setHosts((current) => current?.map((item) => (item.id === next.id ? next : item)) ?? [next])
       if (next.status === 'ok') {
         if (!quiet) toast.push(`${next.name} 连接正常`, 'success')
         void checkEngine(next.id)
@@ -133,7 +152,12 @@ export function RemoteHosts(): React.JSX.Element {
   return (
     <Section
       title="远程主机"
-      actions={<Button onClick={() => setDialog(emptyHostForm())}><Plus className="size-4" />添加 SSH 主机</Button>}
+      actions={
+        <Button onClick={() => setDialog(emptyHostForm())}>
+          <Plus className="size-4" />
+          添加 SSH 主机
+        </Button>
+      }
     >
       <Group>
         {hosts === null ? <Row title="正在读取…" leading={<Spinner />} /> : null}
@@ -154,34 +178,42 @@ export function RemoteHosts(): React.JSX.Element {
                 description={working ? (installing ? install.message : working) : `${summary.statusLabel} · ${summary.detail}`}
               >
                 <Button onClick={() => void prepare(host)} disabled={Boolean(working)}>
-                  {working ? <Spinner /> : null}{engine?.available ? '准备模型' : '准备引擎和模型'}
+                  {working ? <Spinner /> : null}
+                  {engine?.available ? '准备模型' : '准备引擎和模型'}
                 </Button>
-                <Button tone="ghost" onClick={() => void test(host)} disabled={Boolean(working)}>测试</Button>
-                <IconButton label={`打开 ${host.name} 的终端`} onClick={() => setTerminal(host)}><SquareTerminal className="size-4" /></IconButton>
-                <IconButton label={`编辑 ${host.name}`} onClick={() => setDialog(hostFormFrom(host))}><Pencil className="size-4" /></IconButton>
-                <IconButton label={`移除 ${host.name}`} onClick={() => setRemoving(host)}><Trash2 className="size-4" /></IconButton>
+                <Button tone="ghost" onClick={() => void test(host)} disabled={Boolean(working)}>
+                  测试
+                </Button>
+                <IconButton label={`打开 ${host.name} 的终端`} onClick={() => setTerminal(host)}>
+                  <SquareTerminal className="size-4" />
+                </IconButton>
+                <IconButton label={`编辑 ${host.name}`} onClick={() => setDialog(hostFormFrom(host))}>
+                  <Pencil className="size-4" />
+                </IconButton>
+                <IconButton label={`移除 ${host.name}`} onClick={() => setRemoving(host)}>
+                  <Trash2 className="size-4" />
+                </IconButton>
               </Row>
               {installing && typeof install.percent === 'number' ? (
-                <div className="px-3.5 pb-3 pl-10"><ProgressBar value={install.percent} label={`${host.name} 引擎安装进度`} /></div>
+                <div className="px-3.5 pb-3 pl-10">
+                  <ProgressBar value={install.percent} label={`${host.name} 引擎安装进度`} />
+                </div>
               ) : null}
             </div>
           )
         })}
       </Group>
 
-      <HostDialog
-        open={dialog !== null}
-        initial={dialog ?? emptyHostForm()}
-        onClose={() => setDialog(null)}
-        onSave={save}
-      />
+      <HostDialog open={dialog !== null} initial={dialog ?? emptyHostForm()} onClose={() => setDialog(null)} onSave={save} />
       <ConfirmDialog
         open={removing !== null}
         title={`移除 ${removing?.name ?? ''}？`}
         description="只会删除这里保存的连接信息。远程主机上的引擎、模型和训练结果都会保留；正在运行的任务不会被停止。"
         confirmLabel="移除"
         onClose={() => setRemoving(null)}
-        onConfirm={() => { if (removing) void remove(removing) }}
+        onConfirm={() => {
+          if (removing) void remove(removing)
+        }}
       />
       <SshTerminalSheet
         open={terminal !== null}

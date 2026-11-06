@@ -72,7 +72,11 @@ export function resolveJobInputs(
     if (features && !features.imageInput) unsupported('起始图')
     const path = source(inputs.init.link, '起始图')
     if (path) {
-      params.initImage = { path, strength: clamp(inputs.init.strength, 0, 1), ...(inputs.init.resize ? { resize: inputs.init.resize } : {}) }
+      params.initImage = {
+        path,
+        strength: clamp(inputs.init.strength, 0, 1),
+        ...(inputs.init.resize ? { resize: inputs.init.resize } : {}),
+      }
     }
   }
   if (inputs?.mask) {
@@ -120,7 +124,8 @@ export function resolveJobInputs(
   const references = inputs?.references
   if (references && references.links.length) {
     if (features && !features.references) unsupported('参考图')
-    if (references.links.length > MAX_REFERENCES) blockers.push({ id: 'input-invalid', message: `参考图最多 ${MAX_REFERENCES} 张，请移除多出来的` })
+    if (references.links.length > MAX_REFERENCES)
+      blockers.push({ id: 'input-invalid', message: `参考图最多 ${MAX_REFERENCES} 张，请移除多出来的` })
     const paths = references.links.flatMap((link, index) => {
       const path = source(link, `参考图 ${index + 1}`)
       return path ? [path] : []

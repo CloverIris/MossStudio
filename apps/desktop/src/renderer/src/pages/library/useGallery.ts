@@ -42,9 +42,14 @@ export function useGallery(filters: LibraryFilters): GalleryState {
     busy.current = true
     setLoading(true)
     try {
-      const page = await call<GalleryPage>(Ipc.galleryList, listRequest(filtersRef.current, { cursor: reset ? null : from, limit: PAGE_SIZE }))
+      const page = await call<GalleryPage>(
+        Ipc.galleryList,
+        listRequest(filtersRef.current, { cursor: reset ? null : from, limit: PAGE_SIZE }),
+      )
       if (run !== sequence.current) return
-      setItems((previous) => (reset ? page.items : [...previous, ...page.items.filter((item) => !previous.some((known) => known.path === item.path))]))
+      setItems((previous) =>
+        reset ? page.items : [...previous, ...page.items.filter((item) => !previous.some((known) => known.path === item.path))],
+      )
       setCursor(page.nextCursor)
       setTotal(page.total)
       setError(null)

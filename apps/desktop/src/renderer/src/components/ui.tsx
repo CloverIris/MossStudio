@@ -38,12 +38,7 @@ const surfaceTone: Record<SurfaceTone, string> = {
  * A grouped area. It is told apart from its surroundings by tone only, so use
  * a tone one step away from whatever it sits on (panel on surface, surface on panel).
  */
-export function Card({
-  tone = 'panel',
-  className,
-  children,
-  ...rest
-}: ComponentProps<'div'> & { tone?: SurfaceTone }): React.JSX.Element {
+export function Card({ tone = 'panel', className, children, ...rest }: ComponentProps<'div'> & { tone?: SurfaceTone }): React.JSX.Element {
   return (
     <div className={cn('rounded-xl', surfaceTone[tone], className)} {...rest}>
       {children}
@@ -105,7 +100,15 @@ export function Section({
 }
 
 /** A list of rows on one tonal plate, like a settings group. */
-export function Group({ children, className, tone = 'panel' }: { children: ReactNode; className?: string; tone?: SurfaceTone }): React.JSX.Element {
+export function Group({
+  children,
+  className,
+  tone = 'panel',
+}: {
+  children: ReactNode
+  className?: string
+  tone?: SurfaceTone
+}): React.JSX.Element {
   return <div className={cn('flex flex-col gap-0.5 rounded-xl p-1.5', surfaceTone[tone], className)}>{children}</div>
 }
 
@@ -144,7 +147,9 @@ export function Row({
     className,
   )
   return onClick ? (
-    <button type="button" className={classes} onClick={onClick} aria-pressed={selected}>{body}</button>
+    <button type="button" className={classes} onClick={onClick} aria-pressed={selected}>
+      {body}
+    </button>
   ) : (
     <div className={classes}>{body}</div>
   )
@@ -225,7 +230,9 @@ export function Pill({
   className?: string
 }): React.JSX.Element {
   return (
-    <span className={cn('inline-flex h-5 shrink-0 items-center gap-1 rounded-md px-1.5 text-caption font-medium', pillTone[tone], className)}>
+    <span
+      className={cn('inline-flex h-5 shrink-0 items-center gap-1 rounded-md px-1.5 text-caption font-medium', pillTone[tone], className)}
+    >
       {children}
     </span>
   )
@@ -345,12 +352,7 @@ export function Button({
   )
 }
 
-export function IconButton({
-  label,
-  children,
-  className,
-  ...rest
-}: ComponentProps<'button'> & { label: string }): React.JSX.Element {
+export function IconButton({ label, children, className, ...rest }: ComponentProps<'button'> & { label: string }): React.JSX.Element {
   return (
     <button
       type="button"
@@ -384,7 +386,11 @@ export function Segmented<T extends string>({
   block?: boolean
 }): React.JSX.Element {
   return (
-    <div role="group" aria-label={label} className={cn('inline-flex shrink-0 gap-0.5 rounded-lg bg-well p-[3px]', block && 'flex w-full', className)}>
+    <div
+      role="group"
+      aria-label={label}
+      className={cn('inline-flex shrink-0 gap-0.5 rounded-lg bg-well p-[3px]', block && 'flex w-full', className)}
+    >
       {options.map((option) => (
         <button
           key={option.value}
@@ -501,9 +507,13 @@ function Dialog({
     <>
       <header className="flex items-start justify-between gap-4 px-6 pb-2 pt-5">
         <div className="min-w-0 break-words">
-          <h2 id={titleId} className="text-section font-semibold text-ink">{title}</h2>
+          <h2 id={titleId} className="text-section font-semibold text-ink">
+            {title}
+          </h2>
           {description ? (
-            <p id={descriptionId} className="mt-1 text-ui text-ink-2 [overflow-wrap:anywhere]">{description}</p>
+            <p id={descriptionId} className="mt-1 text-ui text-ink-2 [overflow-wrap:anywhere]">
+              {description}
+            </p>
           ) : null}
         </div>
         <IconButton label="关闭" onClick={onClose} className="-mr-2 -mt-1">
@@ -511,11 +521,7 @@ function Dialog({
         </IconButton>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">{children}</div>
-      {footer ? (
-        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 px-6 pb-5 pt-3">
-          {footer}
-        </footer>
-      ) : null}
+      {footer ? <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 px-6 pb-5 pt-3">{footer}</footer> : null}
     </>
   )
   if (open) content.current = body
@@ -571,7 +577,15 @@ export function Sheet(props: DialogProps): React.JSX.Element {
   return <Dialog {...props} sheet />
 }
 
-export function ConfirmDialog({ open, title, description, confirmLabel, onClose, onConfirm, destructive = true }: {
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  onClose,
+  onConfirm,
+  destructive = true,
+}: {
   open: boolean
   title: string
   description: string
@@ -581,12 +595,22 @@ export function ConfirmDialog({ open, title, description, confirmLabel, onClose,
   destructive?: boolean
 }): React.JSX.Element {
   return (
-    <Modal open={open} title={title} onClose={onClose} width="max-w-md" footer={
-      <>
-        <Button tone="ghost" size="md" data-dialog-initial-focus onClick={onClose}>取消</Button>
-        <Button tone={destructive ? 'danger' : 'primary'} size="md" onClick={onConfirm}>{confirmLabel}</Button>
-      </>
-    }>
+    <Modal
+      open={open}
+      title={title}
+      onClose={onClose}
+      width="max-w-md"
+      footer={
+        <>
+          <Button tone="ghost" size="md" data-dialog-initial-focus onClick={onClose}>
+            取消
+          </Button>
+          <Button tone={destructive ? 'danger' : 'primary'} size="md" onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
       <p className="text-control text-ink-2">{description}</p>
     </Modal>
   )
@@ -615,14 +639,17 @@ export function useToast(): { push: (message: string, tone?: ToastTone) => void 
 
 export function useCopyText(): (text: string, message?: string) => Promise<void> {
   const { push } = useToast()
-  return useCallback(async (text: string, message = '已复制') => {
-    try {
-      await navigator.clipboard.writeText(text)
-      push(message, 'success')
-    } catch {
-      push('复制失败，请选择文本后手动复制', 'error')
-    }
-  }, [push])
+  return useCallback(
+    async (text: string, message = '已复制') => {
+      try {
+        await navigator.clipboard.writeText(text)
+        push(message, 'success')
+      } catch {
+        push('复制失败，请选择文本后手动复制', 'error')
+      }
+    },
+    [push],
+  )
 }
 
 const toastIcon: Record<ToastTone, ReactNode> = {
@@ -634,10 +661,13 @@ const toastIcon: Record<ToastTone, ReactNode> = {
 export function ToastProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [items, setItems] = useState<ToastItem[]>([])
   const timers = useRef(new Map<string, number>())
-  useEffect(() => () => {
-    timers.current.forEach((timer) => window.clearTimeout(timer))
-    timers.current.clear()
-  }, [])
+  useEffect(
+    () => () => {
+      timers.current.forEach((timer) => window.clearTimeout(timer))
+      timers.current.clear()
+    },
+    [],
+  )
   useEffect(() => {
     const retained = new Set(items.map((item) => item.id))
     for (const [id, timer] of timers.current) {
@@ -652,7 +682,7 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
     setItems((previous) => [...previous.slice(-2), { id, message, tone, open: true }])
     const timer = window.setTimeout(() => {
       timers.current.delete(id)
-      setItems((previous) => previous.map((item) => item.id === id ? { ...item, open: false } : item))
+      setItems((previous) => previous.map((item) => (item.id === id ? { ...item, open: false } : item)))
     }, 5000)
     timers.current.set(id, timer)
   }, [])
@@ -673,9 +703,15 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
           >
             <span className="mt-0.5">{toastIcon[item.tone]}</span>
             <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{item.message}</span>
-            <IconButton label="关闭提示" className="-my-1 size-7" onClick={() => {
-              setItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, open: false } : entry))
-            }}><X className="size-3.5" /></IconButton>
+            <IconButton
+              label="关闭提示"
+              className="-my-1 size-7"
+              onClick={() => {
+                setItems((previous) => previous.map((entry) => (entry.id === item.id ? { ...entry, open: false } : entry)))
+              }}
+            >
+              <X className="size-3.5" />
+            </IconButton>
           </Presence>
         ))}
       </div>
@@ -697,7 +733,15 @@ export function MarkdownBody({ children }: { children: string }): React.JSX.Elem
  * Standard content page: a light surface that scrolls, with a centred column.
  * Full-bleed pages (Studio, Library, Settings) lay themselves out instead.
  */
-export function PageScroll({ children, className, width = 'max-w-[1080px]' }: { children: ReactNode; className?: string; width?: string }): React.JSX.Element {
+export function PageScroll({
+  children,
+  className,
+  width = 'max-w-[1080px]',
+}: {
+  children: ReactNode
+  className?: string
+  width?: string
+}): React.JSX.Element {
   return (
     <div className="h-full overflow-y-auto bg-surface">
       <div className={cn('mx-auto flex w-full flex-col gap-8 px-10 pb-16 pt-8', width, className)}>{children}</div>

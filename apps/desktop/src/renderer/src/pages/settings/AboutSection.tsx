@@ -34,11 +34,14 @@ export function AboutSection(): React.JSX.Element {
           </Row>
           <Row title="开源" description="MossStudio 以 MIT 许可证开源，欢迎在 GitHub 上提问题和参与开发。">
             <Button onClick={() => void call(Ipc.openExternal, { url: REPOSITORY })}>
-              GitHub<ExternalLink className="size-4" />
+              GitHub
+              <ExternalLink className="size-4" />
             </Button>
           </Row>
           <Row title="QQ 交流群" description={QQ_GROUP}>
-            <IconButton label="复制群号" onClick={() => void copyText(QQ_GROUP, '群号已复制')}><Copy className="size-4" /></IconButton>
+            <IconButton label="复制群号" onClick={() => void copyText(QQ_GROUP, '群号已复制')}>
+              <Copy className="size-4" />
+            </IconButton>
           </Row>
           <UninstallRow />
         </Group>
@@ -47,15 +50,20 @@ export function AboutSection(): React.JSX.Element {
       <Section title="遇到问题">
         <Group>
           <Row title="复制诊断信息" description="包含版本、显卡、引擎状态和最近的问题，不包含令牌、密码或主机地址。提问时一起发出来。">
-            <Button onClick={() => void copyText(diagnosticsReport({ info, env, gpu: inventory, engine, settings, diagnostics }), '诊断信息已复制')}>
-              <Copy className="size-4" />复制
+            <Button
+              onClick={() =>
+                void copyText(diagnosticsReport({ info, env, gpu: inventory, engine, settings, diagnostics }), '诊断信息已复制')
+              }
+            >
+              <Copy className="size-4" />
+              复制
             </Button>
           </Row>
         </Group>
       </Section>
 
       <Group>
-        <Advanced summary={env ? problems ? `环境检查：${problems} 项需要注意` : '环境检查：全部正常' : '环境检查'}>
+        <Advanced summary={env ? (problems ? `环境检查：${problems} 项需要注意` : '环境检查：全部正常') : '环境检查'}>
           <div className="flex flex-col gap-0.5">
             {checks.map((check) => (
               <Row

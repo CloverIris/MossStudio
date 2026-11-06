@@ -39,7 +39,8 @@ function inventory(devices: GpuInventoryDevice[]): GpuInventorySnapshot {
 }
 function hello(patch: Record<string, unknown> = {}, device: Record<string, unknown> = {}): EngineHello {
   return decodeEngineHello({
-    protocol_version: 2, version: '2.1.1',
+    protocol_version: 2,
+    version: '2.1.1',
     probe: { devices: [{ index: 0, name: 'RTX 4080', supported: true, compute_capability: '8.9', ...device }] },
     ...patch,
   })
@@ -91,13 +92,20 @@ describe('localEngineVersions', () => {
     mkdirSync(join(engineRoot(), '.staging', 'x', 'bin'), { recursive: true })
     writeFileSync(join(engineRoot(), '.staging', 'x', 'bin', SERVER), '')
     const ext = external(join(dataRoot(), 'my-engine'))
-    writeFileSync(join(engineRoot(), 'external.json'), JSON.stringify([
-      { path: ext, name: 'mine' }, { path: join(dataRoot(), 'gone', SERVER) }, { nope: true }, 'junk',
-    ]))
+    writeFileSync(
+      join(engineRoot(), 'external.json'),
+      JSON.stringify([{ path: ext, name: 'mine' }, { path: join(dataRoot(), 'gone', SERVER) }, { nope: true }, 'junk']),
+    )
     resolveServerPath.mockReturnValue(current)
 
     expect(engines.localEngineVersions()).toEqual([
-      { id: 'stable-v2.1.1-cu13', name: 'stable-v2.1.1-cu13', path: join(engineRoot(), 'stable-v2.1.1-cu13', SERVER), current: false, source: 'managed' },
+      {
+        id: 'stable-v2.1.1-cu13',
+        name: 'stable-v2.1.1-cu13',
+        path: join(engineRoot(), 'stable-v2.1.1-cu13', SERVER),
+        current: false,
+        source: 'managed',
+      },
       { id: 'stable-v2.1.0-cu13', name: 'stable-v2.1.0-cu13', path: current, current: true, source: 'managed' },
       { id: `external:${ext}`, name: 'mine · 外部', path: ext, current: false, source: 'external' },
     ])
@@ -123,7 +131,10 @@ describe('selectLocalEngineDirectory', () => {
     await engines.selectLocalEngineDirectory(dir)
     await engines.selectLocalEngineDirectory(join(dataRoot(), 'other'))
     const registry = JSON.parse(readFileSync(join(engineRoot(), 'external.json'), 'utf8'))
-    expect(registry).toEqual([{ path: other, name: 'other' }, { path, name: 'picked' }])
+    expect(registry).toEqual([
+      { path: other, name: 'other' },
+      { path, name: 'picked' },
+    ])
   })
 
   it('rejects a missing directory, a file, a folder without the server and an old protocol', async () => {
@@ -183,11 +194,18 @@ describe('removeLocalEngineVersion', () => {
   })
 
   it('stops running Vulkan / HIP jobs before deleting a CLI package', async () => {
-    const path = join(engineRoot(), 'stable-v2.1.0-vulkan', 'bin', process.platform === 'win32' ? 'moss-infer-vulkan.exe' : 'moss-infer-vulkan')
+    const path = join(
+      engineRoot(),
+      'stable-v2.1.0-vulkan',
+      'bin',
+      process.platform === 'win32' ? 'moss-infer-vulkan.exe' : 'moss-infer-vulkan',
+    )
     mkdirSync(join(path, '..'), { recursive: true })
     writeFileSync(path, '#!')
     let existedAtShutdown = false
-    shutdownCliEngines.mockImplementation(async () => { existedAtShutdown = existsSync(path) })
+    shutdownCliEngines.mockImplementation(async () => {
+      existedAtShutdown = existsSync(path)
+    })
     // A HIP install next to it must not be touched.
     const hip = join(engineRoot(), 'stable-v2.1.0-hip', 'bin', 'moss-infer-hip')
     mkdirSync(join(hip, '..'), { recursive: true })
@@ -242,22 +260,47 @@ describe('probeLocalEngineGpuCompatibility', () => {
   it('judges each GPU against the moss-server of its own package (Linux: 4090 on cu13, Titan V on cu12-sm70)', async () => {
     // The SM70 build is Linux-only: model a Linux host whatever this test runs on.
     setPlatform('linux')
-    const rtx: GpuInventoryDevice = { index: 0, uuid: 'GPU-4090', name: 'NVIDIA GeForce RTX 4090', computeCapability: { major: 8, minor: 9 }, driverVersion: '590.48.01' }
-    const titan: GpuInventoryDevice = { index: 1, uuid: 'GPU-titan', name: 'NVIDIA TITAN V', computeCapability: { major: 7, minor: 0 }, driverVersion: '590.48.01' }
+    const rtx: GpuInventoryDevice = {
+      index: 0,
+      uuid: 'GPU-4090',
+      name: 'NVIDIA GeForce RTX 4090',
+      computeCapability: { major: 8, minor: 9 },
+      driverVersion: '590.48.01',
+    }
+    const titan: GpuInventoryDevice = {
+      index: 1,
+      uuid: 'GPU-titan',
+      name: 'NVIDIA TITAN V',
+      computeCapability: { major: 7, minor: 0 },
+      driverVersion: '590.48.01',
+    }
     cachedInventory.value = inventory([rtx, titan])
     getGpuInventory.mockResolvedValue(inventory([rtx, titan]))
     const cu13 = managedFor('stable-v2.2.0-cu13', 'moss-server')
     const sm70 = managedFor('stable-v2.2.0-cu12-sm70', 'moss-server')
     const devices = (titanSupported: boolean) => [
       { index: 0, name: 'NVIDIA GeForce RTX 4090', supported: true, compute_capability: '8.9' },
-      { index: 1, name: 'NVIDIA TITAN V', supported: titanSupported, compute_capability: '7.0', ...(titanSupported ? {} : { unsupported_reason: 'compute capability 7.0 is below the required 8.0' }) },
+      {
+        index: 1,
+        name: 'NVIDIA TITAN V',
+        supported: titanSupported,
+        compute_capability: '7.0',
+        ...(titanSupported ? {} : { unsupported_reason: 'compute capability 7.0 is below the required 8.0' }),
+      },
     ]
-    probeEngine.mockImplementation(async (path: string) => decodeEngineHello({
-      protocol_version: 2, version: path === sm70 ? '2.2.0-sm70' : '2.2.0', probe: { devices: devices(path === sm70) },
-    }))
+    probeEngine.mockImplementation(async (path: string) =>
+      decodeEngineHello({
+        protocol_version: 2,
+        version: path === sm70 ? '2.2.0-sm70' : '2.2.0',
+        probe: { devices: devices(path === sm70) },
+      }),
+    )
     const probe = await engines.probeLocalEngineGpuCompatibility()
     expect(probeEngine.mock.calls.map(([path]) => path).sort()).toEqual([cu13, sm70].sort())
-    expect(probe.snapshot.devices.map((device) => [device.uuid, device.status])).toEqual([['GPU-4090', 'supported'], ['GPU-titan', 'supported']])
+    expect(probe.snapshot.devices.map((device) => [device.uuid, device.status])).toEqual([
+      ['GPU-4090', 'supported'],
+      ['GPU-titan', 'supported'],
+    ])
     expect(probe.helloFor('GPU-titan')?.version).toBe('2.2.0-sm70')
     expect(probe.helloFor('GPU-4090')?.version).toBe('2.2.0')
     // Each binary is cached on its own.
@@ -267,15 +310,41 @@ describe('probeLocalEngineGpuCompatibility', () => {
 
   it('on Windows the Titan V has no CUDA build (no SM70 there): only the cu13 moss-server is probed', async () => {
     setPlatform('win32')
-    const rtx: GpuInventoryDevice = { index: 0, uuid: 'GPU-4090', name: 'NVIDIA GeForce RTX 4090', computeCapability: { major: 8, minor: 9 }, driverVersion: '581.42' }
-    const titan: GpuInventoryDevice = { index: 1, uuid: 'GPU-titan', name: 'NVIDIA TITAN V', computeCapability: { major: 7, minor: 0 }, driverVersion: '581.42' }
+    const rtx: GpuInventoryDevice = {
+      index: 0,
+      uuid: 'GPU-4090',
+      name: 'NVIDIA GeForce RTX 4090',
+      computeCapability: { major: 8, minor: 9 },
+      driverVersion: '581.42',
+    }
+    const titan: GpuInventoryDevice = {
+      index: 1,
+      uuid: 'GPU-titan',
+      name: 'NVIDIA TITAN V',
+      computeCapability: { major: 7, minor: 0 },
+      driverVersion: '581.42',
+    }
     cachedInventory.value = inventory([rtx, titan])
     getGpuInventory.mockResolvedValue(inventory([rtx, titan]))
     const cu13 = managedFor('stable-v2.2.0-cu13', 'moss-server.exe')
-    probeEngine.mockResolvedValue(decodeEngineHello({ protocol_version: 2, version: '2.2.0', probe: { devices: [
-      { index: 0, name: 'NVIDIA GeForce RTX 4090', supported: true, compute_capability: '8.9' },
-      { index: 1, name: 'NVIDIA TITAN V', supported: false, compute_capability: '7.0', unsupported_reason: 'compute capability 7.0 is below the required 8.0' },
-    ] } }))
+    probeEngine.mockResolvedValue(
+      decodeEngineHello({
+        protocol_version: 2,
+        version: '2.2.0',
+        probe: {
+          devices: [
+            { index: 0, name: 'NVIDIA GeForce RTX 4090', supported: true, compute_capability: '8.9' },
+            {
+              index: 1,
+              name: 'NVIDIA TITAN V',
+              supported: false,
+              compute_capability: '7.0',
+              unsupported_reason: 'compute capability 7.0 is below the required 8.0',
+            },
+          ],
+        },
+      }),
+    )
     const probe = await engines.probeLocalEngineGpuCompatibility()
     expect(probeEngine.mock.calls.map(([path]) => path)).toEqual([cu13])
     expect(probe.helloFor('GPU-4090')?.version).toBe('2.2.0')
@@ -292,7 +361,10 @@ describe('probeLocalEngineGpuCompatibility', () => {
 
 describe('remoteEngineInfo', () => {
   it('requires an existing SSH host', async () => {
-    hosts.list = [{ id: 'l', name: 'L', kind: 'local', trainerRoot: '', status: 'ok' }, { id: 's', name: 'S', kind: 'ssh', trainerRoot: '', status: 'ok' }]
+    hosts.list = [
+      { id: 'l', name: 'L', kind: 'local', trainerRoot: '', status: 'ok' },
+      { id: 's', name: 'S', kind: 'ssh', trainerRoot: '', status: 'ok' },
+    ]
     await expect(engines.remoteEngineInfo('nope')).rejects.toThrow('主机不存在')
     await expect(engines.remoteEngineInfo('l')).rejects.toThrow('不是 SSH 主机')
     await engines.remoteEngineInfo('s', true)

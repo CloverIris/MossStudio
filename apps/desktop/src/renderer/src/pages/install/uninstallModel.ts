@@ -5,16 +5,12 @@ export function dataChoiceText(input: { dataBytes: number | null; dataRoot: stri
   const size = input.dataBytes !== null && input.dataBytes > 0 ? `共 ${bytes(input.dataBytes)}` : null
   const where = input.dataRoot ? `位于 ${input.dataRoot}` : null
   const facts = [size, where].filter(Boolean).join('，')
-  return facts
-    ? `${facts}。不勾选的话会保留，重新安装后可以继续使用。`
-    : '不勾选的话会保留，重新安装后可以继续使用。'
+  return facts ? `${facts}。不勾选的话会保留，重新安装后可以继续使用。` : '不勾选的话会保留，重新安装后可以继续使用。'
 }
 
 export function uninstallSummary(removeData: boolean, method: 'plan' | 'trash'): string {
   const program = method === 'trash' ? 'MossStudio 会被移到废纸篓' : 'MossStudio 的程序文件和快捷方式会被删除'
-  return removeData
-    ? `${program}，你的作品、模型和设置也会一起删除，无法恢复。`
-    : `${program}。你的作品、模型和设置会保留。`
+  return removeData ? `${program}，你的作品、模型和设置也会一起删除，无法恢复。` : `${program}。你的作品、模型和设置会保留。`
 }
 
 export type UninstallEntry =

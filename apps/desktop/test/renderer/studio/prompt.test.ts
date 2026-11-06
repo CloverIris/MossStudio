@@ -25,8 +25,17 @@ describe('studio/prompt canvasDescription', () => {
 
 describe('studio/prompt compileCanvasPrompt', () => {
   it('sends the description as-is when there are no visible regions', () => {
-    expect(compileCanvasPrompt(canvas({ prompt: '  spring street  ' }))).toMatchObject({ ok: true, prompt: 'spring street', source: 'text', regions: 0 })
-    expect(compileCanvasPrompt(canvas({ prompt: 'x', layers: [layer({ visible: false })] }))).toMatchObject({ ok: true, prompt: 'x', source: 'text' })
+    expect(compileCanvasPrompt(canvas({ prompt: '  spring street  ' }))).toMatchObject({
+      ok: true,
+      prompt: 'spring street',
+      source: 'text',
+      regions: 0,
+    })
+    expect(compileCanvasPrompt(canvas({ prompt: 'x', layers: [layer({ visible: false })] }))).toMatchObject({
+      ok: true,
+      prompt: 'x',
+      source: 'text',
+    })
   })
 
   it('refuses an empty canvas', () => {
@@ -34,7 +43,9 @@ describe('studio/prompt compileCanvasPrompt', () => {
   })
 
   it('always compiles the layout when regions are visible, never a stale hand-written prompt', () => {
-    const result = compileCanvasPrompt(withDescription(canvas({ layers: [layer(), layer({ id: 'hidden', caption: '', visible: false })] }), 'a poster'))
+    const result = compileCanvasPrompt(
+      withDescription(canvas({ layers: [layer(), layer({ id: 'hidden', caption: '', visible: false })] }), 'a poster'),
+    )
     expect(result.ok).toBe(true)
     expect(result.source).toBe('layout')
     expect(result.regions).toBe(1)
@@ -44,7 +55,9 @@ describe('studio/prompt compileCanvasPrompt', () => {
   })
 
   it('reports what is missing in plain words', () => {
-    const result = compileCanvasPrompt(canvas({ layers: [layer({ caption: '' }), layer({ id: 't', kind: 'text', caption: 'title', text: '' })] }))
+    const result = compileCanvasPrompt(
+      canvas({ layers: [layer({ caption: '' }), layer({ id: 't', kind: 'text', caption: 'title', text: '' })] }),
+    )
     expect(result.ok).toBe(false)
     expect(result.errors).toEqual(['先写一句整体描述', '区域 1 还没有描述', '文字区域 2 还没有填写要显示的文字'])
   })
