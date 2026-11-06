@@ -38,6 +38,8 @@ main(async () => {
       'no-feeds': { type: 'boolean', default: false },
       feeds: { type: 'string' },
       'feeds-optional': { type: 'boolean', default: false },
+      // Only the update files (full package, file list, deltas): see make-artifacts --update-only.
+      'update-only': { type: 'boolean', default: false },
     },
   })
   const version = values.version
@@ -58,17 +60,21 @@ main(async () => {
     checkFileList(list, { version, platform })
     await checkFullZip(join(dir, names.full), list)
     console.log(`ok  ${names.full} (${list.entries.length} entries)`)
-    if (!present.has(names.setup)) throw new Error(`${names.setup} missing`)
-    if (platform.startsWith('darwin')) {
-      if (process.platform === 'darwin') run('hdiutil', ['verify', join(dir, names.setup)], { stdio: 'ignore' })
-      console.log(`ok  ${names.setup}${process.platform === 'darwin' ? '' : ' (present; hdiutil verify needs macOS)'}`)
+    if (values['update-only']) {
+      for (const name of [names.setup, names.portable]) if (present.has(name)) throw new Error(`${name} present in an --update-only check`)
     } else {
-      checkSetupFile(join(dir, names.setup), list)
-      console.log(`ok  ${names.setup}`)
+      if (!present.has(names.setup)) throw new Error(`${names.setup} missing`)
+      if (platform.startsWith('darwin')) {
+        if (process.platform === 'darwin') run('hdiutil', ['verify', join(dir, names.setup)], { stdio: 'ignore' })
+        console.log(`ok  ${names.setup}${process.platform === 'darwin' ? '' : ' (present; hdiutil verify needs macOS)'}`)
+      } else {
+        checkSetupFile(join(dir, names.setup), list)
+        console.log(`ok  ${names.setup}`)
+      }
+      if (!present.has(names.portable)) throw new Error(`${names.portable} missing`)
+      await checkPortable(join(dir, names.portable), list)
+      console.log(`ok  ${names.portable}`)
     }
-    if (!present.has(names.portable)) throw new Error(`${names.portable} missing`)
-    await checkPortable(join(dir, names.portable), list)
-    console.log(`ok  ${names.portable}`)
     for (const file of [...present].sort()) {
       const delta = parseDeltaName(file)
       if (!delta || delta.to !== version || delta.platform !== platform) continue

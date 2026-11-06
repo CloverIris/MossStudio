@@ -2,7 +2,10 @@
 // Turn a packaged app (package-app.mjs) into the downloads of one version and platform.
 //
 //   node tools/release/make-artifacts.mjs --platform linux-x64 --version 1.2.3
-//        [--app dist/release/app/<v>/<platform>] [--out dist/release/artifacts]
+//        [--app dist/release/app/<v>/<platform>] [--out dist/release/artifacts] [--update-only]
+//
+// --update-only writes just the full package and its file list: what an update needs, for
+// versions that are only ever updated to (the integration test's X+1 and X+2), never installed.
 //
 // Windows  MossStudio-Setup-<v>-x64.exe            launcher stub + payload (launcher `pack`)
 //          MossStudio-<v>-win-x64-portable.zip
@@ -55,10 +58,11 @@ function pack(args) {
   return run('go', ['-C', join(REPO_ROOT, 'apps', 'launcher'), 'run', '.', 'pack', ...args])
 }
 
-async function winLinuxArtifacts({ platform, os, version, appDir, out, names, mtime, staging }) {
+async function winLinuxArtifacts({ platform, os, version, appDir, out, names, mtime, staging, updateOnly }) {
   const appTree = walkTree(appDir)
   zipTree(appTree, join(out, names.full), { platform, mtime })
   writeFileList(appTree, join(out, names.files), { version, platform })
+  if (updateOnly) return
 
   const stub = launcherBinary(platform)
   const payloadDir = join(staging, 'payload')
@@ -84,13 +88,14 @@ async function winLinuxArtifacts({ platform, os, version, appDir, out, names, mt
   })
 }
 
-async function macArtifacts({ platform, version, appDir, out, names, mtime, staging }) {
+async function macArtifacts({ platform, version, appDir, out, names, mtime, staging, updateOnly }) {
   const bundle = join(appDir, 'MossStudio.app')
   if (!existsSync(bundle)) throw new Error(`${bundle} is missing`)
   // Bundle-relative (Contents/...): the updater extracts into .MossStudio-<v>.app itself.
   const appTree = walkTree(bundle)
   zipTree(appTree, join(out, names.full), { platform, mtime })
   writeFileList(appTree, join(out, names.files), { version, platform })
+  if (updateOnly) return
 
   const dmgRoot = join(staging, 'dmg')
   mkdirSync(dmgRoot, { recursive: true })
@@ -126,9 +131,11 @@ main(async () => {
       version: { type: 'string' },
       app: { type: 'string' },
       out: { type: 'string', default: join(DIST_DIR, 'artifacts') },
+      'update-only': { type: 'boolean', default: false },
     },
   })
   const { platform } = values
+  const updateOnly = values['update-only']
   const version = values.version
   if (!isVersion(version)) throw new Error('--version <semver> is required')
   const { os } = splitPlatform(platform)
@@ -142,10 +149,10 @@ main(async () => {
   mkdirSync(staging, { recursive: true })
   const mtime = new Date()
   try {
-    if (os === 'darwin') await macArtifacts({ platform, version, appDir, out, names, mtime, staging })
-    else await winLinuxArtifacts({ platform, os, version, appDir, out, names, mtime, staging })
+    if (os === 'darwin') await macArtifacts({ platform, version, appDir, out, names, mtime, staging, updateOnly })
+    else await winLinuxArtifacts({ platform, os, version, appDir, out, names, mtime, staging, updateOnly })
   } finally {
     rmSync(staging, { recursive: true, force: true })
   }
-  for (const file of Object.values(names)) console.log(join(out, file))
+  for (const file of updateOnly ? [names.full, names.files] : Object.values(names)) console.log(join(out, file))
 })
