@@ -14,6 +14,7 @@ import {
   settingsFixture,
   updateAvailableFixture,
   updateDownloadingFixture,
+  updateFailedFixture,
   updateReadyFixture,
   updaterStateFixture,
 } from '../mocks/backend'
@@ -286,6 +287,21 @@ describe('Events.updateState', () => {
     expect(titles.filter((title) => title === '必须更新')).toHaveLength(1)
     expect(titles.filter((title) => title === '更新没有完成')).toHaveLength(1)
     expect(store().notifications.find((item) => item.title === '必须更新')!.message).toContain('1.1.0')
+  })
+
+  it('says once, plainly, that a new version did not start and opens the popover', async () => {
+    const { backend, store } = await ready()
+    backend.emit(Events.updateState, updateFailedFixture('1.1.0'))
+    backend.emit(Events.updateState, updateFailedFixture('1.1.0'))
+    expect(store().notifications).toMatchObject([{
+      tone: 'warning', title: '新版本没能启动', message: 'MossStudio 1.1.0 没能正常启动，已经自动回到 1.0.3。你的作品、模型和设置都没有受影响。',
+    }])
+    expect(store().updatePopoverOpen).toBe(true)
+    store().setUpdatePopoverOpen(false)
+    // Without the notice (told before, or dismissed) the version stays quiet.
+    backend.emit(Events.updateState, updateFailedFixture('1.2.0', { failedNotice: false }))
+    expect(store().notifications).toHaveLength(1)
+    expect(store().updatePopoverOpen).toBe(false)
   })
 
   it('does nothing when there is nothing new, and nothing at all for a copy that cannot update', async () => {

@@ -70,6 +70,7 @@ export function settingsFixture(patch: Partial<Settings> = {}): Settings {
     updateChannel: 'stable',
     autoDownloadUpdates: true,
     dismissedAnnouncements: [],
+    noticedFailedUpdates: [],
     skippedUpdateVersion: null,
     sidebarCollapsed: false,
     onboardingState: 'pending',
@@ -417,7 +418,7 @@ export function updaterStateFixture(patch: Partial<UpdaterState> = {}): UpdaterS
     supported: true, unsupportedReason: null, current: '1.0.3', channel: 'stable', autoDownload: true,
     phase: 'idle', checkedAt: FIXTURE_NOW, available: null, progress: null, pending: null,
     previous: null, canRollback: false, minimumVersion: null, required: false, busy: [],
-    restartWhenIdle: false, error: null, announcements: [], skippedVersion: null, ...patch,
+    restartWhenIdle: false, error: null, announcements: [], skippedVersion: null, failedVersion: null, failedNotice: false, ...patch,
   }
 }
 
@@ -449,6 +450,11 @@ export function updateDownloadingFixture(version = '1.1.0', percent = 40, patch:
 /** Downloaded and materialized: restart to switch to `version`. */
 export function updateReadyFixture(version = '1.1.0', patch: Partial<UpdaterState> = {}): UpdaterState {
   return updaterStateFixture({ phase: 'ready', available: updateAvailableFixture(version).available, pending: version, ...patch })
+}
+
+/** The first start after `version` failed its start and was rolled back to 1.0.3. */
+export function updateFailedFixture(version = '1.1.0', patch: Partial<UpdaterState> = {}): UpdaterState {
+  return updaterStateFixture({ failedVersion: version, failedNotice: true, ...patch })
 }
 
 // ---------------------------------------------------------------------------

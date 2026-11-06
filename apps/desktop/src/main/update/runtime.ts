@@ -31,7 +31,10 @@ export interface UpdateContext {
   recordPath: string | null
 }
 
-export type UpdateSettings = Pick<Settings, 'networkMode' | 'gitMirror' | 'updateChannel' | 'autoDownloadUpdates' | 'dismissedAnnouncements' | 'skippedUpdateVersion'>
+export type UpdateSettings = Pick<
+  Settings,
+  'networkMode' | 'gitMirror' | 'updateChannel' | 'autoDownloadUpdates' | 'dismissedAnnouncements' | 'skippedUpdateVersion' | 'noticedFailedUpdates'
+>
 
 export interface UpdateHost {
   version: string
@@ -139,6 +142,8 @@ export class UpdateRuntime {
       error: null,
       announcements: [],
       skippedVersion: settings.skippedUpdateVersion ?? null,
+      failedVersion: null,
+      failedNotice: false,
     }
     this.refreshRecord()
   }
@@ -165,7 +170,7 @@ export class UpdateRuntime {
     this.host.emit(this.state)
   }
 
-  /** pending/previous/canRollback from install.json. */
+  /** pending/previous/canRollback/failedVersion from install.json. */
   private refreshRecord(): void {
     const record = this.supported ? this.host.readRecord() : null
     const previous = record?.previous ?? null
@@ -175,19 +180,25 @@ export class UpdateRuntime {
     const canRollback = Boolean(
       this.supported && previous && !record?.failed.includes(previous) && existsSync(this.layout.previousBundle(previous)),
     )
-    this.state = { ...this.state, pending, previous, canRollback }
+    // The newest version that failed its start and is newer than this one (older entries no longer matter).
+    const failedVersion = (record?.failed ?? [])
+      .filter((version) => compareSemver(version, this.host.version) > 0)
+      .sort((a, b) => compareSemver(b, a))[0] ?? null
+    const failedNotice = this.state.failedNotice && failedVersion === this.state.failedVersion
+    this.state = { ...this.state, pending, previous, canRollback, failedVersion, failedNotice }
     if (pending && this.state.phase === 'idle') this.state = { ...this.state, phase: 'ready' }
   }
 
   /**
-   * Startup: macOS reconcile after a swap or a helper rollback, leftovers cleanup, and the last
-   * verified feed from the cache (announcements and the gate work offline).
+   * Startup: macOS reconcile after a swap or a helper rollback, leftovers cleanup, the rollback
+   * notice, and the last verified feed from the cache (announcements and the gate work offline).
    */
   async init(): Promise<void> {
     if (this.supported) {
       if (this.host.context.os === 'darwin') this.reconcileMac()
       await this.cleanupLeftovers().catch((error) => this.host.log?.(`[update] cleanup: ${message(error)}`))
       this.refreshRecord()
+      this.noticeFailed()
     }
     const feeds: UpdateFeed[] = []
     for (const channel of channelsToRead(this.state.channel)) {
@@ -239,6 +250,19 @@ export class UpdateRuntime {
       }
     })
     if (failedVersion) rmSync(marker, { force: true })
+  }
+
+  /**
+   * A version that failed its first start was rolled back (by the launcher or the macOS helper):
+   * tell the user once. The notice stays up for this run; the version is remembered as told.
+   */
+  private noticeFailed(): void {
+    const version = this.state.failedVersion
+    const noticed = this.host.settings().noticedFailedUpdates ?? []
+    if (!version || noticed.includes(version)) return
+    this.host.saveSettings({ noticedFailedUpdates: [...noticed, version].slice(-50) })
+    this.host.log?.(`[update] ${version} did not start and was rolled back to ${this.host.version}`)
+    this.state = { ...this.state, failedNotice: true }
   }
 
   private async cleanupLeftovers(): Promise<void> {
@@ -580,6 +604,34 @@ export class UpdateRuntime {
     this.host.saveSettings({ skippedUpdateVersion: null })
     this.set({ skippedVersion: null })
     return this.check()
+  }
+
+  /**
+   * 再试一次: take back a version that was rolled back after a failed start. It leaves
+   * install.json's `failed` (and the skip, if that hid it too) and is downloaded right away.
+   */
+  async retryFailed(): Promise<UpdaterState> {
+    const version = this.state.failedVersion
+    if (!this.supported || !version) return this.state
+    this.host.updateRecord((record) => ({
+      ...record,
+      failed: record.failed.filter((item) => item !== version),
+      updatedAt: new Date(this.now()).toISOString(),
+    }))
+    const skipped = this.host.settings().skippedUpdateVersion
+    if (skipped && compareSemver(version, skipped) <= 0) this.host.saveSettings({ skippedUpdateVersion: null })
+    this.host.log?.(`[update] retrying ${version}`)
+    this.refreshRecord()
+    this.set({ failedNotice: false, skippedVersion: this.host.settings().skippedUpdateVersion ?? null })
+    await this.check()
+    if (this.state.phase === 'available') void this.download()
+    return this.state
+  }
+
+  /** 知道了: hide the rollback notice for the rest of this run. */
+  dismissFailed(): UpdaterState {
+    this.set({ failedNotice: false })
+    return this.state
   }
 
   /**

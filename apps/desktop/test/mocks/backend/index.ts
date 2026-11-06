@@ -48,6 +48,7 @@ import {
   downloadFixture,
   jobLifecycle,
   submittedJobFixture,
+  updateAvailableFixture,
   type JobLifecycleOptions,
 } from './fixtures'
 import { scenario, type MockBackendState, type ScenarioName } from './scenarios'
@@ -238,6 +239,17 @@ function defaultHandlers(): Map<string, Handler> {
     context.state.settings = { ...context.state.settings, skippedUpdateVersion: null }
     return pushUpdate(context, { skippedVersion: null })
   })
+  // 再试一次: like main, the version leaves `failed` and its download starts.
+  h.set(Ipc.updateRetryFailed, (_, context) => {
+    const version = context.state.update.failedVersion
+    if (!version) return context.state.update
+    const available = updateAvailableFixture(version).available!
+    return pushUpdate(context, {
+      failedVersion: null, failedNotice: false, available, phase: 'downloading', error: null,
+      progress: { bytes: 0, totalBytes: available.downloadSize, speedBps: 0, percent: 0 },
+    })
+  })
+  h.set(Ipc.updateDismissFailed, (_, context) => pushUpdate(context, { failedNotice: false }))
   h.set(Ipc.announcementsDismiss, (payload, { state }) => {
     const { id } = p<{ id: string }>(payload)
     state.settings = { ...state.settings, dismissedAnnouncements: [...state.settings.dismissedAnnouncements, id] }

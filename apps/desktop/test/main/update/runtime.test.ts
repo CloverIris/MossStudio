@@ -98,7 +98,7 @@ function harness(options: { os?: UpdateContext['os']; record?: Partial<InstallRe
     schema: 1, platform, root, dataRoot: join(root, 'data'), portable: false, channel: 'stable', current: version, failed: [],
     confirmed: true, installedAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z', ...(mac ? { appPath } : {}), ...options.record,
   })
-  const settings: UpdateSettings = { networkMode: 'auto', gitMirror: null, updateChannel: 'stable', autoDownloadUpdates: false, dismissedAnnouncements: [], skippedUpdateVersion: null, ...options.settings }
+  const settings: UpdateSettings = { networkMode: 'auto', gitMirror: null, updateChannel: 'stable', autoDownloadUpdates: false, dismissedAnnouncements: [], skippedUpdateVersion: null, noticedFailedUpdates: [], ...options.settings }
   const states: UpdaterState[] = []
   const busy = { value: idle }
   const spawn = vi.fn(fakeSpawn(options.spawnError ? { error: options.spawnError } : {}).spawn)
@@ -199,6 +199,49 @@ describe('check → download → materialize → pending', () => {
     publish('1.1.0')
     const h = harness({ record: { failed: ['1.1.0'] } })
     expect((await h.runtime.check())).toMatchObject({ phase: 'idle', available: null })
+  })
+
+  it('tells once that a version was rolled back after a failed start, and 再试一次 takes it back', async () => {
+    publish('1.1.0')
+    // The launcher marked 1.1.0 failed and went back to 1.0.3 (an older failed entry no longer matters).
+    const h = harness({ record: { failed: ['1.0.1', '1.1.0'], confirmed: false }, settings: { autoDownloadUpdates: true } })
+    await h.runtime.init()
+    expect(h.runtime.getState()).toMatchObject({ failedVersion: '1.1.0', failedNotice: true })
+    expect(h.settings.noticedFailedUpdates).toEqual(['1.1.0'])
+    // Automatic checks still never offer it.
+    expect(await h.runtime.check()).toMatchObject({ phase: 'idle', available: null, failedVersion: '1.1.0' })
+    expect(hitsOf('/v1.1.0/full.zip')).toBe(0)
+    expect(h.runtime.dismissFailed()).toMatchObject({ failedNotice: false, failedVersion: '1.1.0' })
+
+    // The next start remembers it was said: no notice, but the version is still there to retry.
+    const next = new UpdateRuntime(h.host)
+    await next.init()
+    expect(next.getState()).toMatchObject({ failedVersion: '1.1.0', failedNotice: false })
+    expect(h.settings.noticedFailedUpdates).toEqual(['1.1.0'])
+
+    // 再试一次: out of `failed`, downloaded and pending, even with 自动下载更新 off.
+    h.settings.autoDownloadUpdates = false
+    const retried = await next.retryFailed()
+    expect(retried).toMatchObject({ failedVersion: null, failedNotice: false, available: { version: '1.1.0' } })
+    await next.download()
+    expect(next.getState()).toMatchObject({ phase: 'ready', pending: '1.1.0' })
+    expect(h.record()).toMatchObject({ failed: ['1.0.1'], pending: '1.1.0' })
+    expect(hitsOf('/v1.1.0/full.zip')).toBe(1)
+  })
+
+  it('再试一次 also lifts a skip that hid the failed version, and does nothing without one', async () => {
+    publish('1.1.0')
+    const h = harness({ record: { failed: ['1.1.0'] }, settings: { skippedUpdateVersion: '1.1.0', noticedFailedUpdates: ['1.1.0'] } })
+    await h.runtime.init()
+    expect(h.runtime.getState()).toMatchObject({ failedVersion: '1.1.0', failedNotice: false })
+    expect(await h.runtime.retryFailed()).toMatchObject({ skippedVersion: null, available: { version: '1.1.0' } })
+    expect(h.settings.skippedUpdateVersion).toBeNull()
+    await h.runtime.download()
+
+    const none = harness()
+    const before = none.record()
+    expect(await none.runtime.retryFailed()).toMatchObject({ failedVersion: null, phase: 'idle' })
+    expect(none.record()).toEqual(before)
   })
 
   it('refuses a feed whose signature does not verify and keeps nothing from it', async () => {
@@ -437,6 +480,16 @@ describe('restart handoff (macOS)', () => {
     expect(h.record()).toMatchObject({ current: '1.0.3', failed: ['1.1.0'], confirmed: false })
     expect(existsSync(failedMarkerPath(h.recordPath))).toBe(false)
     expect(existsSync(join(h.root, '.MossStudio-1.1.0.app'))).toBe(false)
+    expect(h.runtime.getState()).toMatchObject({ failedVersion: null })
+  })
+
+  it('tells about a version the macOS helper rolled back, once', async () => {
+    const h = harness({ os: 'darwin', record: { current: '1.1.0', previous: '1.0.3', confirmed: false } })
+    writeFileSync(failedMarkerPath(h.recordPath), '1.1.0\n')
+    const runtime = new UpdateRuntime(h.host)
+    await runtime.init()
+    expect(runtime.getState()).toMatchObject({ current: '1.0.3', failedVersion: '1.1.0', failedNotice: true })
+    expect(h.settings.noticedFailedUpdates).toEqual(['1.1.0'])
   })
 })
 

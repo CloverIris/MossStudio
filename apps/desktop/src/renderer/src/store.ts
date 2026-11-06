@@ -21,7 +21,7 @@ import type {
   Settings,
 } from '@shared/types'
 import type { UpdateChannel } from '@shared/install'
-import { requiredUpdateMessage, type UpdateBusyReason, type UpdateRestartResult, type UpdaterState } from '@shared/update'
+import { failedUpdateText, requiredUpdateMessage, type UpdateBusyReason, type UpdateRestartResult, type UpdaterState } from '@shared/update'
 import { isStudioReuseRequest, type StudioReuseRequest } from './lib/studioReuse'
 import { call, onEvent } from './lib/api'
 
@@ -102,6 +102,10 @@ interface AppStore {
   setAutoDownloadUpdates: (enabled: boolean) => Promise<void>
   /** Offer the version skipped by a rollback again (安装 <v>). */
   unskipUpdate: () => Promise<void>
+  /** 再试一次: take back a version that was rolled back after a failed start, and download it. */
+  retryFailedUpdate: () => Promise<void>
+  /** 知道了: hide the rollback notice. */
+  dismissFailedUpdate: () => Promise<void>
   saveSettings: (patch: Partial<Settings> & { hfToken?: string | null }) => Promise<void>
   toggleSidebar: () => Promise<void>
   toggleNotifications: () => void
@@ -216,6 +220,11 @@ export const useApp = create<AppStore>((set, get) => {
     }
     if (state.required && state.minimumVersion && once(`required:${state.minimumVersion}`)) {
       get().pushNotification({ tone: 'warning', title: '必须更新', message: requiredUpdateMessage(state.minimumVersion) })
+    }
+    if (state.supported && state.failedNotice && state.failedVersion && once(`failed:${state.failedVersion}`)) {
+      get().pushNotification({ tone: 'warning', title: '新版本没能启动', message: failedUpdateText(state.failedVersion, state.current).notice })
+      // Said once, plainly: open the title bar popover, where 再试一次 is.
+      set({ updatePopoverOpen: true })
     }
     if (state.phase === 'error' && state.error && once(`error:${state.error}`)) {
       get().pushNotification({ tone: 'error', title: '更新没有完成', message: state.error })
@@ -583,6 +592,14 @@ export const useApp = create<AppStore>((set, get) => {
 
     async unskipUpdate() {
       setUpdate(await call<UpdaterState>(Ipc.updateUnskip))
+    },
+
+    async retryFailedUpdate() {
+      setUpdate(await call<UpdaterState>(Ipc.updateRetryFailed))
+    },
+
+    async dismissFailedUpdate() {
+      setUpdate(await call<UpdaterState>(Ipc.updateDismissFailed))
     },
 
     async saveSettings(patch) {

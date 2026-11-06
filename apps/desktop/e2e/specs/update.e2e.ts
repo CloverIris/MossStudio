@@ -114,6 +114,36 @@ describe('update chip', () => {
     })
   }
 
+  for (const theme of ['light', 'dark'] as const) {
+    it(`after an automatic rollback: says so once, and 再试一次 downloads that version again (${theme})`, async () => {
+      const page = await openWith(app, async (p) => {
+        await p.evaluate(() => { window.__mock.state.update = window.__mock.fixtures.updateFailedFixture('1.1.0') })
+      }, { theme })
+      await expect.poll(() => chip(page).textContent()).toBe('新版本没能启动')
+      expect(await chip(page).getAttribute('data-tone')).toBe('warn')
+      // Opened on its own, once.
+      const panel = popover(page)
+      await expect.poll(() => panel.locator('h2').first().textContent()).toBe('1.1.0 没能正常启动')
+      expect(await panel.getByText('如果当时是你自己关掉了它，可以放心再试一次。', { exact: false }).isVisible()).toBe(true)
+      expect(await panel.getByText('更新内容').count()).toBe(0)
+      await app.screenshot(`update-popover-failed-${theme}`)
+      await expectVisualRules(page, `update popover failed (${theme})`)
+      await panel.getByRole('button', { name: '再试一次' }).click()
+      await expect.poll(() => app.calls('update:retry-failed').then((calls) => calls.length)).toBe(1)
+      await expect.poll(() => chip(page).textContent()).toBe('正在下载更新')
+    })
+  }
+
+  it('知道了 hides the rollback notice', async () => {
+    const page = await openWith(app, async (p) => {
+      await p.evaluate(() => { window.__mock.state.update = window.__mock.fixtures.updateFailedFixture('1.1.0') })
+    })
+    await popover(page).getByRole('button', { name: '知道了' }).click()
+    await expect.poll(() => app.calls('update:dismiss-failed').then((calls) => calls.length)).toBe(1)
+    await expect.poll(() => chip(page).count()).toBe(0)
+    expect(await popover(page).count()).toBe(0)
+  })
+
   it('稍后 closes the popover and forgets the busy answer', async () => {
     const page = await openWith(app, async (p) => {
       await p.evaluate(() => {
@@ -259,6 +289,20 @@ describe('设置 › 通知与更新', () => {
     await page.getByRole('button', { name: '安装 1.1.0' }).click()
     await expect.poll(() => app.calls('update:unskip').then((calls) => calls.length)).toBe(1)
     await expect.poll(() => page.getByText('已跳过 1.1.0').count()).toBe(0)
+  })
+
+  it('a version rolled back after a failed start can be tried again from here', async () => {
+    const page = await app.open({ scenario: 'ready', route: '/settings/updates', theme: 'light', defer: true })
+    await page.evaluate(() => {
+      window.__mock.state.update = window.__mock.fixtures.updateFailedFixture('1.1.0', { failedNotice: false })
+    })
+    await app.start()
+    await expect.poll(() => page.getByText('1.1.0 没能正常启动').isVisible()).toBe(true)
+    expect(await chip(page).count()).toBe(0)
+    await page.getByRole('main').getByRole('button', { name: '再试一次' }).click()
+    await expect.poll(() => app.calls('update:retry-failed').then((calls) => calls.length)).toBe(1)
+    await expect.poll(() => page.getByText('1.1.0 没能正常启动').count()).toBe(0)
+    await expect.poll(() => page.locator('[data-update-status]').textContent()).toContain('正在下载 1.1.0')
   })
 
   it('has no rollback row without a previous version', async () => {

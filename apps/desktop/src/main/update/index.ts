@@ -181,6 +181,8 @@ export const updaterApi = {
   setAutoDownload: (enabled: boolean): UpdaterState => getRuntime().setAutoDownload(enabled),
   dismissAnnouncement: (id: string): UpdaterState => getRuntime().dismissAnnouncement(id),
   unskip: (): Promise<UpdaterState> => getRuntime().unskip(),
+  retryFailed: (): Promise<UpdaterState> => getRuntime().retryFailed(),
+  dismissFailed: (): UpdaterState => getRuntime().dismissFailed(),
 }
 
 /** For logs and smoke runs. */

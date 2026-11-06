@@ -72,6 +72,10 @@ export const Ipc = {
   updateSetAutoDownload: 'update:set-auto-download',
   /** Offer the version skipped by a rollback again (安装 <v>) → UpdaterState. */
   updateUnskip: 'update:unskip',
+  /** 再试一次: take a version back that was rolled back automatically, and download it → UpdaterState. */
+  updateRetryFailed: 'update:retry-failed',
+  /** 知道了: hide the rollback notice for this run → UpdaterState. */
+  updateDismissFailed: 'update:dismiss-failed',
   notificationTest: 'notification:test',
   webAccessInfo: 'web:access-info',
   webAccessRestart: 'web:access-restart',

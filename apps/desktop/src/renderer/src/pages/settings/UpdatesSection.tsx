@@ -2,6 +2,7 @@ import { ExternalLink, RotateCw } from 'lucide-react'
 import { useState } from 'react'
 import { Ipc } from '@shared/channels'
 import type { UpdateChannel } from '@shared/install'
+import { failedUpdateText } from '@shared/update'
 import { call } from '../../lib/api'
 import { useApp } from '../../store'
 import { Button, ConfirmDialog, Group, Row, Section, Segmented, Spinner, Switch, useToast } from '../../components/ui'
@@ -22,6 +23,7 @@ export function UpdatesSection(): React.JSX.Element {
   const rollback = useApp((state) => state.rollbackUpdate)
   const download = useApp((state) => state.downloadUpdate)
   const unskip = useApp((state) => state.unskipUpdate)
+  const retryFailed = useApp((state) => state.retryFailedUpdate)
   const setChannel = useApp((state) => state.setUpdateChannel)
   const setAutoDownload = useApp((state) => state.setAutoDownloadUpdates)
   const save = useSaveSettings()
@@ -125,6 +127,11 @@ export function UpdatesSection(): React.JSX.Element {
                   onChange={(channel) => void attempt(() => setChannel(channel))}
                 />
               </Row>
+              {update.failedVersion ? (
+                <Row title={failedUpdateText(update.failedVersion, update.current).title} description={failedUpdateText(update.failedVersion, update.current).detail}>
+                  <Button onClick={() => void attempt(retryFailed)}>再试一次</Button>
+                </Row>
+              ) : null}
               {update.skippedVersion ? (
                 <Row title={`已跳过 ${update.skippedVersion}`} description="你回到了上一个版本，所以不再提示这个版本和更早的版本。想再试时可以重新安装。">
                   <Button onClick={() => void attempt(unskip)}>安装 {update.skippedVersion}</Button>
