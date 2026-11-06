@@ -4,6 +4,7 @@ import type { UninstallInfo } from '@shared/setup'
 import { call } from '../../lib/api'
 import { Button, Modal, Row, Spinner, useToast } from '../../components/ui'
 import { Checkbox } from '../../components/common/Checkbox'
+import { Notice } from '../../components/common/Notice'
 import { dataChoiceText, uninstallEntry, uninstallSummary } from '../install/uninstallModel'
 import { errorText } from './fields'
 
@@ -56,7 +57,7 @@ export function UninstallRow(): React.JSX.Element | null {
         }
       >
         <Button
-          tone="danger"
+          tone="ghost-danger"
           onClick={() => {
             setRemoveData(false)
             setOpen(true)
@@ -94,11 +95,7 @@ export function UninstallRow(): React.JSX.Element | null {
               description={dataChoiceText({ dataBytes: info.dataBytes, dataRoot: info.dataRoot })}
             />
           </div>
-          {removeData ? (
-            <p className="text-ui text-danger" role="status">
-              作品、模型和设置会被永久删除，无法恢复。需要的话请先备份。
-            </p>
-          ) : null}
+          {removeData ? <Notice tone="danger">作品、模型和设置会被永久删除，无法恢复。需要的话请先备份。</Notice> : null}
           {starting ? (
             <p className="text-ui text-ink-2" role="status">
               正在卸载，MossStudio 马上会关闭…

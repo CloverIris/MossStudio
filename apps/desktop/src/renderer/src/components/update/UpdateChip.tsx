@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Ipc } from '@shared/channels'
 import { call } from '../../lib/api'
 import { useApp } from '../../store'
+import { Notice } from '../common/Notice'
 import { Button, MarkdownBody, ProgressBar, Spinner, cn, useToast } from '../ui'
 import { ACTION_LABEL, chipView, popoverView, restartFeedback, type ChipView, type PopoverAction } from './updateModel'
 
@@ -137,12 +138,9 @@ export function UpdateChip(): React.JSX.Element | null {
           className="absolute right-0 top-[calc(100%+6px)] z-50 flex w-[380px] flex-col gap-4 rounded-xl bg-raised p-4 text-ink shadow-float"
         >
           {panel.required ? (
-            <p className="flex items-start gap-2 rounded-lg bg-warn-soft px-3 py-2.5 text-ui text-ink">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden="true" />
-              <span>
-                <span className="font-semibold">必须更新。</span>这个版本已停止支持生成，更新后才能继续生成图片。
-              </span>
-            </p>
+            <Notice tone="warn" title="必须更新">
+              这个版本已停止支持生成，更新后才能继续生成图片。
+            </Notice>
           ) : null}
 
           <div className="flex flex-col gap-0.5">
@@ -163,9 +161,7 @@ export function UpdateChip(): React.JSX.Element | null {
                 ) : null}
                 {panel.status}
               </p>
-              {panel.progress !== undefined ? (
-                <ProgressBar value={panel.progress ?? 100} tone={panel.progress === null ? 'neutral' : 'accent'} label="更新进度" />
-              ) : null}
+              {panel.progress !== undefined ? <ProgressBar value={panel.progress} label="更新进度" /> : null}
             </div>
           ) : null}
 
