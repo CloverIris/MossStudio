@@ -103,8 +103,8 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         if: ${{ !startsWith(matrix.platform, 'darwin') }}
         with:
-          go-version-file: launcher/go.mod
-          cache-dependency-path: launcher/go.mod
+          go-version-file: apps/launcher/go.mod
+          cache-dependency-path: apps/launcher/go.mod
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - name: Release build (no test keys, real feed)
@@ -115,7 +115,7 @@ jobs:
           MOSS_UPDATE_FEED_URL: ''
       - name: Launcher
         if: ${{ !startsWith(matrix.platform, 'darwin') }}
-        working-directory: launcher
+        working-directory: apps/launcher
         run: bash build.sh
       - name: Package
         run: pnpm release:package --platform ${{ matrix.platform }}

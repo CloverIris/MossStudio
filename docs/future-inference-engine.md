@@ -71,7 +71,7 @@ models/moss-image-sft-int8/
 ```
 
 `clover.json` 由 `tools/convert` 生成，启动器只信清单里的哈希：
-下载后先校验再标记可用，损坏则重新下载（见 `contracts/model-manifest.schema.json`）。
+下载后先校验再标记可用，损坏则重新下载（见 `docs/archive/contracts/model-manifest.schema.json`）。
 
 ### 3.2 逐 block 执行，而不是一张 5B 大图
 

@@ -32,8 +32,8 @@ jobs:
           cache: pnpm
       - uses: actions/setup-go@v5
         with:
-          go-version-file: launcher/go.mod
-          cache-dependency-path: launcher/go.mod
+          go-version-file: apps/launcher/go.mod
+          cache-dependency-path: apps/launcher/go.mod
       - name: Install system packages for Electron under a virtual display
         run: |
           sudo apt-get update
@@ -42,7 +42,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test:unit
       - name: Launcher tests (go test)
-        working-directory: launcher
+        working-directory: apps/launcher
         run: |
           go vet ./...
           go test ./...
@@ -90,8 +90,8 @@ jobs:
       - uses: actions/setup-go@v5
         if: ${{ !startsWith(matrix.platform, 'darwin') }}
         with:
-          go-version-file: launcher/go.mod
-          cache-dependency-path: launcher/go.mod
+          go-version-file: apps/launcher/go.mod
+          cache-dependency-path: apps/launcher/go.mod
       - name: Install system packages for Electron under a virtual display
         if: matrix.platform == 'linux-x64'
         run: |
@@ -120,7 +120,7 @@ jobs:
 
       - name: Launcher
         if: ${{ !startsWith(matrix.platform, 'darwin') }}
-        working-directory: launcher
+        working-directory: apps/launcher
         run: bash build.sh
 
       - name: Package X, X+1, X+2 and build their setup, portable, full, delta and feed files

@@ -50,6 +50,7 @@ runs/
 .vscode/
 .agents/
 .claude/
+.omc/
 .codex/
 .cursor/
 .mcp.json

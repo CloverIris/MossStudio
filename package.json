@@ -8,12 +8,9 @@
     "build": "pnpm --filter @clover/desktop build",
     "typecheck": "pnpm --filter @clover/desktop typecheck",
     "smoke": "pnpm --filter @clover/desktop smoke",
-    "test": "pnpm test:unit && pnpm test:model-runtime",
+    "test": "pnpm test:unit",
     "test:unit": "pnpm --filter @clover/desktop test",
     "test:watch": "pnpm --filter @clover/desktop test:watch",
-    "test:settings-draft": "pnpm --filter @clover/desktop exec vitest run test/renderer/lib/settingsDraft.test.ts",
-    "test:ssh-manager": "pnpm --filter @clover/desktop exec vitest run test/main/services/sshManager.test.ts",
-    "test:download-queue": "pnpm --filter @clover/desktop exec vitest run test/main/models/models.downloads.test.ts test/renderer/store.events.test.ts",
     "test:e2e": "pnpm --filter @clover/desktop test:e2e",
     "test:scenarios": "pnpm build && pnpm --filter @clover/desktop test:scenarios",
     "test:install": "node tools/release/integration/local.mjs",
@@ -25,11 +22,7 @@
     "release:deltas": "node tools/release/make-deltas.mjs",
     "release:feed": "node tools/release/make-feed.mjs",
     "release:sign": "node tools/release/sign-feed.mjs",
-    "release:verify": "node --no-warnings tools/release/verify-artifacts.mjs",
-    "test:models": "pnpm --filter @clover/desktop exec vitest run test/main/models/modelFiles.test.ts",
-    "test:gpu-studio": "pnpm --filter @clover/desktop exec vitest run test/shared/gpuProfile.test.ts test/shared/gpuCompatibility.test.ts test/shared/gpuScheduling.test.ts test/shared/canvasJobBranch.test.ts",
-    "test:model-imports": "pnpm --filter @clover/desktop exec vitest run test/main/models/modelImports.test.ts",
-    "test:model-runtime": "python -m unittest discover -s runner/tests"
+    "release:verify": "node --no-warnings tools/release/verify-artifacts.mjs"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0"

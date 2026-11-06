@@ -1,5 +1,5 @@
 /**
- * The contract between the launcher (Go, `launcher/`), the app's install and
+ * The contract between the launcher (Go, `apps/launcher/`), the app's install and
  * update code (main process), the UI and the release pipeline.
  *
  * Install root R, chosen once on first install:

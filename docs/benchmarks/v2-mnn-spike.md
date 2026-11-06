@@ -55,7 +55,7 @@ TFLOP/s = FLOPs / time
 ### D. 整模型外推
 
 - 42 block × 单 block 时间 + attention/调度开销；
-- 与 `tools/budget.py` 的预算对比；
+- 与 `tools/dev/budget.py` 的预算对比；
 - 给出 512²/50 步、512²/8 步、1024²/8 步的预计时间。
 
 ## 判定

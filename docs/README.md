@@ -53,7 +53,7 @@
 - [research/upstream-2026-10-20.md](research/upstream-2026-10-20.md)
 - [future-inference-engine.md](future-inference-engine.md)
 - [benchmarks/v2-mnn-spike.md](benchmarks/v2-mnn-spike.md)
-- [../runner/README.md](../runner/README.md)
+- [archive/runner/README.md](archive/runner/README.md)
 - 旧截图：`home/oobe/instances/terminal/training/creator` 等
 
 ## 本机验证环境

@@ -413,7 +413,7 @@ describe('judgeEngineSupport', () => {
 
 describe('probeEngine against the fake moss-server', () => {
   it('runs a one-shot probe and strictly decodes the hello', async () => {
-    const fakeServer = fileURLToPath(new URL('../../../../tools/fake-moss-server.mjs', import.meta.url))
+    const fakeServer = fileURLToPath(new URL('../../../../tools/dev/fake-moss-server.mjs', import.meta.url))
     const hello = await probeEngine(fakeServer, { timeoutMs: 5000 })
     expect(hello.protocol).toBe(2)
     expect(protocolCompatible(hello)).toBe(true)

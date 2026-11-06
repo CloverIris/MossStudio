@@ -42,7 +42,7 @@
 
 ```powershell
 node --test tests/model-files.test.mjs
-python -m unittest discover -s runner/tests
+python -m unittest discover -s docs/archive/runner/tests
 ```
 
 构建后，从 `apps/desktop` 运行 `electron . --scenario=model-management`，使用轻量本地 HTTP 夹具检查组合安装、共享、损坏修复、旧 blob 复用及删除保护，不下载真实权重。

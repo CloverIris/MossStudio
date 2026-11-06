@@ -54,11 +54,11 @@ export function hostPlatform() {
   return `${process.platform}-${process.arch}`
 }
 
-/** Launcher binary built by launcher/build.sh for a platform (Windows and Linux only). */
+/** Launcher binary built by apps/launcher/build.sh for a platform (Windows and Linux only). */
 export function launcherBinary(platform) {
   const name = { 'win32-x64': 'moss-launcher-win-x64.exe', 'linux-x64': 'moss-launcher-linux-x64' }[platform]
   if (!name) throw new Error(`no launcher for ${platform}`)
-  const path = join(REPO_ROOT, 'launcher', 'dist', name)
-  if (!existsSync(path)) throw new Error(`launcher binary missing: ${path} (run bash launcher/build.sh)`)
+  const path = join(REPO_ROOT, 'apps', 'launcher', 'dist', name)
+  if (!existsSync(path)) throw new Error(`launcher binary missing: ${path} (run bash apps/launcher/build.sh)`)
   return path
 }

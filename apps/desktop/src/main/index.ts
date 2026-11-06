@@ -721,7 +721,7 @@ app.whenReady().then(async () => {
 
   if (scenario === 'mossinfer-remote-job') {
     try {
-      const fakeServer = join(app.getAppPath(), '..', '..', 'tools', 'fake-moss-server.mjs')
+      const fakeServer = join(app.getAppPath(), '..', '..', 'tools', 'dev', 'fake-moss-server.mjs')
       chmodSync(fakeServer, 0o755)
       setupMossInferScenario(fakeServer, null)
       const root = join(tmpdir(), `moss-remote-engine-${process.pid}`)
@@ -766,7 +766,7 @@ app.whenReady().then(async () => {
 
   if (scenario === 'mossinfer-engine-job') {
     try {
-      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'fake-moss-server.mjs')
+      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'dev', 'fake-moss-server.mjs')
       chmodSync(serverPath, 0o755)
       setupMossInferScenario(serverPath, null)
       const job = await startEngineJob({
@@ -790,7 +790,7 @@ app.whenReady().then(async () => {
 
   if (scenario === 'mossinfer-runtime-isolation') {
     try {
-      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'fake-moss-server.mjs')
+      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'dev', 'fake-moss-server.mjs')
       chmodSync(serverPath, 0o755)
       setupMossInferScenario(serverPath, null)
       const model = join(paths.hub(getSettings().modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT', 'snapshots', 'a'.repeat(40))
@@ -869,7 +869,7 @@ app.whenReady().then(async () => {
 
   if (scenario === 'mossinfer-queue') {
     try {
-      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'fake-moss-server.mjs')
+      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'dev', 'fake-moss-server.mjs')
       chmodSync(serverPath, 0o755)
       setupMossInferScenario(serverPath, null)
       const input = (canvasId: string, prompt: string) => ({
@@ -931,7 +931,7 @@ app.whenReady().then(async () => {
 
   if (scenario === 'mossinfer-job' || scenario === 'mossinfer-cancel') {
     try {
-      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'fake-moss-server.mjs')
+      const serverPath = join(app.getAppPath(), '..', '..', 'tools', 'dev', 'fake-moss-server.mjs')
       chmodSync(serverPath, 0o755)
       const instanceId = setupMossInferScenario(serverPath, null)
       const cancel = scenario === 'mossinfer-cancel'

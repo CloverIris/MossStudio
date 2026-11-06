@@ -52,7 +52,7 @@ function writeFileList(tree, path, { version, platform }) {
  */
 function pack(args) {
   if (hostPlatform() === 'linux-x64') return run(launcherBinary('linux-x64'), ['pack', ...args])
-  return run('go', ['-C', join(REPO_ROOT, 'launcher'), 'run', '.', 'pack', ...args])
+  return run('go', ['-C', join(REPO_ROOT, 'apps', 'launcher'), 'run', '.', 'pack', ...args])
 }
 
 async function winLinuxArtifacts({ platform, os, version, appDir, out, names, mtime, staging }) {

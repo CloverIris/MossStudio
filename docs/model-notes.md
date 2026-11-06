@@ -1,7 +1,7 @@
 # 模型事实与数值约定
 
 > 所有数字来自公开 checkpoint 的 config/index 与上游代码，标注了来源。
-> 预算表由 `python3 tools/budget.py --markdown` 生成。
+> 预算表由 `python3 tools/dev/budget.py --markdown` 生成。
 
 ## 1. 组件
 

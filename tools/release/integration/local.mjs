@@ -5,7 +5,7 @@
 //   launcher build → prepare.mjs (X, X+1, X+2 + feeds) → run.mjs (under xvfb-run when there
 //   is no display).
 // Options are passed to run.mjs (e.g. --report <dir>). MOSS_IT_SKIP_BUILD=1 reuses apps/desktop/out
-// and launcher/dist from an earlier run made with the same key file (dist/it/test-key.txt).
+// and apps/launcher/dist from an earlier run made with the same key file (dist/it/test-key.txt).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DESKTOP_DIR, hostPlatform, main, REPO_ROOT, run } from '../lib/cli.mjs'
@@ -26,7 +26,7 @@ main(async () => {
 
   if (!reuse) {
     run(pnpm[0], [...pnpm[1], 'build'], { cwd: REPO_ROOT, env: { ...process.env, MOSS_UPDATE_TEST_KEYS: testKeys, MOSS_UPDATE_FEED_URL: itFeedUrl() } })
-    run('bash', [join(REPO_ROOT, 'launcher', 'build.sh')], { cwd: join(REPO_ROOT, 'launcher') })
+    run('bash', [join(REPO_ROOT, 'apps', 'launcher', 'build.sh')], { cwd: join(REPO_ROOT, 'apps', 'launcher') })
   } else if (!existsSync(join(DESKTOP_DIR, 'out', 'main', 'index.js'))) {
     throw new Error('MOSS_IT_SKIP_BUILD=1 but apps/desktop/out is missing')
   }
