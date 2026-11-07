@@ -7,6 +7,7 @@ import { linksOf, removeLink, setLink } from '@renderer/pages/studio/links'
 import { maskAvailability } from '@renderer/pages/studio/mask'
 import {
   createStyleCanvas,
+  generatedSnapshot,
   generationCanvas,
   nodeBlockers,
   seriesFromStyle,
@@ -16,6 +17,7 @@ import {
   withUpscaleScale,
 } from '@renderer/pages/studio/nodes'
 import { inputSlots, slotDrop, styleDrop } from '@renderer/pages/studio/ports'
+import { withRunSettings } from '@renderer/pages/studio/runs'
 import { boardPorts } from '@renderer/pages/studio/wires'
 import { canvas, layer } from './fixtures'
 
@@ -96,7 +98,7 @@ describe('studio/nodes 风格', () => {
     const socket = slots.at(-1)!
     expect(slotDrop(socket, layout, 's1', 'style')).toEqual({ ok: true, role: 'style' })
     expect(slotDrop(socket, layout, 'p', 'image')).toEqual({ ok: false, reason: '这里只能接风格' })
-    expect(slotDrop(slots[0]!, layout, 's1', 'style')).toEqual({ ok: false, reason: '风格要接到「风格」上' })
+    expect(slotDrop(slots[0]!, layout, 's1', 'style')).toEqual({ ok: false, reason: '把风格拖到画面上就能接上' })
     expect(styleDrop(setLink(layout, 'style', { canvasId: 's1' }), 's1')).toEqual({ ok: false, reason: '这个风格已经接上了' })
     // A 风格 wire is drawn from the 风格 card into its socket.
     const wired = setLink(layout, 'style', { canvasId: 's1' })
@@ -107,7 +109,7 @@ describe('studio/nodes 风格', () => {
   it('a 风格 cannot feed a 放大, and copies as a 风格', () => {
     const made = upscaleFromPicture([picture], 'p', { fallback: defaultSettings(), id: 'u' })!
     const upscale = made.canvases.find((item) => item.id === 'u')!
-    expect(canConnect([style('s1'), upscale], 's1', upscale)).toEqual({ ok: false, reason: '放大不用风格' })
+    expect(canConnect([style('s1'), upscale], 's1', upscale)).toEqual({ ok: false, reason: '放大会照着原图重画，不用接风格' })
     const copy = copyAsLayout(style('s1', { prompt: '水彩', title: '风格 1' }), [style('s1', { title: '风格 1' })], 'c')
     expect(copy).toMatchObject({ id: 'c', kind: 'style', prompt: '水彩', title: '风格 2' })
     // New 画面 never take their settings from a 风格.
@@ -162,7 +164,11 @@ describe('studio/nodes 放大', () => {
     expect(nodeBlockers(made.created, made.canvases)).toEqual([])
     expect(nodeBlockers(removeLink(made.created, 'init'), made.canvases)).toEqual([{ id: 'input-invalid', message: '先给放大接一张原图' }])
     const big = canvas({ ...picture, imageSize: { width: 2048, height: 1024 } })
-    expect(nodeBlockers(made.created, [big, made.created])[0]!.message).toBe('原图已经有 2048 像素宽，不能再放大了')
+    expect(nodeBlockers(made.created, [big, made.created])[0]!.message).toBe('原图的长边已经有 2048 像素，不能再放大了')
+    expect(upscaleFromPicture([big], 'p', { fallback: defaultSettings() })).toBeNull()
+    // A picture card from an older version has no recorded pixel size: its card size is not the picture's.
+    const legacy = canvas({ ...picture, imageSize: undefined })
+    expect(nodeBlockers(made.created, [legacy, made.created])[0]!.message).toBe('读不出原图的尺寸，请把这张图重新放进来')
     // Only a card with a picture can be enlarged; a plain 画面 has no extra checks.
     expect(upscaleFromPicture([canvas()], 'c1', { fallback: defaultSettings() })).toBeNull()
     expect(nodeBlockers(canvas(), [canvas()])).toEqual([])
@@ -183,5 +189,61 @@ describe('studio/nodes 放大', () => {
     expect(
       canvasFromPicture([...made.canvases, run], 'run', { role: 'init', fallback: defaultSettings() })!.created.upscale,
     ).toBeUndefined()
+  })
+})
+
+describe('studio/nodes runs of 风格 and 放大', () => {
+  const styled = (): ProjectCanvas[] => {
+    const watercolor = style('s1', { prompt: '水彩', adapters: [{ id: 'paper', strength: 0.8 }] })
+    const layout = setLink(canvas({ id: 'l', prompt: '一只猫' }), 'style', { canvasId: 's1' })
+    return [watercolor, layout]
+  }
+
+  it('a run keeps what it was generated with, so running it again repeats it', () => {
+    const [watercolor, layout] = styled()
+    const generating = generationCanvas(layout!, [watercolor!, layout!])
+    const snapshot = generatedSnapshot(layout!, generating)
+    expect(snapshot).toEqual({ prompt: '一只猫，水彩', adapters: [{ id: 'paper', strength: 0.8 }] })
+    const run = canvas({ id: 'r', kind: 'result', sourceCanvasId: 'l', prompt: '一只猫', inputs: layout!.inputs, generated: snapshot })
+    // The 风格 changed since: the run still repeats what it made.
+    const later = [{ ...watercolor!, prompt: '油画' }, layout!, run]
+    const again = generationCanvas(run, later)
+    expect(compileCanvasPrompt(again).prompt).toBe('一只猫，水彩')
+    expect(again.adapters).toEqual([{ id: 'paper', strength: 0.8 }])
+    // Nothing added: no snapshot.
+    expect(generatedSnapshot(canvas(), canvas())).toBeUndefined()
+  })
+
+  it('a 放大 of a styled picture keeps its 风格: the description and LoRA it was made with', () => {
+    const [watercolor, layout] = styled()
+    const run = canvas({
+      id: 'r',
+      kind: 'result',
+      sourceCanvasId: 'l',
+      prompt: '一只猫',
+      outputs: [{ path: '/r.png', width: 1024, height: 1024, seed: 1 }],
+      generated: { prompt: '一只猫，水彩', adapters: [{ id: 'paper', strength: 0.8 }] },
+    })
+    const made = upscaleFromPicture([watercolor!, layout!, run], 'r', { fallback: defaultSettings(), id: 'u' })!
+    expect(made.created.adapters).toEqual([{ id: 'paper', strength: 0.8 }])
+    expect(compileCanvasPrompt(generationCanvas(made.created, made.canvases)).prompt).toBe('一只猫，水彩')
+  })
+
+  it('a 放大 never adds a 高清修复 pass, and 用这次的设置 takes back its scale and detail', () => {
+    const made = upscaleFromPicture([picture], 'p', { fallback: defaultSettings(), id: 'u' })!
+    const withHires = { ...made.created, sampling: { hires: { width: 4096, height: 3072 } } }
+    expect(generationCanvas(withHires, made.canvases).sampling).toBeUndefined()
+    const run = canvas({
+      ...made.created,
+      id: 'run',
+      kind: 'result',
+      upscale: { scale: 1.5 },
+      width: 1200,
+      height: 896,
+      inputs: { init: { link: { canvasId: 'p' }, strength: 0.55, resize: 'stretch' } },
+    })
+    const back = withRunSettings(made.created, run)
+    expect(back).toMatchObject({ upscale: { scale: 1.5 }, width: 1200, height: 896 })
+    expect(back.inputs?.init?.strength).toBe(0.55)
   })
 })

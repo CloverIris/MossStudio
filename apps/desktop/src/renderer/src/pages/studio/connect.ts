@@ -16,7 +16,7 @@ export function canConnect(canvases: readonly ProjectCanvas[], sourceId: string,
   if (target.kind !== 'layout') return { ok: false, reason: '只能连到可编辑的画面' }
   const source = canvases.find((canvas) => canvas.id === sourceId)
   if (!source) return { ok: false, reason: '' }
-  if (source.kind === 'style' && target.upscale) return { ok: false, reason: '放大不用风格' }
+  if (source.kind === 'style' && target.upscale) return { ok: false, reason: '放大会照着原图重画，不用接风格' }
   if (wouldCycle(target, sourceId, canvases)) return { ok: false, reason: '这样会连成一个圈' }
   return { ok: true }
 }

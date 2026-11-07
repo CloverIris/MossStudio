@@ -150,7 +150,7 @@ export type SlotDrop = { ok: true; role: LinkRole; kind?: string } | { ok: false
 
 export function slotDrop(slot: InputSlot, canvas: ProjectCanvas, sourceId: string, sourceKind: ProjectCanvas['kind'] = 'image'): SlotDrop {
   if (slot.role === 'style') return sourceKind === 'style' ? styleDrop(canvas, sourceId) : { ok: false, reason: '这里只能接风格' }
-  if (sourceKind === 'style') return { ok: false, reason: '风格要接到「风格」上' }
+  if (sourceKind === 'style') return { ok: false, reason: '把风格拖到画面上就能接上' }
   if (slot.needs) return { ok: false, reason: slot.reason ?? '现在还不能接图片' }
   if (slot.role === 'reference') {
     const links = canvas.inputs?.references?.links ?? []

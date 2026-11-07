@@ -42,7 +42,19 @@ import { EmptyPortChips, type PortActions } from './EmptyPorts'
 import { inputSlots } from './ports'
 import { WireChips, WireLayer } from './WireLayer'
 import { recipes, type Recipe } from './recipes'
-import { boardCanvases, canDropRun, canUnpin, filmstripOf, foldedRunIds, givesPicture, isActiveRun, unpinRun, type StripItem } from './runs'
+import { upscaleProblem } from './nodes'
+import {
+  boardCanvases,
+  canDropRun,
+  canUnpin,
+  filmstripOf,
+  foldedRunIds,
+  givesPicture,
+  isActiveRun,
+  pictureLink,
+  unpinRun,
+  type StripItem,
+} from './runs'
 import { useRunDrag } from './useRunDrag'
 import { boardPorts, type Point } from './wires'
 import { OutputImage } from './OutputImage'
@@ -365,13 +377,16 @@ export function Board(props: BoardProps): React.JSX.Element {
   const menuTarget = connect.menu?.targetId ? props.canvases.find((canvas) => canvas.id === connect.menu!.targetId) : undefined
   const menuSource = connect.menu ? props.canvases.find((canvas) => canvas.id === connect.menu!.sourceId) : undefined
 
+  // 放大 is offered when the engine takes a start picture and the picture can still grow.
+  const canUpscale = (canvas: ProjectCanvas): boolean =>
+    props.engineFeatures?.imageInput !== false && !upscaleProblem(props.canvases, pictureLink(props.canvases, { canvasId: canvas.id }))
   // The ⋯ menu of a card: what can be done with the picture it shows.
   const cardActions = (canvas: ProjectCanvas, run: ProjectCanvas, item: StripItem | undefined): CardMenuAction[] => {
     const actions: CardMenuAction[] = []
     if (canvas.kind === 'layout') {
       if (!item) return actions
       if (item.path) actions.push({ label: '用作起始图', onSelect: () => props.onNewFromPicture(canvas.id, 'init') })
-      if (item.path) actions.push({ label: '放大', onSelect: () => props.onUpscale(canvas.id) })
+      if (item.path && canUpscale(canvas)) actions.push({ label: '放大', onSelect: () => props.onUpscale(canvas.id) })
       if (folded.has(run.id) && item.path) actions.push({ label: '固定到画板', onSelect: () => props.onPinRun(run.id) })
       if (run.kind === 'result') actions.push({ label: '用这次的设置', onSelect: () => props.onUseRunSettings(canvas.id, run.id) })
       // A run that is also a card is deleted from its card.
@@ -381,7 +396,7 @@ export function Board(props: BoardProps): React.JSX.Element {
     }
     if (givesPicture(canvas, props.canvases)) {
       actions.push({ label: '用作起始图', onSelect: () => props.onNewFromPicture(canvas.id, 'init') })
-      actions.push({ label: '放大', onSelect: () => props.onUpscale(canvas.id) })
+      if (canUpscale(canvas)) actions.push({ label: '放大', onSelect: () => props.onUpscale(canvas.id) })
     }
     // A pinned result goes back into its 画面's filmstrip, unless it feeds another canvas.
     if (canUnpin(canvas, props.canvases) && foldedRunIds(unpinRun(props.canvases, canvas.id)).has(canvas.id)) {

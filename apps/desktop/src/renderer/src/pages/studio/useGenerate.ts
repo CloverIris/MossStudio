@@ -12,7 +12,7 @@ import { profileFor, randomSeed, seedForRun } from './defaults'
 import { resolveJobInputs } from './jobInputs'
 import { compileCanvasPrompt } from './prompt'
 import { resolveBundle } from './readiness'
-import { generationCanvas, nodeBlockers, withUpscaleSize } from './nodes'
+import { generatedSnapshot, generationCanvas, nodeBlockers, styleLoraNote, withUpscaleSize } from './nodes'
 import { shownRun, staleRunIds } from './runs'
 import type { StudioProject } from './useStudioProject'
 
@@ -108,9 +108,12 @@ export function useGenerate(options: {
     const remoteModelPath = remoteHost?.modelPath?.trim()
     if (remoteHost && !remoteModelPath) return stop(`「${remoteHost.name}」还没有设置模型位置，请到 设置 › 设备与引擎 填写`)
     const adapters = normalizeCanvasAdapters(generating.adapters)
-    if (remoteHost && adapters.length) return stop('在其他电脑上运行时暂不支持 LoRA，请移除 LoRA 或改回这台电脑')
+    // A 风格's LoRA count too; the message says where they come from.
+    const fromStyles = styleLoraNote(source, canvases)
+    if (remoteHost && adapters.length) return stop(`在其他电脑上运行时暂不支持 LoRA，请移除 LoRA 或改回这台电脑${fromStyles}`)
     const missing = adapterStatuses(adapters, catalog?.adapters).filter((item) => !item.installed)
-    if (missing.length) return stop(`LoRA ${missing.map((item) => `「${item.name}」`).join('')}找不到了，请移除或到模型库重新安装`)
+    if (missing.length)
+      return stop(`LoRA ${missing.map((item) => `「${item.name}」`).join('')}找不到了，请移除或到模型库重新安装${fromStyles}`)
     // Regions are laid out on the first-pass size.
     const compiled = compileCanvasPrompt(generating.baseSize ? { ...generating, ...generating.baseSize } : generating)
     if (!compiled.ok) return stop(compiled.errors[0] ?? '描述还不完整')
@@ -125,7 +128,11 @@ export function useGenerate(options: {
     const shown = source.kind === 'layout' ? (shownRun(source, canvases)?.run ?? source) : source
     const shownSeed = jobs.find((job) => job.id === shown.jobId)?.params.seed ?? shown.outputs?.[0]?.seed ?? source.seed
     const seed = seedMode === 'same' ? shownSeed : seedMode === 'new' ? randomSeed() : seedForRun(source)
+    // The run keeps what it was really generated with, so running it again repeats it.
+    const snapshot = generatedSnapshot(source, generating)
     const runSource: ProjectCanvas = { ...source, seed, modelBundleId: choice.bundle.id }
+    if (snapshot) runSource.generated = snapshot
+    else delete runSource.generated
     let taskId: string | null = null
     let board: ProjectCanvas[] | null = null
     try {

@@ -1119,6 +1119,12 @@ export interface ProjectCanvas {
   kind: 'layout' | 'result' | 'image' | 'style'
   /** A 放大 node (layout only): redraws its start picture at `scale` times its size. */
   upscale?: CanvasUpscale
+  /**
+   * A result: the description and LoRA its run was actually generated with,
+   * when they differ from its own (its 风格 added, a 放大's inherited
+   * description). Running it again uses these.
+   */
+  generated?: { prompt: string; adapters?: CanvasAdapter[] }
   /** The picture of an `image` Canvas (copied into the project's assets). */
   imagePath?: string
   /** The real pixel size of `imagePath` (`width`/`height` are its card size on the board). */

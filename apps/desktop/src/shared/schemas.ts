@@ -151,6 +151,15 @@ const projectCanvasSchema = z.object({
   id: z.string().min(1).max(120),
   kind: z.enum(['layout', 'result', 'image', 'style']),
   upscale: z.object({ scale: z.number().min(1).max(4) }).optional(),
+  generated: z
+    .object({
+      prompt: z.string().max(24000),
+      adapters: z
+        .array(z.object({ id: z.string().min(1).max(160), strength: z.number().min(0).max(2), path: z.string().max(4096).optional() }))
+        .max(32)
+        .optional(),
+    })
+    .optional(),
   imagePath: z.string().max(4096).optional(),
   /** Pixel size of `imagePath` (up to studio:import-image's 16384 limit); width/height are the card's. */
   imageSize: z

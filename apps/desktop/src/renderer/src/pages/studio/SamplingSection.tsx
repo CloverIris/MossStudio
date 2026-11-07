@@ -37,7 +37,8 @@ export function SamplingSection({
   const known = Boolean(features)
   const disabled = !known
   const showSamplers = !known || features!.samplers || Boolean(sampling.sampler || sampling.scheduler)
-  const showHires = !known || features!.hires || Boolean(sampling.hires)
+  // A 放大 already is the redraw 高清修复 would do.
+  const showHires = !canvas.upscale && (!known || features!.hires || Boolean(sampling.hires))
   const showStepCache = enumValues(features, 'step_cache').length > 0 || Boolean(sampling.stepCache)
   const choice = hiresChoice(canvas)
   const [custom, setCustom] = useState(false)

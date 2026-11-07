@@ -17,6 +17,8 @@ interface BoardSetup {
   theme?: 'light' | 'dark'
   /** canvas-1 has already run once in place. */
   outputs?: boolean
+  /** img-2 records its pixel size (800 × 1280), as pictures imported now do. */
+  pictureSizes?: boolean
 }
 
 /** A project with one imported picture (img-1) and one layout canvas (canvas-1), selected. */
@@ -42,6 +44,7 @@ async function openBoard(app: E2eApp, setup: BoardSetup = {}): Promise<Page> {
         kind: 'image',
         title: '线稿',
         imagePath: '/fixture/projects/project-1/assets/lines-800x1280.png',
+        ...(options.pictureSizes ? { imageSize: { width: 800, height: 1280 } } : {}),
         x: 0,
         y: 360,
         width: 640,
@@ -68,7 +71,7 @@ async function openBoard(app: E2eApp, setup: BoardSetup = {}): Promise<Page> {
       window.__mock.state.engineFeatures = engineFeaturesFixture(options.features ?? {})
       window.__mock.state.controlAdapters = options.adapters ? [controlAdapterFixture()] : []
     },
-    { inputs: setup.inputs, features: setup.features, adapters: setup.adapters, outputs: setup.outputs },
+    { inputs: setup.inputs, features: setup.features, adapters: setup.adapters, outputs: setup.outputs, pictureSizes: setup.pictureSizes },
   )
   await app.start()
   await page.locator('[data-project-switcher]').waitFor()
@@ -786,9 +789,9 @@ describe('风格 and 放大 nodes', () => {
   const jobs = (page: Page) => page.evaluate((channel) => window.__mock.callsTo(channel) as Array<Record<string, unknown>>, ENGINE_JOBS)
 
   it('放大 a picture: a node with one 原图 socket, its size from the 原图, and a run that redraws it larger', async () => {
-    // 线稿 is a 640 × 1024 picture card (no imageSize recorded): ×2 is 1280 × 2048.
+    // 线稿 is an 800 × 1280 picture: ×2 is 1600 × 2560, kept within 2048 on the long edge.
     for (const theme of ['light', 'dark'] as const) {
-      const page = await openBoard(app, { theme })
+      const page = await openBoard(app, { theme, pictureSizes: true })
       await card(page, 'img-2').hover()
       await card(page, 'img-2').getByRole('button', { name: '线稿 更多操作' }).click()
       await page.getByRole('menuitem', { name: '放大', exact: true }).click()
@@ -807,12 +810,12 @@ describe('风格 and 放大 nodes', () => {
       if (theme === 'dark') break
 
       await page.getByRole('group', { name: '放大倍数' }).getByRole('button', { name: '×1.5' }).click()
-      await expect.poll(() => card(page, id).locator('[data-card-chips]').textContent()).toContain('960 × 1536')
+      await expect.poll(() => card(page, id).locator('[data-card-chips]').textContent()).toContain('1200 × 1920')
       await page.getByRole('group', { name: '细节' }).getByRole('button', { name: '更多细节' }).click()
       await page.locator('[data-studio-generate]').click()
       await expect.poll(async () => (await jobs(page)).length, { timeout: 10_000 }).toBe(1)
       const [job] = await jobs(page)
-      expect(job).toMatchObject({ width: 960, height: 1536, prompt: '高清，细节清晰，画质细腻' })
+      expect(job).toMatchObject({ width: 1200, height: 1920, prompt: '高清，细节清晰，画质细腻' })
       expect(job!['initImage']).toMatchObject({ strength: 0.55, resize: 'stretch' })
       expect(String((job!['initImage'] as { path: string }).path)).toContain('lines-800x1280.png')
     }

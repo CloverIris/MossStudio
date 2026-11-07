@@ -38,7 +38,9 @@ import {
   nodeBlockers,
   seriesFromStyle,
   STYLE_CARD,
+  styleLoraNote,
   upscaleFromPicture,
+  upscaleProblem,
   withUpscaleSize,
 } from './nodes'
 import { dropRun, givesPicture, isActiveRun, keepCardsShown, pictureLink, pinRun, runsOf, unpinRun, withRunSettings } from './runs'
@@ -163,7 +165,7 @@ export function StudioPage(): React.JSX.Element {
         : [],
     [generating, project.canvases, boardFeatures, controlAdapters, controlAdaptersLoaded],
   )
-  const readiness = deriveReadiness({
+  const derived = deriveReadiness({
     canvas: generating,
     catalog,
     bundle,
@@ -175,6 +177,18 @@ export function StudioPage(): React.JSX.Element {
     update,
     features: boardFeatures,
   })
+  // A LoRA blocker says when some of the LoRA come from a 风格 (the 画面's own list does not show them).
+  const loraNote = selected?.kind === 'layout' ? styleLoraNote(selected, project.canvases) : ''
+  const readiness = loraNote
+    ? {
+        ...derived,
+        blockers: derived.blockers.map((blocker) =>
+          ['adapters', 'remote-adapters', 'lora-unsupported'].includes(blocker.id)
+            ? { ...blocker, message: `${blocker.message}${loraNote}` }
+            : blocker,
+        ),
+      }
+    : derived
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false
   const { submitting, generate } = useGenerate({
@@ -341,7 +355,13 @@ export function StudioPage(): React.JSX.Element {
 
   /** 放大: a 放大 node fed by a card's picture, to its right (or where a wire was dropped). */
   const upscaleFrom = (sourceId: string, at?: { x: number; y: number }): void => {
-    const made = upscaleFromPicture(project.canvasesRef.current, sourceId, { fallback: latestSettings(), at })
+    const list = project.canvasesRef.current
+    const problem = upscaleProblem(list, pictureLink(list, { canvasId: sourceId }))
+    if (problem) {
+      toast.push(problem, 'info')
+      return
+    }
+    const made = upscaleFromPicture(list, sourceId, { fallback: latestSettings(), at })
     if (!made) return
     project.setCanvases(made.canvases)
     project.select(made.created.id)
@@ -447,7 +467,7 @@ export function StudioPage(): React.JSX.Element {
     const editable = (): ProjectCanvas => {
       const canvas = current()
       if (!canvas) throw new Error('先在画布上选中一个画面')
-      if (canvas.kind === 'style') throw new Error('选中的是风格，请在左侧直接编辑它的描述')
+      if (canvas.kind === 'style') throw new Error('选中的是风格，只能改它的描述')
       if (canvas.kind !== 'layout') throw new Error('选中的是生成结果，不能修改；请先复制成新画面')
       return canvas
     }
@@ -509,12 +529,16 @@ export function StudioPage(): React.JSX.Element {
         }
       },
       setPrompt: (value) => {
-        const canvas = editable()
+        // A 风格's description is written the same way.
+        const selectedStyle = current()
+        const canvas = selectedStyle?.kind === 'style' ? selectedStyle : editable()
         live.current.project.updateCanvas(canvas.id, (item) => withDescription(item, value))
         return { written: value.length }
       },
       setSampler: (patch) => {
         const canvas = editable()
+        if (canvas.upscale && (patch.width !== undefined || patch.height !== undefined))
+          throw new Error('放大的尺寸跟着原图走，只能改放大倍数')
         let next = canvas
         if (patch.width !== undefined || patch.height !== undefined) {
           next = resizeCanvas(
@@ -534,6 +558,7 @@ export function StudioPage(): React.JSX.Element {
       },
       addLayer: ({ label, caption, bbox }) => {
         const canvas = editable()
+        if (canvas.upscale) throw new Error('放大按原图重画，没有区域')
         const box = clampBox(
           bbox
             ? [bbox.x * canvas.width, bbox.y * canvas.height, (bbox.x + bbox.w) * canvas.width, (bbox.y + bbox.h) * canvas.height]

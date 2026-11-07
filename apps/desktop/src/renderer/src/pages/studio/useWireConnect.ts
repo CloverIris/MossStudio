@@ -68,8 +68,10 @@ export function useWireConnect(options: {
     const to = toBoardPoint(options.view.current, at.x, at.y)
     // A port sits on the card's left edge, half outside it: look for one first.
     const radius = SLOT_SNAP / Math.max(0.01, options.view.current.zoom)
+    const sourceKind = options.cards.current.find((canvas) => canvas.id === sourceId)?.kind
+    // A 风格 wire snaps only to 风格 sockets; near a picture socket it still links as a 风格.
     const hit = slotAt(
-      options.slots.current.filter((item) => item.canvasId !== sourceId),
+      options.slots.current.filter((item) => item.canvasId !== sourceId && (sourceKind !== 'style' || item.slot.role === 'style')),
       to,
       radius,
     )
@@ -77,7 +79,6 @@ export function useWireConnect(options: {
     const check = canConnect(options.cards.current, sourceId, target)
     const targetId = target && target.id !== sourceId ? target.id : undefined
     if (!check.ok) return { sourceId, from, to, targetId, ok: false, reason: check.reason || undefined }
-    const sourceKind = options.cards.current.find((canvas) => canvas.id === sourceId)?.kind
     if (hit && target) {
       const drop = slotDrop(hit.slot, target, sourceId, sourceKind)
       return {
