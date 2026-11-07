@@ -24,10 +24,10 @@ import {
   zoomAround,
   type View,
 } from './boardLayout'
-import { CanvasCard } from './CanvasCard'
-import { canConnect, hasPicture, linkMenu } from './connect'
+import { CanvasCard, type CardMenuAction, type CardStrip } from './CanvasCard'
+import { canConnect, linkMenu, newCanvasMenu } from './connect'
 import { isImageFile } from './imageNodes'
-import { cardJobView } from './jobStatus'
+import { cardJobView, type CardJobView } from './jobStatus'
 import { LinkMenu } from './LinkMenu'
 import { controlKindLabel, linkSourceImage, roleLabel, type LinkRole, type PickTarget } from './links'
 import { BRUSH_DEFAULT, maskAvailability, startPictureSize } from './mask'
@@ -41,7 +41,11 @@ import { useWireSelection } from './useWireSelection'
 import { EmptyPortChips, type PortActions } from './EmptyPorts'
 import { inputSlots } from './ports'
 import { WireChips, WireLayer } from './WireLayer'
-import { boardPorts } from './wires'
+import { recipes, type Recipe } from './recipes'
+import { boardCanvases, canUnpin, filmstripOf, foldedRunIds, givesPicture, isActiveRun, unpinRun, type StripItem } from './runs'
+import { useRunDrag } from './useRunDrag'
+import { boardPorts, type Point } from './wires'
+import { OutputImage } from './OutputImage'
 
 const FIT_PADDING = { top: 72, side: 48 }
 
@@ -98,6 +102,20 @@ export interface BoardProps {
   describeModel?: (canvas: ProjectCanvas) => { label: string; ready: boolean } | null
   /** Text typed into a card's description on the board. */
   onChangeDescription: (canvasId: string, text: string) => void
+  /** Show this filmstrip picture on its 画面's face (and give it to wires from there). */
+  onShowOutput: (layoutId: string, link: CanvasImageLink) => void
+  /** Pin a filmstrip run as a card of its own: under its 画面, or where it was dragged to. */
+  onPinRun: (runId: string, at?: Point) => void
+  /** Put a pinned result back into its 画面's filmstrip. */
+  onUnpinRun: (runId: string) => void
+  /** 用作起始图, or a wire dropped on the empty board: a new 画面 fed by this card's picture. */
+  onNewFromPicture: (sourceId: string, role: 'init' | 'reference', at?: Point) => void
+  /** 用这次的设置: the 画面 takes back the settings one of its runs was made with. */
+  onUseRunSettings: (layoutId: string, runId: string) => void
+  /** Remove one run from a 画面's filmstrip. */
+  onDropRun: (runId: string) => void
+  /** A recipe from the new-canvas tile: a 画面 wired to a picture the user chooses. */
+  onRecipe: (recipe: Recipe) => void
 }
 
 function isTyping(target: EventTarget | null): boolean {
@@ -118,8 +136,11 @@ export function Board(props: BoardProps): React.JSX.Element {
   const pointer = useRef<{ x: number; y: number } | null>(null)
 
   const selected = props.canvases.find((canvas) => canvas.id === props.selectedCanvasId) ?? null
+  // Results folded into a 画面's filmstrip are not cards on the board.
+  const folded = useMemo(() => foldedRunIds(props.canvases), [props.canvases])
+  const cards = useMemo(() => boardCanvases(props.canvases, folded), [props.canvases, folded])
   const tileSize = selected && selected.kind !== 'image' ? selected : { width: 1024, height: 1024 }
-  const newSpot = nextFreeSpot(props.canvases, tileSize)
+  const newSpot = nextFreeSpot(cards, tileSize)
   const tileRect = { x: newSpot.x, y: newSpot.y, w: cardWidth(tileSize), h: CARD_HEADER + cardBodyHeight(tileSize) }
 
   const [hoveredWire, setHoveredWire] = useState<string | null>(null)
@@ -128,7 +149,7 @@ export function Board(props: BoardProps): React.JSX.Element {
     (canvas: ProjectCanvas) => inputSlots(canvas, engineFeatures, controlAdapters, blockers),
     [engineFeatures, controlAdapters, blockers],
   )
-  const ports = useMemo(() => boardPorts(props.canvases, view.zoom, slotsFor), [props.canvases, view.zoom, slotsFor])
+  const ports = useMemo(() => boardPorts(cards, view.zoom, slotsFor), [cards, view.zoom, slotsFor])
   const wires = ports.wires
   const slotsRef = useRef(ports.slots)
   slotsRef.current = ports.slots
@@ -149,14 +170,14 @@ export function Board(props: BoardProps): React.JSX.Element {
   // its element in the DOM would end the drag (pointer capture is lost).
   const order = useRef<string[]>([])
   const ordered = useMemo(() => {
-    const byPosition = [...props.canvases].sort((a, b) => a.y - b.y || a.x - b.x)
+    const byPosition = [...cards].sort((a, b) => a.y - b.y || a.x - b.x)
     if (!cardDrag.draggingId) {
       order.current = byPosition.map((canvas) => canvas.id)
       return byPosition
     }
     const rank = new Map(order.current.map((id, index) => [id, index]))
-    return [...props.canvases].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity))
-  }, [props.canvases, cardDrag.draggingId])
+    return [...cards].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity))
+  }, [cards, cardDrag.draggingId])
   const orderedRef = useRef(ordered)
   orderedRef.current = ordered
   const connect = useWireConnect({
@@ -179,6 +200,20 @@ export function Board(props: BoardProps): React.JSX.Element {
       latest.current.portActions.onAddFromFile(canvasId, role, kind)
     },
   }
+  const showRef = useRef((layoutId: string, item: StripItem) =>
+    latest.current.onShowOutput(layoutId, item.output ? { canvasId: item.runId, output: item.output } : { canvasId: item.runId }),
+  )
+  // A thumbnail let go outside its 画面 becomes a card where it was dropped.
+  const dropRef = useRef((layoutId: string, item: StripItem, at: Point) => {
+    const list = latest.current.canvases
+    const layout = list.find((canvas) => canvas.id === layoutId)
+    const run = list.find((canvas) => canvas.id === item.runId)
+    if (!layout || !run || run.kind !== 'result') return
+    const rect = cardRect(layout)
+    if (at.x >= rect.x && at.x <= rect.x + rect.w && at.y >= rect.y && at.y <= rect.y + rect.h) return
+    latest.current.onPinRun(run.id, { x: at.x - cardWidth(run) / 2, y: at.y - CARD_HEADER / 2 })
+  })
+  const runDrag = useRunDrag({ viewport, view: viewRef, onShow: showRef, onDrop: dropRef })
   const wireSelection = useWireSelection(wires, (wire) => latest.current.onRemoveLink(wire.targetId, wire.role!, wire.at))
   const selectedWireId = wireSelection.selectedWireId
   const setSelectedWireId = wireSelection.select
@@ -186,7 +221,7 @@ export function Board(props: BoardProps): React.JSX.Element {
   const fit = useCallback(() => {
     const size = viewportSize()
     if (!size.width || !size.height) return
-    const list = latest.current.canvases
+    const list = boardCanvases(latest.current.canvases)
     const choice = list.find((canvas) => canvas.id === latest.current.selectedCanvasId) ?? { width: 1024, height: 1024 }
     const spot = nextFreeSpot(list, choice)
     const extra = { x: spot.x, y: spot.y, w: cardWidth(choice), h: CARD_HEADER + cardBodyHeight(choice) }
@@ -194,7 +229,10 @@ export function Board(props: BoardProps): React.JSX.Element {
   }, [])
 
   const reveal = useCallback((canvasId: string) => {
-    const canvas = latest.current.canvases.find((item) => item.id === canvasId)
+    const list = latest.current.canvases
+    const found = list.find((item) => item.id === canvasId)
+    // A run in a filmstrip shows on its 画面.
+    const canvas = found && foldedRunIds(list).has(found.id) ? list.find((item) => item.id === found.sourceCanvasId) : found
     const size = viewportSize()
     if (!canvas || !size.width) return
     const rect = cardRect(canvas)
@@ -310,7 +348,7 @@ export function Board(props: BoardProps): React.JSX.Element {
   const pickFor = props.pickTarget ? props.canvases.find((canvas) => canvas.id === props.pickTarget!.canvasId) : undefined
   const pickState = (canvas: ProjectCanvas): 'ok' | 'inert' | undefined => {
     if (!props.pickTarget) return undefined
-    return pickFor && hasPicture(canvas) && canConnect(props.canvases, canvas.id, pickFor).ok ? 'ok' : 'inert'
+    return pickFor && givesPicture(canvas, props.canvases) && canConnect(props.canvases, canvas.id, pickFor).ok ? 'ok' : 'inert'
   }
   const pickRole = props.pickTarget
     ? props.pickTarget.role === 'control'
@@ -318,8 +356,31 @@ export function Board(props: BoardProps): React.JSX.Element {
       : roleLabel(props.pickTarget.role)
     : ''
 
-  const menuTarget = connect.menu ? props.canvases.find((canvas) => canvas.id === connect.menu!.targetId) : undefined
+  const menuTarget = connect.menu?.targetId ? props.canvases.find((canvas) => canvas.id === connect.menu!.targetId) : undefined
   const menuSource = connect.menu ? props.canvases.find((canvas) => canvas.id === connect.menu!.sourceId) : undefined
+
+  // The ⋯ menu of a card: what can be done with the picture it shows.
+  const cardActions = (canvas: ProjectCanvas, run: ProjectCanvas, item: StripItem | undefined): CardMenuAction[] => {
+    const actions: CardMenuAction[] = []
+    if (canvas.kind === 'layout') {
+      if (!item) return actions
+      if (item.path) actions.push({ label: '用作起始图', onSelect: () => props.onNewFromPicture(canvas.id, 'init') })
+      if (run.kind === 'result' && item.path) actions.push({ label: '固定到画板', onSelect: () => props.onPinRun(run.id) })
+      if (run.kind === 'result') actions.push({ label: '用这次的设置', onSelect: () => props.onUseRunSettings(canvas.id, run.id) })
+      if (!isActiveRun(run)) actions.push({ label: '删除这次生成', tone: 'danger', onSelect: () => props.onDropRun(run.id) })
+      return actions
+    }
+    if (givesPicture(canvas, props.canvases))
+      actions.push({ label: '用作起始图', onSelect: () => props.onNewFromPicture(canvas.id, 'init') })
+    // A pinned result goes back into its 画面's filmstrip, unless it feeds another canvas.
+    if (canUnpin(canvas, props.canvases) && foldedRunIds(unpinRun(props.canvases, canvas.id)).has(canvas.id)) {
+      const source = props.canvases.find((item) => item.id === canvas.sourceCanvasId)
+      actions.push({ label: `收回到「${source?.title ?? '画面'}」`, onSelect: () => props.onUnpinRun(canvas.id) })
+    }
+    return actions
+  }
+  const recipeList = recipes(props.engineFeatures, props.controlAdapters, props.blockers)
+  const dragged = runDrag.drag
 
   return (
     <div
@@ -393,7 +454,25 @@ export function Board(props: BoardProps): React.JSX.Element {
           onHover={setHoveredWire}
         />
         {ordered.map((canvas) => {
-          const job = canvas.jobId ? props.jobs.find((item) => item.id === canvas.jobId) : undefined
+          const viewOf = (run: ProjectCanvas): CardJobView =>
+            cardJobView(run, run.jobId ? props.jobs.find((item) => item.id === run.jobId) : undefined, props.jobs)
+          // A 画面 shows the run picked in its filmstrip: its picture, progress and job.
+          const film = canvas.kind === 'layout' ? filmstripOf(canvas, props.canvases, folded) : null
+          const item = film ? film.items[film.shown] : undefined
+          const shownRun = (item && film?.runs.find((run) => run.id === item.runId)) || canvas
+          const views = new Map<string, CardJobView>(film?.runs.map((run) => [run.id, viewOf(run)]) ?? [])
+          const strip: CardStrip | null =
+            film && item
+              ? {
+                  items: film.items,
+                  shown: film.shown,
+                  views,
+                  onShow: (index) => showRef.current(canvas.id, film.items[index]!),
+                  onOpen: (index) => props.onOpenViewer(film.items[index]!.runId, film.items[index]!.output),
+                  onPointerDown: (index, event) => runDrag.start(canvas.id, film.items[index]!, event),
+                }
+              : null
+          const jobId = shownRun.jobId
           const busy = props.busyIds.has(canvas.id)
           const isSelected = canvas.id === props.selectedCanvasId
           const init = canvas.kind === 'layout' ? canvas.inputs?.init : undefined
@@ -405,7 +484,10 @@ export function Board(props: BoardProps): React.JSX.Element {
             <CanvasCard
               key={canvas.id}
               canvas={canvas}
-              view={cardJobView(canvas, job, props.jobs)}
+              view={views.get(shownRun.id) ?? viewOf(shownRun)}
+              strip={strip}
+              jobId={jobId}
+              menuActions={cardActions(canvas, shownRun, item)}
               selected={isSelected}
               dragging={cardDrag.draggingId === canvas.id}
               tool={props.tool}
@@ -423,7 +505,7 @@ export function Board(props: BoardProps): React.JSX.Element {
                     }
                   : null
               }
-              hasOutput={hasPicture(canvas)}
+              hasOutput={givesPicture(canvas, props.canvases)}
               model={canvas.kind === 'layout' ? (props.describeModel?.(canvas) ?? null) : null}
               onChangeDescription={(text) => props.onChangeDescription(canvas.id, text)}
               dropTarget={draft?.targetId === canvas.id ? (draft.ok ? 'ok' : 'no') : undefined}
@@ -445,12 +527,12 @@ export function Board(props: BoardProps): React.JSX.Element {
               }}
               onOpenRegion={props.onOpenRegion}
               onDragStart={(event) => startCardDrag(canvas, event)}
-              onOpenViewer={(index) => props.onOpenViewer(canvas.id, index)}
+              onOpenViewer={(index) => props.onOpenViewer(shownRun.id, index)}
               onRerun={(seed) => props.onRerun(canvas.id, seed)}
               onCancel={() => {
-                if (canvas.jobId) props.onCancel(canvas.jobId)
+                if (jobId) props.onCancel(jobId)
               }}
-              onShowActivity={() => props.onShowActivity(canvas.jobId)}
+              onShowActivity={() => props.onShowActivity(jobId)}
               onCopy={() => props.onCopy(canvas)}
               onDelete={() => props.onDelete(canvas)}
             />
@@ -488,16 +570,47 @@ export function Board(props: BoardProps): React.JSX.Element {
             {connect.draft.reason}
           </div>
         ) : null}
-        <button
-          type="button"
+        <div
           data-new-canvas
-          onClick={props.onAddCanvas}
-          className="absolute flex items-center justify-center gap-1.5 rounded-md bg-well text-ui text-ink-2 transition-colors hover:bg-well-strong hover:text-ink"
+          className="absolute flex flex-col items-center justify-center gap-3 rounded-md bg-well px-3"
           style={{ left: tileRect.x, top: tileRect.y + CARD_HEADER, width: tileRect.w, height: tileRect.h - CARD_HEADER }}
         >
-          <Plus className="size-4" aria-hidden="true" strokeWidth={1.6} />
-          新建画面
-        </button>
+          <button
+            type="button"
+            onClick={props.onAddCanvas}
+            className="flex h-9 items-center gap-1.5 rounded-md px-3 text-ui text-ink-2 transition-colors hover:bg-well-strong hover:text-ink"
+          >
+            <Plus className="size-4" aria-hidden="true" strokeWidth={1.6} />
+            新建画面
+          </button>
+          <div role="group" aria-label="从一张图开始" data-recipes className="flex flex-wrap justify-center gap-1.5">
+            {recipeList.map((recipe) => (
+              <button
+                key={recipe.id}
+                type="button"
+                data-recipe={recipe.id}
+                disabled={Boolean(recipe.disabled)}
+                title={recipe.disabled ?? recipe.hint}
+                onClick={() => props.onRecipe(recipe)}
+                className="h-6 rounded-full bg-raised px-2.5 text-caption text-ink transition-colors hover:bg-well-strong disabled:cursor-not-allowed disabled:bg-transparent disabled:text-ink-2"
+              >
+                {recipe.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {dragged?.item.path ? (
+          <div
+            aria-hidden="true"
+            data-run-drag
+            className="pointer-events-none absolute left-0 top-0 z-[8] size-16 origin-top-left overflow-hidden rounded-md bg-well-strong shadow-float"
+            style={{
+              transform: `translate(${dragged.at.x}px, ${dragged.at.y}px) scale(${1 / Math.max(0.01, view.zoom)}) translate(-50%, -50%)`,
+            }}
+          >
+            <OutputImage path={dragged.item.path} alt="" />
+          </div>
+        ) : null}
       </div>
 
       {props.pickTarget ? (
@@ -519,7 +632,20 @@ export function Board(props: BoardProps): React.JSX.Element {
           onClose={connect.closeMenu}
           onPick={(role, kind) => {
             const menu = connect.menu!
-            props.onLink(menu.targetId, role, { canvasId: menu.sourceId }, kind)
+            props.onLink(menu.targetId!, role, { canvasId: menu.sourceId }, kind)
+            connect.closeMenu()
+          }}
+        />
+      ) : connect.menu && !connect.menu.targetId ? (
+        <LinkMenu
+          title={`用「${menuSource?.title ?? '图片'}」新建画面`}
+          entries={newCanvasMenu(props.engineFeatures, props.blockers)}
+          at={connect.menu.at}
+          bounds={viewportSize()}
+          onClose={connect.closeMenu}
+          onPick={(role) => {
+            const menu = connect.menu!
+            if (role !== 'control') props.onNewFromPicture(menu.sourceId, role, { x: menu.point.x, y: menu.point.y - CARD_HEADER })
             connect.closeMenu()
           }}
         />

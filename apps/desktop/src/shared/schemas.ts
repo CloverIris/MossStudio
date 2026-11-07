@@ -230,6 +230,8 @@ const projectCanvasSchema = z.object({
   deviceId: z.string().max(160).optional(),
   backgroundPath: z.string().max(4096).optional(),
   sourceCanvasId: z.string().max(120).optional(),
+  pinned: z.boolean().optional(),
+  shownOutput: canvasImageLinkSchema.optional(),
   jobId: z.string().max(160).optional(),
   jobState: z.enum(['queued', 'starting', 'running', 'succeeded', 'failed', 'canceled']).optional(),
   progress: z

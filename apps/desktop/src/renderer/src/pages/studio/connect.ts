@@ -95,3 +95,15 @@ export function linkMenu(
   if (!entries.length) return [{ type: 'note', label: '当前引擎不支持把图片接进来' }]
   return entries
 }
+
+/**
+ * The menu of a wire dropped on the empty board: a new 画面 fed by the
+ * picture, as its start picture or as a reference.
+ */
+export function newCanvasMenu(features: EngineFeatures | null | undefined, blockers: readonly Blocker[] = []): LinkMenuEntry[] {
+  if (!features) return [{ type: 'note', label: engineUnavailableReason(features, blockers, '把图片接进来') ?? '' }]
+  const entries: LinkMenuEntry[] = []
+  if (features.imageInput) entries.push({ type: 'item', role: 'init', label: '新画面 · 起始图' })
+  if (features.references) entries.push({ type: 'item', role: 'reference', label: '新画面 · 参考图' })
+  return entries.length ? entries : [{ type: 'note', label: '现在的引擎不能把图片接进新画面' }]
+}

@@ -22,16 +22,23 @@ export interface ConnectDraft {
 
 export interface ConnectMenu {
   sourceId: string
-  targetId: string
+  /** The card the wire was dropped on; absent when it was dropped on the empty board (a new 画面 is offered). */
+  targetId?: string
   /** Drop point relative to the board viewport. */
   at: { x: number; y: number }
+  /** Drop point on the board. */
+  point: Point
 }
+
+/** How far (screen pixels) a wire must be pulled before a drop on the empty board offers a new 画面. */
+export const NEW_CANVAS_PULL = 48
 
 /**
  * Dragging a wire out of a card's output port. While dragging, the loose end
  * follows the pointer and the card under it says whether it accepts the
  * wire (and why not). Dropping on an input port links straight into it;
- * dropping anywhere else on an accepting card opens the role menu.
+ * dropping anywhere else on an accepting card opens the role menu, and
+ * dropping on the empty board offers a new 画面 fed by the picture.
  */
 export function useWireConnect(options: {
   viewport: React.RefObject<HTMLDivElement | null>
@@ -98,6 +105,8 @@ export function useWireConnect(options: {
       // The pointer is already gone.
     }
     const from = outputPort(canvas)
+    const startX = event.clientX
+    const startY = event.clientY
     setDraft(aim(canvas.id, from, event))
     const move = (next: PointerEvent): void => {
       if (next.pointerId !== pointerId) return
@@ -111,13 +120,18 @@ export function useWireConnect(options: {
       element.removeEventListener('pointercancel', stop)
       if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId)
       const end = aim(canvas.id, from, next)
+      const pulled = Math.hypot(next.clientX - startX, next.clientY - startY) >= NEW_CANVAS_PULL
       if (next.type === 'pointerup' && end.ok && end.targetId && end.slot?.drop.ok) {
         options.onSlotDrop(end.targetId, canvas.id, end.slot.drop)
         setDraft(null)
       } else if (next.type === 'pointerup' && end.ok && end.targetId) {
         // Keep the wire drawn to the drop point while the menu is open.
         setDraft(end)
-        setMenu({ sourceId: canvas.id, targetId: end.targetId, at: local(next) })
+        setMenu({ sourceId: canvas.id, targetId: end.targetId, at: local(next), point: end.to })
+      } else if (next.type === 'pointerup' && !end.targetId && pulled) {
+        // Dropped on the empty board: offer a new 画面 fed by this picture.
+        setDraft({ ...end, ok: true, reason: undefined })
+        setMenu({ sourceId: canvas.id, at: local(next), point: end.to })
       } else {
         setDraft(null)
       }

@@ -4,7 +4,8 @@ import { clampBox } from '../../lib/layout'
 import type { StudioReuseRequest } from '../../lib/studioReuse'
 import { BOARD_GAP, cardRect, cardWidth, imageNodeSize, resultSpot, nextFreeSpot } from './boardLayout'
 import { DEFAULT_NEGATIVE, DEFAULT_QUALITY, DEFAULT_SIZE, clampDimension, isSeedLocked, nextCanvasTitle, qualityPreset } from './defaults'
-import { DEFAULT_INIT_STRENGTH, dropLinksTo, linksOf } from './links'
+import { DEFAULT_INIT_STRENGTH, dropLinksTo, linksOf, setLink, type LinkRole } from './links'
+import { boardCanvases, foldedRunIds, givesPicture, pictureLink, pinRun, spotBeside } from './runs'
 import { cleanSampling, generationSize, outputSize, scaleHires } from './sampling'
 
 /** Pure canvas and region operations. Every edit returns new objects. */
@@ -119,7 +120,7 @@ export function createLayoutCanvas(
   settings: CanvasSettings,
   id: string = crypto.randomUUID(),
 ): ProjectCanvas {
-  const position = nextFreeSpot(existing, settings)
+  const position = nextFreeSpot(boardCanvases(existing), settings)
   return {
     id,
     kind: 'layout',
@@ -159,6 +160,39 @@ export function copyAsLayout(source: ProjectCanvas, existing: readonly ProjectCa
   return copy
 }
 
+/**
+ * A new 画面 fed by another card's picture: 用作起始图, or a wire dropped on
+ * the empty board. It goes to the right of that card (or where the wire was
+ * dropped) and takes its settings; as a start picture it also takes its
+ * description and regions. A 画面 gives the picture on its face, and a
+ * filmstrip run used this way is pinned as a card of its own.
+ * `fallback` = the settings a picture card's new 画面 starts with.
+ */
+export function canvasFromPicture(
+  canvases: readonly ProjectCanvas[],
+  sourceId: string,
+  options: { role: Exclude<LinkRole, 'control'>; fallback: CanvasSettings; at?: { x: number; y: number }; id?: string },
+): { canvases: ProjectCanvas[]; created: ProjectCanvas } | null {
+  const source = canvases.find((canvas) => canvas.id === sourceId)
+  if (!source || !givesPicture(source, canvases)) return null
+  const link = pictureLink(canvases, { canvasId: sourceId })
+  const pinned = pinRun(canvases, link.canvasId)
+  const settings = source.kind === 'image' ? options.fallback : settingsFrom(source)
+  const placed = createLayoutCanvas(pinned, settings, options.id)
+  const spot = options.at ? { x: Math.round(options.at.x), y: Math.round(options.at.y) } : spotBeside(source, settings, pinned)
+  let created: ProjectCanvas = { ...placed, x: spot.x, y: spot.y }
+  if (options.role === 'init' && source.kind !== 'image') {
+    created = {
+      ...created,
+      prompt: source.prompt,
+      summary: structuredClone(source.summary),
+      layers: source.layers.map((layer) => ({ ...layer, id: crypto.randomUUID() })),
+    }
+  }
+  created = setLink(created, options.role, link)
+  return { canvases: [...pinned, created], created }
+}
+
 function fileTitle(path: string): string {
   const name = path.split(/[\\/]/).pop() ?? ''
   return name.replace(/\.[^.]+$/, '') || '图片'
@@ -176,9 +210,10 @@ export function createImageCanvas(
   title: string = fileTitle(picture.path),
 ): ProjectCanvas {
   const size = imageNodeSize(picture)
-  let position = nextFreeSpot(existing, size)
+  const shown = boardCanvases(existing)
+  let position = nextFreeSpot(shown, size)
   if (near) {
-    const taken = existing.map(cardRect)
+    const taken = shown.map(cardRect)
     const w = cardWidth(size)
     const rect = { x: near.x - w - BOARD_GAP * 2, y: near.y, w, h: cardRect({ x: 0, y: 0, ...size }).h }
     for (let guard = 0; guard < 200; guard += 1) {
@@ -214,32 +249,36 @@ export function createImageCanvas(
 }
 
 /**
- * The canvas a run writes into. A layout canvas with no picture yet renders its
- * first run in place; every later run gets its own result card under the
- * source, so earlier pictures are never overwritten.
+ * The canvas a run writes into: a new result canvas, so earlier pictures are
+ * never overwritten. A 画面's runs stack in its filmstrip (see runs.ts) and
+ * its face follows the new one; a run of a result card gets a card of its own
+ * under it. (Older projects may have a 画面 whose first run rendered on the
+ * 画面 itself; that picture stays the first in its filmstrip.)
  */
 export function taskCanvasFor(
   source: ProjectCanvas,
   canvases: readonly ProjectCanvas[],
   id: string = crypto.randomUUID(),
 ): { canvases: ProjectCanvas[]; taskId: string } {
-  const runInPlace = source.kind === 'layout' && (source.outputs?.length ?? 0) === 0
-  const reset = { jobId: undefined, jobState: 'starting' as const, progress: undefined, outputs: [], error: undefined }
-  if (runInPlace) {
-    return {
-      taskId: source.id,
-      canvases: canvases.map((item) => (item.id === source.id ? { ...source, ...reset } : item)),
-    }
-  }
   // A 高清修复 run's card is the size of the finished picture; the first-pass
   // size is kept so running it again repeats the same job.
   const base = generationSize(source)
   const output = outputSize(source)
   const resized = output.width !== base.width || output.height !== base.height
-  const spot = resultSpot(source, canvases)
+  const spot = resultSpot(source, boardCanvases(canvases))
+  // The run keeps what it was made with; its own picture fields start empty.
+  const {
+    shownOutput: _shown,
+    pinned: _pinned,
+    jobId: _job,
+    jobState: _state,
+    progress: _progress,
+    outputs: _outputs,
+    error: _error,
+    ...frozen
+  } = source
   const task: ProjectCanvas = {
-    ...source,
-    ...reset,
+    ...frozen,
     id,
     kind: 'result',
     title: `${source.title} · 结果`,
@@ -248,10 +287,17 @@ export function taskCanvasFor(
     width: output.width,
     height: output.height,
     sourceCanvasId: source.id,
+    jobState: 'starting',
+    outputs: [],
   }
   if (resized) task.baseSize = base
   else delete task.baseSize
-  return { taskId: id, canvases: [...canvases, task] }
+  const next = canvases.map((item) => {
+    if (item.id !== source.id || !item.shownOutput) return item
+    const { shownOutput: _picked, ...rest } = item
+    return rest
+  })
+  return { taskId: id, canvases: [...next, task] }
 }
 
 /** Copy job state, outputs and errors onto the canvases that track those jobs. */
@@ -351,13 +397,26 @@ export function resizeCanvas<T extends Pick<ProjectCanvas, 'width' | 'height' | 
   return next
 }
 
-/** After deleting a canvas: the remaining canvases without links to it, and how many links went. */
+/** The canvases deleting `id` removes: the canvas, and the runs folded into its filmstrip. */
+export function removedWith(canvases: readonly ProjectCanvas[], id: string): string[] {
+  const folded = foldedRunIds(canvases)
+  return [id, ...canvases.filter((canvas) => folded.has(canvas.id) && canvas.sourceCanvasId === id).map((canvas) => canvas.id)]
+}
+
+/**
+ * After deleting a canvas (and its filmstrip): the remaining canvases without
+ * links to it, and how many links went.
+ */
 export function removeCanvasFrom(canvases: readonly ProjectCanvas[], id: string): { canvases: ProjectCanvas[]; removedLinks: number } {
-  const { canvases: next, removed } = dropLinksTo(
-    canvases.filter((canvas) => canvas.id !== id),
-    id,
-  )
-  return { canvases: next, removedLinks: removed }
+  const gone = new Set(removedWith(canvases, id))
+  let next = canvases.filter((canvas) => !gone.has(canvas.id))
+  let removedLinks = 0
+  for (const goneId of gone) {
+    const result = dropLinksTo(next, goneId)
+    next = result.canvases
+    removedLinks += result.removed
+  }
+  return { canvases: next, removedLinks }
 }
 
 /* ------------------------------------------------------------------ */

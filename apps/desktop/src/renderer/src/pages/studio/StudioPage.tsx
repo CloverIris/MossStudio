@@ -15,7 +15,7 @@ import { useShell } from '../../lib/shell'
 import { useApp } from '../../store'
 import { Assistant } from './assistant/Assistant'
 import { Board, type BoardHandle } from './Board'
-import { canvasFromReuse, newRegion, resizeCanvas, settingsFrom } from './canvases'
+import { canvasFromPicture, canvasFromReuse, newRegion, removedWith, resizeCanvas, settingsFrom } from './canvases'
 import { clampDimension, isSeedLocked, nearestQuality, qualityPreset, SEED_MAX } from './defaults'
 import { InspectorPanel } from './InspectorPanel'
 import type { InputsWiring } from './InputsSection'
@@ -29,7 +29,9 @@ import { deriveReadiness, resolveBundle } from './readiness'
 import { useBoardAssets } from './useBoardAssets'
 import { useEngineFeatures } from './useEngineFeatures'
 import { useControlAdapters } from '../../lib/useControlAdapters'
-import { removeLink, setControlAdapter, setLink, type PickTarget } from './links'
+import { removeLink, setControlAdapter, setLink, type CanvasLinkEntry, type LinkRole, type PickTarget } from './links'
+import type { Recipe } from './recipes'
+import { dropRun, pictureLink, pinRun, unpinRun, withRunSettings } from './runs'
 import { resolveJobInputs } from './jobInputs'
 import { useGenerate } from './useGenerate'
 import { useInputImport } from './useInputImport'
@@ -279,19 +281,51 @@ export function StudioPage(): React.JSX.Element {
     project.updateCanvas(canvasId, (canvas) => ({ ...canvas, layers: update(canvas.layers) }))
   }
 
+  /**
+   * Link a picture into a canvas. A 画面 gives the picture on its face (a
+   * filmstrip run), and a run used this way is pinned as a card of its own.
+   */
+  const linkInto = (targetId: string, role: LinkRole, link: CanvasLinkEntry['link'], kind?: string): void => {
+    project.setCanvases((previous) => {
+      const resolved = pictureLink(previous, link)
+      return pinRun(previous, resolved.canvasId).map((canvas) => (canvas.id === targetId ? setLink(canvas, role, resolved, kind) : canvas))
+    })
+  }
+
   const pickSource = (sourceId: string): void => {
     const target = pickTarget
     if (!target) return
     setPickTarget(null)
-    project.updateCanvas(target.canvasId, (canvas) => setLink(canvas, target.role, { canvasId: sourceId }, target.kind))
+    linkInto(target.canvasId, target.role, { canvasId: sourceId }, target.kind)
   }
 
-  // A picture card's 用它新建画面: a new canvas next to it, starting from the picture.
-  const newCanvasFromPicture = (imageCanvasId: string): void => {
-    if (!project.canvasesRef.current.some((canvas) => canvas.id === imageCanvasId)) return
+  /** 用作起始图 (or a wire dropped on the empty board): a new 画面 fed by a card's picture. */
+  const newCanvasFromPicture = (sourceId: string, role: 'init' | 'reference' = 'init', at?: { x: number; y: number }): void => {
+    const list = project.canvasesRef.current
+    // A picture card has no generation settings; the new 画面 takes the latest canvas's.
+    const latestCanvas = [...list].reverse().find((canvas) => canvas.kind !== 'image')
+    const made = canvasFromPicture(list, sourceId, { role, at, fallback: settingsFrom(latestCanvas) })
+    if (!made) return
+    project.setCanvases(made.canvases)
+    project.select(made.created.id)
+    requestAnimationFrame(() => board.current?.reveal(made.created.id))
+  }
+
+  /** A recipe: a new 画面, then the picture it starts from, chosen from a file. */
+  const startRecipe = async (recipe: Recipe): Promise<void> => {
     const created = project.addCanvas()
-    project.updateCanvas(created.id, (canvas) => setLink(canvas, 'init', { canvasId: imageCanvasId }))
     requestAnimationFrame(() => board.current?.reveal(created.id))
+    if (recipe.role === 'control') {
+      const adapter = controlAdapters.find((item) => item.controlKinds.length)
+      if (!adapter) return
+      project.updateCanvas(created.id, (canvas) => setControlAdapter(canvas, adapter.id))
+      await inputImport.addFromFile(created.id, 'control', adapter.controlKinds[0])
+    } else {
+      await inputImport.addFromFile(created.id, recipe.role)
+    }
+    // 局部重绘 goes straight to painting the part to redo.
+    const made = project.canvasesRef.current.find((canvas) => canvas.id === created.id)
+    if (recipe.id === 'inpaint' && made?.inputs?.init) setTool('mask')
   }
 
   const inputsWiring: InputsWiring = {
@@ -474,6 +508,7 @@ export function StudioPage(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  const deletingRuns = deleting ? removedWith(project.canvases, deleting.id).length - 1 : 0
   const viewerCanvas = viewer ? (project.canvases.find((canvas) => canvas.id === viewer.canvasId) ?? null) : null
   const viewerJob = viewerCanvas?.jobId ? jobs.find((job) => job.id === viewerCanvas.jobId) : undefined
 
@@ -517,7 +552,7 @@ export function StudioPage(): React.JSX.Element {
           onAddCanvas={() => project.addCanvas()}
           onNavigate={(to) => navigate(to)}
           inputs={inputsWiring}
-          onUseAsStart={newCanvasFromPicture}
+          onUseAsStart={(id) => newCanvasFromPicture(id)}
         />
       </StudioSidebar>
 
@@ -563,7 +598,8 @@ export function StudioPage(): React.JSX.Element {
           }}
           onDelete={(canvas) => {
             const job = canvas.jobId ? jobs.find((item) => item.id === canvas.jobId) : undefined
-            if (ACTIVE_JOB_STATES.has(job?.state ?? '')) {
+            // A 画面 is busy while any run in its filmstrip is.
+            if (ACTIVE_JOB_STATES.has(job?.state ?? '') || (canvas.kind === 'layout' && busyIds.has(canvas.id))) {
               toast.push('这个画面还在生成，先取消再删除', 'info')
               return
             }
@@ -571,7 +607,7 @@ export function StudioPage(): React.JSX.Element {
           }}
           engineFeatures={boardFeatures}
           controlAdapters={controlAdapters}
-          onLink={(targetId, role, link, kind) => project.updateCanvas(targetId, (canvas) => setLink(canvas, role, link, kind))}
+          onLink={linkInto}
           onRemoveLink={(canvasId, role, at) => project.updateCanvas(canvasId, (canvas) => removeLink(canvas, role, at))}
           onImportImages={(files, at) => {
             void boardAssets.importImages(files, at)
@@ -596,6 +632,21 @@ export function StudioPage(): React.JSX.Element {
             return { label: ready ? choice.bundle.name : `${choice.bundle.name} · 未下载`, ready }
           }}
           onChangeDescription={(canvasId, text) => project.updateCanvas(canvasId, (canvas) => withDescription(canvas, text))}
+          onShowOutput={(layoutId, link) => project.updateCanvas(layoutId, { shownOutput: link })}
+          onPinRun={(runId, at) => project.setCanvases((previous) => pinRun(previous, runId, at))}
+          onUnpinRun={(runId) => project.setCanvases((previous) => unpinRun(previous, runId))}
+          onNewFromPicture={newCanvasFromPicture}
+          onUseRunSettings={(layoutId, runId) => {
+            const run = project.canvasesRef.current.find((canvas) => canvas.id === runId)
+            if (!run) return
+            project.updateCanvas(layoutId, (canvas) => withRunSettings(canvas, run))
+            toast.push('已换成这次生成用的设置', 'info')
+          }}
+          onDropRun={(runId) => {
+            project.setCanvases((previous) => dropRun(previous, runId))
+            toast.push('已删除这次生成，图片仍保留在作品里', 'info')
+          }}
+          onRecipe={(recipe) => void startRecipe(recipe)}
         />
       </main>
 
@@ -647,7 +698,11 @@ export function StudioPage(): React.JSX.Element {
         open={deleting !== null}
         onClose={() => setDeleting(null)}
         title={deleting ? `删除「${deleting.title}」？` : '删除画面？'}
-        description="画面和它的区域会从项目里删除。已经生成的图片仍保留在作品里。"
+        description={
+          deletingRuns
+            ? `画面、它的区域和 ${deletingRuns} 次生成会从项目里删除。已经生成的图片仍保留在作品里。`
+            : '画面和它的区域会从项目里删除。已经生成的图片仍保留在作品里。'
+        }
         confirmLabel="删除画面"
         onConfirm={() => {
           if (deleting) {

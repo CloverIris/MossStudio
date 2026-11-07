@@ -612,3 +612,166 @@ describe('readable nodes', () => {
     await expect.poll(() => card(page).locator('[data-face-description]').textContent()).toBe('一只橘猫在雪地里')
   })
 })
+
+describe('filmstrip, 用作起始图 and recipes', () => {
+  const app = useApp()
+  const card = (page: Page, id = 'canvas-1') => page.locator(`article[data-canvas-card="${id}"]`)
+  const saved = (page: Page, id: string) =>
+    page.evaluate((canvasId) => window.__mock.state.projects[0]?.canvases.find((item) => item.id === canvasId) ?? null, id)
+  const cardIds = (page: Page) =>
+    page.locator('article[data-canvas-card]').evaluateAll((items) => items.map((item) => item.getAttribute('data-canvas-card')))
+
+  /**
+   * canvas-1 as an older project saved it: two runs as result cards of their
+   * own (now folded into its filmstrip) and one pinned to the board.
+   */
+  async function openWithRuns(theme: 'light' | 'dark' = 'light'): Promise<Page> {
+    const page = await app.open({ scenario: 'ready', route: '/studio', defer: true, theme })
+    await page.evaluate(() => {
+      const { canvasFixture, projectFixture, engineFeaturesFixture } = window.__mock.fixtures
+      const picture = canvasFixture({
+        id: 'img-1',
+        kind: 'image',
+        title: '小猫照片',
+        imagePath: '/fixture/projects/project-1/assets/cat-1600x1200.png',
+        imageSize: { width: 1600, height: 1200 },
+        x: 0,
+        y: 0,
+        width: 1024,
+        height: 768,
+        steps: 1,
+      })
+      const layout = canvasFixture({ id: 'canvas-1', title: '画面 1', prompt: '一只橘猫坐在窗台上', x: 420, y: 0 })
+      const run = (id: string, y: number, extra: object = {}) =>
+        canvasFixture({
+          id,
+          kind: 'result',
+          title: '画面 1 · 结果',
+          prompt: '一只橘猫坐在窗台上',
+          x: 420,
+          y,
+          sourceCanvasId: 'canvas-1',
+          jobState: 'succeeded',
+          outputs: [{ path: `/fixture/outputs/${id}-1024x1024.png`, width: 1024, height: 1024, seed: y }],
+          ...extra,
+        } as never)
+      window.__mock.state.projects = [
+        projectFixture({
+          id: 'project-1',
+          name: '小猫',
+          canvases: [picture, layout, run('run-1', 380), run('run-2', 760), run('kept', 1140, { pinned: true, x: 860 })],
+          selectedCanvasId: 'canvas-1',
+        }),
+      ]
+      window.__mock.state.engineFeatures = engineFeaturesFixture({})
+      window.__mock.state.controlAdapters = []
+    })
+    await app.start()
+    await card(page).waitFor()
+    await settle(page, 150)
+    return page
+  }
+
+  it("stacks a 画面's runs in its filmstrip; a pinned one stays a card with its lineage wire", async () => {
+    for (const theme of ['light', 'dark'] as const) {
+      const page = await openWithRuns(theme)
+      expect(await cardIds(page)).toEqual(['img-1', 'canvas-1', 'kept'])
+      const strip = card(page).locator('[data-filmstrip]')
+      expect(await strip.getByRole('button', { name: /^第 \d 张$/ }).count()).toBe(2)
+      // The newest is on the face, and the header says which of how many.
+      expect(await strip.getByRole('button', { name: '第 2 张' }).getAttribute('aria-pressed')).toBe('true')
+      expect(await card(page).locator('header').textContent()).toContain('2 / 2')
+      expect(await page.locator('[data-wire="lineage:kept"]').count()).toBe(1)
+      await app.screenshot(`board-filmstrip-${theme}`)
+    }
+  })
+
+  it('picks a picture for the face, and pins one by dragging it onto the board', async () => {
+    const page = await openWithRuns()
+    const strip = card(page).locator('[data-filmstrip]')
+    await strip.getByRole('button', { name: '第 1 张' }).click()
+    await expect.poll(async () => (await saved(page, 'canvas-1'))?.shownOutput, { timeout: 10_000 }).toEqual({ canvasId: 'run-1' })
+    const face = card(page).getByRole('button', { name: '查看 画面 1 的结果' })
+    expect(await face.locator('img').getAttribute('src')).toContain('run-1-1024x1024.png')
+
+    // Drag the second picture out of the strip and let go below the card.
+    const thumb = (await strip.getByRole('button', { name: '第 2 张' }).boundingBox())!
+    const body = (await card(page).boundingBox())!
+    await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(thumb.x + 40, thumb.y + 40, { steps: 4 })
+    await expect.poll(() => page.locator('[data-run-drag]').count()).toBe(1)
+    await page.mouse.move(body.x + body.width / 2, body.y + body.height + 120, { steps: 6 })
+    await page.mouse.up()
+    await expect.poll(() => cardIds(page)).toEqual(['img-1', 'canvas-1', 'run-2', 'kept'])
+    await expect.poll(async () => (await saved(page, 'run-2'))?.pinned, { timeout: 10_000 }).toBe(true)
+    expect(await strip.getByRole('button', { name: /^第 \d 张$/ }).count()).toBe(1)
+    expect(await page.locator('[data-wire="lineage:run-2"]').count()).toBe(1)
+
+    // 收回 puts it back into the strip.
+    await card(page, 'run-2').hover()
+    await card(page, 'run-2')
+      .getByRole('button', { name: /更多操作$/ })
+      .click()
+    await page.getByRole('menuitem', { name: '收回到「画面 1」' }).click()
+    await expect.poll(() => cardIds(page)).toEqual(['img-1', 'canvas-1', 'kept'])
+  })
+
+  it('用作起始图: a new 画面 to the right, wired from the picture on the face', async () => {
+    const page = await openWithRuns()
+    await card(page).getByRole('button', { name: '画面 1 更多操作' }).click()
+    await page.getByRole('menuitem', { name: '用作起始图' }).click()
+    await expect.poll(async () => (await cardIds(page)).length).toBe(5)
+    const created = (await cardIds(page)).find((id) => !['img-1', 'canvas-1', 'run-2', 'kept'].includes(id!))!
+    // The run it starts from became a card of its own, and feeds the new 画面.
+    await expect
+      .poll(async () => (await saved(page, created))?.inputs?.init, { timeout: 10_000 })
+      .toEqual({ link: { canvasId: 'run-2' }, strength: 0.6 })
+    expect((await saved(page, created))?.prompt).toBe('一只橘猫坐在窗台上')
+    expect(await page.locator(`[data-wire-chip="input:${created}:init:"]`).textContent()).toBe('起始图 60%')
+    const source = (await card(page).boundingBox())!
+    const fresh = (await card(page, created).boundingBox())!
+    expect(fresh.x).toBeGreaterThan(source.x + source.width)
+    // It is the selected card, ready to be described.
+    expect(await card(page, created).getAttribute('aria-current')).toBe('true')
+  })
+
+  it('a wire dropped on the empty board offers a new 画面 fed by the picture', async () => {
+    const page = await openWithRuns()
+    await card(page, 'img-1').hover()
+    const start = await center(page, '[data-output-port="img-1"]')
+    const body = (await card(page, 'img-1').boundingBox())!
+    const end = { x: body.x + body.width / 2, y: body.y + body.height + 200 }
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 8 })
+    await page.mouse.up()
+    const menu = page.getByRole('menu', { name: '用「小猫照片」新建画面' })
+    await expect.poll(() => menu.isVisible()).toBe(true)
+    await menu.getByRole('menuitem', { name: '新画面 · 参考图' }).click()
+    await expect.poll(async () => (await cardIds(page)).length).toBe(4)
+    const created = (await cardIds(page)).find((id) => !['img-1', 'canvas-1', 'kept'].includes(id!))!
+    await expect
+      .poll(async () => (await saved(page, created))?.inputs?.references?.links, { timeout: 10_000 })
+      .toEqual([{ canvasId: 'img-1' }])
+  })
+
+  it('starts from a recipe: the picture comes from a file, and 局部重绘 opens the mask', async () => {
+    const page = await openWithRuns()
+    const recipes = page.locator('[data-recipes]')
+    // No control adapter yet: 按构图生成 says what is missing.
+    const compose = recipes.getByRole('button', { name: '按构图生成' })
+    expect(await compose.isDisabled()).toBe(true)
+    expect(await compose.getAttribute('title')).toBe('需要先在模型页添加控制适配器')
+    await app.screenshot('board-recipes-light')
+
+    await page.evaluate(() => window.__mock.handle(window.__mock.Ipc.pickImages, () => ['/home/me/pictures/sofa.png']))
+    await recipes.getByRole('button', { name: '局部重绘' }).click()
+    await expect.poll(async () => (await cardIds(page)).length, { timeout: 10_000 }).toBe(5)
+    // The new 画面 (selected) and the picture card that feeds it.
+    const created = await page.locator('article[data-canvas-kind="layout"][aria-current="true"]').getAttribute('data-canvas-card')
+    expect(created).not.toBe('canvas-1')
+    await expect.poll(async () => (await saved(page, created!))?.inputs?.init?.link.canvasId ?? '', { timeout: 10_000 }).toMatch(/.+/)
+    await expect.poll(() => page.getByRole('toolbar', { name: '遮罩工具' }).isVisible()).toBe(true)
+  })
+})
