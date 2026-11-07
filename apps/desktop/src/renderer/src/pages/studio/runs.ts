@@ -1,21 +1,22 @@
-import type { CanvasImageLink, ProjectCanvas } from '@shared/types'
+import type { CanvasImageLink, JobRecord, ProjectCanvas } from '@shared/types'
 import { normalizeCanvasAdapters } from '@shared/adapters'
 import { ACTIVE_JOB_STATES } from '../../lib/format'
 import { BOARD_GAP, cardRect, cardWidth, overlaps, resultSpot } from './boardLayout'
-import { linksOf } from './links'
+import { consumersOf, linksOf } from './links'
 
 /**
- * The runs of a 画面 (layout canvas) and its filmstrip. A layout canvas's first
- * run renders on the canvas itself; every later run is a result canvas with
- * `sourceCanvasId` pointing back. Those results stay folded into the 画面's
- * filmstrip, off the board, until they are pinned or used as an input: then
- * they are cards of their own. Pure, no React.
+ * The runs of a 画面 (layout canvas) and its filmstrip. Every run is a result
+ * canvas with `sourceCanvasId` pointing back (older projects may also have a
+ * first run rendered on the 画面 itself). All of them show in the 画面's
+ * filmstrip; a run is also a card on the board once it is pinned or used as
+ * an input, otherwise it stays folded off the board. Pure, no React.
  */
 
 /**
- * Results that live in their 画面's filmstrip instead of on the board: not
- * pinned, made by a layout canvas that still exists, and not feeding any
- * canvas (a picture that feeds another one is always shown, so its wire is).
+ * Results that live only in their 画面's filmstrip, not on the board: not
+ * pinned, made by a layout canvas that still exists, not feeding any canvas
+ * (a picture that feeds another one is always shown, so its wire is) and not
+ * the source of another result (whose lineage wire starts there).
  */
 export function foldedRunIds(canvases: readonly ProjectCanvas[]): Set<string> {
   const byId = new Map(canvases.map((canvas) => [canvas.id, canvas]))
@@ -23,6 +24,7 @@ export function foldedRunIds(canvases: readonly ProjectCanvas[]): Set<string> {
   const consumed = new Set(
     canvases.filter((canvas) => canvas.kind !== 'result').flatMap((canvas) => linksOf(canvas).map((entry) => entry.link.canvasId)),
   )
+  for (const canvas of canvases) if (canvas.kind === 'result' && canvas.sourceCanvasId) consumed.add(canvas.sourceCanvasId)
   const folded = new Set<string>()
   for (const canvas of canvases) {
     if (canvas.kind !== 'result' || canvas.pinned || consumed.has(canvas.id)) continue
@@ -42,18 +44,20 @@ function hasRun(canvas: ProjectCanvas): boolean {
   return Boolean(canvas.jobId || canvas.jobState || canvas.outputs?.length)
 }
 
-export function isActiveRun(canvas: Pick<ProjectCanvas, 'jobState'>): boolean {
-  return ACTIVE_JOB_STATES.has(canvas.jobState ?? '')
+/**
+ * Whether a run is still going. The live job decides; a job that is no
+ * longer known is not (the card calls it lost); without a job id the run is
+ * still being submitted.
+ */
+export function isActiveRun(run: Pick<ProjectCanvas, 'jobId' | 'jobState'>, jobs: readonly Pick<JobRecord, 'id' | 'state'>[]): boolean {
+  const job = run.jobId ? jobs.find((item) => item.id === run.jobId) : undefined
+  return ACTIVE_JOB_STATES.has((job ? job.state : run.jobId ? undefined : run.jobState) ?? '')
 }
 
-/** A layout canvas's runs, oldest first: its own first run, then its folded results. */
-export function runsOf(
-  layout: ProjectCanvas,
-  canvases: readonly ProjectCanvas[],
-  folded: ReadonlySet<string> = foldedRunIds(canvases),
-): ProjectCanvas[] {
+/** A layout canvas's runs, oldest first: its own first run (older projects), then its results. */
+export function runsOf(layout: ProjectCanvas, canvases: readonly ProjectCanvas[]): ProjectCanvas[] {
   if (layout.kind !== 'layout') return []
-  const later = canvases.filter((canvas) => folded.has(canvas.id) && canvas.sourceCanvasId === layout.id)
+  const later = canvases.filter((canvas) => canvas.kind === 'result' && canvas.sourceCanvasId === layout.id)
   return hasRun(layout) ? [layout, ...later] : later
 }
 
@@ -104,12 +108,8 @@ export interface Filmstrip {
   shown: number
 }
 
-export function filmstripOf(
-  layout: ProjectCanvas,
-  canvases: readonly ProjectCanvas[],
-  folded: ReadonlySet<string> = foldedRunIds(canvases),
-): Filmstrip {
-  const runs = runsOf(layout, canvases, folded)
+export function filmstripOf(layout: ProjectCanvas, canvases: readonly ProjectCanvas[]): Filmstrip {
+  const runs = runsOf(layout, canvases)
   const items = stripOf(runs)
   return { runs, items, shown: items.length ? shownIndex(layout, items) : -1 }
 }
@@ -133,6 +133,24 @@ export function pictureLink(canvases: readonly ProjectCanvas[], link: CanvasImag
   const shown = shownRun(source, canvases)
   if (!shown?.item.path) return link
   return shown.item.output ? { canvasId: shown.run.id, output: shown.item.output } : { canvasId: shown.run.id }
+}
+
+/**
+ * Results of a 画面 that only take room: folded, no picture and not running
+ * (failed or stopped runs that are no longer the newest). Cleared when it
+ * runs again.
+ */
+export function staleRunIds(
+  layoutId: string,
+  canvases: readonly ProjectCanvas[],
+  jobs: readonly Pick<JobRecord, 'id' | 'state'>[],
+): string[] {
+  const folded = foldedRunIds(canvases)
+  return canvases
+    .filter(
+      (canvas) => folded.has(canvas.id) && canvas.sourceCanvasId === layoutId && !canvas.outputs?.length && !isActiveRun(canvas, jobs),
+    )
+    .map((canvas) => canvas.id)
 }
 
 /** Whether a canvas has a picture to give: a 画面 through its filmstrip. */
@@ -159,8 +177,8 @@ export function spotBeside(
 
 /**
  * Pin a filmstrip run as a card of its own: under its 画面 (or at `at`, where
- * it was dragged to). Its 画面 then shows its newest remaining picture. A run
- * that is already a card, or the 画面's own first run, stays as it is.
+ * it was dragged to). It stays in the 画面's filmstrip too. A run that is
+ * already a card, or the 画面's own first run, stays as it is.
  */
 export function pinRun(canvases: readonly ProjectCanvas[], runId: string, at?: { x: number; y: number }): ProjectCanvas[] {
   const run = canvases.find((canvas) => canvas.id === runId)
@@ -170,14 +188,19 @@ export function pinRun(canvases: readonly ProjectCanvas[], runId: string, at?: {
   const source = canvases.find((canvas) => canvas.id === run.sourceCanvasId)
   const others = boardCanvases(canvases, folded).filter((canvas) => canvas.id !== run.id)
   const spot = at ? { x: Math.round(at.x), y: Math.round(at.y) } : wasFolded && source ? resultSpot(source, others) : run
-  return canvases.map((canvas) => {
-    if (canvas.id === run.id) return { ...canvas, pinned: true, x: spot.x, y: spot.y }
-    if (wasFolded && canvas.id === run.sourceCanvasId && canvas.shownOutput?.canvasId === run.id) {
-      const { shownOutput: _shown, ...rest } = canvas
-      return rest
-    }
-    return canvas
-  })
+  return canvases.map((canvas) => (canvas.id === run.id ? { ...canvas, pinned: true, x: spot.x, y: spot.y } : canvas))
+}
+
+/**
+ * Pin the results that were cards before an edit and would fold into a
+ * filmstrip after it (e.g. an older project's result that fed a canvas whose
+ * wire was just removed): a card never vanishes from under the user.
+ */
+export function keepCardsShown(before: readonly ProjectCanvas[], after: ProjectCanvas[]): ProjectCanvas[] {
+  const was = foldedRunIds(before)
+  const now = foldedRunIds(after)
+  const stay = new Set(before.filter((canvas) => !was.has(canvas.id) && now.has(canvas.id)).map((canvas) => canvas.id))
+  return stay.size ? after.map((canvas) => (stay.has(canvas.id) ? { ...canvas, pinned: true } : canvas)) : after
 }
 
 /** Put a pinned result back into its 画面's filmstrip (it stays a card while it feeds another canvas). */
@@ -196,12 +219,24 @@ export function canUnpin(canvas: ProjectCanvas, canvases: readonly ProjectCanvas
 }
 
 /**
- * Remove one run from a filmstrip. A folded result is deleted; the 画面's own
- * first run only loses its pictures and job (the 画面 itself stays).
+ * Whether a run can be removed from its filmstrip: a result that is only in
+ * the strip (a card has its own 删除), or an older 画面's own first run that
+ * no canvas takes its picture from.
+ */
+export function canDropRun(canvases: readonly ProjectCanvas[], runId: string): boolean {
+  const run = canvases.find((canvas) => canvas.id === runId)
+  if (!run) return false
+  if (run.kind === 'result') return foldedRunIds(canvases).has(run.id)
+  return run.kind === 'layout' && !consumersOf(canvases, run.id).some((canvas) => canvas.kind !== 'result')
+}
+
+/**
+ * Remove one run from a filmstrip (see canDropRun). A folded result is
+ * deleted; the 画面's own first run only loses its pictures and job.
  */
 export function dropRun(canvases: readonly ProjectCanvas[], runId: string): ProjectCanvas[] {
   const run = canvases.find((canvas) => canvas.id === runId)
-  if (!run) return [...canvases]
+  if (!run || !canDropRun(canvases, runId)) return [...canvases]
   if (run.kind === 'result') {
     return canvases
       .filter((canvas) => canvas.id !== runId)

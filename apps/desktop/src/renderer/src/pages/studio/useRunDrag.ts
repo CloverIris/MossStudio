@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toBoardPoint, type View } from './boardLayout'
 import type { StripItem } from './runs'
 import type { Point } from './wires'
@@ -28,6 +28,9 @@ export function useRunDrag(options: {
 } {
   const [drag, setDrag] = useState<RunDrag | null>(null)
   const active = useRef<number | null>(null)
+  /** Ends the press in progress without acting on it. */
+  const abort = useRef<(() => void) | null>(null)
+  useEffect(() => () => abort.current?.(), [])
 
   const boardAt = (event: { clientX: number; clientY: number }): Point => {
     const rect = options.viewport.current?.getBoundingClientRect()
@@ -55,14 +58,19 @@ export function useRunDrag(options: {
       moved = true
       setDrag({ layoutId, item, at: boardAt(next) })
     }
-    const stop = (next: PointerEvent): void => {
-      if (next.pointerId !== pointerId) return
+    const release = (): void => {
       active.current = null
+      abort.current = null
       element.removeEventListener('pointermove', move)
       element.removeEventListener('pointerup', stop)
       element.removeEventListener('pointercancel', stop)
+      element.removeEventListener('lostpointercapture', stop)
       if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId)
       setDrag(null)
+    }
+    const stop = (next: PointerEvent): void => {
+      if (next.pointerId !== pointerId) return
+      release()
       if (next.type !== 'pointerup') return
       if (moved) options.onDrop.current(layoutId, item, boardAt(next))
       else options.onShow.current(layoutId, item)
@@ -70,6 +78,9 @@ export function useRunDrag(options: {
     element.addEventListener('pointermove', move)
     element.addEventListener('pointerup', stop)
     element.addEventListener('pointercancel', stop)
+    // Capture lost without a pointerup (window blur, the thumbnail re-rendered away): end the press.
+    element.addEventListener('lostpointercapture', stop)
+    abort.current = release
   }
 
   return { drag, start }

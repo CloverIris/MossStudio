@@ -12,7 +12,7 @@ import { profileFor, randomSeed, seedForRun } from './defaults'
 import { resolveJobInputs } from './jobInputs'
 import { compileCanvasPrompt } from './prompt'
 import { resolveBundle } from './readiness'
-import { shownRun } from './runs'
+import { shownRun, staleRunIds } from './runs'
 import type { StudioProject } from './useStudioProject'
 
 export type SeedMode = 'auto' | 'new' | 'same'
@@ -123,9 +123,13 @@ export function useGenerate(options: {
     try {
       // An editable source remembers the seed this run used, so 种子 shows it
       // afterwards. A result card's parameters are frozen and stay as they were.
+      // A 画面's old failed or stopped runs (no longer shown in its filmstrip) are cleared.
+      const stale = new Set(source.kind === 'layout' ? staleRunIds(source.id, canvases, jobs) : [])
       const withSeed =
         source.kind === 'layout'
-          ? canvases.map((canvas) => (canvas.id === source.id ? { ...canvas, seed, modelBundleId: choice.bundle!.id } : canvas))
+          ? canvases
+              .filter((canvas) => !stale.has(canvas.id))
+              .map((canvas) => (canvas.id === source.id ? { ...canvas, seed, modelBundleId: choice.bundle!.id } : canvas))
           : canvases
       const task = taskCanvasFor(runSource, withSeed)
       taskId = task.taskId

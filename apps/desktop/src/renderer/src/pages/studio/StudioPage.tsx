@@ -31,7 +31,7 @@ import { useEngineFeatures } from './useEngineFeatures'
 import { useControlAdapters } from '../../lib/useControlAdapters'
 import { removeLink, setControlAdapter, setLink, type CanvasLinkEntry, type LinkRole, type PickTarget } from './links'
 import type { Recipe } from './recipes'
-import { dropRun, pictureLink, pinRun, unpinRun, withRunSettings } from './runs'
+import { dropRun, givesPicture, isActiveRun, keepCardsShown, pictureLink, pinRun, runsOf, unpinRun, withRunSettings } from './runs'
 import { resolveJobInputs } from './jobInputs'
 import { useGenerate } from './useGenerate'
 import { useInputImport } from './useInputImport'
@@ -287,8 +287,14 @@ export function StudioPage(): React.JSX.Element {
    */
   const linkInto = (targetId: string, role: LinkRole, link: CanvasLinkEntry['link'], kind?: string): void => {
     project.setCanvases((previous) => {
+      const source = previous.find((canvas) => canvas.id === link.canvasId)
+      const target = previous.find((canvas) => canvas.id === targetId)
+      // A 画面 whose face has no picture yet (a run just started) has nothing to give.
+      if (!source || !target || (source.kind === 'layout' && !givesPicture(source, previous))) return previous
       const resolved = pictureLink(previous, link)
-      return pinRun(previous, resolved.canvasId).map((canvas) => (canvas.id === targetId ? setLink(canvas, role, resolved, kind) : canvas))
+      const linked = setLink(target, role, resolved, kind)
+      if (linked === target) return previous
+      return pinRun(previous, resolved.canvasId).map((canvas) => (canvas.id === targetId ? linked : canvas))
     })
   }
 
@@ -599,7 +605,8 @@ export function StudioPage(): React.JSX.Element {
           onDelete={(canvas) => {
             const job = canvas.jobId ? jobs.find((item) => item.id === canvas.jobId) : undefined
             // A 画面 is busy while any run in its filmstrip is.
-            if (ACTIVE_JOB_STATES.has(job?.state ?? '') || (canvas.kind === 'layout' && busyIds.has(canvas.id))) {
+            const running = canvas.kind === 'layout' && runsOf(canvas, project.canvasesRef.current).some((run) => isActiveRun(run, jobs))
+            if (ACTIVE_JOB_STATES.has(job?.state ?? '') || running) {
               toast.push('这个画面还在生成，先取消再删除', 'info')
               return
             }
@@ -608,7 +615,14 @@ export function StudioPage(): React.JSX.Element {
           engineFeatures={boardFeatures}
           controlAdapters={controlAdapters}
           onLink={linkInto}
-          onRemoveLink={(canvasId, role, at) => project.updateCanvas(canvasId, (canvas) => removeLink(canvas, role, at))}
+          onRemoveLink={(canvasId, role, at) =>
+            project.setCanvases((previous) =>
+              keepCardsShown(
+                previous,
+                previous.map((canvas) => (canvas.id === canvasId ? removeLink(canvas, role, at) : canvas)),
+              ),
+            )
+          }
           onImportImages={(files, at) => {
             void boardAssets.importImages(files, at)
           }}
@@ -634,7 +648,12 @@ export function StudioPage(): React.JSX.Element {
           onChangeDescription={(canvasId, text) => project.updateCanvas(canvasId, (canvas) => withDescription(canvas, text))}
           onShowOutput={(layoutId, link) => project.updateCanvas(layoutId, { shownOutput: link })}
           onPinRun={(runId, at) => project.setCanvases((previous) => pinRun(previous, runId, at))}
-          onUnpinRun={(runId) => project.setCanvases((previous) => unpinRun(previous, runId))}
+          onUnpinRun={(runId) => {
+            const run = project.canvasesRef.current.find((canvas) => canvas.id === runId)
+            project.setCanvases((previous) => unpinRun(previous, runId))
+            // The card is gone from the board: its 画面 is selected instead.
+            if (run?.sourceCanvasId && project.selectedRef.current === runId) project.select(run.sourceCanvasId)
+          }}
           onNewFromPicture={newCanvasFromPicture}
           onUseRunSettings={(layoutId, runId) => {
             const run = project.canvasesRef.current.find((canvas) => canvas.id === runId)

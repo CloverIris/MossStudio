@@ -676,11 +676,12 @@ describe('filmstrip, 用作起始图 and recipes', () => {
     for (const theme of ['light', 'dark'] as const) {
       const page = await openWithRuns(theme)
       expect(await cardIds(page)).toEqual(['img-1', 'canvas-1', 'kept'])
+      // Every run is in the strip, the pinned one too.
       const strip = card(page).locator('[data-filmstrip]')
-      expect(await strip.getByRole('button', { name: /^第 \d 张$/ }).count()).toBe(2)
+      expect(await strip.getByRole('button', { name: /^第 \d 张$/ }).count()).toBe(3)
       // The newest is on the face, and the header says which of how many.
-      expect(await strip.getByRole('button', { name: '第 2 张' }).getAttribute('aria-pressed')).toBe('true')
-      expect(await card(page).locator('header').textContent()).toContain('2 / 2')
+      expect(await strip.getByRole('button', { name: '第 3 张' }).getAttribute('aria-pressed')).toBe('true')
+      expect(await card(page).locator('header').textContent()).toContain('3 / 3')
       expect(await page.locator('[data-wire="lineage:kept"]').count()).toBe(1)
       await app.screenshot(`board-filmstrip-${theme}`)
     }
@@ -705,7 +706,8 @@ describe('filmstrip, 用作起始图 and recipes', () => {
     await page.mouse.up()
     await expect.poll(() => cardIds(page)).toEqual(['img-1', 'canvas-1', 'run-2', 'kept'])
     await expect.poll(async () => (await saved(page, 'run-2'))?.pinned, { timeout: 10_000 }).toBe(true)
-    expect(await strip.getByRole('button', { name: /^第 \d 张$/ }).count()).toBe(1)
+    // It is a card now, and still in its 画面's strip.
+    expect(await strip.getByRole('button', { name: /^第 \d 张$/ }).count()).toBe(3)
     expect(await page.locator('[data-wire="lineage:run-2"]').count()).toBe(1)
 
     // 收回 puts it back into the strip.
@@ -719,6 +721,7 @@ describe('filmstrip, 用作起始图 and recipes', () => {
 
   it('用作起始图: a new 画面 to the right, wired from the picture on the face', async () => {
     const page = await openWithRuns()
+    await card(page).locator('[data-filmstrip]').getByRole('button', { name: '第 2 张' }).click()
     await card(page).getByRole('button', { name: '画面 1 更多操作' }).click()
     await page.getByRole('menuitem', { name: '用作起始图' }).click()
     await expect.poll(async () => (await cardIds(page)).length).toBe(5)

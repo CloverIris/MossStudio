@@ -1,20 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import type { ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
 import { cardRect, overlaps } from '@renderer/pages/studio/boardLayout'
-import { canvasFromPicture, defaultSettings, removeCanvasFrom, removedWith } from '@renderer/pages/studio/canvases'
+import { canvasFromPicture, defaultSettings, migrateCanvas, removeCanvasFrom, removedWith } from '@renderer/pages/studio/canvases'
 import { newCanvasMenu } from '@renderer/pages/studio/connect'
 import { recipes } from '@renderer/pages/studio/recipes'
 import {
   boardCanvases,
+  canDropRun,
   canUnpin,
   dropRun,
   filmstripOf,
   foldedRunIds,
   givesPicture,
+  isActiveRun,
+  keepCardsShown,
   pictureLink,
   pinRun,
   shownRun,
   spotBeside,
+  staleRunIds,
   unpinRun,
   withRunSettings,
 } from '@renderer/pages/studio/runs'
@@ -96,7 +100,7 @@ describe('studio/runs filmstrip', () => {
 })
 
 describe('studio/runs pin, unpin and drop', () => {
-  it('pins a run under its 画面, clear of other cards, and the face moves on to the newest left', () => {
+  it('pins a run under its 画面, clear of other cards; it stays in the strip and on the face', () => {
     const blocker = canvas({ id: 'x', y: 400 })
     const list = [layout({ shownOutput: { canvasId: 'a' } }), run('a', { y: 5000 }), run('b', { y: 9000 }), blocker]
     const pinned = pinRun(list, 'a')
@@ -105,8 +109,20 @@ describe('studio/runs pin, unpin and drop', () => {
     expect(card.y).toBeLessThan(5000)
     for (const other of boardCanvases(pinned).filter((item) => item.id !== 'a'))
       expect(overlaps(cardRect(card), cardRect(other))).toBe(false)
-    expect(pinned.find((item) => item.id === 'l')!.shownOutput).toBeUndefined()
+    expect(pinned.find((item) => item.id === 'l')!.shownOutput).toEqual({ canvasId: 'a' })
     expect(foldedRunIds(pinned).has('a')).toBe(false)
+    expect(filmstripOf(pinned[0]!, pinned).items.map((item) => item.runId)).toEqual(['a', 'b'])
+    expect(shownRun(pinned[0]!, pinned)?.run.id).toBe('a')
+  })
+
+  it('keeps a card that would fold after an edit (an older run losing its wire)', () => {
+    const feeds = canvas({ id: 'm', x: 600, inputs: { init: { link: { canvasId: 'a' }, strength: 0.6 } } })
+    const before = [layout(), run('a'), feeds]
+    const after = [layout(), run('a'), canvas({ id: 'm', x: 600 })]
+    expect(foldedRunIds(after).has('a')).toBe(true)
+    const kept = keepCardsShown(before, after)
+    expect(kept.find((item) => item.id === 'a')!.pinned).toBe(true)
+    expect(keepCardsShown(after, after)).toBe(after)
   })
 
   it('pins where the thumbnail was dropped, and leaves the 画面 and cards alone', () => {
@@ -120,6 +136,15 @@ describe('studio/runs pin, unpin and drop', () => {
     expect(canUnpin(list[1]!, list)).toBe(true)
     expect(foldedRunIds(unpinRun(list, 'a')).has('a')).toBe(true)
     expect(canUnpin(run('a', { pinned: true, sourceCanvasId: 'gone' }), list)).toBe(false)
+  })
+
+  it('only drops a run nothing depends on: a card is deleted from its card, a fed first run stays', () => {
+    const own = layout({ jobId: 'j0', jobState: 'succeeded', outputs: [out('own')] })
+    const feeds = canvas({ id: 'm', x: 600, inputs: { init: { link: { canvasId: 'l' }, strength: 0.6 } } })
+    expect(canDropRun([own, feeds], 'l')).toBe(false)
+    expect(dropRun([own, feeds], 'l')[0]).toBe(own)
+    expect(canDropRun([own, run('p', { pinned: true })], 'p')).toBe(false)
+    expect(canDropRun([own, run('a')], 'a')).toBe(true)
   })
 
   it("drops a run: a result goes, the 画面's own first run only loses its pictures", () => {
@@ -140,6 +165,38 @@ describe('studio/runs pin, unpin and drop', () => {
     const { canvases, removedLinks } = removeCanvasFrom(list, 'l')
     expect(canvases.map((item) => item.id)).toEqual(['pinned', 'm'])
     expect(removedLinks).toBe(1)
+  })
+})
+
+describe('studio/runs liveness and clean-up', () => {
+  it('a run is going while its job is, or while it is being submitted; a lost job is not', () => {
+    expect(isActiveRun({ jobId: 'j', jobState: 'succeeded' }, [{ id: 'j', state: 'running' }])).toBe(true)
+    expect(isActiveRun({ jobId: 'gone', jobState: 'running' }, [])).toBe(false)
+    expect(isActiveRun({ jobState: 'starting' }, [])).toBe(true)
+    expect(isActiveRun({ jobId: 'j', jobState: 'running' }, [{ id: 'j', state: 'failed' }])).toBe(false)
+  })
+
+  it('a result that another result was made from stays a card, so its lineage wire does', () => {
+    const list = [layout(), run('a', { pinned: true }), run('b', { sourceCanvasId: 'a' }), run('c')]
+    expect([...foldedRunIds(unpinRun(list, 'a'))]).toEqual(['c'])
+    expect(removedWith(unpinRun(list, 'a'), 'l')).toEqual(['l', 'c'])
+  })
+
+  it('finds the old runs without pictures that only take room', () => {
+    const list = [
+      layout(),
+      run('failed', { jobState: 'failed', outputs: [] }),
+      run('going', { jobId: 'j', jobState: 'running', outputs: [] }),
+      run('ok'),
+      run('pinned', { pinned: true, jobState: 'failed', outputs: [] }),
+    ]
+    expect(staleRunIds('l', list, [{ id: 'j', state: 'running' }])).toEqual(['failed'])
+  })
+
+  it('opens a run saved mid-submit (no job id) as not submitted', () => {
+    const stuck = migrateCanvas(run('a', { jobState: 'starting', outputs: [] }))
+    expect(stuck).toMatchObject({ jobState: 'failed', error: { code: 'E_SUBMIT' } })
+    expect(migrateCanvas(run('b', { jobId: 'j', jobState: 'running' })).jobState).toBe('running')
   })
 })
 

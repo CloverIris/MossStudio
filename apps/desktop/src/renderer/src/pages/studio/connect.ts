@@ -1,16 +1,11 @@
 import type { ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
-import { canvasPicture, controlKindLabel, linksOf, MAX_REFERENCES, wouldCycle, type LinkRole } from './links'
+import { controlKindLabel, linksOf, MAX_REFERENCES, wouldCycle, type LinkRole } from './links'
 import { engineUnavailableReason, type Blocker } from './readiness'
 
 /**
  * Connecting cards by dragging a wire: which cards offer a picture, which
  * drops are allowed, and what the role menu offers. Pure, no React.
  */
-
-/** A card has an output port once it has a picture to give. */
-export function hasPicture(canvas: ProjectCanvas): boolean {
-  return canvasPicture(canvas) !== null
-}
 
 export type ConnectCheck = { ok: true } | { ok: false; reason: string }
 

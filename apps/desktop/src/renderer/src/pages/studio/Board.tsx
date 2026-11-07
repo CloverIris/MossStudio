@@ -42,7 +42,7 @@ import { EmptyPortChips, type PortActions } from './EmptyPorts'
 import { inputSlots } from './ports'
 import { WireChips, WireLayer } from './WireLayer'
 import { recipes, type Recipe } from './recipes'
-import { boardCanvases, canUnpin, filmstripOf, foldedRunIds, givesPicture, isActiveRun, unpinRun, type StripItem } from './runs'
+import { boardCanvases, canDropRun, canUnpin, filmstripOf, foldedRunIds, givesPicture, isActiveRun, unpinRun, type StripItem } from './runs'
 import { useRunDrag } from './useRunDrag'
 import { boardPorts, type Point } from './wires'
 import { OutputImage } from './OutputImage'
@@ -365,9 +365,11 @@ export function Board(props: BoardProps): React.JSX.Element {
     if (canvas.kind === 'layout') {
       if (!item) return actions
       if (item.path) actions.push({ label: '用作起始图', onSelect: () => props.onNewFromPicture(canvas.id, 'init') })
-      if (run.kind === 'result' && item.path) actions.push({ label: '固定到画板', onSelect: () => props.onPinRun(run.id) })
+      if (folded.has(run.id) && item.path) actions.push({ label: '固定到画板', onSelect: () => props.onPinRun(run.id) })
       if (run.kind === 'result') actions.push({ label: '用这次的设置', onSelect: () => props.onUseRunSettings(canvas.id, run.id) })
-      if (!isActiveRun(run)) actions.push({ label: '删除这次生成', tone: 'danger', onSelect: () => props.onDropRun(run.id) })
+      // A run that is also a card is deleted from its card.
+      if (!isActiveRun(run, props.jobs) && canDropRun(props.canvases, run.id))
+        actions.push({ label: '删除这次生成', tone: 'danger', onSelect: () => props.onDropRun(run.id) })
       return actions
     }
     if (givesPicture(canvas, props.canvases))
@@ -457,7 +459,7 @@ export function Board(props: BoardProps): React.JSX.Element {
           const viewOf = (run: ProjectCanvas): CardJobView =>
             cardJobView(run, run.jobId ? props.jobs.find((item) => item.id === run.jobId) : undefined, props.jobs)
           // A 画面 shows the run picked in its filmstrip: its picture, progress and job.
-          const film = canvas.kind === 'layout' ? filmstripOf(canvas, props.canvases, folded) : null
+          const film = canvas.kind === 'layout' ? filmstripOf(canvas, props.canvases) : null
           const item = film ? film.items[film.shown] : undefined
           const shownRun = (item && film?.runs.find((run) => run.id === item.runId)) || canvas
           const views = new Map<string, CardJobView>(film?.runs.map((run) => [run.id, viewOf(run)]) ?? [])

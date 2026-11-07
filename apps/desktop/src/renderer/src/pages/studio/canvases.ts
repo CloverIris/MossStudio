@@ -67,9 +67,16 @@ function migrateInputs(inputs: CanvasInputs): CanvasInputs | undefined {
   return next.init || next.control || next.references ? next : undefined
 }
 
-/** Bring a canvas saved by an older version up to date (see `isSeedLocked`). */
+/**
+ * Bring a canvas saved by an older version up to date (see `isSeedLocked`).
+ * A run saved while it was still being submitted (no job id: the app closed
+ * in between) never reached the engine; it opens as not submitted.
+ */
 export function migrateCanvas(canvas: ProjectCanvas): ProjectCanvas {
   let next = canvas.seedLocked !== undefined ? canvas : { ...canvas, seedLocked: isSeedLocked(canvas) }
+  if (!next.jobId && (next.jobState === 'queued' || next.jobState === 'starting' || next.jobState === 'running')) {
+    next = { ...next, jobState: 'failed', error: { code: 'E_SUBMIT', message: '这次生成没有提交成功，请重新生成' } }
+  }
   if (next.inputs) {
     const inputs = migrateInputs(next.inputs)
     next = { ...next, inputs }
