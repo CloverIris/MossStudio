@@ -22,6 +22,7 @@ import {
   type LinkRole,
   type PickTarget,
 } from './links'
+import { inputsUnavailableReason, type Blocker } from './readiness'
 import { enumLabel, enumValues } from './sampling'
 
 /** What the 输入 section needs from the Studio page besides the canvas itself. */
@@ -102,7 +103,7 @@ function AddButton({
   const picking = wiring.pickTarget?.canvasId === canvas.id && wiring.pickTarget.role === role && wiring.pickTarget.kind === kind
   if (picking) {
     return (
-      <Button tone="secondary" size="sm" className="h-[26px] px-2" onClick={() => wiring.onPickTarget(null)}>
+      <Button tone="secondary" size="xs" onClick={() => wiring.onPickTarget(null)}>
         取消选择
       </Button>
     )
@@ -114,8 +115,8 @@ function AddButton({
       trigger={(props) => (
         <Button
           tone="ghost"
-          size="sm"
-          className="-mr-2 h-[26px] px-2"
+          size="xs"
+          className="-mr-2"
           disabled={disabled}
           aria-label={`添加${label}`}
           aria-expanded={props['aria-expanded']}
@@ -173,15 +174,18 @@ export function InputsSection({
   canvas,
   onChange,
   wiring,
+  blockers,
 }: {
   canvas: ProjectCanvas
   onChange: Change
   wiring: InputsWiring
+  /** The canvas's readiness blockers: an engine that is not ready explains why nothing can be added. */
+  blockers: readonly Blocker[]
 }): React.JSX.Element | null {
   const { features, canvases } = wiring
   const inputs = canvas.inputs
   const known = Boolean(features)
-  const unavailable = features === null ? '没有可用的引擎，暂时不能添加图片' : features === undefined ? '正在读取引擎支持的功能…' : null
+  const unavailable = inputsUnavailableReason(features, blockers)
   // A row stays visible while it holds something, so it can always be removed.
   const showInit = !known || features!.imageInput || Boolean(inputs?.init)
   const showControl = !known || features!.control || Boolean(inputs?.control)
@@ -254,14 +258,13 @@ export function InputsSection({
               </span>
               <span className="flex shrink-0 items-center gap-1">
                 {inputs.mask ? (
-                  <Button tone="ghost" size="sm" className="h-[26px] px-2" onClick={() => onChange(clearMask)}>
+                  <Button tone="ghost" size="xs" onClick={() => onChange(clearMask)}>
                     清除
                   </Button>
                 ) : null}
                 <Button
                   tone={wiring.maskTool ? 'primary' : 'secondary'}
-                  size="sm"
-                  className="h-[26px] px-2"
+                  size="xs"
                   aria-pressed={wiring.maskTool}
                   disabled={disabled}
                   onClick={wiring.onToggleMask}
@@ -281,7 +284,7 @@ export function InputsSection({
           {wiring.controlAdapters.length === 0 && !inputs?.control ? (
             <div className="flex items-center justify-between gap-2 rounded-lg bg-well px-3 py-2">
               <span className="text-caption text-ink-2">需要控制适配器</span>
-              <Button tone="secondary" size="sm" className="h-[26px] px-2" onClick={() => wiring.onNavigate('/models')}>
+              <Button tone="secondary" size="xs" disabled={disabled} onClick={() => wiring.onNavigate('/models')}>
                 去添加
               </Button>
             </div>

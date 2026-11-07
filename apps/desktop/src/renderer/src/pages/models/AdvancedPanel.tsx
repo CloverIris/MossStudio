@@ -256,7 +256,7 @@ function RemoteFolders({ location }: { location: ModelLocation }): React.JSX.Ele
         </Row>
         {modelPath ? (
           <Row title="删除生成用的模型文件夹" description={modelPath}>
-            <Button tone="ghost" className="text-danger" disabled={busy !== null} onClick={() => setConfirmRemove(true)}>
+            <Button tone="ghost-danger" disabled={busy !== null} onClick={() => setConfirmRemove(true)}>
               删除
             </Button>
           </Row>

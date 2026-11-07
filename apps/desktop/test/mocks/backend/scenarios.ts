@@ -15,6 +15,7 @@ import type {
   DownloadTask,
   EngineReadiness,
   EnvReport,
+  GalleryDetail,
   GalleryItem,
   GpuInventorySnapshot,
   JobLogLine,
@@ -136,7 +137,12 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     engineReleases: [engineReleaseFixture()],
     trainerVersions: [trainerVersionFixture()],
     hosts: [],
-    gallery: [galleryItemFixture(0), galleryItemFixture(1), galleryItemFixture(2)],
+    // The newest one carries a negative prompt, as images made in 创作 do (the detail panel reads it).
+    gallery: [
+      galleryItemFixture(0, { negativePrompt: 'blurry, watermark' } as Partial<GalleryDetail>),
+      galleryItemFixture(1),
+      galleryItemFixture(2),
+    ],
     projects: [],
     aiProviders: [],
     conversations: [],

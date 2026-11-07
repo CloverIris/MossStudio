@@ -6,6 +6,7 @@ import { call } from '../../lib/api'
 import { commitText, createCommitGuard, textOf, type Validator } from '../../lib/settingsDraft'
 import { useApp } from '../../store'
 import { Button, IconButton, Input, Row, Switch, cn, useToast } from '../../components/ui'
+import { PathValue } from '../../components/common/PathValue'
 
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -267,13 +268,7 @@ export function FolderRow({
   return (
     <StackRow title={title} description={description}>
       <div className="flex min-w-0 items-center gap-2">
-        <span
-          className="selectable min-w-0 flex-1 truncate rounded-md bg-well px-2.5 py-1.5 font-mono text-caption text-ink-2"
-          title={shown ?? undefined}
-        >
-          {shown ?? '默认位置'}
-          {!value && shown ? '（默认）' : ''}
-        </span>
+        <PathValue value={shown} empty="默认位置" suffix={value ? undefined : '（默认）'} className="flex-1" />
         <Button onClick={() => void pick()}>更改</Button>
         {value ? (
           <Button tone="ghost" onClick={() => void onChange(null)}>

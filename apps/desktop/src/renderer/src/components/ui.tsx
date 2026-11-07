@@ -238,17 +238,35 @@ export function Pill({
   )
 }
 
+/**
+ * Progress from 0 to 100. Pass `null` when the amount is not known: the bar
+ * then shows a moving segment, never a full bar that would read as done.
+ */
 export function ProgressBar({
   value,
   tone = 'accent',
   className,
   label,
 }: {
-  value: number
+  value: number | null
   tone?: 'accent' | 'neutral'
   className?: string
   label?: string
 }): React.JSX.Element {
+  const fill = tone === 'accent' ? 'bg-accent' : 'bg-ink'
+  if (value === null) {
+    return (
+      <div
+        role="progressbar"
+        aria-label={label}
+        aria-busy="true"
+        data-indeterminate
+        className={cn('relative h-1 w-full overflow-hidden rounded-full bg-well-strong', className)}
+      >
+        <div className={cn('ui-progress-indeterminate absolute inset-y-0 left-0 w-[30%] rounded-full', fill)} />
+      </div>
+    )
+  }
   const width = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))
   return (
     <div
@@ -259,10 +277,7 @@ export function ProgressBar({
       aria-valuenow={Math.round(width)}
       className={cn('h-1 w-full overflow-hidden rounded-full bg-well-strong', className)}
     >
-      <div
-        className={cn('h-full rounded-full transition-[width] duration-200 ease-out', tone === 'accent' ? 'bg-accent' : 'bg-ink')}
-        style={{ width: `${width}%` }}
-      />
+      <div className={cn('h-full rounded-full transition-[width] duration-200 ease-out', fill)} style={{ width: `${width}%` }} />
     </div>
   )
 }
@@ -271,25 +286,46 @@ export function Spinner({ className }: { className?: string }): React.JSX.Elemen
   return <Loader2 aria-hidden="true" className={cn('size-4 animate-spin', className)} />
 }
 
+/** The one loading line: a spinner and what is being read. */
+export function LoadingRow({ label = '正在读取…', className }: { label?: string; className?: string }): React.JSX.Element {
+  return (
+    <div role="status" className={cn('flex items-center gap-2 py-2 text-ui text-ink-2', className)}>
+      <Spinner className="shrink-0" />
+      {label}
+    </div>
+  )
+}
+
+const emptySize = {
+  /** A whole page or panel with nothing in it. */
+  page: { box: 'gap-2 px-6 py-14', title: 'text-control', description: 'text-ui' },
+  /** One section or list inside a page. */
+  section: { box: 'gap-1 px-4 py-6', title: 'text-ui', description: 'text-caption' },
+}
+
+/** The one empty pattern: what is missing, why, and the action that fills it. */
 export function EmptyState({
   icon,
   title,
   description,
   action,
+  size = 'page',
   className,
 }: {
   icon?: ReactNode
   title: string
   description?: ReactNode
   action?: ReactNode
+  size?: keyof typeof emptySize
   className?: string
 }): React.JSX.Element {
+  const sizes = emptySize[size]
   return (
-    <div className={cn('flex flex-col items-center justify-center gap-2 px-6 py-14 text-center', className)}>
+    <div className={cn('flex flex-col items-center justify-center text-center', sizes.box, className)}>
       {icon ? <div className="mb-1 text-ink-3">{icon}</div> : null}
-      <p className="text-control font-medium text-ink">{title}</p>
-      {description ? <p className="max-w-md text-ui text-ink-2">{description}</p> : null}
-      {action ? <div className="mt-3">{action}</div> : null}
+      <p className={cn('font-medium text-ink', sizes.title)}>{title}</p>
+      {description ? <p className={cn('max-w-md text-ink-2', sizes.description)}>{description}</p> : null}
+      {action ? <div className={size === 'page' ? 'mt-3' : 'mt-2'}>{action}</div> : null}
     </div>
   )
 }
@@ -302,25 +338,30 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
 /* Actions                                                             */
 /* ------------------------------------------------------------------ */
 
-type ButtonTone = 'primary' | 'secondary' | 'ghost' | 'danger'
-type ButtonSize = 'sm' | 'md' | 'lg'
+type ButtonTone = 'primary' | 'secondary' | 'ghost' | 'danger' | 'ghost-danger'
+type ButtonSize = 'xs' | 'sm' | 'md' | 'lg'
 
 const buttonTone: Record<ButtonTone, string> = {
   primary: 'bg-ink text-on-ink font-semibold enabled:hover:opacity-90',
   secondary: 'bg-well text-ink enabled:hover:bg-well-strong',
   ghost: 'bg-transparent text-ink enabled:hover:bg-well',
-  danger: 'bg-danger-soft text-danger enabled:hover:bg-danger enabled:hover:text-white',
+  danger: 'bg-danger text-on-danger font-semibold enabled:hover:opacity-90',
+  'ghost-danger': 'bg-transparent text-danger enabled:hover:bg-danger-soft',
 }
 
 const buttonSize: Record<ButtonSize, string> = {
+  xs: 'h-[26px] px-2 text-ui gap-1',
   sm: 'h-[30px] px-3 text-ui gap-1.5',
   md: 'h-[34px] px-3.5 text-control gap-2',
   lg: 'h-11 px-5 text-[15px] gap-2.5 rounded-lg',
 }
 
 /**
- * Primary is solid ink and appears once per area. Secondary is a filled well,
- * ghost has no fill until hovered, danger is for destructive actions.
+ * Primary is solid ink and appears at most once per view. Secondary is a
+ * filled well, ghost has no fill until hovered. Danger is solid and confirms a
+ * destructive action (the button inside the confirm step); ghost-danger starts
+ * one from a row or a panel. Sizes: xs 26px (inline in dense panels), sm 30px,
+ * md 34px (dialog footers), lg 44px (the one main action of a screen).
  */
 export function Button({
   tone = 'secondary',

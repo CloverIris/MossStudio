@@ -188,6 +188,8 @@ describe('studio inputs', () => {
     await expect.poll(() => inputs(page).getByText('没有可用的引擎，暂时不能添加图片').isVisible()).toBe(true)
     expect(await inputs(page).getByRole('button', { name: '添加起始图' }).isDisabled()).toBe(true)
     expect(await inputs(page).getByRole('button', { name: '添加参考图' }).isDisabled()).toBe(true)
+    // Every add action is off, including the way to a control adapter.
+    expect(await inputs(page).getByRole('button', { name: '去添加' }).isDisabled()).toBe(true)
   })
 
   it('sends the 高级 sampling choices; 高清修复 makes the result card the output size', async () => {

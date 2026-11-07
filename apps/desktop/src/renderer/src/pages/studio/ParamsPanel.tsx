@@ -225,7 +225,7 @@ function CanvasParams({
             {regionCount > 0 ? <p className="text-caption text-ink-2">另有 {regionCount} 个区域，在画面上编辑</p> : null}
           </section>
 
-          {inputs && !readOnly ? <InputsSection canvas={canvas} onChange={onChange} wiring={inputs} /> : null}
+          {inputs && !readOnly ? <InputsSection canvas={canvas} onChange={onChange} wiring={inputs} blockers={blockers} /> : null}
 
           <section className="flex flex-col gap-2.5">
             <Label htmlFor="studio-model">模型</Label>

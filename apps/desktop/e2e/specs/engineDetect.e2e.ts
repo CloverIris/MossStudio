@@ -73,7 +73,8 @@ describe('engine detection', () => {
   it('macOS: says the engine does not run here and points to 远程主机', async () => {
     const page = await app.open({ scenario: 'machineMac', route: '/setup' })
     await expect.poll(() => page.getByText('这台 Mac 不能在本机运行推理引擎。').isVisible()).toBe(true)
-    await expect.poll(() => page.getByRole('button', { name: '开始准备' }).isDisabled()).toBe(true)
+    // Nothing to start here: 开始准备 is gone and 远程主机 is the main action.
+    await expect.poll(() => page.getByRole('button', { name: '开始准备' }).count()).toBe(0)
     expect(await page.getByRole('button', { name: '重新检测' }).count()).toBe(0)
     await page.getByRole('button', { name: '去开启远程主机' }).click()
     await expect.poll(() => hash(page)).toBe('#/settings/features')
