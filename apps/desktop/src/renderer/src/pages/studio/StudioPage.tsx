@@ -29,7 +29,7 @@ import { deriveReadiness, resolveBundle } from './readiness'
 import { useBoardAssets } from './useBoardAssets'
 import { useEngineFeatures } from './useEngineFeatures'
 import { useControlAdapters } from '../../lib/useControlAdapters'
-import { removeLink, setLink, type PickTarget } from './links'
+import { removeLink, setControlAdapter, setLink, type PickTarget } from './links'
 import { resolveJobInputs } from './jobInputs'
 import { useGenerate } from './useGenerate'
 import { useInputImport } from './useInputImport'
@@ -581,6 +581,21 @@ export function StudioPage(): React.JSX.Element {
           }}
           pickTarget={pickTarget}
           onPick={pickSource}
+          portActions={{
+            onPick: (canvasId, role, kind) => setPickTarget({ canvasId, role, ...(kind ? { kind } : {}) }),
+            onAddFromFile: (canvasId, role, kind) => void inputImport.addFromFile(canvasId, role, kind),
+            onSetControlAdapter: (canvasId, adapterId) => project.updateCanvas(canvasId, (canvas) => setControlAdapter(canvas, adapterId)),
+            onNavigate: (to) => void navigate(to),
+          }}
+          describeModel={(canvas) => {
+            if (!catalog) return null
+            const choice = resolveBundle(catalog, canvas.modelBundleId, preferredBundleId)
+            if (!choice.bundle) return { label: choice.unavailable ? '找不到选的模型' : '没有模型', ready: false }
+            // A remote host's models are checked when the job starts there.
+            const ready = choice.installed || Boolean(remoteHost)
+            return { label: ready ? choice.bundle.name : `${choice.bundle.name} · 未下载`, ready }
+          }}
+          onChangeDescription={(canvasId, text) => project.updateCanvas(canvasId, (canvas) => withDescription(canvas, text))}
         />
       </main>
 

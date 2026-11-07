@@ -1,7 +1,8 @@
 import { ImageOff, MoreHorizontal } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ImageResizeMode, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
-import { Button, IconButton, cn } from '../../components/ui'
+import { Button, IconButton, Pill, cn } from '../../components/ui'
+import { dimensions } from '../../lib/format'
 import { MenuItem, Popover } from '../../components/common/Popover'
 import { cloverUrl } from '../../lib/clover'
 import { CARD_FOOTER, CARD_HEADER, cardBodyHeight, cardWidth } from './boardLayout'
@@ -10,6 +11,8 @@ import type { CardJobView } from './jobStatus'
 import { MaskLayer, usePictureSize, type MaskBrush, type MaskCommand } from './MaskLayer'
 import type { Size } from './mask'
 import type { RerunCheck } from './readiness'
+import { qualityLabel } from './defaults'
+import { canvasDescription } from './prompt'
 import { RegionLayer, type BoardTool } from './RegionLayer'
 import { StartPicture } from './StartPicture'
 
@@ -73,7 +76,11 @@ export interface CanvasCardProps {
   dropTarget?: 'ok' | 'no'
   /** Board pick mode: 'ok' = a click picks this card's picture, 'inert' = it cannot be picked. */
   pick?: 'ok' | 'inert'
+  /** The model this canvas generates with, for its chip; null on cards that do not generate. */
+  model?: { label: string; ready: boolean } | null
   onPortDown: (event: React.PointerEvent<HTMLElement>) => void
+  /** The description typed on the card itself (double-click the empty face). */
+  onChangeDescription?: (text: string) => void
   onSelect: () => void
   onSelectRegion: (id: string | null) => void
   onChangeLayers: (update: (layers: ProjectLayer[]) => ProjectLayer[]) => void
@@ -86,6 +93,80 @@ export interface CanvasCardProps {
   onShowActivity: () => void
   onCopy: () => void
   onDelete: () => void
+}
+
+/**
+ * The description, written on the card's empty face; double-click to edit it
+ * there. The left panel keeps the full editor.
+ */
+function FaceDescription({
+  text,
+  editing,
+  onDone,
+}: {
+  text: string
+  editing: boolean
+  onDone: (text: string | null) => void
+}): React.JSX.Element {
+  const field = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (!editing) return
+    const element = field.current
+    element?.focus()
+    element?.setSelectionRange(element.value.length, element.value.length)
+  }, [editing])
+  if (editing) {
+    return (
+      <textarea
+        ref={field}
+        data-face-editor
+        aria-label="描述"
+        defaultValue={text}
+        placeholder="想要什么样的画面？"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onBlur={(event) => onDone(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          event.stopPropagation()
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onDone(null)
+          } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault()
+            event.currentTarget.blur()
+          }
+        }}
+        className="absolute inset-2 z-[3] resize-none rounded-md bg-raised p-2 text-caption leading-snug text-ink outline-none placeholder:text-ink-3"
+      />
+    )
+  }
+  return (
+    <p
+      data-face-description
+      // Ink, not ink-2: the empty face is well-strong, where ink-2 falls below 4.5:1 in the light theme.
+      className="pointer-events-none absolute inset-x-3 top-2.5 z-[1] line-clamp-4 text-caption leading-snug text-ink"
+    >
+      {text.trim() || '双击这里写描述'}
+    </p>
+  )
+}
+
+/** What a layout canvas will generate with, before its first run: model, quality, size, LoRA. */
+function SettingChips({ canvas, model }: { canvas: ProjectCanvas; model?: { label: string; ready: boolean } | null }): React.JSX.Element {
+  const loras = canvas.adapters?.length ?? 0
+  return (
+    <div data-card-chips className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+      {model ? (
+        <Pill tone={model.ready ? 'neutral' : 'warn'} className="min-w-0 shrink">
+          <span className="truncate">{model.label}</span>
+        </Pill>
+      ) : null}
+      <Pill className="tabular">{qualityLabel(canvas.steps)}</Pill>
+      <Pill className="tabular">{dimensions(canvas.width, canvas.height)}</Pill>
+      {loras ? <Pill>LoRA {loras}</Pill> : null}
+    </div>
+  )
 }
 
 /**
@@ -108,6 +189,11 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
   // While painting the mask, the start picture shows even over earlier results.
   const painting = Boolean(props.mask?.interactive && props.initPicture)
   const pictureSize = usePictureSize(props.mask ? props.initPicture?.path : undefined, props.initPicture?.size ?? null)
+  const [editing, setEditing] = useState(false)
+  // An empty face (nothing generated, no start picture or underlay) shows the description instead.
+  const blankFace =
+    canvas.kind === 'layout' && !preview && !current && !painting && !props.initPicture && !canvas.backgroundPath && !view.active
+  const statusLabel = isImage ? '' : view.label || (canvas.kind === 'layout' && outputs.length === 0 && !view.active ? '尚未生成' : '')
 
   return (
     <article
@@ -153,7 +239,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           {canvas.title}
         </button>
         <span className={cn('tabular min-w-0 flex-1 truncate text-right', view.state === 'failed' ? 'text-danger' : 'text-ink-2')}>
-          {isImage ? '' : view.label}
+          {statusLabel}
         </span>
         <Popover
           align="end"
@@ -223,6 +309,13 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           // A press on the picture outside every region clears the region selection.
           if (editable && !(event.target as HTMLElement).closest('[data-region-id]')) props.onSelectRegion(null)
         }}
+        onDoubleClick={(event) => {
+          if (!blankFace || props.tool !== 'select' || !props.onChangeDescription || props.pick) return
+          if ((event.target as HTMLElement).closest('[data-region-id]')) return
+          event.stopPropagation()
+          if (!selected) props.onSelect()
+          setEditing(true)
+        }}
       >
         {preview ? (
           <LivePreview path={preview.path} seq={preview.seq} alt={`${canvas.title} 的实时预览`} />
@@ -259,6 +352,17 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             brush={props.mask.brush}
             command={props.mask.command}
             onSave={props.mask.onSave}
+          />
+        ) : null}
+
+        {blankFace ? (
+          <FaceDescription
+            text={canvasDescription(canvas)}
+            editing={editing}
+            onDone={(text) => {
+              setEditing(false)
+              if (text !== null && text !== canvasDescription(canvas)) props.onChangeDescription?.(text)
+            }}
           />
         ) : null}
 
@@ -447,7 +551,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             重新生成
           </Button>
         ) : canvas.kind === 'layout' ? (
-          <span className="text-caption text-ink-2">{canvas.layers.length ? `${canvas.layers.length} 个区域 · 尚未生成` : '尚未生成'}</span>
+          <SettingChips canvas={canvas} model={props.model} />
         ) : null}
       </footer>
     </article>
