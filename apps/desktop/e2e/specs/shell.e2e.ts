@@ -26,6 +26,7 @@ describe('activity panel', () => {
     await page.evaluate(() => {
       const job = window.__mock.fixtures.jobFixture({
         id: 'job-run',
+        canvasTitle: '海边的灯塔',
         state: 'running',
         stage: 'denoise',
         progress: { stage: 'denoise', current: 10, total: 28, percent: 36 },
@@ -37,6 +38,8 @@ describe('activity panel', () => {
     await expect.poll(() => panel(page).isVisible()).toBe(true)
     await expect.poll(() => panel(page).getByRole('progressbar', { name: '任务进度' }).isVisible()).toBe(true)
     await expect.poll(() => panel(page).getByText('已结束').isVisible()).toBe(true)
+    // Named after its canvas, as on the Studio card.
+    expect(await panel(page).locator('[data-job-row="job-run"]').textContent()).toContain('海边的灯塔')
 
     await panel(page).locator('[data-job-row="job-run"] button[aria-expanded]').click()
     await expect.poll(() => app.calls<{ id: string }>('jobs:logs').then((calls) => calls.some((call) => call.id === 'job-run'))).toBe(true)

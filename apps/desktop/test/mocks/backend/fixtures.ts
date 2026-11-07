@@ -392,6 +392,7 @@ export function submittedJobFixture(body: Record<string, unknown>, id: string): 
     state: 'queued',
     stage: 'idle',
     canvasId: typeof body['canvasId'] === 'string' ? body['canvasId'] : undefined,
+    canvasTitle: typeof body['canvasTitle'] === 'string' ? body['canvasTitle'] : undefined,
     projectId: typeof body['projectId'] === 'string' ? body['projectId'] : undefined,
     hostId: typeof body['hostId'] === 'string' ? body['hostId'] : undefined,
     params: {

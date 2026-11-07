@@ -388,6 +388,10 @@ describe('studio board', () => {
     await page.waitForFunction((channel) => window.__mock.callsTo(channel).length >= 1, ENGINE_JOBS)
     const id = await page.evaluate(() => window.__mock.state.jobs[0]!.id)
     const card = page.locator('article[data-canvas-card="canvas-1"]')
+    // The job carries the card's title, so Activity names it as the card does.
+    const canvasTitle = await page.evaluate(() => window.__mock.state.jobs[0]!.canvasTitle)
+    expect(canvasTitle).toBeTruthy()
+    expect(await card.textContent()).toContain(canvasTitle)
 
     await emitJob(page, id, { state: 'queued', queuePosition: 2 })
     await expect.poll(() => card.getByText('排队中 · 第 2 个').first().isVisible()).toBe(true)

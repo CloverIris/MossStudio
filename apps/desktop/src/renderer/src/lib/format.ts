@@ -173,6 +173,8 @@ export function jobProgressDetail(progress: JobProgress | undefined): string {
 /** A job is named by what it draws (its prompt) or, for training, by the run. */
 export function jobTitle(job: JobRecord): string {
   if (job.kind === 'training') return `训练 · ${job.trainerRunName ?? job.instanceName}`
+  // Named after its canvas, as on the Studio card; the prompt only for jobs that have no canvas.
+  if (job.canvasTitle?.trim()) return job.canvasTitle.trim()
   const prompt = job.params.prompt.trim()
   if (prompt) return prompt.length > 36 ? `${prompt.slice(0, 36)}…` : prompt
   return job.caseName ?? '生成'

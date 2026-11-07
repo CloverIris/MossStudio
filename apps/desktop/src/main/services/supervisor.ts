@@ -402,6 +402,8 @@ export interface StartEngineJobInput extends Pick<JobParams, 'initImage' | 'mask
   projectId?: string
   canvasId?: string
   canvasLineage?: string[]
+  /** The canvas's title, shown as the job's name in Activity (trimmed, at most 120 characters). */
+  canvasTitle?: string
   modelBinding?: ModelBinding
   modelName?: string
   prompt: string
@@ -656,6 +658,10 @@ function gpuSnapshot(device: GpuInventoryDevice): NonNullable<JobRecord['gpuSnap
 
 /** Generate directly through MossInfer; no Instance, repo worktree or Python runtime. */
 export async function startEngineJob(input: StartEngineJobInput): Promise<JobRecord> {
+  if (input.canvasTitle !== undefined) {
+    const title = typeof input.canvasTitle === 'string' ? input.canvasTitle.trim().slice(0, 120) : ''
+    input = { ...input, canvasTitle: title || undefined }
+  }
   await loadJobs()
   // A new engine build is being switched in (and the old one stopped): start on the new one.
   if (!input.hostId) await waitForEngineActivation()
@@ -735,6 +741,7 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
         projectId: assignedInput.projectId,
         canvasId: assignedInput.canvasId,
         canvasLineage: assignedInput.canvasLineage,
+        canvasTitle: assignedInput.canvasTitle,
         deviceId: assignedInput.deviceId,
         deviceUuid: assignedInput.deviceUuid,
         gpuSnapshot: assignedGpu ? gpuSnapshot(assignedGpu) : undefined,
@@ -853,6 +860,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       projectId: input.projectId,
       canvasId: input.canvasId,
       canvasLineage: input.canvasLineage,
+      canvasTitle: input.canvasTitle,
       deviceId: input.deviceId,
       hostId: host.id,
       kind: 'inference',
@@ -869,6 +877,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       projectId: input.projectId,
       canvasId: input.canvasId,
       canvasLineage: input.canvasLineage,
+      canvasTitle: input.canvasTitle,
       deviceId: input.deviceId,
       hostId: host.id,
       state: 'starting' as const,
@@ -936,6 +945,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     projectId: input.projectId,
     canvasId: input.canvasId,
     canvasLineage: input.canvasLineage,
+    canvasTitle: input.canvasTitle,
     modelSnapshot,
     deviceId: resolvedDeviceId,
     deviceUuid: localGpu?.uuid,
@@ -955,6 +965,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     projectId: input.projectId,
     canvasId: input.canvasId,
     canvasLineage: input.canvasLineage,
+    canvasTitle: input.canvasTitle,
     deviceId: resolvedDeviceId,
     deviceUuid: localGpu?.uuid,
     gpuSnapshot: localGpu ? gpuSnapshot(localGpu) : undefined,
