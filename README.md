@@ -153,12 +153,15 @@ pnpm dev            # electron-vite 开发模式
 pnpm typecheck      # tsc（主进程 + 渲染层，两个 tsconfig）
 pnpm build          # 生产构建
 
-pnpm test:models         # 模型文件 / 硬链接
-pnpm test:model-imports  # 模型导入
-pnpm test:ssh-manager    # SSH 主机管理
-pnpm test:download-queue # 下载队列
-pnpm test:settings-draft # 设置草稿
-pnpm test:ui             # Electron UI 检查（需要显示器）
+pnpm lint               # ESLint
+pnpm test:unit          # 单元测试（Vitest）；单个文件：pnpm test:unit -- <文件>
+pnpm test:e2e           # Electron E2E（先 pnpm build；Linux 无显示器时用 xvfb-run -a）
+pnpm test:install       # 真实安装 → 更新 → 回滚 → 卸载
+```
+
+开发流程、CI 与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+```bash
 ```
 
 ## 许可

@@ -33,7 +33,7 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
 
 ## 已知事项
 
-- 当前正式发布资产仅适用于 Windows x64；尚未提供 macOS、Linux 或签名安装程序。
+- 发布流水线可构建 Windows、Linux、macOS 安装包；生产更新签名密钥尚未配置（见 [docs/release.md](../docs/release.md)），程序本身也尚未代码签名。
 - 本机推理依赖兼容的 NVIDIA GPU、驱动、引擎和模型；首次使用需先完成准备。
 - 远端引擎暂不支持 LoRA：选择远端引擎时提交会给出明确提示。
 - Linux SSH 远端功能仍需在真实 GPU 主机环境中进一步验收。
@@ -41,9 +41,4 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
 
 ## 发布与更新（维护者）
 
-- 这是 MossStudio 1.0.3 的拟发布正文草稿；在构建产物并上传到 GitHub Release 前，版本尚未正式发布。
-- `release/manifest.json` 的 `installers` 由 `pnpm release:build` 回填：安装器（`kind: exe`）与便携 ZIP（`kind: zip`）各一条。
-- 发布前在 Windows x64 运行 `pnpm release:build`，确认 `release/artifacts/` 中的 `MossStudio-Setup-1.0.3-x64.exe`、ZIP、`release.md` 与本正文一致。
-- 创建非预发布的 `1.0.3` Release（tag 必须与 `manifest.json` 中 `app.notes_url` 的 `/tag/<tag>` 一致，构建脚本用它拼接下载地址；带 `v` 的 tag 会导致 404），并设为 latest；上传安装器、ZIP 与 `release.md` 作为附件资产。打开 `release/artifacts/README.md`，复制全文粘贴到 GitHub Release 正文框。
-- 资产文件名必须保持 `MossStudio-Setup-1.0.3-x64.exe`、`MossStudio-1.0.3-win32-x64.zip`；元数据附件必须精确命名为 `release.md`。
-- 不要使用此前构建的哈希或大小；构建命令会根据新产物更新 `release/manifest.json` 和 `release/release.md`。
+发布流程已改为由 CI 构建、签名并发布：见 [docs/release.md](../docs/release.md)。旧的 `release:build` / `manifest.json` 步骤已不再使用。

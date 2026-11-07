@@ -25,7 +25,7 @@
 | Linux SSH 远端 sidecar | 🟡 | fake SSH 出图通过；真实 Linux GPU 未验收 |
 | 远端 HF 模型准备 | 🟡 | 默认 SFT curl 下载；组件 bundle/断点续传未做 |
 | 模型库/下载 | ✅ | 组件、HF 缓存、推荐组合、本地导入 |
-| 安装器 | ✅ | 单文件自解压 Setup exe：安装、原地更新（备份 + 回滚）、卸载；`installer/selftest.ps1` 36 项通过，真实 1.0.3 载荷安装/卸载已验 |
+| 安装器 | ✅ | 自有安装器与启动器（Windows / Linux / macOS）：安装、签名更新、回滚、卸载；CI 在四个平台上真实运行安装 → 更新 → 回滚 → 卸载（见 [ADR-0010](decisions/0010-own-installer-and-signed-updates.md)） |
 | 模型目录识别 | ✅ | 模型页「模型目录」卡片：只读扫描 ComfyUI 目录、勾选登记（不复制不哈希）；目录惰性创建，可清理旧版本留下的空 `hf/hub` |
 | 本地文件组合生成 | 🟡 | 扫描登记的 DiT/编码器/VAE 组成「本地文件（扫描）」组合，引擎收到 `dit_file` / `text_encoder_file` / `vae_file`；载荷与目录链路已接，真实 GPU 出图验收待做 |
 | Agent | 🟡 | Provider、历史、分段/确认、快捷动作；真实模型调用未验收 |
@@ -54,8 +54,10 @@ Studio → IPC / HTTP → startEngineJob
 ```bash
 pnpm typecheck
 pnpm build
-node --test "tests/*.test.mjs"
-CLOVER_UI_NO_SANDBOX=1 pnpm test:ui
+pnpm lint
+pnpm test:unit
+pnpm test:e2e        # 先 pnpm build
+pnpm test:install    # 真实安装 → 更新 → 回滚 → 卸载
 pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 ```
 
@@ -65,7 +67,7 @@ pnpm --filter @clover/desktop exec electron . --scenario=mossinfer-engine-job
 - `tsc -p tsconfig.web.json` ✅ 0 error
 - `electron-vite build` ✅
 - 工具链与协议测试 74 项断言 ✅（含 LoRA、更新/发布文档、引擎协议、原子安装、就绪状态）
-- `pnpm test:ui` ✅ 100% / 150% / 200% 三档缩放，含 LoRA 选择与强度、引擎就绪页面分支
+- 旧 `pnpm test:ui` 记录（已由 `pnpm test:e2e` 取代）：100% / 150% / 200% 三档缩放，含 LoRA 选择与强度、引擎就绪页面分支
 - 真实出图：`job-mvw31llh-60fe09`，1024×1024，8 步，CFG 3，seed 42，profile `dmd8`，耗时 69.2s，输出 `outputs/job-mvw31llh-60fe09-1.png` ✅
 
 ## 4. 已知限制

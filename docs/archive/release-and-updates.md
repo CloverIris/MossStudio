@@ -1,7 +1,9 @@
+> **Archived (2026-11-06).** Describes the release.md / manifest.json flow that was replaced by the signed update feed. Current process: [docs/release.md](../release.md); decision: [ADR-0010](../decisions/0010-own-installer-and-signed-updates.md).
+
 # 发布源、模型目录与更新
 
 - 状态：`1.0.1` Windows x64 便携 ZIP 已发布为 GitHub Release（tag `1.0.1`，资产 `MossStudio-1.0.1-win32-x64.zip` + `release.md`）；`1.0.2` 在开发中，尚未构建
-- 决策：[ADR-0005](decisions/0005-release-channel-and-updates.md)
+- 决策：[ADR-0005](../decisions/0005-release-channel-and-updates.md)
 - 待发布版本：`1.0.2`（严格版本）；更新验收基线：`1.0.1`
 
 > 截图为 `9.9.9` 测试数据，只展示交互，不是真实发布版本。

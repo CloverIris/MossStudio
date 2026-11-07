@@ -4,7 +4,7 @@
 
 ## 事实来源
 
-1. 代码与运行结果：`apps/desktop/`、`release/`、`tools/`
+1. 代码与运行结果：`apps/desktop/`、`apps/launcher/`、`tools/`、`.github/workflows/`、`release/`
 2. [status.md](status.md)：当前完成度、证据、已知限制
 3. [architecture.md](architecture.md)：进程、页面、服务、MossInfer、远端、存储
 4. [product-design.md](product-design.md)：工作台信息架构与交互边界
@@ -25,6 +25,8 @@
 | 文档 | 作用 |
 | --- | --- |
 | [../README.md](../README.md) | 项目总览、安装、快速开始 |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | 开发：目录结构、命令、CI、分支与提交规范（英文） |
+| [design/ui-rules.md](design/ui-rules.md) | UI 规则：组件、按钮语气、状态与文案格式（英文） |
 | [mossinfer-performance.md](mossinfer-performance.md) | MossInfer 1.0.0 性能报告与 PyTorch 对比 |
 | [status.md](status.md) | 完成度与验证证据 |
 | [architecture.md](architecture.md) | 当前进程/窗口/服务/引擎架构 |
@@ -32,19 +34,17 @@
 | [design/multi-canvas-studio.md](design/multi-canvas-studio.md) | Project 多 Canvas 画布板、串行生成与结果呈现（已实现，含 as-built 差异） |
 | [design/lora-support.md](design/lora-support.md) | Canvas LoRA 选择、强度、导入与生成链路（本机已实现，远端拒绝） |
 | [design/model-directories.md](design/model-directories.md) | 模型目录 v2：ComfyUI 就地识别、组件文件绑定、模型页入口（1.0.3 设计） |
-| [design/app-installer.md](design/app-installer.md) | 单文件自解压安装器：安装、原地更新、回滚、卸载（1.0.3 设计） |
-| [design/ui-rules.md](design/ui-rules.md) | 界面规则：用哪个组件、按钮语气、标题层级、加载/空/错误、状态与文案格式 |
 | [design/gpu-device-management.md](design/gpu-device-management.md) | GPU 枚举与兼容引擎、设备推荐、显存策略、标题栏状态及按卡调度 Canvas |
 | [mossinfer-migration.md](mossinfer-migration.md) | sidecar、远端、HF、CUDA wheel、旧链路清理 |
 | [layout-schema.md](layout-schema.md) | 画布坐标、布局编译契约 |
 | [backend-and-project.md](backend-and-project.md) | Project schema v3、Engine Job、HTTP/WS |
-| [release-and-updates.md](release-and-updates.md) | 发布与更新流程 |
+| [release.md](release.md) | 发布流程、签名密钥与轮换（英文） |
 | [agent-and-prompt.md](agent-and-prompt.md) | AI Provider、分段、确认 |
 | [gbc-integration.md](gbc-integration.md) | 可选 GBC 图像解析桥 |
 | [toolchain-and-onboarding.md](toolchain-and-onboarding.md) | Trainer/引擎前置条件与首次运行 |
 | [windows-validation-guide.md](windows-validation-guide.md) | Windows 实机验收手册 |
 | [assets/](assets/) | 历史截图；不再代表当前 UI |
-| [decisions/](decisions/) | ADR 决策记录（含 ADR-0009 MossInfer） |
+| [decisions/](decisions/) | ADR 决策记录（含 ADR-0009 MossInfer、ADR-0010 安装器与签名更新） |
 
 ## 历史文档
 
@@ -54,7 +54,7 @@
 - [research/upstream-2026-10-20.md](research/upstream-2026-10-20.md)
 - [future-inference-engine.md](future-inference-engine.md)
 - [benchmarks/v2-mnn-spike.md](benchmarks/v2-mnn-spike.md)
-- [archive/runner/README.md](archive/runner/README.md)
+- [archive/](archive/)：旧 runner、V2 引擎与协议、旧发布流程（release-and-updates）、1.0.3 安装器设计、早期 `apps/README.md`
 - 旧截图：`home/oobe/instances/terminal/training/creator` 等
 
 ## 本机验证环境

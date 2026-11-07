@@ -41,9 +41,8 @@ pnpm --filter @clover/desktop exec electron . --smoke
 UI：
 
 ```powershell
-pnpm test:ui
-# 设备 DPI 审查：网页缩放保持 100%，分别启动设备缩放 100%/125%/150%/175%/200% 的独立进程
-node tools/test-ui.mjs --dpi
+pnpm build
+pnpm test:e2e
 ```
 
 DPI 审查使用实际 App 外壳、创作页和设置页，配合内存 IPC 与临时用户目录，不读写 `.dev-data/`。
