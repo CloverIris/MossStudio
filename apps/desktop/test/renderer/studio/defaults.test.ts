@@ -13,6 +13,7 @@ import {
   qualityFor,
   qualityLabel,
   randomSeed,
+  samplingForBundle,
   seedForRun,
   sizePresetFor,
 } from '@renderer/pages/studio/defaults'
@@ -114,5 +115,25 @@ describe('studio/defaults seeds saved before the lock existed', () => {
     expect(isSeedLocked({ seed: 1234, seedLocked: false })).toBe(false)
     expect(isSeedLocked({ seed: LEGACY_DEFAULT_SEED, seedLocked: true })).toBe(true)
     expect(seedForRun({ seed: 1234 }, () => 0.5)).toBe(1234)
+  })
+})
+
+describe('studio/defaults sampling when the model changes', () => {
+  const turbo = { defaults: { steps: 8, cfg: 1 } }
+  const sft = {}
+
+  it('applies a few-step model’s own steps and CFG', () => {
+    expect(samplingForBundle({ steps: 20, cfg: 3 }, sft, turbo)).toEqual({ steps: 8, cfg: 1 })
+    expect(samplingForBundle({ steps: 20, cfg: 3 }, null, { defaults: { steps: 4 } })).toEqual({ steps: 4, cfg: 3 })
+  })
+
+  it('goes back to 标准 when leaving one, unless the steps or CFG were changed since', () => {
+    expect(samplingForBundle({ steps: 8, cfg: 1 }, turbo, sft)).toEqual({ steps: 20, cfg: 3 })
+    expect(samplingForBundle({ steps: 12, cfg: 1 }, turbo, sft)).toEqual({ steps: 12, cfg: 1 })
+  })
+
+  it('leaves the sampling alone between normal models', () => {
+    expect(samplingForBundle({ steps: 50, cfg: 4 }, sft, sft)).toEqual({ steps: 50, cfg: 4 })
+    expect(samplingForBundle({ steps: 50, cfg: 4 }, undefined, undefined)).toEqual({ steps: 50, cfg: 4 })
   })
 })

@@ -98,6 +98,12 @@ interface RawCatalog {
   updated_at?: string
   models: RawModel[]
   bundles?: ModelBundle[]
+  /**
+   * Bundles of single weight files (schema 3). Kept apart from `bundles` so an
+   * older app, which reads only `bundles` and cannot load single files, never
+   * offers them.
+   */
+  single_file_bundles?: ModelBundle[]
   adapters?: RawAdapter[]
 }
 
@@ -365,6 +371,21 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       adapters: raw.adapters ?? BUILTIN.adapters,
     }
   }
+  // A catalog from before single-file bundles (schema 2) gets this version's
+  // single-file bundles and the parts they need, and this version's wording and
+  // certification of the bundles both know, so every certified model is offered.
+  if (raw.schema_version < 3) {
+    const fileBundles = BUILTIN.single_file_bundles ?? []
+    const builtinBundles = new Map((BUILTIN.bundles ?? []).map((bundle) => [bundle.id, bundle]))
+    const needed = new Set(fileBundles.flatMap((bundle) => [...Object.values(bundle.components), bundle.support]))
+    const present = new Set(raw.models.map((model) => model.id))
+    raw = {
+      ...raw,
+      models: [...raw.models, ...BUILTIN.models.filter((model) => needed.has(model.id) && !present.has(model.id))],
+      bundles: (raw.bundles ?? BUILTIN.bundles ?? []).map((bundle) => builtinBundles.get(bundle.id) ?? bundle),
+      single_file_bundles: fileBundles,
+    }
+  }
   // Keep the config-only repair available with an older remote catalog too.
   const runtimeConfig = BUILTIN.models.find((model) => model.id === 'moss-runtime-config')
   if (runtimeConfig && !raw.models.some((model) => model.id === runtimeConfig.id)) {
@@ -520,7 +541,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
   catalogRoot = key
   // A scanned ComfyUI set (DiT + text encoder + VAE registered in place) becomes a
   // selectable bundle without copying anything; the engine gets the three files.
-  const bundles: ModelBundle[] = [...(raw.bundles ?? BUILTIN.bundles ?? [])]
+  const bundles: ModelBundle[] = [...(raw.bundles ?? BUILTIN.bundles ?? []), ...(raw.single_file_bundles ?? [])]
   const localBundle = localFilesBundle(models)
   if (localBundle) bundles.unshift(localBundle)
   catalogCache = {

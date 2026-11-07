@@ -1,4 +1,14 @@
-import type { AdapterEntry, Catalog, EngineFeatures, EngineReadiness, ModelBundle, ModelEntry, ProjectCanvas } from '@shared/types'
+import type {
+  AdapterEntry,
+  Catalog,
+  EngineFeatures,
+  EngineReadiness,
+  GpuInventoryDevice,
+  ModelBundle,
+  ModelEntry,
+  ProjectCanvas,
+} from '@shared/types'
+import { bundleGpusProblem, isFileBundle } from '@shared/bundleFit'
 import { adapterStatuses, normalizeCanvasAdapters } from '@shared/adapters'
 import { CLI_ENGINE_LABEL, cliBundleProblem } from '@shared/cliEngine'
 import { compileCanvasPrompt, type CompiledPrompt } from './prompt'
@@ -85,6 +95,8 @@ export interface ReadinessInput {
   update?: { supported: boolean; required: boolean; minimumVersion: string | null } | null
   /** What the engine this run goes to can do; undefined while reading, null when none is usable. */
   features?: EngineFeatures | null
+  /** The GPUs of this computer the run may use (empty or absent while unknown). */
+  gpus?: readonly GpuInventoryDevice[]
 }
 
 export interface Readiness {
@@ -131,6 +143,22 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
   if (cli && input.catalog && input.bundle.bundle && input.bundle.installed) {
     const problem = cliBundleProblem(cli, input.bundle.bundle, input.catalog.models)
     if (problem) blockers.push({ id: 'model-engine', message: problem, action: toModels })
+  }
+  // Single files load only on this computer; some quantized models need a particular GPU.
+  const picked = input.catalog && input.bundle.installed ? input.bundle.bundle : null
+  if (picked && input.catalog) {
+    const problem = input.remote
+      ? isFileBundle(picked, input.catalog.models)
+        ? '只能在这台电脑上运行，在其他电脑上请换成官方模型'
+        : null
+      : cli
+        ? null
+        : bundleGpusProblem(picked, input.gpus ?? [])
+    if (problem)
+      blockers.push({
+        id: 'model-engine',
+        message: input.remote ? `「${picked.name}」${problem}` : `「${picked.name}」${problem}，请换一个模型`,
+      })
   }
 
   if (input.remote) {

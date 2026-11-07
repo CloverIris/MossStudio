@@ -1,3 +1,4 @@
+import { RUNTIME_CONFIG_ID } from './bundleFit'
 import type { ModelBundle, ModelEntry } from './types'
 
 /**
@@ -6,7 +7,8 @@ import type { ModelBundle, ModelEntry } from './types'
  * A scanned ComfyUI tree registers single-file components in place; when a DiT,
  * a text encoder and a VAE are all available the Models page offers them as one
  * bundle. The engine receives the three files as `dit_file` /
- * `text_encoder_file` / `vae_file`, so nothing is copied, linked or re-downloaded.
+ * `text_encoder_file` / `vae_file`, so nothing is copied, linked or re-downloaded;
+ * it still needs the configs and tokenizer of the small runtime-config download.
  */
 export function localFilesBundle(models: readonly ModelEntry[]): ModelBundle | null {
   const pick = (role: ModelEntry['role']): ModelEntry | undefined =>
@@ -20,7 +22,7 @@ export function localFilesBundle(models: readonly ModelEntry[]): ModelBundle | n
     name: '本地文件（扫描）',
     description: '直接使用你添加到模型库的本地文件，不复制、不下载。',
     components: { dit: dit.id, textEncoder: textEncoder.id, vae: vae.id },
-    support: '',
+    support: RUNTIME_CONFIG_ID,
     recommended: false,
   }
 }

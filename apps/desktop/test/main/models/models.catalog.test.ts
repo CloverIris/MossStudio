@@ -37,7 +37,7 @@ beforeEach(async () => {
   listJobs.mockReset().mockResolvedValue([])
   models = await import('@main/services/models')
   settings = testSettings(DEFAULT_SETTINGS, { modelsRoot: modelsRoot(), hfEndpoint: 'http://127.0.0.1:9' })
-  writeCatalog(releaseDir(), { schema_version: 2, updated_at: '2026-01-01T00:00:00Z', models: [vae], bundles: [bundle], adapters: [] })
+  writeCatalog(releaseDir(), { schema_version: 3, updated_at: '2026-01-01T00:00:00Z', models: [vae], bundles: [bundle], adapters: [] })
 })
 
 const byId = <T extends { id: string }>(items: T[], id: string): T | undefined => items.find((item) => item.id === id)
@@ -85,7 +85,7 @@ describe('getCatalog sources', () => {
     contentDir.mockReturnValue(null)
     const fetch = vi.fn(async (url: string) => {
       expect(url).toBe('https://raw.githubusercontent.com/CloverIris/MossStudio/main/apps/desktop/resources/models.json')
-      return new Response(JSON.stringify({ schema_version: 2, models: [vae] }))
+      return new Response(JSON.stringify({ schema_version: 3, models: [vae] }))
     })
     vi.stubGlobal('fetch', fetch)
     const catalog = await models.getCatalog(settings)
@@ -104,6 +104,43 @@ describe('getCatalog sources', () => {
     expect(ids).toContain('brand-new')
     expect(ids).toContain('moss-sft-dit')
     expect(ids).not.toContain('moss-sft')
+  })
+
+  it('an older (schema 2) catalog still offers the certified single-file models', async () => {
+    writeCatalog(releaseDir(), {
+      schema_version: 2,
+      models: [vae],
+      bundles: [bundle, { ...bundle, id: 'moss-sft', name: 'old name', description: 'old wording' }],
+    })
+    const catalog = await models.getCatalog(settings)
+    expect(catalog.bundles.map((b) => b.id)).toEqual([
+      'b1',
+      'moss-sft',
+      'moss-sft-int8',
+      'moss-sft-nvfp4',
+      'moss-sft-int4',
+      'moss-sft-turbo-int8',
+      'moss-base-int8',
+    ])
+    // A bundle this version knows takes this version's wording and certification.
+    expect(byId(catalog.bundles, 'moss-sft')).toMatchObject({ name: 'MOSS-Image SFT', certified: true })
+    expect(byId(catalog.bundles, 'b1')).toEqual(bundle)
+    // The parts the single-file bundles need come along.
+    for (const id of ['moss-sft-comfy-nvfp4', 'qwen35-comfy-int8_convrot', 'flux2-vae-comfy-small', 'moss-runtime-config']) {
+      expect(byId(catalog.models, id)).toBeDefined()
+    }
+  })
+
+  it('a current (schema 3) catalog lists its single-file bundles after the folder ones', async () => {
+    writeCatalog(releaseDir(), {
+      schema_version: 3,
+      models: [vae],
+      bundles: [bundle],
+      single_file_bundles: [{ ...bundle, id: 'files', tier: 'turbo' }],
+    })
+    const catalog = await models.getCatalog(settings)
+    expect(catalog.bundles.map((b) => b.id)).toEqual(['b1', 'files'])
+    expect(byId(catalog.bundles, 'files')?.tier).toBe('turbo')
   })
 })
 
@@ -255,7 +292,7 @@ describe('adapters', () => {
   const adaptersRoot = (): string => join(modelsRoot(), 'adapters')
 
   beforeEach(() => {
-    writeCatalog(releaseDir(), { schema_version: 2, models: [vae], bundles: [], adapters: [adapterRaw] })
+    writeCatalog(releaseDir(), { schema_version: 3, models: [vae], bundles: [], adapters: [adapterRaw] })
   })
 
   it('marks a catalog adapter installed only with adapter.json and every non-empty file', async () => {
@@ -370,7 +407,7 @@ describe('deleteModel', () => {
 
   it('keeps blobs that are not owned or are shared with another component record', async () => {
     writeCatalog(releaseDir(), {
-      schema_version: 2,
+      schema_version: 3,
       models: [vae, rawModel({ id: 'vae-b', repo: 'org/vae', role: 'vae', subfolder: 'vae', files: ['vae/*'] })],
     })
     const dir = installOnDisk(modelsRoot(), { id: 'vae-a', repo: 'org/vae', role: 'vae' }, SHA, vaeFiles())

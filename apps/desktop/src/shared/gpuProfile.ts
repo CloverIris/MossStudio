@@ -10,7 +10,7 @@ export function gpuRequiresBf16Tier(device: GpuInventoryDevice): boolean {
 export interface ResolvedGpuProfile {
   memoryMode: GpuMemoryMode
   tier: Settings['mossInferTier']
-  source: 'recommended' | 'global' | 'gpu-override' | 'hardware-compatibility'
+  source: 'recommended' | 'global' | 'gpu-override' | 'hardware-compatibility' | 'bundle'
 }
 
 export function recommendGpuMemoryMode(device: GpuInventoryDevice): GpuMemoryMode | null {

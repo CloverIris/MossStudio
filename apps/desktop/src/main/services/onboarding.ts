@@ -11,6 +11,7 @@ import { remoteEngineStatus } from './remoteEngine'
 import { scanRemoteModels } from './remoteModels'
 import { localEngineKinds } from './engineInstalls'
 import { cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
+import { bestBundleFor, generationGpus, isFileBundle } from '@shared/bundleFit'
 
 export async function getOnboardingStatus(settings: Settings, hostId = 'local'): Promise<OnboardingStatus> {
   const catalog = await getCatalog(settings, true)
@@ -64,40 +65,25 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
         (installed.has(id) ? 2 : hostId === 'local' && catalog.models.find((model) => model.id === id)?.installState === 'partial' ? 1 : 0),
       0,
     )
-  const usable = cliKind ? catalog.bundles.filter((item) => cliBundleProblem(cliKind!, item, catalog.models) === null) : catalog.bundles
-  const bundle = [...usable].sort((a, b) => score(b) - score(a) || Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))[0]
-  let modelIds = bundle ? ids(bundle) : []
-  let bundleName = bundle?.name
-  let modelCount = fullModelReady ? modelIds.length : modelIds.filter((id) => installed.has(id)).length
-  // Single-file MossInfer overrides still need the bundle's configs and tokenizer.
-  // Count the actual installed weights instead of asking for another BF16 download.
-  if (bundle && !fullModelReady && !cliKind && catalog.models.some((model) => model.id === 'moss-runtime-config')) {
-    const singleFile = (role: 'dit' | 'text_encoder') =>
-      catalog.models.find(
-        (model) =>
-          installed.has(model.id) &&
-          model.role === role &&
-          model.family === 'moss-image' &&
-          model.format === 'comfyui' &&
-          ['bf16', 'int8', 'int4', 'w4a8'].includes(model.precision),
-      )
-    const dit = singleFile('dit')
-    const textEncoder = singleFile('text_encoder')
-    if (dit || textEncoder) {
-      const candidates = [
-        dit?.id ?? bundle.components.dit,
-        textEncoder?.id ?? bundle.components.textEncoder,
-        bundle.components.vae,
-        'moss-runtime-config',
-      ]
-      const count = candidates.filter((id) => installed.has(id)).length
-      if (count > modelCount) {
-        modelIds = candidates
-        modelCount = count
-        bundleName = 'MossInfer 单文件组合'
-      }
-    }
-  }
+  const usable = cliKind
+    ? catalog.bundles.filter((item) => cliBundleProblem(cliKind!, item, catalog.models) === null)
+    : hostId === 'local'
+      ? catalog.bundles
+      : // Another computer runs a model folder; single files load only on this one.
+        catalog.bundles.filter((item) => !isFileBundle(item, catalog.models))
+  // With nothing downloaded yet, the model that suits this computer's GPU comes first (as on the 模型 page).
+  const best = hostId === 'local' ? bestBundleFor(usable, generationGpus(cachedGpuInventory()?.devices, settings))?.bundle : undefined
+  const bundle = [...usable].sort(
+    (a, b) =>
+      score(b) - score(a) ||
+      Number(b.id === best?.id) - Number(a.id === best?.id) ||
+      Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)),
+  )[0]
+  // Downloaded single files count through the single-file bundle they belong to
+  // (score above), so the checklist names a model the Studio can actually run.
+  const modelIds = bundle ? ids(bundle) : []
+  const bundleName = bundle?.name
+  const modelCount = fullModelReady ? modelIds.length : modelIds.filter((id) => installed.has(id)).length
   const modelReady = fullModelReady || (modelIds.length > 0 && modelCount === modelIds.length)
   const partialModel =
     modelCount > 0 ||

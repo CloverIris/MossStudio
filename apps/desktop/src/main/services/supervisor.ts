@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { appendFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Events } from '@shared/channels'
-import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, GpuInventoryDevice } from '@shared/types'
+import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, ModelBundle, GpuInventoryDevice } from '@shared/types'
 import { cliUnsupported } from '../lib/cliProtocol'
 import { codedError } from '../lib/codedError'
 import { emit } from '../lib/events'
@@ -24,6 +24,7 @@ import { CLI_ENGINE_LABEL, cliBundleProblem, type CliEngineKind } from '@shared/
 import { isCliEngine } from '@shared/enginePackages'
 import { canvasBranchesConflict } from '@shared/canvasJobBranch'
 import { resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
+import { bundleGpuProblem, isFileBundle, profileForBundle } from '@shared/bundleFit'
 import { probeLocalEngineGpuCompatibility } from './engines'
 import { getTrainingHost } from './trainingHosts'
 import { cancelRemoteEngineJob, runRemoteEngineJob } from './remoteEngine'
@@ -795,7 +796,16 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
   let modelPath: string | undefined
   let modelSnapshot: unknown
   let modelFiles: { ditFile?: string; textEncoderFile?: string; vaeFile?: string } = {}
+  let modelBundle: ModelBundle | undefined
   const cliEngine = input.hostId ? null : cliEngineOf(input.deviceUuid)
+  if (input.hostId && input.modelBinding) {
+    // Another computer runs the model folder at its remote path; single files load only here.
+    const catalog = await getCatalog(settings)
+    const bundle = catalog.bundles.find((item) => item.id === input.modelBinding!.bundleId)
+    if (bundle && isFileBundle(bundle, catalog.models)) {
+      throw codedError('E_MODEL', `「${bundle.name}」只能在这台电脑上运行，在其他电脑上请用官方模型`)
+    }
+  }
   if (!input.hostId) {
     if (input.modelBinding && cliEngine) {
       // A CLI engine reads a bf16 bundle folder: say so before anything is materialized or started.
@@ -810,21 +820,20 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     }
     if (input.modelBinding) {
       const source = await prepareModelSource(input.modelBinding, settings)
-      modelPath = source.model ?? undefined
-      if (modelPath) {
-        modelSnapshot = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8'))
-      } else {
-        modelSnapshot = { bundleId: input.modelBinding.bundleId, files: source }
-      }
+      modelPath = source.model
+      modelBundle = source.bundle
       modelFiles = {
         ditFile: source.ditFile,
         textEncoderFile: source.textEncoderFile,
         vaeFile: source.vaeFile,
       }
+      const manifest: unknown = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8'))
+      modelSnapshot = source.ditFile ? { ...(manifest as object), files: modelFiles } : manifest
     } else {
       modelPath = (await resolveLegacyModelPath(join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'))) ?? undefined
     }
-    if (!modelPath && !modelFiles.ditFile) {
+    // Single files replace the folder's weights; the engine still reads its configs and tokenizer.
+    if (!modelPath) {
       throw new Error('模型权重尚未就绪，请先在模型库下载 MOSS-Image，或扫描本地模型文件')
     }
     if (cliEngine && modelPath) {
@@ -841,7 +850,11 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     if (!serverPath || !existsSync(serverPath)) throw new Error('未找到 moss-server；请先在引擎页下载或配置引擎')
   }
   const resolvedDeviceId = localGpu ? `cuda:${localGpu.index}` : input.deviceId
-  const gpuProfile = localGpu ? (queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu)) : undefined
+  if (localGpu && modelBundle && !cliEngineOf(localGpu.uuid)) {
+    const problem = bundleGpuProblem(modelBundle, localGpu)
+    if (problem) throw codedError('E_MODEL', `「${modelBundle.name}」${problem}，请换一个模型`)
+  }
+  const gpuProfile = localGpu ? profileForBundle(queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu), modelBundle) : undefined
   const executionSettings = gpuProfile ? settingsForGpuProfile(settings, gpuProfile) : settings
 
   if (input.hostId) {

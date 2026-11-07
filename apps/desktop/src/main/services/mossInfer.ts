@@ -33,9 +33,9 @@ interface PendingRequest {
 }
 
 interface EngineConfig {
-  /** Materialized diffusers folder; empty when loading component files. */
+  /** Bundle folder: a materialized diffusers model, or the runtime configs and tokenizer when files are given. */
   model: string
-  /** Local single-file components (a user's ComfyUI tree, registered in place). */
+  /** Single-file components that replace the folder's weights (downloaded, or a ComfyUI tree registered in place). */
   ditFile?: string
   textEncoderFile?: string
   vaeFile?: string
@@ -511,8 +511,8 @@ async function ensureEngine(runtime: MossInferRuntime, config: EngineConfig, set
       tier: config.tier,
       cache_dir: join(paths.cache(), 'mossinfer'),
     }
-    // A diffusers folder goes as `model`; scanned single files go as component
-    // files. The engine refuses a request that mixes both.
+    // `model` is always a bundle folder (configs and tokenizer); component files
+    // replace its weights for the parts they name.
     if (config.model) payload.model = config.model
     if (config.ditFile) payload.dit_file = config.ditFile
     if (config.textEncoderFile) payload.text_encoder_file = config.textEncoderFile

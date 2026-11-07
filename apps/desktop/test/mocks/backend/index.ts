@@ -18,6 +18,7 @@
  * and are listed in `backend.unhandled`, unless `fallback: 'empty'` is passed
  * (the legacy UI-harness behaviour: `[]`, or `null` for appInfo/envScan).
  */
+import { bestBundleFor, generationGpus, isFileBundle } from '@shared/bundleFit'
 import { Events, Ipc } from '@shared/channels'
 import type { AiChatInput, AiConversationInfo, AiMessage } from '@shared/ai'
 import type { WebAccessInfo } from '@shared/backend'
@@ -123,7 +124,12 @@ function onboardingStatus(state: MockBackendState, hostId: string): OnboardingSt
   const deviceReady = local ? Boolean(gpu) : host?.status === 'ok'
   const engineReady = local ? state.engineReadiness.state === 'ready' : false
   const installed = new Set(local ? state.catalog.models.filter((model) => model.installed).map((model) => model.id) : [])
-  const bundle = [...state.catalog.bundles].sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))[0]
+  // As main: single files load only on this computer, and the model that suits its GPU comes first.
+  const usable = local ? state.catalog.bundles : state.catalog.bundles.filter((item) => !isFileBundle(item, state.catalog.models))
+  const best = local ? bestBundleFor(usable, generationGpus(state.gpuInventory.devices, state.settings))?.bundle : undefined
+  const bundle = [...usable].sort(
+    (a, b) => Number(b.id === best?.id) - Number(a.id === best?.id) || Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)),
+  )[0]
   const modelIds = bundle ? [...Object.values(bundle.components), bundle.support] : []
   const count = modelIds.filter((id) => installed.has(id)).length
   const partial = count > 0 || modelIds.some((id) => state.catalog.models.find((model) => model.id === id)?.installState === 'partial')

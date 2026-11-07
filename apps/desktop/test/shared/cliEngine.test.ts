@@ -67,7 +67,9 @@ describe('cliBundleProblem', () => {
   it('refuses scanned single files and ComfyUI files, whatever their precision', () => {
     const scanned = '「MOSS-Image SFT」是扫描到的单个模型文件，兼容模式引擎只能用完整的模型包，请在模型库下载 MOSS-Image（bf16）'
     expect(cliBundleProblem('vulkan', bundle, parts({ dit: { provider: 'local' } }))).toBe(scanned)
-    expect(cliBundleProblem('vulkan', bundle, parts({ vae: { format: 'comfyui' } }))).toBe(scanned)
+    expect(cliBundleProblem('vulkan', bundle, parts({ vae: { format: 'comfyui' } }))).toBe(
+      '「MOSS-Image SFT」由单个模型文件组成，兼容模式引擎只能用完整的模型包，请在模型库下载 MOSS-Image（bf16）',
+    )
   })
 
   it('refuses a bundle whose parts the catalog does not describe: its precision cannot be checked', () => {

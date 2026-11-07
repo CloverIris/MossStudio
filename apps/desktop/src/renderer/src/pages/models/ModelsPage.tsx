@@ -1,9 +1,11 @@
 import { Download, FolderOpen, Package, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { generationGpus } from '@shared/bundleFit'
 import { Events, Ipc } from '@shared/channels'
 import type { AppInfo, Catalog, ModelBundle } from '@shared/types'
 import { call, onEvent } from '../../lib/api'
+import { useGpuInventory } from '../../lib/useGpuInventory'
 import { DownloadQueue } from '../../components/DownloadQueue'
 import { Notice } from '../../components/common/Notice'
 import {
@@ -27,7 +29,7 @@ import { AdvancedPanel } from './AdvancedPanel'
 import { ControlAdaptersSection } from './ControlAdaptersSection'
 import { LoraTab } from './LoraTab'
 import { DeleteModelDialog, FeaturedModel, ModelList } from './ModelEntries'
-import { bundleDeletePlan, bundleView, parseModelsQuery, recommendedBundle, visibleTasks } from './logic'
+import { bundleBlocker, bundleDeletePlan, bundleView, modelSections, parseModelsQuery, visibleTasks } from './logic'
 import { useModelLocation, useSshHosts, type ModelLocation } from './useModelLocation'
 
 type Tab = 'models' | 'lora' | 'downloads'
@@ -87,18 +89,41 @@ function ModelsTab({
   componentFocus: boolean
 }): React.JSX.Element {
   const [deleting, setDeleting] = useState<ModelBundle | null>(null)
-  const featured = recommendedBundle(catalog.bundles, preferredBundleId)
+  const settings = useApp((state) => state.settings)
+  const { inventory } = useGpuInventory()
+  const remote = location.kind === 'remote'
+  const gpus = useMemo(() => generationGpus(inventory?.devices, settings), [inventory, settings])
   const views = useMemo(
-    () => catalog.bundles.map((bundle) => bundleView(bundle, catalog.models, location.tasks, location.isModelInstalled)),
-    [catalog, location.tasks, location.isModelInstalled],
+    () =>
+      catalog.bundles
+        // Scanned local files only make sense on this computer.
+        .filter((bundle) => !remote || bundle.id !== 'local-files')
+        .map((bundle) =>
+          bundleView(
+            bundle,
+            catalog.models,
+            location.tasks,
+            location.isModelInstalled,
+            bundleBlocker(bundle, catalog.models, { remote, gpus }),
+          ),
+        ),
+    [catalog, location.tasks, location.isModelInstalled, remote, gpus],
   )
+  const sections = modelSections(views, catalog.models, { remote, gpus }, preferredBundleId)
+  const featuredView = sections.featured
   const deletePlan = (bundle: ModelBundle) =>
     bundleDeletePlan(bundle, catalog.bundles, catalog.models, location.isModelInstalled, location.tasks)
-  const featuredView = views.find((view) => view.bundle.id === featured?.id)
-  const others = views.filter((view) => view.bundle.id !== featured?.id && view.status !== 'unavailable')
-  // Scanned local files only make sense on this computer.
-  const shownOthers = location.kind === 'remote' ? others.filter((view) => view.bundle.id !== 'local-files') : others
   const deletable = (bundle: ModelBundle): boolean => deletePlan(bundle).ids.length > 0
+  const featuredCard = featuredView ? (
+    <FeaturedModel
+      view={featuredView}
+      location={location}
+      pick={sections.pick ?? undefined}
+      deletable={deletable(featuredView.bundle)}
+      onDelete={setDeleting}
+    />
+  ) : null
+  const featuredCertified = Boolean(featuredView?.bundle.certified)
 
   return (
     <div className="flex flex-col gap-8">
@@ -120,7 +145,23 @@ function ModelsTab({
           <LoadingRow label={`正在查看 ${location.host?.name ?? '远程主机'} 上的模型…`} />
         ) : null
       ) : featuredView ? (
-        <FeaturedModel view={featuredView} location={location} deletable={deletable(featuredView.bundle)} onDelete={setDeleting} />
+        <>
+          {featuredCertified ? null : featuredCard}
+          {featuredCertified || sections.certified.length ? (
+            <Section title="推荐模型" description="引擎验证过的模型，下载后就能用">
+              {featuredCertified ? featuredCard : null}
+              {sections.certified.length ? (
+                <ModelList
+                  views={sections.certified}
+                  location={location}
+                  highlightId={preferredBundleId}
+                  deletable={deletable}
+                  onDelete={setDeleting}
+                />
+              ) : null}
+            </Section>
+          ) : null}
+        </>
       ) : (
         <Group>
           <EmptyState
@@ -132,9 +173,15 @@ function ModelsTab({
         </Group>
       )}
 
-      {shownOthers.length && location.ready ? (
-        <Section title="其他模型">
-          <ModelList views={shownOthers} location={location} highlightId={preferredBundleId} deletable={deletable} onDelete={setDeleting} />
+      {sections.others.length && location.ready ? (
+        <Section title="其他模型" description="社区版本和本地文件，引擎没有验证过，不保证能正常出图">
+          <ModelList
+            views={sections.others}
+            location={location}
+            highlightId={preferredBundleId}
+            deletable={deletable}
+            onDelete={setDeleting}
+          />
         </Section>
       ) : null}
 

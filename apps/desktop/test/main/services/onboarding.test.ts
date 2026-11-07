@@ -4,7 +4,7 @@
  * the catalog is the real resources/models.json via catalogFixture.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Catalog, LaunchDevice, TrainingHost } from '@shared/types'
+import type { Catalog, GpuInventoryDevice, LaunchDevice, TrainingHost } from '@shared/types'
 import { useTempDataRoot } from '@test/helpers/tempDir'
 import { SFT_BUNDLE_IDS, catalogFixture, engineMissingFixture, engineReadyFixture, settingsFixture } from '@test/mocks/backend/fixtures'
 
@@ -19,6 +19,8 @@ interface Options {
   amd?: boolean
   /** Engine kinds the local GPUs run (default: CUDA). */
   kinds?: Array<'cuda' | 'vulkan' | 'hip'>
+  /** NVIDIA GPUs in the cached inventory. */
+  gpus?: GpuInventoryDevice[]
 }
 const state: { options: Options } = { options: {} }
 
@@ -30,7 +32,9 @@ vi.mock('@main/services/devices', () => ({
   cachedGpuInventory: () =>
     state.options.amd
       ? { scannedAt: '', status: 'ok', devices: [{ uuid: 'vk-1002-744c-0', index: 0, name: 'AMD Radeon RX 7900 XTX', vendor: 'amd' }] }
-      : null,
+      : state.options.gpus
+        ? { scannedAt: '', status: 'ok', devices: state.options.gpus }
+        : null,
 }))
 vi.mock('@main/services/engineInstalls', () => ({ localEngineKinds: () => state.options.kinds ?? ['cuda'] }))
 vi.mock('@main/services/models', () => ({
@@ -142,12 +146,43 @@ describe('getOnboardingStatus (local)', () => {
     expect(step(result, 'device')).toMatchObject({ status: 'ok', detail: 'AMD Radeon RX 7900 XTX' })
   })
 
-  it('counts single-file ComfyUI weights with the runtime config instead of asking for BF16 diffusers', async () => {
+  it('counts downloaded single files through the single-file model they belong to, not a BF16 download', async () => {
+    const int8 = ['moss-sft-comfy-int8_convrot', 'qwen35-comfy-int8_convrot', 'flux2-vae-comfy-small', 'moss-runtime-config']
+    const result = await status({ engine: true, installed: int8 })
+    expect(result.bundleId).toBe('moss-sft-int8')
+    expect(result.bundleName).toBe('SFT · INT8')
+    expect(step(result, 'model').modelIds).toEqual(int8)
+    expect(result.ready).toBe(true)
+  })
+
+  it('names the closest single-file model when only some of its files are there', async () => {
+    // A W4A8 text encoder and the folder VAE belong to no model the Studio can run.
     const installed = ['moss-sft-comfy-int8_convrot', 'qwen35-comfy-w4a8_gptq', 'flux2-vae-small', 'moss-runtime-config']
     const result = await status({ engine: true, installed })
-    expect(result.bundleName).toBe('MossInfer 单文件组合')
-    expect(step(result, 'model').modelIds).toEqual(installed)
-    expect(result.ready).toBe(true)
+    expect(result.bundleName).toBe('SFT · INT8')
+    expect(step(result, 'model')).toMatchObject({ status: 'partial', detail: expect.stringMatching(/2\/4/) })
+    expect(result.ready).toBe(false)
+  })
+
+  it('suggests the model that suits the GPU when nothing is downloaded yet', async () => {
+    const rtx3060 = {
+      uuid: 'GPU-3060',
+      index: 0,
+      name: 'NVIDIA GeForce RTX 3060',
+      computeCapability: { major: 8, minor: 6 },
+      memoryTotalBytes: 12 * 1024 ** 3,
+    }
+    const rtx5090 = {
+      uuid: 'GPU-5090',
+      index: 0,
+      name: 'NVIDIA GeForce RTX 5090',
+      computeCapability: { major: 12, minor: 0 },
+      memoryTotalBytes: 32 * 1024 ** 3,
+    }
+    expect((await status({ gpus: [rtx3060] })).bundleId).toBe('moss-sft-int8')
+    expect((await status({ gpus: [rtx5090] })).bundleId).toBe('moss-sft-nvfp4')
+    // What is already downloaded still wins.
+    expect((await status({ gpus: [rtx3060], installed: sft })).bundleId).toBe('moss-sft')
   })
 
   it('a Vulkan / HIP-only machine needs the bf16 bundle: no fp16 DiT, no single-file combination', async () => {
@@ -157,8 +192,10 @@ describe('getOnboardingStatus (local)', () => {
     const vulkan = await status({ engine: true, installed: fp16, kinds: ['vulkan'] })
     expect(step(vulkan, 'model').modelIds).toEqual(sft)
     expect(vulkan.ready).toBe(false)
-    const single = ['moss-sft-comfy-int8_convrot', 'qwen35-comfy-w4a8_gptq', 'flux2-vae-small', 'moss-runtime-config']
-    expect((await status({ engine: true, installed: single, kinds: ['hip'] })).bundleName).not.toBe('MossInfer 单文件组合')
+    const single = ['moss-sft-comfy-int8_convrot', 'qwen35-comfy-int8_convrot', 'flux2-vae-comfy-small', 'moss-runtime-config']
+    const hip = await status({ engine: true, installed: single, kinds: ['hip'] })
+    expect(hip.bundleName).toBe('MOSS-Image SFT')
+    expect(hip.ready).toBe(false)
     // A machine with a CUDA GPU next to a Vulkan one keeps every bundle.
     expect(result(await status({ engine: true, installed: fp16, kinds: ['cuda', 'vulkan'] }))).toBe('SFT · FP16-fixed')
   })
@@ -176,6 +213,13 @@ describe('getOnboardingStatus (remote)', () => {
     expect(result.hostId).toBe('ssh-a')
     expect(result.ready).toBe(false)
     expect(step(result, 'model').status).toBe('missing')
+  })
+
+  it('never offers a single-file model for a remote host', async () => {
+    const single = ['moss-sft-comfy-int8_convrot', 'qwen35-comfy-int8_convrot', 'flux2-vae-comfy-small', 'moss-runtime-config']
+    const result = await status({ engine: true, remoteInstalled: single }, 'ssh-a')
+    expect(result.bundleId).toBe('moss-sft')
+    expect(result.ready).toBe(false)
   })
 
   it('lets the selected remote host complete its own checklist', async () => {
