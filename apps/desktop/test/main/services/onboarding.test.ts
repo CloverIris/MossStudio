@@ -21,6 +21,8 @@ interface Options {
   kinds?: Array<'cuda' | 'vulkan' | 'hip'>
   /** NVIDIA GPUs in the cached inventory. */
   gpus?: GpuInventoryDevice[]
+  /** GPUs that run 兼容模式 (Vulkan). */
+  cliGpus?: string[]
 }
 const state: { options: Options } = { options: {} }
 
@@ -36,7 +38,10 @@ vi.mock('@main/services/devices', () => ({
         ? { scannedAt: '', status: 'ok', devices: state.options.gpus }
         : null,
 }))
-vi.mock('@main/services/engineInstalls', () => ({ localEngineKinds: () => state.options.kinds ?? ['cuda'] }))
+vi.mock('@main/services/engineInstalls', () => ({
+  localEngineKinds: () => state.options.kinds ?? ['cuda'],
+  resolveDeviceEngine: (uuid: string) => (state.options.cliGpus?.includes(uuid) ? { package: { kind: 'vulkan' } } : null),
+}))
 vi.mock('@main/services/models', () => ({
   getCatalog: async (): Promise<Catalog> =>
     catalogFixture({ installed: state.options.installed, partial: state.options.partial ? [state.options.partial] : [] }),
@@ -183,6 +188,8 @@ describe('getOnboardingStatus (local)', () => {
     expect((await status({ gpus: [rtx5090] })).bundleId).toBe('moss-sft-nvfp4')
     // What is already downloaded still wins.
     expect((await status({ gpus: [rtx3060], installed: sft })).bundleId).toBe('moss-sft')
+    // An NVIDIA GPU on 兼容模式 reads only the official folders.
+    expect((await status({ gpus: [rtx3060], cliGpus: ['GPU-3060'] })).bundleId).toBe('moss-sft')
   })
 
   it('a Vulkan / HIP-only machine needs the bf16 bundle: no fp16 DiT, no single-file combination', async () => {

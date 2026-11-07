@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { localFilesBundle } from '@shared/localBundle'
+import { localDitNeeds, localFilesBundle } from '@shared/localBundle'
 import type { ModelEntry } from '@shared/types'
 
 const entry = (id: string, role: ModelEntry['role'], overrides: Partial<ModelEntry> = {}): ModelEntry => ({
@@ -72,5 +72,24 @@ describe('localFilesBundle', () => {
       entry('vae-2', 'vae'),
     ])
     expect(bundle?.components).toEqual({ dit: 'dit-a', textEncoder: 'te-1', vae: 'vae-1' })
+  })
+})
+
+describe('localDitNeeds', () => {
+  it('reads the tier a scanned DiT needs from its precision or file name', () => {
+    expect(localDitNeeds(entry('a', 'dit', { name: 'moss_image_sft_int4_convrot' }))).toEqual({ tier: 'turbo' })
+    expect(localDitNeeds(entry('b', 'dit', { localPath: 'D:/models/moss_image_sft_nvfp4.safetensors' }))).toEqual({
+      tier: 'turbo',
+      requires: { computeCapability: { major: 12, minor: 0 }, label: 'RTX 50 系列显卡' },
+    })
+    expect(localDitNeeds(entry('c', 'dit', { precision: 'int8' }))).toEqual({ tier: 'high' })
+    expect(localDitNeeds(entry('d', 'dit', { files: ['MOSS-Image-SFT-Q4_K_M.gguf'] }))).toEqual({ tier: 'high' })
+    // Nothing to go by: the tier from 设置.
+    expect(localDitNeeds(entry('e', 'dit'))).toEqual({})
+  })
+
+  it('carries it into the local-files bundle', () => {
+    const files = [entry('dit-int8', 'dit', { name: 'moss_image_sft_int8_convrot' }), entry('te-1', 'text_encoder'), entry('vae-1', 'vae')]
+    expect(localFilesBundle(files)).toMatchObject({ id: 'local-files', tier: 'high' })
   })
 })

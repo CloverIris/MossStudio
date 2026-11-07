@@ -1,5 +1,7 @@
-import { gpuRequiresBf16Tier, type ResolvedGpuProfile } from './gpuProfile'
-import type { GpuInventoryDevice, ModelBundle, ModelEntry, Settings } from './types'
+import { isCliEngine, parseEnginePackageId } from './enginePackages'
+import type { ResolvedGpuProfile } from './gpuProfile'
+import { compareRecommendedGpu } from './gpuScheduling'
+import type { EngineReadiness, GpuInventoryDevice, ModelBundle, ModelEntry, Settings } from './types'
 
 /**
  * Which models fit which computer. Pure, shared by main (job start, first-run
@@ -29,8 +31,38 @@ export function isFileBundle(
 
 const isNvidia = (device: GpuInventoryDevice): boolean => !device.vendor || device.vendor === 'nvidia'
 
-/** Why a bundle cannot run on this GPU, or null when it can. */
-export function bundleGpuProblem(bundle: Pick<ModelBundle, 'tier' | 'requires'>, device: GpuInventoryDevice): string | null {
+/**
+ * The GPUs that run a CLI engine (兼容模式 / AMD 原生) instead of moss-server.
+ * Those read only a bf16 model folder: no single files, no quantized tiers.
+ */
+export function cliGpuUuids(readiness: Pick<EngineReadiness, 'devices'> | null | undefined): Set<string> {
+  return new Set(
+    (readiness?.devices ?? [])
+      .filter((device) => {
+        const pkg = device.packageId ? parseEnginePackageId(device.packageId) : null
+        return pkg !== null && isCliEngine(pkg)
+      })
+      .map((device) => device.deviceUuid),
+  )
+}
+
+/** How a GPU would run a bundle: `cli` = it runs a CLI engine; `files` = the bundle loads single files (default: it has a tier). */
+export interface GpuFit {
+  cli?: boolean
+  files?: boolean
+}
+
+/**
+ * Why a bundle cannot run on this GPU, or null when it can. INT8 (high) and
+ * INT4 (turbo) run on every GPU moss-server supports, Turing and Volta included
+ * (their SM75 / SM70 builds); NVFP4 needs the GPU its `requires` names.
+ */
+export function bundleGpuProblem(
+  bundle: Pick<ModelBundle, 'tier' | 'requires'>,
+  device: GpuInventoryDevice,
+  fit: GpuFit = {},
+): string | null {
+  if (fit.cli && (fit.files ?? Boolean(bundle.tier))) return `${device.name} 上的引擎只能运行官方模型`
   const need = bundle.requires
   if (need) {
     const have = device.computeCapability
@@ -40,7 +72,8 @@ export function bundleGpuProblem(bundle: Pick<ModelBundle, 'tier' | 'requires'>,
   }
   if (bundle.tier) {
     if (!isNvidia(device)) return '需要 NVIDIA 显卡'
-    if (gpuRequiresBf16Tier(device)) return `在 ${device.name} 上用不了，这张显卡只能运行官方模型`
+    const have = device.computeCapability
+    if (have && have.major < 7) return `在 ${device.name} 上用不了，这张显卡只能运行官方模型`
   }
   return null
 }
@@ -49,9 +82,13 @@ export function bundleGpuProblem(bundle: Pick<ModelBundle, 'tier' | 'requires'>,
  * Why a bundle runs on none of these GPUs, or null when one of them can run it
  * (or none is known yet: nothing is ruled out before the GPUs are read).
  */
-export function bundleGpusProblem(bundle: Pick<ModelBundle, 'tier' | 'requires'>, devices: readonly GpuInventoryDevice[]): string | null {
+export function bundleGpusProblem(
+  bundle: Pick<ModelBundle, 'tier' | 'requires'>,
+  devices: readonly GpuInventoryDevice[],
+  fit: { cliGpus?: ReadonlySet<string>; files?: boolean } = {},
+): string | null {
   if (!devices.length) return null
-  const problems = devices.map((device) => bundleGpuProblem(bundle, device))
+  const problems = devices.map((device) => bundleGpuProblem(bundle, device, { cli: fit.cliGpus?.has(device.uuid), files: fit.files }))
   return problems.includes(null) ? null : problems[0]!
 }
 
@@ -78,19 +115,25 @@ export interface BestBundle {
 /**
  * The certified model that suits this computer best: one made for its GPU
  * (NVFP4 on an RTX 50), the INT8 model when VRAM is limited, otherwise the
- * catalog's recommended official model. Without a known NVIDIA GPU it is the
- * recommended one.
+ * catalog's recommended official model. The GPU judged is the one automatic
+ * assignment prefers (full engine first, then newest, then most memory).
+ * Without a known NVIDIA GPU it is the recommended one.
  */
-export function bestBundleFor(bundles: readonly ModelBundle[], devices: readonly GpuInventoryDevice[]): BestBundle | null {
+export function bestBundleFor(
+  bundles: readonly ModelBundle[],
+  devices: readonly GpuInventoryDevice[],
+  cliGpus: ReadonlySet<string> = new Set(),
+): BestBundle | null {
   const certified = bundles.filter((bundle) => bundle.certified)
   const fallback =
     certified.find((bundle) => bundle.recommended) ?? bundles.find((bundle) => bundle.recommended) ?? certified[0] ?? bundles[0]
   if (!fallback) return null
   const gpu = devices
     .filter(isNvidia)
-    .sort((a, b) => (b.memoryTotalBytes ?? 0) - (a.memoryTotalBytes ?? 0))
+    .sort((a, b) => Number(cliGpus.has(a.uuid)) - Number(cliGpus.has(b.uuid)) || compareRecommendedGpu(a, b))
     .at(0)
   if (!gpu) return { bundle: fallback, reason: null }
+  if (cliGpus.has(gpu.uuid)) return { bundle: fallback, reason: `${gpu.name} 上的引擎只能运行官方模型` }
   const runnable = certified.filter((bundle) => bundleGpuProblem(bundle, gpu) === null)
   const made = runnable.find((bundle) => bundle.requires)
   if (made) return { bundle: made, reason: `为 ${gpu.name} 这类显卡做的版本，速度最快` }

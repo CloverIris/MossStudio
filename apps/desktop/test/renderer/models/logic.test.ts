@@ -140,6 +140,25 @@ describe('bundleView on a place that cannot run it', () => {
     expect(view).toMatchObject({ status: 'missing', action: null, actionLabel: '', blocked: '只能在 RTX 50 系列显卡上运行' })
   })
 
+  it('still lets a paused or failed download be continued or retried', () => {
+    const paused = bundleView(
+      bundle('moss-sft-nvfp4'),
+      catalog().models,
+      [task('moss-sft-comfy-nvfp4', { state: 'paused' })],
+      undefined,
+      'x',
+    )
+    expect(paused).toMatchObject({ status: 'paused', action: 'resume', actionLabel: '继续', blocked: 'x' })
+    const failed = bundleView(
+      bundle('moss-sft-nvfp4'),
+      catalog().models,
+      [task('moss-sft-comfy-nvfp4', { state: 'error' })],
+      undefined,
+      'x',
+    )
+    expect(failed).toMatchObject({ status: 'failed', action: 'resume', actionLabel: '重试', blocked: 'x' })
+  })
+
   it('still lets a running download be paused', () => {
     const view = bundleView(
       bundle('moss-sft-nvfp4'),
@@ -173,11 +192,17 @@ describe('bundleBlocker', () => {
     expect(bundleBlocker(bundle('moss-sft-nvfp4'), models, { remote: false, gpus: [] })).toBeNull()
   })
 
-  it('keeps quantized models off GPUs that only run the official model', () => {
-    expect(bundleBlocker(bundle('moss-sft-int8'), models, { remote: false, gpus: [GPU_GTX_1660()] })).toBe(
-      '在 NVIDIA GeForce GTX 1660 上用不了，这张显卡只能运行官方模型',
-    )
-    expect(bundleBlocker(bundle('moss-sft'), models, { remote: false, gpus: [GPU_GTX_1660()] })).toBeNull()
+  it('offers INT8 and INT4 on Turing (the SM75 engine build runs them)', () => {
+    expect(bundleBlocker(bundle('moss-sft-int8'), models, { remote: false, gpus: [GPU_GTX_1660()] })).toBeNull()
+    expect(bundleBlocker(bundle('moss-sft-int4'), models, { remote: false, gpus: [GPU_GTX_1660()] })).toBeNull()
+    expect(bundleBlocker(bundle('moss-sft-nvfp4'), models, { remote: false, gpus: [GPU_GTX_1660()] })).not.toBeNull()
+  })
+
+  it('keeps single-file models off a GPU on 兼容模式', () => {
+    const gpu = gpuDeviceFixture()
+    const place = { remote: false, gpus: [gpu], cliGpus: new Set([gpu.uuid]) }
+    expect(bundleBlocker(bundle('moss-sft-int8'), models, place)).toBe(`${gpu.name} 上的引擎只能运行官方模型`)
+    expect(bundleBlocker(bundle('moss-sft'), models, place)).toBeNull()
   })
 
   it('keeps single-file models on this computer', () => {
@@ -225,8 +250,8 @@ describe('modelSections', () => {
   it('features INT8 when VRAM is limited and the official model when it is not', () => {
     expect(sections([GPU_RTX_3060()]).featured?.bundle.id).toBe('moss-sft-int8')
     expect(sections([gpuDeviceFixture()]).featured?.bundle.id).toBe('moss-sft')
-    // A GPU that runs only the official model never gets a quantized pick.
-    expect(sections([GPU_GTX_1660()]).featured?.bundle.id).toBe('moss-sft')
+    // Turing runs INT8 too: a 6 GB card gets it.
+    expect(sections([GPU_GTX_1660()]).featured?.bundle.id).toBe('moss-sft-int8')
   })
 
   it('features the deep-linked model, which is then not called the best pick', () => {

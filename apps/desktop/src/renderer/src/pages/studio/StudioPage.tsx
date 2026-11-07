@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { GalleryItem, GpuInventorySnapshot, ManagedHost, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { ADAPTER_STRENGTH_DEFAULT, normalizeCanvasAdapters } from '@shared/adapters'
-import { generationGpus } from '@shared/bundleFit'
+import { cliGpuUuids, generationGpus } from '@shared/bundleFit'
 import { activeCanvasBranchIds } from '@shared/canvasJobBranch'
 import { Events, Ipc } from '@shared/channels'
 import { ConfirmDialog, Segmented, useToast } from '../../components/ui'
@@ -152,6 +152,7 @@ export function StudioPage(): React.JSX.Element {
         : generationGpus(gpuInventory?.devices, settings),
     [selected?.deviceUuid, gpuInventory, settings],
   )
+  const cliGpus = useMemo(() => cliGpuUuids(engineReadiness), [engineReadiness])
   const readiness = deriveReadiness({
     canvas: selected?.kind === 'layout' ? selected : null,
     catalog,
@@ -164,6 +165,7 @@ export function StudioPage(): React.JSX.Element {
     update,
     features: boardFeatures,
     gpus,
+    cliGpus,
   })
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false

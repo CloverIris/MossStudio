@@ -146,6 +146,18 @@ function mapErr(code: string): string {
   return `E_${code.toUpperCase()}`
 }
 
+/**
+ * A failed generate in plain words. A tier the loaded model cannot run (an INT8
+ * file under reference, an INT4 one under high, a scanned file whose kind the
+ * app could not tell) says which tier to pick.
+ */
+export function generateErrorMessage(code: string, message: string): string {
+  if (code === 'invalid_argument' && /\btier\b/i.test(message)) {
+    return `这个主模型文件要换一个运行档位：INT8 用 High，INT4 和 NVFP4 用 Turbo。请到 设置 › 设备与引擎 › 高级 里改好后重试。（${message}）`
+  }
+  return message
+}
+
 function engineFailureMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   if (/cudaErrorNoKernelImageForDevice|no kernel image is available/i.test(message)) {
@@ -333,7 +345,7 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
         sink.event({
           type: 'error',
           code: mapErr(String(error.code ?? 'internal')),
-          message: String(error.message ?? '生成失败'),
+          message: generateErrorMessage(String(error.code ?? 'internal'), String(error.message ?? '生成失败')),
           fatal: true,
         })
         sink.done(1)

@@ -8,7 +8,7 @@ import { call } from '../../lib/api'
 import { electronStudioClient } from '../../lib/studioClient'
 import { useApp } from '../../store'
 import { taskCanvasFor } from './canvases'
-import { profileFor, randomSeed, seedForRun } from './defaults'
+import { profileFor, randomSeed, samplingForBundle, seedForRun } from './defaults'
 import { resolveJobInputs } from './jobInputs'
 import { compileCanvasPrompt } from './prompt'
 import { resolveBundle } from './readiness'
@@ -114,7 +114,10 @@ export function useGenerate(options: {
     // source's latest seed (a later 换个种子 from this card records a new one).
     const shownSeed = jobs.find((job) => job.id === source.jobId)?.params.seed ?? source.outputs?.[0]?.seed ?? source.seed
     const seed = seedMode === 'same' ? shownSeed : seedMode === 'new' ? randomSeed() : seedForRun(source)
-    const runSource: ProjectCanvas = { ...source, seed, modelBundleId: choice.bundle.id }
+    // A canvas that never picked a model runs with the one it resolves to; a few-step
+    // model (Turbo) then brings its own steps and CFG, as picking it by hand does.
+    const sampling = source.modelBundleId ? { steps: source.steps, cfg: source.cfg } : samplingForBundle(source, null, choice.bundle)
+    const runSource: ProjectCanvas = { ...source, ...sampling, seed, modelBundleId: choice.bundle.id }
     let taskId: string | null = null
     let board: ProjectCanvas[] | null = null
     try {
@@ -122,7 +125,9 @@ export function useGenerate(options: {
       // afterwards. A result card's parameters are frozen and stay as they were.
       const withSeed =
         source.kind === 'layout'
-          ? canvases.map((canvas) => (canvas.id === source.id ? { ...canvas, seed, modelBundleId: choice.bundle!.id } : canvas))
+          ? canvases.map((canvas) =>
+              canvas.id === source.id ? { ...canvas, ...sampling, seed, modelBundleId: choice.bundle!.id } : canvas,
+            )
           : canvases
       const task = taskCanvasFor(runSource, withSeed)
       taskId = task.taskId
@@ -161,10 +166,10 @@ export function useGenerate(options: {
           ...resolved.params,
           width: resolved.size.width,
           height: resolved.size.height,
-          steps: source.steps,
-          cfg: source.cfg,
+          steps: sampling.steps,
+          cfg: sampling.cfg,
           seed,
-          profile: profileFor(source.steps),
+          profile: profileFor(sampling.steps),
           mode: 'runner',
         }),
       })

@@ -82,8 +82,8 @@ export interface BundleView {
 /**
  * Whole-model state. `isInstalled` decides per part (local catalog flag, or a
  * remote host's inventory); `tasks` are the downloads for the same machine.
- * A `blocked` model keeps its state but offers no download (a download already
- * running can still be paused).
+ * A `blocked` model keeps its state but offers no new download; one already
+ * started can still be paused, continued or retried.
  */
 export function bundleView(
   bundle: ModelBundle,
@@ -94,7 +94,8 @@ export function bundleView(
 ): BundleView {
   const view = bundleState(bundle, models, tasks, isInstalled)
   if (!blocked) return { ...view, blocked: null }
-  return view.action === 'pause' ? { ...view, blocked } : { ...view, blocked, action: null, actionLabel: '' }
+  // A download already started (pause, continue, retry) stays in the user's hands; only new ones are not offered.
+  return view.action === 'download' ? { ...view, blocked, action: null, actionLabel: '' } : { ...view, blocked }
 }
 
 function bundleState(
@@ -164,16 +165,19 @@ function bundleState(
   return { ...base, status: 'missing', stateText: '未下载', action: 'download', actionLabel: '下载' }
 }
 
-/** Where the page points: this computer (its GPUs, once read) or another computer. */
+/** Where the page points: this computer (its GPUs, once read, and which of them run a CLI engine) or another computer. */
 export interface ModelPlace {
   remote: boolean
   gpus: readonly GpuInventoryDevice[]
+  /** GPUs running 兼容模式 / AMD 原生, which read only the official bf16 folders. */
+  cliGpus?: ReadonlySet<string>
 }
 
 /** Why a whole model cannot run at this place, or null. */
 export function bundleBlocker(bundle: ModelBundle, models: readonly ModelEntry[], place: ModelPlace): string | null {
-  if (place.remote) return isFileBundle(bundle, models) ? '只能在这台电脑上使用，其他电脑请用官方模型' : null
-  return bundleGpusProblem(bundle, place.gpus)
+  const files = isFileBundle(bundle, models)
+  if (place.remote) return files ? '只能在这台电脑上使用，其他电脑请用官方模型' : null
+  return bundleGpusProblem(bundle, place.gpus, { cliGpus: place.cliGpus, files })
 }
 
 export interface ModelSections {
@@ -199,7 +203,7 @@ export function modelSections(
   preferredId?: string | null,
 ): ModelSections {
   const candidates = views.map((view) => view.bundle).filter((bundle) => !place.remote || !isFileBundle(bundle, models))
-  const best = bestBundleFor(candidates, place.remote ? [] : place.gpus)
+  const best = bestBundleFor(candidates, place.remote ? [] : place.gpus, place.cliGpus)
   const featured = views.find((view) => view.bundle.id === preferredId) ?? views.find((view) => view.bundle.id === best?.bundle.id)
   const listed = views.filter((view) => view !== featured && view.status !== 'unavailable')
   return {

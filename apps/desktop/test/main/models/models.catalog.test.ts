@@ -165,6 +165,45 @@ describe('getCatalog install state', () => {
     expect(entry).toMatchObject({ installed: true, installState: 'ready', installedBytes: bytes, resolvedRevision: SHA })
   })
 
+  describe('a component whose catalog entry is pinned to a commit after it was downloaded from main', () => {
+    const PIN = 'b'.repeat(40)
+    const pinned = (): void =>
+      writeCatalog(releaseDir(), { schema_version: 3, models: [{ ...vae, revision: PIN }], bundles: [bundle], adapters: [] })
+
+    it('stays installed when main was the pinned commit', async () => {
+      pinned()
+      installOnDisk(modelsRoot(), { id: 'vae-a', repo: 'org/vae', role: 'vae', revision: 'main' }, PIN, vaeFiles())
+      expect(byId((await models.getCatalog(settings)).models, 'vae-a')).toMatchObject({
+        installed: true,
+        installState: 'ready',
+        resolvedRevision: PIN,
+      })
+    })
+
+    it('stays installed when main was another commit: the files are there and the engine checks them on load', async () => {
+      pinned()
+      installOnDisk(modelsRoot(), { id: 'vae-a', repo: 'org/vae', role: 'vae', revision: 'main' }, SHA, vaeFiles())
+      expect(byId((await models.getCatalog(settings)).models, 'vae-a')).toMatchObject({ installed: true, resolvedRevision: SHA })
+    })
+
+    it('does not count a download pinned to a different commit', async () => {
+      pinned()
+      installOnDisk(modelsRoot(), { id: 'vae-a', repo: 'org/vae', role: 'vae', revision: SHA }, SHA, vaeFiles())
+      expect(byId((await models.getCatalog(settings)).models, 'vae-a')?.installed).toBe(false)
+    })
+  })
+
+  it('matches install records to catalog revisions', () => {
+    const pin = 'c'.repeat(40)
+    expect(models.installMatchesRevision({ revision: 'main', sha: SHA }, 'main')).toBe(true)
+    expect(models.installMatchesRevision({ revision: 'main', sha: pin }, pin)).toBe(true)
+    expect(models.installMatchesRevision({ revision: 'main', sha: SHA }, pin)).toBe(true)
+    expect(models.installMatchesRevision({ revision: pin, sha: pin }, pin)).toBe(true)
+    expect(models.installMatchesRevision({ revision: SHA, sha: SHA }, pin)).toBe(false)
+    // A branch in the catalog never adopts another branch's download.
+    expect(models.installMatchesRevision({ revision: 'dev', sha: SHA }, 'main')).toBe(false)
+  })
+
   it('finds an install in the legacy shared hub', async () => {
     const legacy = join(modelsRoot(), 'hf', 'hub', 'models--org--vae')
     installOnDisk(modelsRoot(), { id: 'vae-a', repo: 'org/vae', role: 'full' }, SHA, vaeFiles())

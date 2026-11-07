@@ -9,8 +9,9 @@ import { describeEngineReadiness } from '@shared/engineReadiness'
 import { getTrainingHost } from './trainingHosts'
 import { remoteEngineStatus } from './remoteEngine'
 import { scanRemoteModels } from './remoteModels'
-import { localEngineKinds } from './engineInstalls'
+import { localEngineKinds, resolveDeviceEngine } from './engineInstalls'
 import { cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
+import { isCliEngine } from '@shared/enginePackages'
 import { bestBundleFor, generationGpus, isFileBundle } from '@shared/bundleFit'
 
 export async function getOnboardingStatus(settings: Settings, hostId = 'local'): Promise<OnboardingStatus> {
@@ -72,7 +73,11 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
       : // Another computer runs a model folder; single files load only on this one.
         catalog.bundles.filter((item) => !isFileBundle(item, catalog.models))
   // With nothing downloaded yet, the model that suits this computer's GPU comes first (as on the 模型 page).
-  const best = hostId === 'local' ? bestBundleFor(usable, generationGpus(cachedGpuInventory()?.devices, settings))?.bundle : undefined
+  const gpus = hostId === 'local' ? generationGpus(cachedGpuInventory()?.devices, settings) : []
+  const cliGpus = new Set(
+    gpus.filter((device) => isCliEngine(resolveDeviceEngine(device.uuid)?.package ?? 'cuda')).map((device) => device.uuid),
+  )
+  const best = hostId === 'local' ? bestBundleFor(usable, gpus, cliGpus)?.bundle : undefined
   const bundle = [...usable].sort(
     (a, b) =>
       score(b) - score(a) ||

@@ -100,6 +100,24 @@ describe('models', () => {
     await app.screenshot('models-rtx50-dark')
   })
 
+  it('offers only the official models when the GPU runs 兼容模式', async () => {
+    const page = await app.open({ scenario: 'engineInstalledModelMissing', route: '/models', defer: true })
+    await page.evaluate(() => {
+      const gpu = window.__mock.state.gpuInventory.devices[0]!
+      window.__mock.state.engineReadiness = {
+        ...window.__mock.state.engineReadiness,
+        devices: [{ deviceUuid: gpu.uuid, name: gpu.name, packageId: 'vulkan', path: null }],
+      }
+    })
+    await app.start()
+    const card = featured(page)
+    await expect.poll(() => card.getByRole('heading', { name: 'MOSS-Image SFT' }).isVisible()).toBe(true)
+    expect(await card.getByText('上的引擎只能运行官方模型', { exact: false }).isVisible()).toBe(true)
+    const int8 = page.getByText('SFT · INT8', { exact: true }).locator('xpath=ancestor::*[.//span[text()="用不了"]][1]')
+    await expect.poll(() => int8.getByText('上的引擎只能运行官方模型', { exact: false }).isVisible()).toBe(true)
+    expect(await int8.getByRole('button', { name: '下载' }).count()).toBe(0)
+  })
+
   it('pauses and resumes a download', async () => {
     const page = await app.open({ scenario: 'engineInstalledModelMissing', route: '/models' })
     const card = featured(page)

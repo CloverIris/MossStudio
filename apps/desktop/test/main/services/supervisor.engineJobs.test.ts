@@ -183,6 +183,14 @@ describe('engine jobs: single-file models', () => {
     expect(job.modelSnapshot).toMatchObject({ bundleId: 'b', files: { ditFile: '/models/dit-int4.safetensors' } })
   })
 
+  it('runs INT4 on Turing with its own tier, though Turing runs folder models at reference', async () => {
+    refreshGpuInventory.mockResolvedValue({ devices: [{ ...gpu, computeCapability: { major: 7, minor: 5 } }] })
+    prepareModelSource.mockResolvedValue({ model: join(dataRoot(), 'bundle'), ditFile: '/models/dit-int4.safetensors', bundle: fileBundle })
+    const job = await supervisor.startEngineJob(request('int4 on turing', { modelBinding: { bundleId: 'files' } }))
+    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'bundle' })
+    expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('turbo')
+  })
+
   it('keeps the tier from 设置 for a folder model', async () => {
     const job = await supervisor.startEngineJob(request('folder'))
     expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('high')

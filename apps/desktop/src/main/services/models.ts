@@ -295,6 +295,22 @@ interface InstallLocation {
   dir: string
 }
 
+const COMMIT = /^[a-f0-9]{40}$/
+
+/**
+ * Whether an install record serves the catalog's revision. The same revision
+ * always does. When the catalog pins a commit, a download of exactly that
+ * commit does too, and so does one made from a branch (`main`) before the pin
+ * existed: the user has those files and the engine checks every model by its
+ * architecture when it loads it, so they are not downloaded again. A download
+ * pinned to another commit does not count.
+ */
+export function installMatchesRevision(record: Pick<InstallRecord, 'revision' | 'sha'>, revision: string): boolean {
+  if (record.revision === revision) return true
+  if (!COMMIT.test(revision)) return false
+  return record.sha === revision || !COMMIT.test(record.revision)
+}
+
 async function findInstall(
   settings: Settings,
   model: Pick<ModelEntry, 'id' | 'repo' | 'revision' | 'role' | 'format' | 'subfolder'>,
@@ -306,7 +322,7 @@ async function findInstall(
         record.version !== 2 ||
         record.id !== model.id ||
         record.repo !== model.repo ||
-        record.revision !== model.revision ||
+        !installMatchesRevision(record, model.revision) ||
         !/^[a-f0-9]{40,64}$/.test(record.sha)
       )
         continue

@@ -18,7 +18,7 @@
  * and are listed in `backend.unhandled`, unless `fallback: 'empty'` is passed
  * (the legacy UI-harness behaviour: `[]`, or `null` for appInfo/envScan).
  */
-import { bestBundleFor, generationGpus, isFileBundle } from '@shared/bundleFit'
+import { bestBundleFor, cliGpuUuids, generationGpus, isFileBundle } from '@shared/bundleFit'
 import { Events, Ipc } from '@shared/channels'
 import type { AiChatInput, AiConversationInfo, AiMessage } from '@shared/ai'
 import type { WebAccessInfo } from '@shared/backend'
@@ -126,7 +126,9 @@ function onboardingStatus(state: MockBackendState, hostId: string): OnboardingSt
   const installed = new Set(local ? state.catalog.models.filter((model) => model.installed).map((model) => model.id) : [])
   // As main: single files load only on this computer, and the model that suits its GPU comes first.
   const usable = local ? state.catalog.bundles : state.catalog.bundles.filter((item) => !isFileBundle(item, state.catalog.models))
-  const best = local ? bestBundleFor(usable, generationGpus(state.gpuInventory.devices, state.settings))?.bundle : undefined
+  const best = local
+    ? bestBundleFor(usable, generationGpus(state.gpuInventory.devices, state.settings), cliGpuUuids(state.engineReadiness))?.bundle
+    : undefined
   const bundle = [...usable].sort(
     (a, b) => Number(b.id === best?.id) - Number(a.id === best?.id) || Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)),
   )[0]

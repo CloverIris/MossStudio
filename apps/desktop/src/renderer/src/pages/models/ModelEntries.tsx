@@ -76,9 +76,9 @@ const isLocalOnly = (view: BundleView): boolean => localFilesOnly(view.bundle, v
 /** The description of a model with its total size at the end, the same place as for parts and LoRA. */
 const describe = (view: BundleView): string => [view.bundle.description, sizeText(view.totalBytes)].filter(Boolean).join(' · ')
 
-/** The state of a model as a Pill: 用不了 when it cannot run here (unless it is already downloaded), else its state. */
+/** The state of a model as a Pill: 用不了 when it cannot run here and nothing of it is under way, else its state. */
 function StatePill({ view }: { view: BundleView }): React.JSX.Element | null {
-  if (view.blocked && view.status !== 'ready' && view.action !== 'pause') return <Pill tone="warn">用不了</Pill>
+  if (view.blocked && (view.status === 'missing' || view.status === 'partial')) return <Pill tone="warn">用不了</Pill>
   if (view.status === 'missing') return null
   return (
     <Pill tone={bundleTone(view.status)} className="tabular">

@@ -540,6 +540,8 @@ async function resolveLocalGpu(
   deviceUuid: string | undefined,
   /** What the job asks for: a job a CLI engine cannot run never goes to a CLI GPU. */
   params: JobParams,
+  /** The model it runs: automatic assignment only picks a GPU that can run it (NVFP4 on an RTX 50). */
+  model?: { bundle: ModelBundle; files: boolean },
 ): Promise<GpuInventoryDevice> {
   const settings = getSettings()
   const inventory = await refreshGpuInventory()
@@ -582,6 +584,16 @@ async function resolveLocalGpu(
     }
     if (needsCuda && !cudaUuids.size && cliUuids.size) {
       throw codedError('E_NOT_SUPPORTED', `${needsCuda}（这台电脑上没有能运行完整引擎的显卡）`)
+    }
+    if (model && compatibleUuids.size) {
+      // A GPU that cannot run the model would only fail the job: it waits for one that can.
+      const problems = [...compatibleUuids].map((uuid) => {
+        const device = inventory.devices.find((item) => item.uuid === uuid)
+        return [uuid, device ? bundleGpuProblem(model.bundle, device, { cli: cliUuids.has(uuid), files: model.files }) : '']
+      })
+      const capable = problems.filter(([, problem]) => problem === null).map(([uuid]) => uuid!)
+      if (!capable.length) throw codedError('E_MODEL', `「${model.bundle.name}」${problems[0]![1]}，请换一个模型`)
+      compatibleUuids = new Set(capable)
     }
     const loads: Record<string, { runningTasks: number; queuedTasks: number }> = {}
     for (const job of jobs.values()) {
@@ -719,10 +731,16 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
   }
   const settings = getSettings()
   try {
+    let model: { bundle: ModelBundle; files: boolean } | undefined
+    if (!input.hostId && input.modelBinding) {
+      const catalog = await getCatalog(settings)
+      const bundle = catalog.bundles.find((item) => item.id === input.modelBinding!.bundleId)
+      if (bundle) model = { bundle, files: isFileBundle(bundle, catalog.models) }
+    }
     if (input.hostId) {
       assignedInput = { ...input, deviceUuid: undefined }
     } else {
-      assignedGpu = await resolveLocalGpu(input.deviceUuid, paramsOf(input))
+      assignedGpu = await resolveLocalGpu(input.deviceUuid, paramsOf(input), model)
       if (!input.deviceUuid && settings.gpuSelection === 'auto') pendingAutoUuid = assignedGpu.uuid
       assignedInput = { ...input, deviceUuid: assignedGpu.uuid, deviceId: `cuda:${assignedGpu.index}` }
     }
@@ -730,7 +748,7 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
     if (!assignedInput) throw new Error('推理任务设备解析失败。')
     const slot = engineSlotKey(assignedInput)
     if (!slot) throw new Error('无法确定推理设备资源槽；请重新选择 GPU 后重试。')
-    const gpuProfile = assignedGpu ? resolveGpuProfile(settings, assignedGpu) : undefined
+    const gpuProfile = assignedGpu ? profileForBundle(resolveGpuProfile(settings, assignedGpu), model?.bundle) : undefined
     const queue = engineQueues.get(slot) ?? []
     if (activeEngineSlots.has(slot) || queue.length > 0) {
       const params = paramsOf(input)

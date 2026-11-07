@@ -2,11 +2,11 @@
 
 模型库使用 `apps/desktop/resources/models.json`（schema 3）。`models` 描述独立下载组件，`bundles` 描述 Diffusers 文件夹组合，`single_file_bundles` 描述单文件组合。一个本地组合引用 DiT、文本编码器、VAE 和隐藏的配置组件；Qwen 组件同时包含 tokenizer。
 
-模型页的「推荐模型」列出 MossInfer 引擎认证的全部模型（`certified: true`，以引擎 `docs/integration.md` 的 Supported models 为准）：官方 SFT、Base，以及单文件的 SFT · INT8、SFT · NVFP4、SFT · INT4、SFT Turbo · INT8 8 步、Base · INT8。最适合这台电脑的一个放在最前：RTX 50 用 NVFP4，显存不到 16 GB 用 INT8，否则用官方 SFT（`shared/bundleFit.ts`）。引擎没验证过的 FP16-fixed 社区版放在「其他模型」。
+模型页的「推荐模型」列出 MossInfer 引擎认证的全部模型（`certified: true`，以引擎 `docs/integration.md` 的 Supported models 为准）：官方 SFT、Base，以及单文件的 SFT · INT8、SFT · NVFP4、SFT · INT4、SFT Turbo · INT8 8 步、Base · INT8。最适合这台电脑的一个放在最前：RTX 50 用 NVFP4，显存不到 16 GB 用 INT8，否则用官方 SFT；判断的是自动分配会优先用的那块显卡（跑完整引擎的优先，再按架构新、显存大排序），用兼容模式引擎的显卡只推荐官方模型（`shared/bundleFit.ts`）。引擎没验证过的 FP16-fixed 社区版放在「其他模型」。
 
-单文件组合 = 引擎认证的 DiT 文件 + INT8 文本编码器文件 + FLUX.2 small VAE 文件 + `moss-runtime-config`（约 20 MB 的配置与 tokenizer）。生成时 `moss-runtime-config` 物化为引擎的 `model` 文件夹，三个文件作为 `dit_file` / `text_encoder_file` / `vae_file` 传入；扫描登记的本地文件组合（`local-files`）同样如此。组合自带 `tier`（INT8 为 `high`，INT4 / NVFP4 为 `turbo`），覆盖设置里的档位；`requires` 限定显卡（NVFP4 只在算力 12.0 的 RTX 50 上运行）；`defaults` 是少步模型在创作页被选中时套用的步数与 CFG。单文件组合只能在这台电脑上运行，远程主机用它的模型文件夹；兼容模式与 AMD 原生引擎只读 bf16 文件夹，也不能用。
+单文件组合 = 引擎认证的 DiT 文件 + INT8 文本编码器文件 + FLUX.2 small VAE 文件 + `moss-runtime-config`（约 20 MB 的配置与 tokenizer）。生成时 `moss-runtime-config` 物化为引擎的 `model` 文件夹，三个文件作为 `dit_file` / `text_encoder_file` / `vae_file` 传入；扫描登记的本地文件组合（`local-files`）同样如此。组合自带 `tier`（INT8 为 `high`，INT4 / NVFP4 为 `turbo`），覆盖设置里的档位；`requires` 限定显卡（NVFP4 只在算力 12.0 的 RTX 50 上运行，自动分配显卡时会等能跑它的那块）；INT8 和 INT4 在 Turing、Volta 上也能跑（引擎的 SM75 / SM70 构建）；扫描登记的本地文件组合按主模型的精度或文件名推断档位；`defaults` 是少步模型在创作页被选中时套用的步数与 CFG。单文件组合只能在这台电脑上运行，远程主机用它的模型文件夹；兼容模式与 AMD 原生引擎只读 bf16 文件夹，也不能用。
 
-单文件组合放在独立的 `single_file_bundles` 里，旧版本应用只读 `bundles`，拿到新目录也不会列出它们跑不了的组合；新版本拿到 schema 2 的旧目录时，补上内置的单文件组合和它们需要的组件。
+单文件组件钉在引擎测试过的提交上；更新前从 `main` 下载的同一组件仍算已下载，不会重新下载（`installMatchesRevision`）。单文件组合放在独立的 `single_file_bundles` 里，旧版本应用只读 `bundles`，拿到新目录也不会列出它们跑不了的组合；新版本拿到 schema 2 的旧目录时，补上内置的单文件组合和它们需要的组件。
 
 `adapters` 是可挂在 Canvas 上的 LoRA：8-step DMD 两档由专用采样档驱动，其余为普通 LoRA（人像美化 Beauty、去色带 Destripe、Turbo MFD 少步、4-step 蒸馏）。后 4 个的格式都在上游 MossInfer 开发期验证过可加载（kohya / PEFT），少步 LoRA 记得把步数与 CFG 调到各自说明的档位。
 

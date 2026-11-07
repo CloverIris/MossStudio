@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   LIMITED_VRAM_BYTES,
   bestBundleFor,
+  cliGpuUuids,
   bundleGpuProblem,
   bundleGpusProblem,
   generationGpus,
@@ -83,12 +84,31 @@ describe('bundleGpuProblem', () => {
     expect(bundleGpuProblem(bundle('moss-sft-nvfp4'), gpuDeviceFixture({ computeCapability: undefined }))).not.toBeNull()
   })
 
-  it('keeps quantized models off GPUs without the engine tiers they need', () => {
-    expect(bundleGpuProblem(bundle('moss-sft-int8'), rtx4090)).toBeNull()
-    expect(bundleGpuProblem(bundle('moss-sft-int8'), GPU_GTX_1660())).toBe('在 NVIDIA GeForce GTX 1660 上用不了，这张显卡只能运行官方模型')
+  it('runs INT8 and INT4 on Turing and Volta (their SM75 / SM70 engine builds), but not NVFP4', () => {
+    const v100 = gpuDeviceFixture({ name: 'Tesla V100', computeCapability: { major: 7, minor: 0 } })
+    for (const device of [rtx4090, GPU_GTX_1660(), v100]) {
+      expect(bundleGpuProblem(bundle('moss-sft-int8'), device)).toBeNull()
+      expect(bundleGpuProblem(bundle('moss-sft-int4'), device)).toBeNull()
+    }
+    expect(bundleGpuProblem(bundle('moss-sft-nvfp4'), GPU_GTX_1660())).toBe('只能在 RTX 50 系列显卡上运行')
+  })
+
+  it('keeps quantized models off GPUs moss-server does not run them on', () => {
+    const pascal = gpuDeviceFixture({ name: 'GTX 1080', computeCapability: { major: 6, minor: 1 } })
+    expect(bundleGpuProblem(bundle('moss-sft-int8'), pascal)).toBe('在 GTX 1080 上用不了，这张显卡只能运行官方模型')
     expect(bundleGpuProblem(bundle('moss-sft-int8'), radeon)).toBe('需要 NVIDIA 显卡')
-    expect(bundleGpuProblem(bundle('moss-sft'), GPU_GTX_1660())).toBeNull()
+    expect(bundleGpuProblem(bundle('moss-sft'), pascal)).toBeNull()
     expect(bundleGpuProblem(bundle('moss-sft'), radeon)).toBeNull()
+  })
+
+  it('keeps single files off a GPU that runs a CLI engine (兼容模式 / AMD 原生)', () => {
+    const problem = `${rtx4090.name} 上的引擎只能运行官方模型`
+    expect(bundleGpuProblem(bundle('moss-sft-int8'), rtx4090, { cli: true })).toBe(problem)
+    // A scanned set has no tier: the caller says it is made of files.
+    expect(bundleGpuProblem({}, rtx4090, { cli: true, files: true })).toBe(problem)
+    expect(bundleGpuProblem(bundle('moss-sft'), rtx4090, { cli: true, files: false })).toBeNull()
+    expect(bundleGpusProblem(bundle('moss-sft-int8'), [rtx4090, rtx5090], { cliGpus: new Set([rtx4090.uuid]) })).toBeNull()
+    expect(bundleGpusProblem(bundle('moss-sft-int8'), [rtx4090], { cliGpus: new Set([rtx4090.uuid]) })).toBe(problem)
   })
 
   it('is fine when one of several GPUs runs it, and rules nothing out while they are unknown', () => {
@@ -127,13 +147,30 @@ describe('bestBundleFor', () => {
     expect(pick([rtx4090])).toEqual({ bundle: bundle('moss-sft'), reason: expect.stringMatching(/显存充足/) })
   })
 
-  it('judges by the largest NVIDIA GPU', () => {
+  it('judges the GPU automatic assignment prefers: newest architecture first, then most memory', () => {
     expect(pick([GPU_RTX_3060(), rtx4090])?.bundle.id).toBe('moss-sft')
+    expect(pick([rtx4090, rtx5090])?.bundle.id).toBe('moss-sft-nvfp4')
+    // A 32 GB V100 loses to a 12 GB RTX 3060, as in the scheduler.
+    const v100 = gpuDeviceFixture({
+      uuid: 'GPU-v100',
+      name: 'Tesla V100',
+      computeCapability: { major: 7, minor: 0 },
+      memoryTotalBytes: 32 * 1024 ** 3,
+    })
+    expect(pick([v100, GPU_RTX_3060()])?.bundle.id).toBe('moss-sft-int8')
   })
 
-  it('never picks a model the GPU cannot run', () => {
-    // 6 GB, but only the official model runs on it.
-    expect(pick([GPU_GTX_1660()])?.bundle.id).toBe('moss-sft')
+  it('picks INT8 on a Turing card with little VRAM', () => {
+    expect(pick([GPU_GTX_1660()])?.bundle.id).toBe('moss-sft-int8')
+  })
+
+  it('picks the official model on a GPU that runs a CLI engine, preferring one that runs moss-server', () => {
+    expect(bestBundleFor(catalog.bundles, [GPU_RTX_3060()], new Set([GPU_RTX_3060().uuid]))).toEqual({
+      bundle: bundle('moss-sft'),
+      reason: `${GPU_RTX_3060().name} 上的引擎只能运行官方模型`,
+    })
+    // The 5090 runs 兼容模式; the 3060 runs moss-server and is the one judged.
+    expect(bestBundleFor(catalog.bundles, [rtx5090, GPU_RTX_3060()], new Set([rtx5090.uuid]))?.bundle.id).toBe('moss-sft-int8')
   })
 
   it('falls back to the recommended model without a known NVIDIA GPU', () => {
@@ -159,5 +196,18 @@ describe('profileForBundle', () => {
   it('keeps the GPU profile for a folder model', () => {
     expect(profileForBundle({ ...profile, tier: 'reference' }, bundle('moss-sft'))).toEqual({ ...profile, tier: 'reference' })
     expect(profileForBundle(profile, undefined)).toBe(profile)
+  })
+})
+
+describe('cliGpuUuids', () => {
+  it('lists the GPUs whose installed package is a CLI engine', () => {
+    const devices = [
+      { deviceUuid: 'a', name: 'A', packageId: 'cu13', path: null },
+      { deviceUuid: 'b', name: 'B', packageId: 'vulkan', path: null },
+      { deviceUuid: 'c', name: 'C', packageId: 'hip', path: null },
+      { deviceUuid: 'd', name: 'D', packageId: null, path: null },
+    ]
+    expect([...cliGpuUuids({ devices })]).toEqual(['b', 'c'])
+    expect(cliGpuUuids(null).size).toBe(0)
   })
 })

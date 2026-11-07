@@ -97,6 +97,8 @@ export interface ReadinessInput {
   features?: EngineFeatures | null
   /** The GPUs of this computer the run may use (empty or absent while unknown). */
   gpus?: readonly GpuInventoryDevice[]
+  /** Which of them run a CLI engine (兼容模式 / AMD 原生). */
+  cliGpus?: ReadonlySet<string>
 }
 
 export interface Readiness {
@@ -153,7 +155,7 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
         : null
       : cli
         ? null
-        : bundleGpusProblem(picked, input.gpus ?? [])
+        : bundleGpusProblem(picked, input.gpus ?? [], { cliGpus: input.cliGpus, files: isFileBundle(picked, input.catalog.models) })
     if (problem)
       blockers.push({
         id: 'model-engine',

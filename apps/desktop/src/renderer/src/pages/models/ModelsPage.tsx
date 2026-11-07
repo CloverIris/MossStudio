@@ -1,7 +1,7 @@
 import { Download, FolderOpen, Package, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { generationGpus } from '@shared/bundleFit'
+import { cliGpuUuids, generationGpus } from '@shared/bundleFit'
 import { Events, Ipc } from '@shared/channels'
 import type { AppInfo, Catalog, ModelBundle } from '@shared/types'
 import { call, onEvent } from '../../lib/api'
@@ -92,7 +92,9 @@ function ModelsTab({
   const settings = useApp((state) => state.settings)
   const { inventory } = useGpuInventory()
   const remote = location.kind === 'remote'
+  const engineReadiness = useApp((state) => state.engineReadiness)
   const gpus = useMemo(() => generationGpus(inventory?.devices, settings), [inventory, settings])
+  const cliGpus = useMemo(() => cliGpuUuids(engineReadiness), [engineReadiness])
   const views = useMemo(
     () =>
       catalog.bundles
@@ -104,12 +106,12 @@ function ModelsTab({
             catalog.models,
             location.tasks,
             location.isModelInstalled,
-            bundleBlocker(bundle, catalog.models, { remote, gpus }),
+            bundleBlocker(bundle, catalog.models, { remote, gpus, cliGpus }),
           ),
         ),
-    [catalog, location.tasks, location.isModelInstalled, remote, gpus],
+    [catalog, location.tasks, location.isModelInstalled, remote, gpus, cliGpus],
   )
-  const sections = modelSections(views, catalog.models, { remote, gpus }, preferredBundleId)
+  const sections = modelSections(views, catalog.models, { remote, gpus, cliGpus }, preferredBundleId)
   const featuredView = sections.featured
   const deletePlan = (bundle: ModelBundle) =>
     bundleDeletePlan(bundle, catalog.bundles, catalog.models, location.isModelInstalled, location.tasks)

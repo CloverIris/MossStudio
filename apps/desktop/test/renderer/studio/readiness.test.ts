@@ -341,6 +341,13 @@ describe('studio/readiness single-file and GPU-bound models', () => {
     expect(deriveReadiness(pick('nvfp4')).blockers).toEqual([])
   })
 
+  it('blocks a single-file model when the only GPU runs 兼容模式', () => {
+    expect(deriveReadiness(pick('int8', { gpus: [rtx4090], cliGpus: new Set([rtx4090.uuid]) })).blockers).toEqual([
+      { id: 'model-engine', message: '「INT8」RTX 4090 上的引擎只能运行官方模型，请换一个模型' },
+    ])
+    expect(deriveReadiness(pick('int8', { gpus: [rtx4090, rtx5090], cliGpus: new Set([rtx4090.uuid]) })).blockers).toEqual([])
+  })
+
   it('keeps single-file models on this computer', () => {
     const remote = { name: 'Lab', modelPath: '/models' }
     expect(deriveReadiness(pick('int8', { remote })).blockers).toEqual([
