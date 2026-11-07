@@ -45,7 +45,64 @@ const components = {
     files: { 'model_index.json': '{}', 'pipeline_moss_image.py': '#', 'scheduler/scheduler_config.json': '{}' },
   },
 }
-const comfyDit = rawModel({ id: 'dit-comfy', repo: 'org/comfy', role: 'dit', format: 'comfyui' })
+const comfyDit = rawModel({
+  id: 'dit-comfy',
+  repo: 'org/comfy',
+  role: 'dit',
+  format: 'comfyui',
+  files: ['diffusion_models/dit.safetensors'],
+})
+const comfyTe = rawModel({
+  id: 'te-comfy',
+  repo: 'org/comfy',
+  role: 'text_encoder',
+  format: 'comfyui',
+  files: ['text_encoders/te.safetensors'],
+})
+const comfyVae = rawModel({ id: 'vae-comfy', repo: 'org/comfy', role: 'vae', format: 'comfyui', files: ['vae/vae.safetensors'] })
+/** The configs and tokenizer a single-file bundle loads next to (as `moss-runtime-config`). */
+const runtimeConfig = {
+  model: rawModel({ id: 'moss-runtime-config', repo: 'OpenMOSS-Team/MOSS-Image-SFT', role: 'support' }),
+  files: {
+    'model_index.json': '{}',
+    'pipeline_moss_image.py': '#',
+    'scheduler/scheduler_config.json': '{}',
+    'transformer/config.json': '{"t":1}',
+    'text_encoder/config.json': '{}',
+    'vae/config.json': '{}',
+    'tokenizer/tokenizer.json': '{}',
+    'tokenizer/tokenizer_config.json': '{}',
+  },
+}
+const fileBundle = {
+  id: 'files',
+  name: 'Files',
+  description: '',
+  support: 'moss-runtime-config',
+  components: { dit: 'dit-comfy', textEncoder: 'te-comfy', vae: 'vae-comfy' },
+  tier: 'high',
+}
+const fileBinding: ModelBinding = { bundleId: 'files', dit: 'dit-comfy', textEncoder: 'te-comfy', vae: 'vae-comfy' }
+
+function installRuntimeConfig(): void {
+  installOnDisk(
+    modelsRoot(),
+    { id: 'moss-runtime-config', repo: 'OpenMOSS-Team/MOSS-Image-SFT', role: 'support' },
+    SHA,
+    runtimeConfig.files,
+  )
+}
+
+function installFiles(): void {
+  installRuntimeConfig()
+  for (const [id, role, path] of [
+    ['dit-comfy', 'dit', 'diffusion_models/dit.safetensors'],
+    ['te-comfy', 'text_encoder', 'text_encoders/te.safetensors'],
+    ['vae-comfy', 'vae', 'vae/vae.safetensors'],
+  ] as const) {
+    installOnDisk(modelsRoot(), { id, repo: 'org/comfy', role }, SHA, { [path]: `${id}-weights` })
+  }
+}
 const otherFamily = rawModel({ id: 'dit-other', repo: 'org/other', role: 'dit', subfolder: 'transformer', family: 'flux' })
 const bundle = {
   id: 'b1',
@@ -66,9 +123,10 @@ beforeEach(async () => {
   vi.resetModules()
   contentDir.mockReset().mockImplementation(() => releaseDir())
   writeCatalog(releaseDir(), {
-    schema_version: 2,
-    models: [...Object.values(components).map((c) => c.model), comfyDit, otherFamily],
+    schema_version: 3,
+    models: [...Object.values(components).map((c) => c.model), comfyDit, comfyTe, comfyVae, runtimeConfig.model, otherFamily],
     bundles: [bundle],
+    single_file_bundles: [fileBundle],
   })
   bundles = await import('@main/services/modelBundles')
   models = await import('@main/services/models')
@@ -86,12 +144,16 @@ describe('bundleBinding / validateBinding', () => {
 
   it.each([
     ['an unknown bundle', { ...binding, bundleId: 'nope' }, '模型组合不存在'],
-    ['a ComfyUI single file', { ...binding, dit: 'dit-comfy' }, /Diffusers/],
+    ['a single file mixed with folders', { ...binding, dit: 'dit-comfy' }, /Diffusers/],
     ['a component of the wrong role', { ...binding, dit: 'vae-a' }, /Diffusers/],
     ['a different model family', { ...binding, dit: 'dit-other' }, /Diffusers/],
     ['a missing component', { ...binding, vae: 'gone' }, /Diffusers/],
   ])('rejects %s', async (_label, input, message) => {
     await expect(bundles.validateBinding(input, settings)).rejects.toThrow(message)
+  })
+
+  it('accepts three single files next to a runtime-config folder', async () => {
+    expect((await bundles.validateBinding(fileBinding, settings)).id).toBe('files')
   })
 })
 
@@ -108,19 +170,57 @@ describe('prepareModelSource', () => {
     return ids
   }
 
-  it('passes three local files to the engine without copying anything', async () => {
+  it('passes three local files to the engine without copying them, next to the runtime configs', async () => {
     const ids = await registerLocal(['dit', 'text_encoder', 'vae'])
+    installRuntimeConfig()
     const source = await bundles.prepareModelSource(
       { bundleId: 'local-files', dit: ids['dit']!, textEncoder: ids['text_encoder']!, vae: ids['vae']! },
       settings,
     )
-    expect(source).toEqual({
-      model: null,
+    expect(source).toMatchObject({
       ditFile: join(dataRoot(), 'comfy', 'dit', 'dit.safetensors'),
       textEncoderFile: join(dataRoot(), 'comfy', 'text_encoder', 'text_encoder.safetensors'),
       vaeFile: join(dataRoot(), 'comfy', 'vae', 'vae.safetensors'),
+      bundle: { id: 'local-files' },
     })
-    expect(existsSync(join(modelsRoot(), 'bundles'))).toBe(false)
+    // The engine's `model` is a folder of configs and tokenizer only: no weights are linked into it.
+    expect(dirname(source.model)).toBe(join(modelsRoot(), 'bundles'))
+    expect(readFileSync(join(source.model, 'transformer', 'config.json'), 'utf8')).toBe('{"t":1}')
+    expect(existsSync(join(source.model, 'tokenizer', 'tokenizer.json'))).toBe(true)
+    const files = readdirSync(source.model, { recursive: true }) as string[]
+    expect(files.filter((name) => name.endsWith('.safetensors'))).toEqual([])
+  })
+
+  it('asks for the runtime configs when local files have none to load with', async () => {
+    const ids = await registerLocal(['dit', 'text_encoder', 'vae'])
+    await expect(
+      bundles.prepareModelSource(
+        { bundleId: 'local-files', dit: ids['dit']!, textEncoder: ids['text_encoder']!, vae: ids['vae']! },
+        settings,
+      ),
+    ).rejects.toThrow(/组件未就绪：moss-runtime-config/)
+  })
+
+  it('passes a downloaded single-file bundle as component files next to its runtime-config folder', async () => {
+    installFiles()
+    const source = await bundles.prepareModelSource(fileBinding, settings)
+    const snapshot = (role: 'dit' | 'text_encoder' | 'vae', path: string) =>
+      join(cacheDirFor(modelsRoot(), role, 'org/comfy'), 'snapshots', SHA, path)
+    expect(source).toMatchObject({
+      ditFile: snapshot('dit', 'diffusion_models/dit.safetensors'),
+      textEncoderFile: snapshot('text_encoder', 'text_encoders/te.safetensors'),
+      vaeFile: snapshot('vae', 'vae/vae.safetensors'),
+      bundle: { id: 'files', tier: 'high' },
+    })
+    expect(readFileSync(source.ditFile!, 'utf8')).toBe('dit-comfy-weights')
+    const manifest = JSON.parse(readFileSync(join(source.model, 'clover_model.json'), 'utf8'))
+    expect(manifest).toMatchObject({ version: 1, bundleId: 'files', components: [{ id: 'moss-runtime-config', revision: SHA }] })
+    expect(readFileSync(join(source.model, 'vae', 'config.json'), 'utf8')).toBe('{}')
+  })
+
+  it('says which part of a single-file bundle is missing', async () => {
+    installRuntimeConfig()
+    await expect(bundles.prepareModelSource(fileBinding, settings)).rejects.toThrow(/组件未就绪：dit-comfy/)
   })
 
   it('refuses a mix of local files and downloaded components', async () => {
@@ -136,8 +236,9 @@ describe('prepareModelSource', () => {
     installAll()
     const source = await bundles.prepareModelSource(binding, settings)
     const bundlesDir = join(modelsRoot(), 'bundles')
-    expect(dirname(source.model!)).toBe(bundlesDir)
-    expect(basename(source.model!)).toMatch(/^[a-f0-9]{24}$/)
+    expect(dirname(source.model)).toBe(bundlesDir)
+    expect(basename(source.model)).toMatch(/^[a-f0-9]{24}$/)
+    expect(source.ditFile).toBeUndefined()
   })
 })
 

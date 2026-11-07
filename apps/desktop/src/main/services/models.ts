@@ -98,6 +98,12 @@ interface RawCatalog {
   updated_at?: string
   models: RawModel[]
   bundles?: ModelBundle[]
+  /**
+   * Bundles of single weight files (schema 3). Kept apart from `bundles` so an
+   * older app, which reads only `bundles` and cannot load single files, never
+   * offers them.
+   */
+  single_file_bundles?: ModelBundle[]
   adapters?: RawAdapter[]
 }
 
@@ -289,6 +295,22 @@ interface InstallLocation {
   dir: string
 }
 
+const COMMIT = /^[a-f0-9]{40}$/
+
+/**
+ * Whether an install record serves the catalog's revision. The same revision
+ * always does. When the catalog pins a commit, a download of exactly that
+ * commit does too, and so does one made from a branch (`main`) before the pin
+ * existed: the user has those files and the engine checks every model by its
+ * architecture when it loads it, so they are not downloaded again. A download
+ * pinned to another commit does not count.
+ */
+export function installMatchesRevision(record: Pick<InstallRecord, 'revision' | 'sha'>, revision: string): boolean {
+  if (record.revision === revision) return true
+  if (!COMMIT.test(revision)) return false
+  return record.sha === revision || !COMMIT.test(record.revision)
+}
+
 async function findInstall(
   settings: Settings,
   model: Pick<ModelEntry, 'id' | 'repo' | 'revision' | 'role' | 'format' | 'subfolder'>,
@@ -300,7 +322,7 @@ async function findInstall(
         record.version !== 2 ||
         record.id !== model.id ||
         record.repo !== model.repo ||
-        record.revision !== model.revision ||
+        !installMatchesRevision(record, model.revision) ||
         !/^[a-f0-9]{40,64}$/.test(record.sha)
       )
         continue
@@ -363,6 +385,21 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       ...BUILTIN,
       models: [...BUILTIN.models, ...raw.models.filter((m) => !known.has(m.id))],
       adapters: raw.adapters ?? BUILTIN.adapters,
+    }
+  }
+  // A catalog from before single-file bundles (schema 2) gets this version's
+  // single-file bundles and the parts they need, and this version's wording and
+  // certification of the bundles both know, so every certified model is offered.
+  if (raw.schema_version < 3) {
+    const fileBundles = BUILTIN.single_file_bundles ?? []
+    const builtinBundles = new Map((BUILTIN.bundles ?? []).map((bundle) => [bundle.id, bundle]))
+    const needed = new Set(fileBundles.flatMap((bundle) => [...Object.values(bundle.components), bundle.support]))
+    const present = new Set(raw.models.map((model) => model.id))
+    raw = {
+      ...raw,
+      models: [...raw.models, ...BUILTIN.models.filter((model) => needed.has(model.id) && !present.has(model.id))],
+      bundles: (raw.bundles ?? BUILTIN.bundles ?? []).map((bundle) => builtinBundles.get(bundle.id) ?? bundle),
+      single_file_bundles: fileBundles,
     }
   }
   // Keep the config-only repair available with an older remote catalog too.
@@ -520,7 +557,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
   catalogRoot = key
   // A scanned ComfyUI set (DiT + text encoder + VAE registered in place) becomes a
   // selectable bundle without copying anything; the engine gets the three files.
-  const bundles: ModelBundle[] = [...(raw.bundles ?? BUILTIN.bundles ?? [])]
+  const bundles: ModelBundle[] = [...(raw.bundles ?? BUILTIN.bundles ?? []), ...(raw.single_file_bundles ?? [])]
   const localBundle = localFilesBundle(models)
   if (localBundle) bundles.unshift(localBundle)
   catalogCache = {

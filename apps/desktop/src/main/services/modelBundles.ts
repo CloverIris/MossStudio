@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promise
 import { join } from 'node:path'
 import type { ModelBinding, ModelBundle, Settings } from '@shared/types'
 import { paths } from '../lib/paths'
+import { RUNTIME_CONFIG_ID } from '@shared/bundleFit'
 import { componentSnapshot, getCatalog } from './models'
 import { fileSize, linkInPlace, materialize, safePath } from './modelFiles'
 
@@ -10,36 +11,57 @@ export function bundleBinding(bundle: ModelBundle): ModelBinding {
   return { bundleId: bundle.id, ...bundle.components }
 }
 
+const ROLES = [
+  ['dit', 'dit'],
+  ['textEncoder', 'text_encoder'],
+  ['vae', 'vae'],
+] as const
+
+/**
+ * A binding the engine can load: three MOSS-Image parts of the right roles,
+ * either all diffusers folders or all single files (which load next to the
+ * bundle's runtime-config folder).
+ */
 export async function validateBinding(binding: ModelBinding, settings: Settings): Promise<ModelBundle> {
   const catalog = await getCatalog(settings)
   const bundle = catalog.bundles.find((b) => b.id === binding.bundleId)
   if (!bundle) throw new Error('模型组合不存在，请重新选择')
-  for (const [key, role] of [
-    ['dit', 'dit'],
-    ['textEncoder', 'text_encoder'],
-    ['vae', 'vae'],
-  ] as const) {
+  const parts = ROLES.map(([key, role]) => {
     const model = catalog.models.find((m) => m.id === binding[key])
-    if (!model || model.role !== role || model.format !== 'diffusers' || model.family !== 'moss-image') {
-      throw new Error('请选择与 MOSS 兼容的 Diffusers 组件；ComfyUI 单文件仅支持下载')
-    }
-  }
+    return model && model.role === role && model.family === 'moss-image' ? model : null
+  })
+  const formats = new Set(parts.map((model) => model?.format))
+  const support = catalog.models.find((m) => m.id === bundle.support)
+  const valid =
+    parts.every(Boolean) && formats.size === 1 && (formats.has('diffusers') || (formats.has('comfyui') && support?.role === 'support'))
+  if (!valid) throw new Error('请选择与 MOSS 兼容的组件：主模型、文本编码器和 VAE 需要都是 Diffusers 文件夹，或都是单文件')
   return bundle
 }
 
-/** A model source is either one materialized diffusers folder or three files. */
+/** What the engine loads: the bundle folder (`model`), and the component files that replace its weights. */
 export interface PreparedModelSource {
-  model: string | null
+  model: string
   ditFile?: string
   textEncoderFile?: string
   vaeFile?: string
+  /** The resolved bundle: its tier and hardware needs decide how the job runs. */
+  bundle: ModelBundle
+}
+
+/** The one weight file of a downloaded single-file part. */
+async function componentFile(id: string, settings: Settings): Promise<string> {
+  const { model, record, root } = await componentSnapshot(id, settings)
+  const weights = record.entries.filter((file) => file.path.endsWith('.safetensors'))
+  if (weights.length !== 1) throw new Error(`组件文件不完整：${model.name}。请在模型库修复组件。`)
+  return safePath(root, weights[0]!.path)
 }
 
 /**
- * Resolve a binding to what the engine can load. A bundle whose components are
- * files registered by a directory scan (a user's ComfyUI folder) is passed as
- * `dit_file` / `text_encoder_file` / `vae_file`; nothing is copied or linked, so
- * the 27 GB set keeps living where the user installed it.
+ * Resolve a binding to what the engine can load. Single files (a user's
+ * ComfyUI folder registered in place, or a downloaded single-file bundle) go as
+ * `dit_file` / `text_encoder_file` / `vae_file`; nothing is copied, so they keep
+ * living where they are. The engine still reads the configs and tokenizer from
+ * `model`, which is then the bundle's runtime-config folder.
  */
 export async function prepareModelSource(binding: ModelBinding, settings: Settings): Promise<PreparedModelSource> {
   const catalog = await getCatalog(settings)
@@ -56,22 +78,44 @@ export async function prepareModelSource(binding: ModelBinding, settings: Settin
       throw new Error('本地模型缺少文件路径，请重新扫描登记')
     }
     return {
-      model: null,
+      model: await prepareSupportFolder(binding.bundleId, bundle.support || RUNTIME_CONFIG_ID, settings),
       ditFile: paths[0]!,
       textEncoderFile: paths[1]!,
       vaeFile: paths[2]!,
+      bundle,
     }
   }
-  return { model: await prepareModelBundle(binding, settings) }
+  await validateBinding(binding, settings)
+  if (entries.every((entry) => entry?.format === 'comfyui')) {
+    // One after another, so a missing part is named in the order DiT, text encoder, VAE.
+    const ditFile = await componentFile(binding.dit, settings)
+    const textEncoderFile = await componentFile(binding.textEncoder, settings)
+    const vaeFile = await componentFile(binding.vae, settings)
+    return { model: await prepareSupportFolder(binding.bundleId, bundle.support, settings), ditFile, textEncoderFile, vaeFile, bundle }
+  }
+  return { model: await prepareModelBundle(binding, settings), bundle }
 }
 
 export async function prepareModelBundle(binding: ModelBinding, settings: Settings): Promise<string> {
   const bundle = await validateBinding(binding, settings)
   const requests = [binding.dit, binding.textEncoder, binding.vae, bundle.support]
-  const components = await Promise.all(requests.map((id) => componentSnapshot(id, settings)))
+  return materializeBundle(binding.bundleId, await Promise.all(requests.map((id) => componentSnapshot(id, settings))), settings)
+}
+
+/** The configs and tokenizer of a single-file bundle, laid out as the engine's `model` folder. */
+async function prepareSupportFolder(bundleId: string, supportId: string, settings: Settings): Promise<string> {
+  return materializeBundle(bundleId, [await componentSnapshot(supportId, settings)], settings)
+}
+
+/** Lay out component snapshots as one immutable folder (links, not copies) with a manifest. */
+async function materializeBundle(
+  bundleId: string,
+  components: Array<Awaited<ReturnType<typeof componentSnapshot>>>,
+  settings: Settings,
+): Promise<string> {
   const manifest = {
     version: 1,
-    bundleId: binding.bundleId,
+    bundleId,
     components: components.map(({ model, record }) => ({
       id: model.id,
       role: model.role,

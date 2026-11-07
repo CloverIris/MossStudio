@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { GalleryItem, GpuInventorySnapshot, ManagedHost, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { ADAPTER_STRENGTH_DEFAULT, normalizeCanvasAdapters } from '@shared/adapters'
+import { cliGpuUuids, generationGpus } from '@shared/bundleFit'
 import { activeCanvasBranchIds } from '@shared/canvasJobBranch'
 import { Events, Ipc } from '@shared/channels'
 import { ConfirmDialog, Segmented, useToast } from '../../components/ui'
@@ -16,7 +17,7 @@ import { useApp } from '../../store'
 import { Assistant } from './assistant/Assistant'
 import { Board, type BoardHandle } from './Board'
 import { canvasFromReuse, newRegion, resizeCanvas, settingsFrom } from './canvases'
-import { clampDimension, isSeedLocked, nearestQuality, qualityPreset, SEED_MAX } from './defaults'
+import { clampDimension, isSeedLocked, nearestQuality, qualityPreset, samplingForBundle, SEED_MAX } from './defaults'
 import { InspectorPanel } from './InspectorPanel'
 import type { InputsWiring } from './InputsSection'
 import { ACTIVE_JOB_STATES } from './jobStatus'
@@ -143,6 +144,15 @@ export function StudioPage(): React.JSX.Element {
         : [],
     [selected, project.canvases, boardFeatures, controlAdapters, controlAdaptersLoaded],
   )
+  // The GPUs this canvas may run on: the one it is bound to, else what 设置 allows.
+  const gpus = useMemo(
+    () =>
+      selected?.deviceUuid
+        ? (gpuInventory?.devices.filter((device) => device.uuid === selected.deviceUuid) ?? [])
+        : generationGpus(gpuInventory?.devices, settings),
+    [selected?.deviceUuid, gpuInventory, settings],
+  )
+  const cliGpus = useMemo(() => cliGpuUuids(engineReadiness), [engineReadiness])
   const readiness = deriveReadiness({
     canvas: selected?.kind === 'layout' ? selected : null,
     catalog,
@@ -154,6 +164,8 @@ export function StudioPage(): React.JSX.Element {
     inputBlockers,
     update,
     features: boardFeatures,
+    gpus,
+    cliGpus,
   })
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false
@@ -505,7 +517,10 @@ export function StudioPage(): React.JSX.Element {
           submitting={submitting}
           onChange={changeSelected}
           onPickBundle={(id) => {
-            changeSelected((canvas) => ({ ...canvas, modelBundleId: id || undefined }))
+            // A few-step model (Turbo) brings its own steps and CFG.
+            const from = bundle.bundle
+            const to = catalog?.bundles.find((item) => item.id === id)
+            changeSelected((canvas) => ({ ...canvas, ...samplingForBundle(canvas, from, to), modelBundleId: id || undefined }))
             setPreferredBundleId(id)
             writeStorage(BUNDLE_KEY, id || null)
           }}

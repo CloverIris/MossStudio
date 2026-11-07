@@ -4,6 +4,8 @@
  * receives is unit tested.
  */
 
+import type { ModelBundle } from '@shared/types'
+
 export const DEFAULT_NEGATIVE = 'nsfw, worst quality, bad anatomy, watermark, jpeg artifact'
 
 export const MIN_DIMENSION = 256
@@ -96,6 +98,25 @@ export function profileFor(steps: number): SamplerProfile {
   const quality = qualityFor(steps)
   if (quality !== 'custom') return qualityPreset(quality).profile
   return steps <= 8 ? 'dmd8' : 'base'
+}
+
+/**
+ * Steps and CFG after switching models. A few-step model brings its own (8
+ * steps, CFG 1); going from one back to a normal model restores 标准 when the
+ * canvas still has the few-step values, so it does not keep drawing in 8 steps.
+ */
+export function samplingForBundle(
+  current: { steps: number; cfg: number },
+  from: Pick<ModelBundle, 'defaults'> | null | undefined,
+  to: Pick<ModelBundle, 'defaults'> | null | undefined,
+): { steps: number; cfg: number } {
+  if (to?.defaults) return { steps: to.defaults.steps ?? current.steps, cfg: to.defaults.cfg ?? current.cfg }
+  const left = from?.defaults
+  if (left && (left.steps ?? current.steps) === current.steps && (left.cfg ?? current.cfg) === current.cfg) {
+    const standard = qualityPreset(DEFAULT_QUALITY)
+    return { steps: standard.steps, cfg: standard.cfg }
+  }
+  return { steps: current.steps, cfg: current.cfg }
 }
 
 /** Seeds are stored as non-negative 31-bit integers (the project schema requires int). */

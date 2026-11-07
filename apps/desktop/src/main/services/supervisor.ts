@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { appendFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Events } from '@shared/channels'
-import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, GpuInventoryDevice } from '@shared/types'
+import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, ModelBundle, GpuInventoryDevice } from '@shared/types'
 import { cliUnsupported } from '../lib/cliProtocol'
 import { codedError } from '../lib/codedError'
 import { emit } from '../lib/events'
@@ -24,6 +24,7 @@ import { CLI_ENGINE_LABEL, cliBundleProblem, type CliEngineKind } from '@shared/
 import { isCliEngine } from '@shared/enginePackages'
 import { canvasBranchesConflict } from '@shared/canvasJobBranch'
 import { resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
+import { bundleGpuProblem, isFileBundle, profileForBundle } from '@shared/bundleFit'
 import { probeLocalEngineGpuCompatibility } from './engines'
 import { getTrainingHost } from './trainingHosts'
 import { cancelRemoteEngineJob, runRemoteEngineJob } from './remoteEngine'
@@ -539,6 +540,8 @@ async function resolveLocalGpu(
   deviceUuid: string | undefined,
   /** What the job asks for: a job a CLI engine cannot run never goes to a CLI GPU. */
   params: JobParams,
+  /** The model it runs: automatic assignment only picks a GPU that can run it (NVFP4 on an RTX 50). */
+  model?: { bundle: ModelBundle; files: boolean },
 ): Promise<GpuInventoryDevice> {
   const settings = getSettings()
   const inventory = await refreshGpuInventory()
@@ -581,6 +584,16 @@ async function resolveLocalGpu(
     }
     if (needsCuda && !cudaUuids.size && cliUuids.size) {
       throw codedError('E_NOT_SUPPORTED', `${needsCuda}（这台电脑上没有能运行完整引擎的显卡）`)
+    }
+    if (model && compatibleUuids.size) {
+      // A GPU that cannot run the model would only fail the job: it waits for one that can.
+      const problems = [...compatibleUuids].map((uuid) => {
+        const device = inventory.devices.find((item) => item.uuid === uuid)
+        return [uuid, device ? bundleGpuProblem(model.bundle, device, { cli: cliUuids.has(uuid), files: model.files }) : '']
+      })
+      const capable = problems.filter(([, problem]) => problem === null).map(([uuid]) => uuid!)
+      if (!capable.length) throw codedError('E_MODEL', `「${model.bundle.name}」${problems[0]![1]}，请换一个模型`)
+      compatibleUuids = new Set(capable)
     }
     const loads: Record<string, { runningTasks: number; queuedTasks: number }> = {}
     for (const job of jobs.values()) {
@@ -718,10 +731,16 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
   }
   const settings = getSettings()
   try {
+    let model: { bundle: ModelBundle; files: boolean } | undefined
+    if (!input.hostId && input.modelBinding) {
+      const catalog = await getCatalog(settings)
+      const bundle = catalog.bundles.find((item) => item.id === input.modelBinding!.bundleId)
+      if (bundle) model = { bundle, files: isFileBundle(bundle, catalog.models) }
+    }
     if (input.hostId) {
       assignedInput = { ...input, deviceUuid: undefined }
     } else {
-      assignedGpu = await resolveLocalGpu(input.deviceUuid, paramsOf(input))
+      assignedGpu = await resolveLocalGpu(input.deviceUuid, paramsOf(input), model)
       if (!input.deviceUuid && settings.gpuSelection === 'auto') pendingAutoUuid = assignedGpu.uuid
       assignedInput = { ...input, deviceUuid: assignedGpu.uuid, deviceId: `cuda:${assignedGpu.index}` }
     }
@@ -729,7 +748,7 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
     if (!assignedInput) throw new Error('推理任务设备解析失败。')
     const slot = engineSlotKey(assignedInput)
     if (!slot) throw new Error('无法确定推理设备资源槽；请重新选择 GPU 后重试。')
-    const gpuProfile = assignedGpu ? resolveGpuProfile(settings, assignedGpu) : undefined
+    const gpuProfile = assignedGpu ? profileForBundle(resolveGpuProfile(settings, assignedGpu), model?.bundle) : undefined
     const queue = engineQueues.get(slot) ?? []
     if (activeEngineSlots.has(slot) || queue.length > 0) {
       const params = paramsOf(input)
@@ -795,7 +814,16 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
   let modelPath: string | undefined
   let modelSnapshot: unknown
   let modelFiles: { ditFile?: string; textEncoderFile?: string; vaeFile?: string } = {}
+  let modelBundle: ModelBundle | undefined
   const cliEngine = input.hostId ? null : cliEngineOf(input.deviceUuid)
+  if (input.hostId && input.modelBinding) {
+    // Another computer runs the model folder at its remote path; single files load only here.
+    const catalog = await getCatalog(settings)
+    const bundle = catalog.bundles.find((item) => item.id === input.modelBinding!.bundleId)
+    if (bundle && isFileBundle(bundle, catalog.models)) {
+      throw codedError('E_MODEL', `「${bundle.name}」只能在这台电脑上运行，在其他电脑上请用官方模型`)
+    }
+  }
   if (!input.hostId) {
     if (input.modelBinding && cliEngine) {
       // A CLI engine reads a bf16 bundle folder: say so before anything is materialized or started.
@@ -810,21 +838,20 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     }
     if (input.modelBinding) {
       const source = await prepareModelSource(input.modelBinding, settings)
-      modelPath = source.model ?? undefined
-      if (modelPath) {
-        modelSnapshot = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8'))
-      } else {
-        modelSnapshot = { bundleId: input.modelBinding.bundleId, files: source }
-      }
+      modelPath = source.model
+      modelBundle = source.bundle
       modelFiles = {
         ditFile: source.ditFile,
         textEncoderFile: source.textEncoderFile,
         vaeFile: source.vaeFile,
       }
+      const manifest: unknown = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8'))
+      modelSnapshot = source.ditFile ? { ...(manifest as object), files: modelFiles } : manifest
     } else {
       modelPath = (await resolveLegacyModelPath(join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'))) ?? undefined
     }
-    if (!modelPath && !modelFiles.ditFile) {
+    // Single files replace the folder's weights; the engine still reads its configs and tokenizer.
+    if (!modelPath) {
       throw new Error('模型权重尚未就绪，请先在模型库下载 MOSS-Image，或扫描本地模型文件')
     }
     if (cliEngine && modelPath) {
@@ -841,7 +868,11 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     if (!serverPath || !existsSync(serverPath)) throw new Error('未找到 moss-server；请先在引擎页下载或配置引擎')
   }
   const resolvedDeviceId = localGpu ? `cuda:${localGpu.index}` : input.deviceId
-  const gpuProfile = localGpu ? (queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu)) : undefined
+  if (localGpu && modelBundle && !cliEngineOf(localGpu.uuid)) {
+    const problem = bundleGpuProblem(modelBundle, localGpu)
+    if (problem) throw codedError('E_MODEL', `「${modelBundle.name}」${problem}，请换一个模型`)
+  }
+  const gpuProfile = localGpu ? profileForBundle(queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu), modelBundle) : undefined
   const executionSettings = gpuProfile ? settingsForGpuProfile(settings, gpuProfile) : settings
 
   if (input.hostId) {
