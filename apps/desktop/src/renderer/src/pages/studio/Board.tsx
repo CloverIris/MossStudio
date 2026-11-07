@@ -38,8 +38,10 @@ import { MaskBar, Toolbar } from './Toolbar'
 import { useCardDrag } from './useCardDrag'
 import { useWireConnect } from './useWireConnect'
 import { useWireSelection } from './useWireSelection'
+import { EmptyPortChips, type PortActions } from './EmptyPorts'
+import { inputSlots } from './ports'
 import { WireChips, WireLayer } from './WireLayer'
-import { boardWires } from './wires'
+import { boardPorts } from './wires'
 
 const FIT_PADDING = { top: 72, side: 48 }
 
@@ -90,6 +92,12 @@ export interface BoardProps {
   /** Pick mode (from the inspector): the next card with a picture clicked fills this input. */
   pickTarget?: PickTarget | null
   onPick?: (sourceCanvasId: string) => void
+  /** What an empty input slot's menu does (add from the board or a file, choose a control adapter). */
+  portActions: PortActions
+  /** The model chip of a card: its short name, and whether it is ready to use. */
+  describeModel?: (canvas: ProjectCanvas) => { label: string; ready: boolean } | null
+  /** Text typed into a card's description on the board. */
+  onChangeDescription: (canvasId: string, text: string) => void
 }
 
 function isTyping(target: EventTarget | null): boolean {
@@ -115,7 +123,15 @@ export function Board(props: BoardProps): React.JSX.Element {
   const tileRect = { x: newSpot.x, y: newSpot.y, w: cardWidth(tileSize), h: CARD_HEADER + cardBodyHeight(tileSize) }
 
   const [hoveredWire, setHoveredWire] = useState<string | null>(null)
-  const wires = useMemo(() => boardWires(props.canvases, view.zoom), [props.canvases, view.zoom])
+  const { engineFeatures, controlAdapters, blockers } = props
+  const slotsFor = useCallback(
+    (canvas: ProjectCanvas) => inputSlots(canvas, engineFeatures, controlAdapters, blockers),
+    [engineFeatures, controlAdapters, blockers],
+  )
+  const ports = useMemo(() => boardPorts(props.canvases, view.zoom, slotsFor), [props.canvases, view.zoom, slotsFor])
+  const wires = ports.wires
+  const slotsRef = useRef(ports.slots)
+  slotsRef.current = ports.slots
   const mask = maskAvailability(selected, props.engineFeatures, props.blockers)
 
   const viewportSize = (): { width: number; height: number } => {
@@ -143,7 +159,26 @@ export function Board(props: BoardProps): React.JSX.Element {
   }, [props.canvases, cardDrag.draggingId])
   const orderedRef = useRef(ordered)
   orderedRef.current = ordered
-  const connect = useWireConnect({ viewport, view: viewRef, cards: orderedRef })
+  const connect = useWireConnect({
+    viewport,
+    view: viewRef,
+    cards: orderedRef,
+    slots: slotsRef,
+    onSlotDrop: (targetId, sourceId, drop) => latest.current.onLink(targetId, drop.role, { canvasId: sourceId }, drop.kind),
+  })
+  const activePort = connect.draft?.slot?.id ?? null
+  // An empty slot's menu acts on its card: select it first, as the inputs panel does.
+  const portActions: PortActions = {
+    ...props.portActions,
+    onPick: (canvasId, role, kind) => {
+      if (canvasId !== latest.current.selectedCanvasId) latest.current.onSelectCanvas(canvasId)
+      latest.current.portActions.onPick(canvasId, role, kind)
+    },
+    onAddFromFile: (canvasId, role, kind) => {
+      if (canvasId !== latest.current.selectedCanvasId) latest.current.onSelectCanvas(canvasId)
+      latest.current.portActions.onAddFromFile(canvasId, role, kind)
+    },
+  }
   const wireSelection = useWireSelection(wires, (wire) => latest.current.onRemoveLink(wire.targetId, wire.role!, wire.at))
   const selectedWireId = wireSelection.selectedWireId
   const setSelectedWireId = wireSelection.select
@@ -389,6 +424,8 @@ export function Board(props: BoardProps): React.JSX.Element {
                   : null
               }
               hasOutput={hasPicture(canvas)}
+              model={canvas.kind === 'layout' ? (props.describeModel?.(canvas) ?? null) : null}
+              onChangeDescription={(text) => props.onChangeDescription(canvas.id, text)}
               dropTarget={draft?.targetId === canvas.id ? (draft.ok ? 'ok' : 'no') : undefined}
               onPortDown={(event) => connect.start(canvas, event)}
               pick={pick}
@@ -431,6 +468,26 @@ export function Board(props: BoardProps): React.JSX.Element {
           }}
           onRemove={wireSelection.remove}
         />
+        <EmptyPortChips
+          ports={ports.empties}
+          zoom={view.zoom}
+          selectedCanvasId={props.selectedCanvasId}
+          active={activePort}
+          adapters={props.controlAdapters}
+          actions={portActions}
+        />
+        {connect.draft && !connect.draft.ok && connect.draft.reason ? (
+          <div
+            role="status"
+            data-wire-refused
+            className="pointer-events-none absolute left-0 top-0 z-[7] origin-top-left whitespace-nowrap rounded-full bg-raised px-2.5 py-1 text-caption text-ink shadow-float"
+            style={{
+              transform: `translate(${connect.draft.to.x}px, ${connect.draft.to.y}px) scale(${1 / Math.max(0.01, view.zoom)}) translate(12px, 12px)`,
+            }}
+          >
+            {connect.draft.reason}
+          </div>
+        ) : null}
         <button
           type="button"
           data-new-canvas

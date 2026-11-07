@@ -2,7 +2,11 @@ import { useRef, useState } from 'react'
 import type { ProjectCanvas } from '@shared/types'
 import { toBoardPoint, type View } from './boardLayout'
 import { canConnect } from './connect'
-import { cardAt, outputPort, type Point } from './wires'
+import { slotDrop, type SlotDrop } from './ports'
+import { cardAt, outputPort, slotAt, type Point, type SlotPort } from './wires'
+
+/** How close (screen pixels) the pointer must be to an input port to drop straight into it. */
+export const SLOT_SNAP = 18
 
 export interface ConnectDraft {
   sourceId: string
@@ -10,6 +14,10 @@ export interface ConnectDraft {
   to: Point
   targetId?: string
   ok: boolean
+  /** The input slot under the pointer (`canvasId/slotKey`), and what dropping there does. */
+  slot?: { id: string; drop: SlotDrop }
+  /** Why the card or slot under the pointer refuses the wire. */
+  reason?: string
 }
 
 export interface ConnectMenu {
@@ -22,13 +30,17 @@ export interface ConnectMenu {
 /**
  * Dragging a wire out of a card's output port. While dragging, the loose end
  * follows the pointer and the card under it says whether it accepts the
- * wire; dropping on an accepting card opens the role menu.
+ * wire (and why not). Dropping on an input port links straight into it;
+ * dropping anywhere else on an accepting card opens the role menu.
  */
 export function useWireConnect(options: {
   viewport: React.RefObject<HTMLDivElement | null>
   view: { readonly current: View }
   /** Cards in drawing order (topmost last). */
   cards: { readonly current: readonly ProjectCanvas[] }
+  /** Input slot ports on the board: a drop on one links straight into it. */
+  slots: { readonly current: readonly SlotPort[] }
+  onSlotDrop: (targetId: string, sourceId: string, drop: Extract<SlotDrop, { ok: true }>) => void
 }): {
   draft: ConnectDraft | null
   menu: ConnectMenu | null
@@ -47,9 +59,30 @@ export function useWireConnect(options: {
   const aim = (sourceId: string, from: Point, event: PointerEvent | React.PointerEvent): ConnectDraft => {
     const at = local(event)
     const to = toBoardPoint(options.view.current, at.x, at.y)
-    const target = cardAt(options.cards.current, to)
+    // A port sits on the card's left edge, half outside it: look for one first.
+    const radius = SLOT_SNAP / Math.max(0.01, options.view.current.zoom)
+    const hit = slotAt(
+      options.slots.current.filter((item) => item.canvasId !== sourceId),
+      to,
+      radius,
+    )
+    const target = hit ? options.cards.current.find((canvas) => canvas.id === hit.canvasId) : cardAt(options.cards.current, to)
     const check = canConnect(options.cards.current, sourceId, target)
-    return { sourceId, from, to, targetId: target && target.id !== sourceId ? target.id : undefined, ok: check.ok }
+    const targetId = target && target.id !== sourceId ? target.id : undefined
+    if (!check.ok) return { sourceId, from, to, targetId, ok: false, reason: check.reason || undefined }
+    if (hit && target) {
+      const drop = slotDrop(hit.slot, target, sourceId)
+      return {
+        sourceId,
+        from,
+        to: hit.port,
+        targetId,
+        ok: drop.ok,
+        slot: { id: `${hit.canvasId}/${hit.slot.key}`, drop },
+        reason: drop.ok ? undefined : drop.reason,
+      }
+    }
+    return { sourceId, from, to, targetId, ok: true }
   }
 
   const start = (canvas: ProjectCanvas, event: React.PointerEvent<HTMLElement>): void => {
@@ -78,7 +111,10 @@ export function useWireConnect(options: {
       element.removeEventListener('pointercancel', stop)
       if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId)
       const end = aim(canvas.id, from, next)
-      if (next.type === 'pointerup' && end.ok && end.targetId) {
+      if (next.type === 'pointerup' && end.ok && end.targetId && end.slot?.drop.ok) {
+        options.onSlotDrop(end.targetId, canvas.id, end.slot.drop)
+        setDraft(null)
+      } else if (next.type === 'pointerup' && end.ok && end.targetId) {
         // Keep the wire drawn to the drop point while the menu is open.
         setDraft(end)
         setMenu({ sourceId: canvas.id, targetId: end.targetId, at: local(next) })

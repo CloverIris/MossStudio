@@ -494,3 +494,121 @@ describe('studio board', () => {
     })
   }
 })
+
+describe('readable nodes', () => {
+  const app = useApp()
+  const card = (page: Page) => page.locator('article[data-canvas-card="canvas-1"]')
+  const slot = (page: Page, key: string) => page.locator(`[data-empty-port="canvas-1/${key}"]`)
+
+  /** Drag a wire from a card's output port onto one of canvas-1's input sockets; `hold` keeps the button down. */
+  async function dragToSocket(page: Page, from: string, key: string, hold = false): Promise<void> {
+    await page.locator(`article[data-canvas-card="${from}"]`).hover()
+    const start = await center(page, `[data-output-port="${from}"]`)
+    const end = await center(page, `[data-empty-port-dot="canvas-1/${key}"]`)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2, { steps: 5 })
+    await page.mouse.move(end.x, end.y, { steps: 5 })
+    if (!hold) await page.mouse.up()
+  }
+
+  it('shows what a canvas takes in and what it will make before its first run', async () => {
+    for (const theme of ['light', 'dark'] as const) {
+      const page = await openBoard(app, { theme })
+      // Every input it can take, named, even with nothing linked.
+      expect(await page.locator('[data-empty-port^="canvas-1/"]').evaluateAll((items) => items.map((item) => item.textContent))).toEqual([
+        '起始图',
+        '控制',
+        '参考图',
+      ])
+      expect(await page.locator('[data-empty-port-dot^="canvas-1/"]').count()).toBe(3)
+      // The face carries the description; the footer what it will generate with.
+      expect(await card(page).locator('[data-face-description]').textContent()).toBe('一只橘猫坐在窗台上')
+      const chips = await card(page).locator('[data-card-chips]').textContent()
+      expect(chips).toContain('MOSS-Image SFT')
+      expect(chips).toContain('自定义 · 28 步')
+      expect(chips).toContain('1024 × 1024')
+      expect(await card(page).locator('header').textContent()).toContain('尚未生成')
+      // Picture cards take nothing in: no sockets.
+      expect(await page.locator('[data-empty-port^="img-1/"]').count()).toBe(0)
+      await app.screenshot(`board-readable-node-${theme}`)
+    }
+  })
+
+  it('fills an empty socket from a file or from the board', async () => {
+    const page = await openBoard(app)
+    await page.evaluate(() => window.__mock.handle(window.__mock.Ipc.pickImages, () => ['/home/me/pictures/sofa.png']))
+    await slot(page, 'init').getByRole('button').click()
+    await page.getByRole('menuitem', { name: '从文件…' }).click()
+    await expect.poll(async () => (await savedInputs(page))?.init?.link.canvasId ?? '', { timeout: 10_000 }).toMatch(/.+/)
+    const picture = (await savedInputs(page))!.init!.link.canvasId
+    expect(await page.locator(`article[data-canvas-card="${picture}"]`).count()).toBe(1)
+    // The socket is now a wire with its chip; the empty one is gone.
+    await expect.poll(() => slot(page, 'init').count()).toBe(0)
+    await expect.poll(() => page.locator('[data-wire-chip="input:canvas-1:init:"]').textContent()).toBe('起始图 60%')
+
+    await slot(page, 'reference').getByRole('button').click()
+    await page.getByRole('menuitem', { name: '从画板选择' }).click()
+    await expect.poll(() => page.locator('[data-pick-hint]').textContent()).toContain('参考图')
+    await page.locator('article[data-canvas-card="img-2"] [data-card-body]').click()
+    await expect
+      .poll(async () => (await savedInputs(page))?.references?.links.map((link) => link.canvasId), { timeout: 10_000 })
+      .toEqual(['img-2'])
+  })
+
+  it('links a wire dropped on a socket straight into it, and says why when it cannot', async () => {
+    const page = await openBoard(app)
+    await dragToSocket(page, 'img-2', 'reference')
+    await expect.poll(async () => (await savedInputs(page))?.references?.links, { timeout: 10_000 }).toEqual([{ canvasId: 'img-2' }])
+    // No role menu: the socket already said what the picture is for.
+    expect(await page.getByRole('menu').count()).toBe(0)
+
+    // No control adapter installed: the 控制 socket refuses and says what to do.
+    await dragToSocket(page, 'img-1', 'control', true)
+    await expect.poll(() => page.locator('[data-wire-refused]').textContent()).toBe('需要先添加控制适配器')
+    await app.screenshot('board-socket-refused-light')
+    await page.mouse.up()
+    expect((await savedInputs(page))?.control).toBeUndefined()
+    await expect.poll(() => page.locator('[data-wire-refused]').count()).toBe(0)
+  })
+
+  it('asks which control adapter to use, then offers one socket per kind', async () => {
+    const page = await openBoard(app, { adapters: true })
+    await slot(page, 'control').getByRole('button').click()
+    await page.getByRole('menuitem', { name: 'moss-control-union.safetensors' }).click()
+    await expect
+      .poll(() => page.locator('[data-empty-port^="canvas-1/control"]').evaluateAll((items) => items.map((item) => item.textContent)))
+      .toEqual(['控制 · 深度', '控制 · 边缘', '控制 · 姿态'])
+    await dragToSocket(page, 'img-2', 'control:canny')
+    await expect
+      .poll(async () => (await savedInputs(page))?.control?.images.map((image) => image.kind), { timeout: 10_000 })
+      .toEqual(['canny'])
+  })
+
+  it('writes the description on the card itself', async () => {
+    const page = await openBoard(app)
+    await card(page)
+      .locator('[data-card-body]')
+      .dblclick({ position: { x: 120, y: 140 } })
+    const editor = card(page).locator('[data-face-editor]')
+    await expect.poll(() => editor.evaluate((element) => element === document.activeElement)).toBe(true)
+    await editor.fill('一只橘猫在雪地里')
+    await page.keyboard.press('Control+Enter')
+    await expect.poll(() => card(page).locator('[data-face-description]').textContent()).toBe('一只橘猫在雪地里')
+    await expect
+      .poll(() => page.evaluate(() => window.__mock.state.projects[0]?.canvases.find((item) => item.id === 'canvas-1')?.prompt), {
+        timeout: 10_000,
+      })
+      .toBe('一只橘猫在雪地里')
+    // The left panel shows the same text.
+    expect(await page.getByRole('textbox', { name: '描述' }).first().inputValue()).toBe('一只橘猫在雪地里')
+
+    // Esc leaves it as it was.
+    await card(page)
+      .locator('[data-card-body]')
+      .dblclick({ position: { x: 120, y: 140 } })
+    await editor.fill('不要这个')
+    await page.keyboard.press('Escape')
+    await expect.poll(() => card(page).locator('[data-face-description]').textContent()).toBe('一只橘猫在雪地里')
+  })
+})
