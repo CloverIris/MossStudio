@@ -4,7 +4,8 @@ import '@xterm/xterm/css/xterm.css'
 import { useEffect, useRef, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import { call, onEvent } from '../lib/api'
-import { Button, Sheet, Spinner } from '../components/ui'
+import { Notice } from '../components/common/Notice'
+import { Button, LoadingRow, Sheet } from '../components/ui'
 
 interface SshSession {
   id: string
@@ -54,6 +55,7 @@ export function SshTerminalSheet({
   const [session, setSession] = useState<SshSession | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ended, setEnded] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (!open || !hostId) return
@@ -74,7 +76,7 @@ export function SshTerminalSheet({
     return () => {
       canceled = true
     }
-  }, [open, hostId])
+  }, [open, hostId, attempt])
 
   async function endSession(): Promise<void> {
     if (session) await call(Ipc.sshTerminalClose, { id: session.id }).catch(() => undefined)
@@ -100,16 +102,21 @@ export function SshTerminalSheet({
       }
     >
       {error ? (
-        <p role="alert" className="text-ui text-danger">
+        <Notice
+          tone="danger"
+          role="alert"
+          action={
+            <Button size="sm" onClick={() => setAttempt((value) => value + 1)}>
+              重试
+            </Button>
+          }
+        >
           没能打开终端：{error}。请先在设置里测试这台主机的连接。
-        </p>
+        </Notice>
       ) : session ? (
         <TerminalView session={session} onExit={() => setEnded(true)} />
       ) : (
-        <div className="flex items-center gap-2 text-ui text-ink-2">
-          <Spinner />
-          正在连接…
-        </div>
+        <LoadingRow label="正在连接…" />
       )}
     </Sheet>
   )

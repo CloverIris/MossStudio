@@ -177,15 +177,25 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
 }
 
 /**
- * Why the 输入 section cannot add pictures right now, or null when it can.
- * Worded from the same readiness the 生成 footer shows, so the two never
- * disagree (e.g. the engine is still installing, not missing).
+ * Why something that needs the engine (adding pictures, a mask, a wire) cannot
+ * be done right now, or null when it can. Worded from the same readiness the
+ * 生成 footer shows, so the two never disagree (e.g. the engine is still
+ * installing, not missing). `action` is what waits, e.g. "添加图片".
  */
-export function inputsUnavailableReason(features: EngineFeatures | null | undefined, blockers: readonly Blocker[]): string | null {
+export function engineUnavailableReason(
+  features: EngineFeatures | null | undefined,
+  blockers: readonly Blocker[],
+  action: string,
+): string | null {
   if (features === undefined) return '正在读取引擎支持的功能…'
   if (features !== null) return null
   const engine = blockers.find((blocker) => blocker.id === 'engine' || blocker.id === 'remote-path')
-  return engine ? `${engine.message}，就绪后才能添加图片` : '没有可用的引擎，暂时不能添加图片'
+  return engine ? `${engine.message}，就绪后才能${action}` : `没有可用的引擎，暂时不能${action}`
+}
+
+/** Why the 输入 section cannot add pictures right now, or null when it can. */
+export function inputsUnavailableReason(features: EngineFeatures | null | undefined, blockers: readonly Blocker[]): string | null {
+  return engineUnavailableReason(features, blockers, '添加图片')
 }
 
 export interface RerunCheck {

@@ -1,6 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Button, ProgressBar, cn } from '../../components/ui'
+import { Button, cn, FieldLabel, ProgressBar } from '../../components/ui'
 
 /**
  * One setup screen: the content scrolls if it must, the actions stay pinned to
@@ -50,7 +50,7 @@ export function FolderField({
     <section aria-label={label} className="flex flex-col gap-1 rounded-xl bg-surface p-1.5">
       <div className="flex items-center gap-4 rounded-lg px-3.5 py-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h2 className="text-caption font-medium text-ink-2">{label}</h2>
+          <FieldLabel as="h2">{label}</FieldLabel>
           <PathText path={path} />
           {detail ? <span className="tabular text-caption text-ink-2">{detail}</span> : null}
         </div>
@@ -68,7 +68,7 @@ export function FolderProblem({ text, action }: { text: string; action?: { label
   return (
     <div role="alert" className="flex flex-col gap-2.5 rounded-lg bg-warn-soft px-3.5 py-3">
       <p className="flex items-start gap-2 text-ui text-ink">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden="true" />
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden="true" strokeWidth={1.6} />
         <span className="[overflow-wrap:anywhere]">{text}</span>
       </p>
       {action ? (
@@ -143,11 +143,12 @@ export function ProgressBlock({
 }): React.JSX.Element {
   return (
     <div className="flex flex-col gap-2.5 pt-2" role="status" aria-live="polite">
-      <ProgressBar value={percent} label={label} className="h-1.5" />
+      {/* Words above the bar, as in first-run setup's steps. */}
       <div className="flex items-baseline justify-between gap-4">
         <span className="text-ui text-ink">{label}</span>
         {percent !== null && percent < 100 ? <span className="tabular text-ui text-ink-2">{Math.round(percent)}%</span> : null}
       </div>
+      <ProgressBar value={percent} label={label} />
       {detail ? <div className="min-w-0 text-caption text-ink-2">{detail}</div> : null}
     </div>
   )
@@ -157,7 +158,7 @@ export function ProgressBlock({
 export function FailureBlock({ children }: { children: ReactNode }): React.JSX.Element {
   return (
     <div role="alert" className="flex items-start gap-2.5 rounded-xl bg-danger-soft px-4 py-3.5 text-ui text-ink">
-      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" strokeWidth={1.6} />
       <div className="min-w-0 [overflow-wrap:anywhere]">{children}</div>
     </div>
   )

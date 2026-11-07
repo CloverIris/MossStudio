@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { FieldLabel } from '../../components/ui'
 import { MenuItem } from '../../components/common/Popover'
 import type { LinkMenuEntry } from './connect'
 import type { LinkRole } from './links'
@@ -71,9 +72,9 @@ export function LinkMenu({
         }
         if (entry.type === 'heading') {
           return (
-            <div key={index} className="px-2.5 pt-1.5 text-micro font-medium text-ink-2">
+            <FieldLabel key={index} className="px-2.5 pt-1.5">
               {entry.label}
-            </div>
+            </FieldLabel>
           )
         }
         return (

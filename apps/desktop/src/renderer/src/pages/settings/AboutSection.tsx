@@ -3,7 +3,7 @@ import { Ipc } from '@shared/channels'
 import { call } from '../../lib/api'
 import { useGpuInventory } from '../../lib/useGpuInventory'
 import { useApp } from '../../store'
-import { Advanced, Button, Group, IconButton, Row, Section, Spinner, StatusDot, useCopyText } from '../../components/ui'
+import { Advanced, Button, cn, Group, IconButton, LoadingRow, Row, Section, StatusDot, useCopyText } from '../../components/ui'
 import { SectionBody } from './fields'
 import { diagnosticsReport } from './diagnosticsReport'
 import { UninstallRow } from './UninstallRow'
@@ -30,17 +30,17 @@ export function AboutSection(): React.JSX.Element {
       <Section title="MossStudio">
         <Group>
           <Row title="版本" description={info ? `Electron ${info.electron} · Node ${info.node}` : undefined}>
-            <span className="tabular text-control text-ink">{info?.version ?? env?.appVersion ?? '—'}</span>
+            <span className="tabular text-ui text-ink-2">{info?.version ?? env?.appVersion ?? '正在读取…'}</span>
           </Row>
           <Row title="开源" description="MossStudio 以 MIT 许可证开源，欢迎在 GitHub 上提问题和参与开发。">
-            <Button onClick={() => void call(Ipc.openExternal, { url: REPOSITORY })}>
+            <Button tone="ghost" onClick={() => void call(Ipc.openExternal, { url: REPOSITORY })}>
               GitHub
-              <ExternalLink className="size-4" />
+              <ExternalLink className="size-4" strokeWidth={1.6} />
             </Button>
           </Row>
           <Row title="QQ 交流群" description={QQ_GROUP}>
             <IconButton label="复制群号" onClick={() => void copyText(QQ_GROUP, '群号已复制')}>
-              <Copy className="size-4" />
+              <Copy className="size-4" strokeWidth={1.6} />
             </IconButton>
           </Row>
           <UninstallRow />
@@ -55,7 +55,7 @@ export function AboutSection(): React.JSX.Element {
                 void copyText(diagnosticsReport({ info, env, gpu: inventory, engine, settings, diagnostics }), '诊断信息已复制')
               }
             >
-              <Copy className="size-4" />
+              <Copy className="size-4" strokeWidth={1.6} />
               复制
             </Button>
           </Row>
@@ -73,11 +73,11 @@ export function AboutSection(): React.JSX.Element {
                 description={[check.value, check.detail].filter(Boolean).join(' · ')}
               />
             ))}
-            {!env ? <Row title="正在检测…" /> : null}
-            <div className="flex justify-end px-3.5 py-2">
-              <Button tone="ghost" onClick={() => void refreshEnv()} disabled={scanning}>
-                {scanning ? <Spinner /> : <RefreshCw className="size-4" />}重新检测
-              </Button>
+            {!env ? <LoadingRow label="正在检测…" className="px-3.5" /> : null}
+            <div className="flex justify-end px-3.5 py-1">
+              <IconButton label="重新检测" onClick={() => void refreshEnv()} disabled={scanning}>
+                <RefreshCw className={cn('size-4', scanning && 'animate-spin')} strokeWidth={1.6} />
+              </IconButton>
             </div>
           </div>
         </Advanced>

@@ -72,6 +72,12 @@ export function qualityFor(steps: number): QualityId | 'custom' {
   return QUALITY_PRESETS.find((preset) => preset.steps === steps)?.id ?? 'custom'
 }
 
+/** Quality as it reads everywhere (panel and viewer): "标准 · 20 步", or "自定义 · 28 步". */
+export function qualityLabel(steps: number): string {
+  const id = qualityFor(steps)
+  return `${id === 'custom' ? '自定义' : qualityPreset(id).label} · ${steps} 步`
+}
+
 /** Nearest preset, for values that arrive from outside the panel (e.g. the assistant). */
 export function nearestQuality(steps: number): QualityId {
   let best = QUALITY_PRESETS[0]

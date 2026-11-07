@@ -8,7 +8,8 @@ import { cloverUrl } from '../../lib/clover'
 import { buildReuseRequest, buildStartPictureRequest, canReuse } from '../../lib/studioReuse'
 import { useApp } from '../../store'
 import { PromptBlock } from '../../components/common/PromptBlock'
-import { Button, ConfirmDialog, IconButton, Spinner, useToast } from '../../components/ui'
+import { Notice } from '../../components/common/Notice'
+import { Button, ConfirmDialog, FieldLabel, IconButton, LoadingRow, Spinner, useToast } from '../../components/ui'
 import { detailFacts } from './logic'
 
 const message = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
@@ -113,6 +114,14 @@ export function DetailPanel({
         <span className="tabular min-w-0 flex-1 truncate px-1 text-caption text-ink-2">
           {position} / {total.toLocaleString('en-US')}
         </span>
+        {/* Secondary actions on the picture itself sit with the picture navigation, so the pinned
+            footer keeps only what continues the work and the details stay in view. */}
+        <IconButton label="在文件夹中显示" onClick={reveal}>
+          <FolderOpen className="size-4" strokeWidth={1.6} />
+        </IconButton>
+        <IconButton label="删除" className="text-danger enabled:hover:text-danger" disabled={deleting} onClick={() => setConfirming(true)}>
+          {deleting ? <Spinner /> : <Trash2 className="size-4" strokeWidth={1.6} />}
+        </IconButton>
         <IconButton label="上一张（←）" disabled={!canPrevious} onClick={() => onStep(-1)}>
           <ArrowLeft className="size-4" strokeWidth={1.6} />
         </IconButton>
@@ -136,18 +145,18 @@ export function DetailPanel({
         </div>
 
         {error ? (
-          <div className="flex flex-col gap-2 rounded-lg bg-danger-soft p-3">
-            <p className="text-ui text-danger">读不到这张图片的信息：{error}</p>
-            <div>
-              <Button tone="secondary" onClick={() => setAttempt((value) => value + 1)}>
+          <Notice
+            tone="danger"
+            action={
+              <Button tone="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>
                 重试
               </Button>
-            </div>
-          </div>
+            }
+          >
+            读不到这张图片的信息：{error}
+          </Notice>
         ) : !shown ? (
-          <div className="flex items-center gap-2 text-ui text-ink-2">
-            <Spinner /> 正在读取
-          </div>
+          <LoadingRow />
         ) : (
           <>
             <div className="flex flex-col gap-3">
@@ -161,14 +170,19 @@ export function DetailPanel({
             </div>
 
             {facts.length ? (
-              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-ui">
-                {facts.map((fact) => (
-                  <div key={fact.label} className="contents">
-                    <dt className="text-ink-2">{fact.label}</dt>
-                    <dd className="tabular min-w-0 text-ink [overflow-wrap:anywhere]">{fact.value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <section aria-label="生成参数" className="flex flex-col gap-1.5">
+                <FieldLabel as="h3" className="min-h-7">
+                  生成参数
+                </FieldLabel>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-ui">
+                  {facts.map((fact) => (
+                    <div key={fact.label} className="contents">
+                      <dt className="text-ink-2">{fact.label}</dt>
+                      <dd className="tabular min-w-0 text-ink [overflow-wrap:anywhere]">{fact.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
             ) : null}
           </>
         )}
@@ -192,13 +206,7 @@ export function DetailPanel({
           <Button tone="secondary" onClick={useAsBackground}>
             <ImageIcon className="size-4" strokeWidth={1.6} /> 用作底图
           </Button>
-          <Button tone="secondary" className="col-span-2" onClick={reveal}>
-            <FolderOpen className="size-4" strokeWidth={1.6} /> 在文件夹中显示
-          </Button>
         </div>
-        <Button tone="ghost-danger" disabled={deleting} onClick={() => setConfirming(true)}>
-          {deleting ? <Spinner /> : <Trash2 className="size-4" strokeWidth={1.6} />} 删除
-        </Button>
       </div>
 
       <ConfirmDialog

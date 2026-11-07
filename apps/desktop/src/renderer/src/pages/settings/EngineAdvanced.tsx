@@ -9,7 +9,8 @@ import { date } from '../../lib/format'
 import { engineDownloadActive, packageLabel } from '../../lib/engineInstall'
 import { enginePackageOptionLabel } from '@shared/enginePackages'
 import { useApp } from '../../store'
-import { Button, ConfirmDialog, IconButton, Pill, Row, Segmented, Select, Spinner, useToast } from '../../components/ui'
+import { PathValue } from '../../components/common/PathValue'
+import { Button, ConfirmDialog, FieldLabel, IconButton, Pill, Row, Segmented, Select, Spinner, useToast } from '../../components/ui'
 import { applyEngineOverride, applyGpuOverride, engineOverrideOptions, fixedEngineSettingsNote, type OverrideField } from './devicesModel'
 import { FolderRow, errorText, pickFolder, useSaveSettings } from './fields'
 import { useAppInfo } from './useAppInfo'
@@ -27,9 +28,13 @@ const TIER_OPTIONS: Array<{ value: Settings['mossInferTier']; label: string }> =
   { value: 'turbo', label: 'Turbo' },
 ]
 
-/** A small heading inside the Advanced area. */
+/** A block heading inside the Advanced area: the rule sheet's field/block label level. */
 function SubHeading({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return <h3 className="px-3.5 pb-1 pt-4 text-caption font-semibold text-ink-2">{children}</h3>
+  return (
+    <FieldLabel as="h3" className="px-3.5 pb-1 pt-4">
+      {children}
+    </FieldLabel>
+  )
 }
 
 export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inventory: GpuInventorySnapshot | null }): React.JSX.Element {
@@ -48,7 +53,7 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
         title="显存模式"
         description={
           settings.gpuProfileMode === 'auto'
-            ? '现在按每块 GPU 的显存自动选择。手动选择后对所有 GPU 生效。'
+            ? '现在按每块显卡的显存自动选择。手动选择后对所有显卡生效。'
             : '省显存更稳，速度优先需要更多显存。'
         }
       >
@@ -77,7 +82,7 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
       </Row>
       {(inventory?.devices ?? []).length > 1 ? (
         <>
-          <SubHeading>每块 GPU 单独设置</SubHeading>
+          <SubHeading>每块显卡单独设置</SubHeading>
           {inventory!.devices.map((device) => {
             const override = settings.gpuProfileOverrides?.[device.uuid]
             const bf16Only = gpuRequiresBf16Tier(device)
@@ -85,7 +90,11 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
             const fixed = fixedEngineSettingsNote(engine.readiness, device.uuid)
             if (fixed) return <Row key={device.uuid} title={device.name} description={fixed} />
             return (
-              <Row key={device.uuid} title={device.name} description={bf16Only ? '这块显卡只能使用 Reference 档位' : `GPU ${device.index}`}>
+              <Row
+                key={device.uuid}
+                title={device.name}
+                description={bf16Only ? '这块显卡只能使用 Reference 档位' : `显卡 ${device.index}`}
+              >
                 <Select
                   aria-label={`${device.name} 显存模式`}
                   className="w-32"
@@ -151,7 +160,7 @@ function GpuEngines({ engine }: { engine: EngineState }): React.JSX.Element | nu
 
   return (
     <>
-      <SubHeading>每块 GPU 的引擎</SubHeading>
+      <SubHeading>每块显卡的引擎</SubHeading>
       {plan.choices.map((choice) => {
         const options = engineOverrideOptions(plan, choice.gpuId)
         const value =
@@ -233,7 +242,7 @@ function InstallOptions({ engine }: { engine: EngineState }): React.JSX.Element 
       {channel === 'stable' ? (
         <Row title="版本" description={engine.releasesError ? `读取版本列表失败：${engine.releasesError}` : '默认安装最新的正式版。'}>
           <IconButton label="刷新版本列表" onClick={() => void loadReleases()} disabled={engine.loadingReleases}>
-            <RefreshCw className={engine.loadingReleases ? 'size-4 animate-spin' : 'size-4'} />
+            <RefreshCw className={engine.loadingReleases ? 'size-4 animate-spin' : 'size-4'} strokeWidth={1.6} />
           </IconButton>
           <Select
             aria-label="引擎版本"
@@ -298,11 +307,7 @@ function InstalledVersions({ engine }: { engine: EngineState }): React.JSX.Eleme
         <Row title="还没有安装引擎" />
       ) : (
         engine.versions.map((version) => (
-          <Row
-            key={version.id}
-            title={<span className="font-mono text-caption">{version.name}</span>}
-            description={<span className="font-mono">{version.path}</span>}
-          >
+          <Row key={version.id} title={version.name} description={<PathValue value={version.path} className="mt-1" />}>
             {version.current ? (
               <Pill tone="accent">正在使用</Pill>
             ) : (
@@ -315,7 +320,7 @@ function InstalledVersions({ engine }: { engine: EngineState }): React.JSX.Eleme
               disabled={version.current || busy !== null || installing}
               onClick={() => setRemoving(version)}
             >
-              <Trash2 className="size-4" />
+              <Trash2 className="size-4" strokeWidth={1.6} />
             </IconButton>
           </Row>
         ))
@@ -378,7 +383,7 @@ function CustomEngine({ engine }: { engine: EngineState }): React.JSX.Element {
         description="选择自己编译或第三方提供的 MossInfer 文件夹（包含 bin/moss-server）。添加前会检查它能否正常通信。"
       >
         <Button onClick={() => void add()} disabled={adding}>
-          {adding ? <Spinner /> : <FolderPlus className="size-4" />}选择文件夹
+          {adding ? <Spinner /> : <FolderPlus className="size-4" strokeWidth={1.6} />}选择文件夹
         </Button>
       </Row>
       <Row
@@ -388,9 +393,9 @@ function CustomEngine({ engine }: { engine: EngineState }): React.JSX.Element {
             ? engine.probeError
               ? `失败：${engine.probeError}`
               : hello
-                ? `通信正常 · ${hello.server ?? 'MossInfer'} ${hello.version ?? ''} · 协议 ${hello.protocol} · ${compatible} 块 GPU 可用`
+                ? `通信正常 · ${hello.server ?? 'MossInfer'} ${hello.version ?? ''} · 协议 ${hello.protocol} · ${compatible} 块显卡可用`
                 : '正在测试…'
-            : '启动引擎并检查它能使用哪些 GPU。'
+            : '启动引擎并检查它能使用哪些显卡。'
         }
       >
         <Button onClick={() => void test()} disabled={!ready || engine.probing}>

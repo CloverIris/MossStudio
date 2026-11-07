@@ -5,19 +5,20 @@ import { Events, Ipc } from '@shared/channels'
 import type { AppInfo, Catalog, ModelBundle } from '@shared/types'
 import { call, onEvent } from '../../lib/api'
 import { DownloadQueue } from '../../components/DownloadQueue'
+import { Notice } from '../../components/common/Notice'
 import {
   Advanced,
   Button,
   EmptyState,
   Group,
   IconButton,
+  LoadingRow,
   PageHeader,
   PageScroll,
   Row,
   Section,
   Segmented,
   Select,
-  Spinner,
   Tabs,
   useToast,
 } from '../../components/ui'
@@ -53,7 +54,7 @@ function StorageRow({ location }: { location: ModelLocation }): React.JSX.Elemen
   }
   return (
     <Group>
-      <Row title="模型保存在" description={modelsPath ?? settings?.modelsRoot ?? '应用数据目录'}>
+      <Row title="模型文件夹" description={modelsPath ?? settings?.modelsRoot ?? '应用数据目录'}>
         {modelsPath ? (
           <IconButton
             label="打开模型文件夹"
@@ -102,32 +103,33 @@ function ModelsTab({
   return (
     <div className="flex flex-col gap-8">
       {location.kind === 'remote' && location.scanError ? (
-        <Group>
-          <Row
-            title={`读不到 ${location.host?.name ?? '远程主机'} 上的模型`}
-            description={`${location.scanError}。检查这台主机是否在线，然后重试。`}
-          >
-            <Button tone="secondary" onClick={location.rescan}>
+        <Notice
+          tone="danger"
+          action={
+            <Button size="xs" onClick={location.rescan}>
               重试
             </Button>
-          </Row>
-        </Group>
+          }
+        >
+          读不到 {location.host?.name ?? '远程主机'} 上的模型：{location.scanError}。检查这台主机是否在线，然后重试。
+        </Notice>
       ) : null}
 
       {!location.ready ? (
         location.scanning ? (
-          <div className="flex items-center gap-2 px-1 text-ui text-ink-2">
-            <Spinner /> 正在查看 {location.host?.name} 上已有的模型
-          </div>
+          <LoadingRow label={`正在查看 ${location.host?.name ?? '远程主机'} 上的模型…`} />
         ) : null
       ) : featuredView ? (
         <FeaturedModel view={featuredView} location={location} deletable={deletable(featuredView.bundle)} onDelete={setDeleting} />
       ) : (
-        <EmptyState
-          icon={<Package className="size-8" strokeWidth={1.6} />}
-          title="还没有可用的模型列表"
-          description="刷新一下；如果仍然为空，检查网络后再试。"
-        />
+        <Group>
+          <EmptyState
+            size="section"
+            icon={<Package className="size-6" strokeWidth={1.6} />}
+            title="还没有可用的模型列表"
+            description="刷新一下；如果仍然为空，检查网络后再试。"
+          />
+        </Group>
       )}
 
       {shownOthers.length && location.ready ? (
@@ -187,7 +189,7 @@ function DownloadsTab({ location }: { location: ModelLocation }): React.JSX.Elem
       ) : (
         <Group>
           <EmptyState
-            className="py-12"
+            size="section"
             icon={<Download className="size-6" strokeWidth={1.6} />}
             title="没有进行中的下载"
             description="开始下载模型或 LoRA 后，进度会显示在这里。"
@@ -284,9 +286,7 @@ export function ModelsPage(): React.JSX.Element {
       />
 
       {!catalog ? (
-        <div className="flex justify-center py-16">
-          <Spinner />
-        </div>
+        <LoadingRow label="正在读取模型列表…" />
       ) : tab === 'models' ? (
         <ModelsTab catalog={catalog} location={location} preferredBundleId={preferredBundleId} componentFocus={componentFocus} />
       ) : tab === 'lora' ? (

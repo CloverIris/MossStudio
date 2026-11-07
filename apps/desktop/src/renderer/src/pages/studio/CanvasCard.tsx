@@ -1,4 +1,4 @@
-import { ImageOff, MoreHorizontal, RotateCcw } from 'lucide-react'
+import { ImageOff, MoreHorizontal } from 'lucide-react'
 import { useState } from 'react'
 import type { ImageResizeMode, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { Button, IconButton, cn } from '../../components/ui'
@@ -32,7 +32,7 @@ export function OutputImage({
         title={`图片文件找不到了：${path}`}
         className="flex size-full items-center justify-center px-3 text-center text-caption text-ink-2"
       >
-        {compact ? <ImageOff className="size-4 text-ink-3" aria-label="图片文件找不到了" /> : '图片文件找不到了'}
+        {compact ? <ImageOff className="size-4 text-ink-3" aria-label="图片文件找不到了" strokeWidth={1.6} /> : '图片文件找不到了'}
       </span>
     )
   }
@@ -173,7 +173,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
               aria-expanded={menu['aria-expanded']}
               aria-haspopup="menu"
             >
-              <MoreHorizontal className="size-4" />
+              <MoreHorizontal className="size-4" strokeWidth={1.6} />
             </IconButton>
           )}
         >
@@ -194,7 +194,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
                     props.onShowActivity()
                   }}
                 >
-                  在活动中查看
+                  查看详情
                 </MenuItem>
               ) : null}
               <MenuItem
@@ -325,27 +325,27 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             <span data-card-progress className="min-w-0 flex-1 truncate text-ink">
               {view.detail}
             </span>
-            <button
-              type="button"
+            <Button
+              tone="ghost"
+              size="xs"
               onClick={(event) => {
                 event.stopPropagation()
                 props.onShowActivity()
               }}
-              className="shrink-0 text-ink-2 underline-offset-2 hover:text-ink hover:underline"
             >
-              详情
-            </button>
+              查看详情
+            </Button>
             {canvas.jobId ? (
-              <button
-                type="button"
+              <Button
+                tone="ghost"
+                size="xs"
                 onClick={(event) => {
                   event.stopPropagation()
                   props.onCancel()
                 }}
-                className="shrink-0 text-ink underline underline-offset-2"
               >
                 取消
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : outputs.length > 0 ? (
@@ -363,7 +363,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
                 }}
                 className={cn(
                   'size-8 shrink-0 overflow-hidden rounded-[4px] bg-well-strong',
-                  index === shown && outputs.length > 1 && 'ring-2 ring-ink ring-offset-2 ring-offset-board',
+                  index === shown && outputs.length > 1 && 'ring-2 ring-accent ring-offset-2 ring-offset-board',
                 )}
               >
                 <OutputImage path={output.path} alt="" compact />
@@ -383,9 +383,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             ) : null}
             <span className="flex-1" />
             <Button
-              tone="secondary"
-              size="sm"
-              className="h-7 px-2.5"
+              size="xs"
               disabled={!props.rerun.ok}
               title={props.rerun.reason}
               onClick={(event) => {
@@ -395,9 +393,9 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             >
               换个种子
             </Button>
-            <IconButton
-              label={`重新生成 ${canvas.title}`}
-              className="size-7"
+            <Button
+              size="xs"
+              aria-label={`重新生成 ${canvas.title}`}
               disabled={!props.rerun.ok}
               title={props.rerun.reason ?? '用同样的参数和种子再生成一次'}
               onClick={(event) => {
@@ -405,15 +403,13 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
                 props.onRerun('same')
               }}
             >
-              <RotateCcw className="size-3.5" />
-            </IconButton>
+              重新生成
+            </Button>
           </>
         ) : view.state === 'failed' ? (
           <>
             <Button
-              tone="secondary"
-              size="sm"
-              className="h-7 px-2.5"
+              size="xs"
               aria-label={`重试 ${canvas.title}`}
               disabled={!props.rerun.ok}
               title={props.rerun.reason}
@@ -427,22 +423,19 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             {canvas.jobId ? (
               <Button
                 tone="ghost"
-                size="sm"
-                className="h-7 px-2.5"
+                size="xs"
                 onClick={(event) => {
                   event.stopPropagation()
                   props.onShowActivity()
                 }}
               >
-                查看原因
+                查看详情
               </Button>
             ) : null}
           </>
         ) : view.state === 'canceled' || view.state === 'lost' || view.state === 'succeeded' ? (
           <Button
-            tone="secondary"
-            size="sm"
-            className="h-7 px-2.5"
+            size="xs"
             aria-label={`重新生成 ${canvas.title}`}
             disabled={!props.rerun.ok}
             title={props.rerun.reason}

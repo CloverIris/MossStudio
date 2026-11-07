@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { EngineFeatures, ProjectCanvas } from '@shared/types'
+import { Notice } from '../../components/common/Notice'
 import { Segmented, Select, Switch } from '../../components/ui'
 import { FieldLabel, OptionalNumberInput, SliderField } from './InputControls'
 import { percent } from './links'
@@ -45,7 +46,7 @@ export function SamplingSection({
 
   return (
     <div className="flex flex-col gap-5" data-sampling-section>
-      {features === null ? <p className="text-caption text-ink-2">没有可用的引擎，采样设置暂时不能改。</p> : null}
+      {features === null ? <Notice>引擎准备好后才能改采样设置。</Notice> : null}
 
       {showSamplers ? (
         <>
@@ -88,7 +89,7 @@ export function SamplingSection({
         <section className="flex flex-col gap-2.5" data-hires>
           <div className="flex items-center justify-between gap-2">
             <span className="flex flex-col">
-              <span className="text-caption font-semibold text-ink-2">高清修复</span>
+              <FieldLabel>高清修复</FieldLabel>
               <span className="text-caption text-ink-2">先出图，再放大补细节</span>
             </span>
             <Switch

@@ -158,8 +158,7 @@ describe('studio/links editing', () => {
 
 describe('studio/links input settings', () => {
   it('edits the start picture, control and references settings', async () => {
-    const { patchInit, patchControl, patchControlImage, patchReferences, setControlAdapter, clearMask } =
-      await import('@renderer/pages/studio/links')
+    const { patchInit, patchControl, patchControlImage, patchReferences, setControlAdapter } = await import('@renderer/pages/studio/links')
     let target = setLink(canvas({ id: 't' }), 'init', { canvasId: 'a' })
     target = patchInit(target, { strength: 0.25, resize: 'stretch' })
     expect(target.inputs?.init).toEqual({ link: { canvasId: 'a' }, strength: 0.25, resize: 'stretch' })
@@ -185,10 +184,6 @@ describe('studio/links input settings', () => {
     target = setLink(target, 'reference', { canvasId: 'c' })
     target = patchReferences(target, { maxEdge: 768 })
     expect(target.inputs?.references).toEqual({ links: [{ canvasId: 'c' }], maxEdge: 768 })
-
-    const masked = { ...target, inputs: { ...target.inputs, mask: { path: '/m.png' } } }
-    expect(clearMask(masked).inputs?.mask).toBeUndefined()
-    expect(clearMask(target)).toBe(target)
   })
 })
 

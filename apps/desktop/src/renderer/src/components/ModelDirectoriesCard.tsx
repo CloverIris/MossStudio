@@ -1,17 +1,18 @@
-import { FolderSearch, Sparkles } from 'lucide-react'
+import { FolderPlus, FolderSearch, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { ModelDirectories, ModelDirectoryId, ModelScanResult, ScannedModel, Settings } from '@shared/types'
 import { call, onEvent } from '../lib/api'
 import { sizeText } from '../pages/models/logic'
-import { Button, Group, Modal, Pill, Row, Spinner, cn, useToast } from './ui'
+import { Notice } from './common/Notice'
+import { Button, EmptyState, Group, Modal, Pill, Row, Spinner, cn, useToast } from './ui'
 
-const roles: Array<{ key: ModelDirectoryId; label: string; hint: string }> = [
-  { key: 'dit', label: '主模型', hint: '跟随模型根目录' },
-  { key: 'textEncoder', label: '文本编码器', hint: '跟随模型根目录' },
-  { key: 'vae', label: 'VAE', hint: '跟随模型根目录' },
-  { key: 'adapters', label: 'LoRA', hint: '跟随模型根目录' },
-  { key: 'support', label: '运行配置', hint: '跟随模型根目录' },
+const roles: Array<{ key: ModelDirectoryId; label: string }> = [
+  { key: 'dit', label: '主模型' },
+  { key: 'textEncoder', label: '文本编码器' },
+  { key: 'vae', label: 'VAE' },
+  { key: 'adapters', label: 'LoRA' },
+  { key: 'support', label: '运行配置' },
 ]
 
 const roleLabel: Record<ScannedModel['role'], string> = {
@@ -24,10 +25,11 @@ const roleLabel: Record<ScannedModel['role'], string> = {
 }
 
 /**
- * Directory management for models, shown under 模型 › 高级: the root folder,
- * per-part folders, "use files I already have" (scan + register) and cleanup.
+ * Directory management for models, shown under 模型 › 高级: per-part folders,
+ * "use files I already have" (scan + add) and cleanup. The model folder itself
+ * is shown once, under 存储位置 on the same page, and changed in 设置 › 存储.
  * Selecting a folder only scans it; nothing is copied or created until the
- * user registers a file.
+ * user adds a file.
  */
 export function ModelDirectoriesCard(): React.JSX.Element {
   const toast = useToast()
@@ -71,7 +73,6 @@ export function ModelDirectoriesCard(): React.JSX.Element {
   const runScan = useCallback(
     async (directory?: string) => {
       setBusy('scan')
-      setError(null)
       try {
         const result = await call<ModelScanResult & { canceled?: boolean }>(Ipc.modelsScan, directory ? { directory } : {})
         if (result.canceled) return
@@ -84,25 +85,13 @@ export function ModelDirectoriesCard(): React.JSX.Element {
         setSelected(preselect)
         if (!result.candidates.length) toast.push('这个目录里没有找到模型文件', 'info')
       } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause)
-        setError(message)
-        toast.push(message, 'error')
+        toast.push(cause instanceof Error ? cause.message : String(cause), 'error')
       } finally {
         setBusy(null)
       }
     },
     [toast],
   )
-
-  const chooseRoot = useCallback(async () => {
-    try {
-      const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: '选择模型根目录' })
-      if (!path) return
-      if (await persist({ modelsRoot: path })) void runScan(path)
-    } catch (cause) {
-      toast.push(cause instanceof Error ? cause.message : String(cause), 'error')
-    }
-  }, [persist, runScan, toast])
 
   const directories: ModelDirectories = settings?.modelDirectories ?? {
     dit: null,
@@ -115,7 +104,7 @@ export function ModelDirectoriesCard(): React.JSX.Element {
   const chooseRole = useCallback(
     async (key: ModelDirectoryId) => {
       try {
-        const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: '选择目录' })
+        const path = await call<string | null>(Ipc.pickDialog, { kind: 'folder', title: '选择文件夹' })
         if (!path) return
         const next = { ...directories, [key]: path }
         if (await persist({ modelDirectories: next })) void runScan(path)
@@ -167,14 +156,14 @@ export function ModelDirectoriesCard(): React.JSX.Element {
         ...(candidate.layout === 'unknown' ? {} : { layout: candidate.layout }),
       }))
     if (!items.length) {
-      toast.push('先勾选要登记的模型', 'info')
+      toast.push('先勾选要添加的模型', 'info')
       return
     }
     setBusy('scan')
     try {
       const result = await call<{ added: number; updated: number; missing: string[] }>(Ipc.modelsRegisterScan, { items })
       toast.push(
-        `已登记 ${result.added + result.updated} 个模型` + (result.missing.length ? `，${result.missing.length} 个文件已不存在` : ''),
+        `已添加 ${result.added + result.updated} 个模型` + (result.missing.length ? `，${result.missing.length} 个文件已不存在` : ''),
         result.missing.length ? 'info' : 'success',
       )
       setScan(null)
@@ -186,26 +175,41 @@ export function ModelDirectoriesCard(): React.JSX.Element {
     }
   }, [scan, selected, toast])
 
-  const root = settings?.modelsRoot?.trim() || ''
-
   return (
     <>
+      {error ? (
+        <Notice
+          tone="danger"
+          className="mb-2"
+          action={
+            <Button
+              size="xs"
+              onClick={() => {
+                setError(null)
+                void load()
+              }}
+            >
+              重试
+            </Button>
+          }
+        >
+          读不到模型文件夹的设置：{error}
+        </Notice>
+      ) : null}
       <Group data-model-directories>
-        <Row title="模型根目录" description={root || '应用数据目录中的 models 文件夹'}>
-          <Button tone="secondary" disabled={busy !== null} onClick={() => void chooseRoot()}>
-            更改
-          </Button>
-        </Row>
-        <Row title="使用已有的模型文件" description="选择一个文件夹（例如 ComfyUI 的 models），只读取、不复制，选好的文件会登记到模型库。">
+        <Row
+          title="添加文件夹里的模型文件"
+          description="选择一个文件夹（例如 ComfyUI 的 models），挑出里面的模型文件添加到模型库。文件留在原处，不复制、不移动。"
+        >
           <Button tone="secondary" disabled={busy !== null} onClick={() => void runScan()} data-scan-models>
-            {busy === 'scan' ? <Spinner /> : <FolderSearch className="size-4" strokeWidth={1.6} />}
+            {busy === 'scan' ? <Spinner /> : <FolderPlus className="size-4" strokeWidth={1.6} />}
             选择文件夹
           </Button>
         </Row>
         {roles.map((role) => {
           const path = settings?.modelDirectories?.[role.key] ?? ''
           return (
-            <Row key={role.key} title={`${role.label}目录`} description={path || role.hint}>
+            <Row key={role.key} title={`${role.label}文件夹`} description={path || '跟随模型文件夹'}>
               {path ? (
                 <Button tone="ghost" disabled={busy !== null} onClick={() => void clearRole(role.key)}>
                   恢复默认
@@ -217,14 +221,13 @@ export function ModelDirectoriesCard(): React.JSX.Element {
             </Row>
           )
         })}
-        <Row title="清理空文件夹" description="删除模型目录里下载中断后留下的空文件夹。">
+        <Row title="清理空文件夹" description="删除模型文件夹里下载中断后留下的空文件夹。">
           <Button tone="secondary" disabled={busy !== null} onClick={() => void cleanup()}>
             {busy === 'clean' ? <Spinner /> : <Sparkles className="size-4" strokeWidth={1.6} />}
             清理
           </Button>
         </Row>
       </Group>
-      {error ? <p className="px-1 text-caption text-danger">{error}</p> : null}
 
       <Modal
         open={scan !== null}
@@ -240,7 +243,7 @@ export function ModelDirectoriesCard(): React.JSX.Element {
               取消
             </Button>
             <Button tone="primary" size="md" disabled={busy !== null || selected.size === 0} onClick={() => void register()}>
-              登记到模型库
+              添加到模型库
             </Button>
           </>
         }
@@ -281,10 +284,15 @@ export function ModelDirectoriesCard(): React.JSX.Element {
                 )
               })}
               {!scan.candidates.length ? (
-                <p className="py-6 text-center text-ui text-ink-2">没有找到能识别的模型文件。确认文件夹里是 .safetensors 或 .gguf 权重。</p>
+                <EmptyState
+                  size="section"
+                  icon={<FolderSearch className="size-6" strokeWidth={1.6} />}
+                  title="没有找到能识别的模型文件"
+                  description="确认文件夹里是 .safetensors 或 .gguf 权重。"
+                />
               ) : null}
             </div>
-            <p className="text-caption text-ink-2">LoRA 请在「LoRA」里导入。登记不会改动原文件，删除登记也不会删除文件。</p>
+            <p className="text-caption text-ink-2">LoRA 请在「LoRA」里导入。添加不会改动原文件，之后从模型库移除也不会删除文件。</p>
           </div>
         ) : null}
       </Modal>

@@ -6,7 +6,7 @@ import { ACTIVE_JOB_STATES, jobSummary, jobTitle, relative } from '../../lib/for
 import { useShell, type ActivityTab } from '../../lib/shell'
 import { useApp } from '../../store'
 import { cn } from '../cn'
-import { Button, EmptyState, IconButton, ProgressBar, Tabs, useToast } from '../ui'
+import { Button, ConfirmDialog, EmptyState, FieldLabel, IconButton, ProgressBar, Tabs, useToast } from '../ui'
 
 const isActive = (job: JobRecord): boolean => ACTIVE_JOB_STATES.has(job.state)
 
@@ -25,7 +25,7 @@ function JobLog({ job }: { job: JobRecord }): React.JSX.Element {
     <pre
       ref={box}
       data-job-log
-      className="selectable max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-well px-3 py-2.5 font-mono text-[12px] leading-5 text-ink-2"
+      className="selectable max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface px-3 py-2.5 font-mono text-[12px] leading-5 text-ink-2"
     >
       {lines?.length ? lines.map((line) => line.text).join('\n') : '还没有输出'}
     </pre>
@@ -45,10 +45,10 @@ function JobsTab(): React.JSX.Element {
     const open = focused === job.id
     const running = isActive(job)
     return (
-      <div key={job.id} data-job-row={job.id} className={cn('flex flex-col gap-2 rounded-lg px-3 py-2.5', open && 'bg-surface')}>
+      <div key={job.id} data-job-row={job.id} className={cn('flex flex-col gap-2 rounded-lg px-3 py-2.5', open && 'bg-well')}>
         <div className="flex items-start gap-3">
           <button type="button" aria-expanded={open} onClick={() => focusJob(open ? null : job.id)} className="min-w-0 flex-1 text-left">
-            <div className="truncate text-ui font-medium text-ink">{jobTitle(job)}</div>
+            <div className="truncate text-control text-ink">{jobTitle(job)}</div>
             <div className={cn('tabular mt-0.5 truncate text-caption', job.state === 'failed' ? 'text-danger' : 'text-ink-2')}>
               {jobSummary(job)}
             </div>
@@ -56,6 +56,7 @@ function JobsTab(): React.JSX.Element {
           {running ? (
             <Button
               tone="ghost"
+              size="xs"
               onClick={() => {
                 void cancelJob(job.id).catch((error: unknown) =>
                   toast.push(error instanceof Error ? error.message : String(error), 'error'),
@@ -80,17 +81,21 @@ function JobsTab(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-1">
       {active.map(row)}
-      {finished.length ? <div className="px-3 pb-1 pt-4 text-caption font-medium text-ink-2">已结束</div> : null}
+      {finished.length ? (
+        <FieldLabel as="h3" className="px-3 pb-1 pt-4">
+          已结束
+        </FieldLabel>
+      ) : null}
       {finished.map(row)}
     </div>
   )
 }
 
 const toneIcon: Record<AppNotification['tone'], React.JSX.Element> = {
-  info: <Info className="size-4 text-ink-2" aria-hidden="true" />,
-  success: <CheckCircle2 className="size-4 text-ok" aria-hidden="true" />,
-  warning: <AlertTriangle className="size-4 text-warn" aria-hidden="true" />,
-  error: <AlertCircle className="size-4 text-danger" aria-hidden="true" />,
+  info: <Info className="size-4 text-ink-2" aria-hidden="true" strokeWidth={1.6} />,
+  success: <CheckCircle2 className="size-4 text-ok" aria-hidden="true" strokeWidth={1.6} />,
+  warning: <AlertTriangle className="size-4 text-warn" aria-hidden="true" strokeWidth={1.6} />,
+  error: <AlertCircle className="size-4 text-danger" aria-hidden="true" strokeWidth={1.6} />,
 }
 
 function NotificationsTab(): React.JSX.Element {
@@ -108,11 +113,17 @@ function NotificationsTab(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-1">
       {notifications.map((item) => (
-        <div key={item.id} className={cn('flex gap-3 rounded-lg px-3 py-2.5', unreadOnOpen.has(item.id) && 'bg-surface')}>
+        <div key={item.id} data-unread={unreadOnOpen.has(item.id) || undefined} className="flex gap-3 rounded-lg px-3 py-2.5">
           <span className="mt-0.5 shrink-0">{toneIcon[item.tone]}</span>
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="truncate text-ui font-medium text-ink">{item.title}</span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-control text-ink">{item.title}</span>
+                {/* Unread is a dot, not a fill: fills mean selected (well) or a card (surface). */}
+                {unreadOnOpen.has(item.id) ? (
+                  <span role="img" aria-label="未读" className="size-1.5 shrink-0 rounded-full bg-accent" />
+                ) : null}
+              </span>
               <span className="shrink-0 text-caption text-ink-2">{relative(item.createdAt)}</span>
             </div>
             <p className="mt-0.5 text-caption text-ink-2 [overflow-wrap:anywhere]">{item.message}</p>
@@ -151,6 +162,7 @@ export function solutionTarget(solution: DiagnosticSolution): { route?: string; 
 }
 
 function ProblemsTab(): React.JSX.Element {
+  const [clearing, setClearing] = useState(false)
   const diagnostics = useApp((state) => state.diagnostics)
   const dismissDiagnostic = useApp((state) => state.dismissDiagnostic)
   const clearDiagnostics = useApp((state) => state.clearDiagnostics)
@@ -183,40 +195,51 @@ function ProblemsTab(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex justify-end px-1 pb-1">
-        <Button tone="ghost" onClick={() => void clearDiagnostics()}>
+        <Button tone="ghost-danger" size="xs" onClick={() => setClearing(true)}>
           全部清除
         </Button>
       </div>
+      <ConfirmDialog
+        open={clearing}
+        onClose={() => setClearing(false)}
+        title="清除所有问题？"
+        description="问题列表会清空；之后再出错时会重新出现。"
+        confirmLabel="全部清除"
+        onConfirm={() => {
+          setClearing(false)
+          void clearDiagnostics()
+        }}
+      />
       {diagnostics.map((diagnostic) => {
         const solutions = diagnostic.solutions.filter(
           (solution) => solutionTarget(solution) && (!solutionTarget(solution)?.job || diagnostic.jobId),
         )
         return (
-          <div key={diagnostic.id} data-problem={diagnostic.id} className="flex flex-col gap-2 rounded-lg bg-surface px-3.5 py-3">
+          <div key={diagnostic.id} data-problem={diagnostic.id} className="flex flex-col gap-2 rounded-lg bg-surface px-3 py-2.5">
             <div className="flex items-start gap-3">
               <span className="mt-0.5 shrink-0">
                 {diagnostic.severity === 'error' ? toneIcon.error : diagnostic.severity === 'warning' ? toneIcon.warning : toneIcon.info}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-ui font-medium text-ink">{diagnostic.title}</div>
+                {/* The time sits where every Activity list puts it: right of the title, ink-2. */}
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 text-control text-ink">{diagnostic.title}</span>
+                  <span className="tabular shrink-0 text-caption text-ink-2">
+                    {diagnostic.count > 1 ? `出现 ${diagnostic.count} 次 · ` : ''}
+                    {relative(diagnostic.lastAt)}
+                  </span>
+                </div>
                 <p className="mt-0.5 text-caption text-ink-2 [overflow-wrap:anywhere]">{diagnostic.explain}</p>
-                <p className="tabular mt-1 text-caption text-ink-3">
-                  {diagnostic.count > 1 ? `出现 ${diagnostic.count} 次 · ` : ''}
-                  {relative(diagnostic.lastAt)}
-                </p>
               </div>
               <IconButton label="忽略" className="-mr-1 -mt-1 size-7" onClick={() => void dismissDiagnostic(diagnostic.id)}>
-                <X className="size-3.5" />
+                <X className="size-3.5" strokeWidth={1.6} />
               </IconButton>
             </div>
             {solutions.length ? (
               <div className="flex flex-wrap gap-2 pl-7">
                 {solutions.map((solution, index) => (
-                  <Button
-                    key={`${solution.action}-${index}`}
-                    tone={index === 0 ? 'primary' : 'secondary'}
-                    onClick={() => void apply(diagnostic, solution)}
-                  >
+                  // One list, many cards: no card's fix outranks another's, so none is primary.
+                  <Button key={`${solution.action}-${index}`} onClick={() => void apply(diagnostic, solution)}>
                     {solution.label}
                   </Button>
                 ))}
@@ -263,7 +286,7 @@ export function ActivityPanel(): React.JSX.Element | null {
       <div className="flex items-center justify-between px-5 pb-3 pt-4">
         <h2 className="text-section font-semibold">活动</h2>
         <IconButton label="关闭活动" onClick={close}>
-          <X className="size-4" />
+          <X className="size-4" strokeWidth={1.6} />
         </IconButton>
       </div>
       <Tabs<ActivityTab>

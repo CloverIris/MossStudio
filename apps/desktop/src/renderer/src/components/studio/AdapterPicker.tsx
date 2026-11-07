@@ -1,4 +1,5 @@
 import { Check, FilePlus2, Search } from 'lucide-react'
+import { Notice } from '../common/Notice'
 import { useMemo, useState } from 'react'
 import type { AdapterEntry, CanvasAdapter } from '@shared/types'
 import { adapterStatuses, isSelectableAdapter } from '@shared/adapters'
@@ -58,11 +59,11 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
       width="max-w-xl"
       footer={
         <>
-          <Button tone="ghost" size="md" onClick={() => void importFiles()} disabled={importing}>
-            {importing ? <Spinner className="size-4" /> : <FilePlus2 className="size-4" />}
+          <Button tone="secondary" size="md" onClick={() => void importFiles()} disabled={importing}>
+            {importing ? <Spinner className="size-4" /> : <FilePlus2 className="size-4" strokeWidth={1.6} />}
             导入文件
           </Button>
-          <Button tone="primary" size="md" data-dialog-initial-focus onClick={onClose}>
+          <Button tone="ghost" size="md" data-dialog-initial-focus onClick={onClose}>
             完成
           </Button>
         </>
@@ -70,7 +71,11 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
     >
       <div className="flex flex-col gap-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden="true" />
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3"
+            aria-hidden="true"
+            strokeWidth={1.6}
+          />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -111,7 +116,7 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
                           active ? 'bg-accent text-on-accent' : 'bg-well-strong',
                         )}
                       >
-                        {active ? <Check className="size-3" aria-hidden="true" /> : null}
+                        {active ? <Check className="size-3" aria-hidden="true" strokeWidth={1.6} /> : null}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-control text-ink">{entry.name}</span>
@@ -127,16 +132,18 @@ export function AdapterPicker({ open, selected, catalog, onClose, onToggle, onIm
         </div>
 
         {orphans.length ? (
-          <div className="flex flex-col gap-2 rounded-lg bg-warn-soft px-3 py-2.5">
-            <p className="text-caption text-warn">下面的 LoRA 已经不在模型库里，生成前需要移除：</p>
-            <div className="flex flex-wrap gap-1.5">
-              {orphans.map((row) => (
-                <Button key={row.adapter.id} tone="secondary" size="sm" className="h-7 px-2.5" onClick={() => onToggle(row.adapter.id)}>
-                  移除「{row.name}」
-                </Button>
-              ))}
+          <Notice tone="warn">
+            <div className="flex flex-col gap-2">
+              <span>下面的 LoRA 已经不在模型库里，生成前需要移除：</span>
+              <div className="flex flex-wrap gap-1.5">
+                {orphans.map((row) => (
+                  <Button key={row.adapter.id} size="xs" onClick={() => onToggle(row.adapter.id)}>
+                    移除「{row.name}」
+                  </Button>
+                ))}
+              </div>
             </div>
-          </div>
+          </Notice>
         ) : null}
 
         <p className="text-caption text-ink-2">

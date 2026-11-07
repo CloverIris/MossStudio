@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Ipc } from '@shared/channels'
 import type { SshAuthMethod } from '@shared/types'
 import { call } from '../../lib/api'
-import { Advanced, Button, Field, IconButton, Input, Modal, Segmented, Spinner, Switch, useToast } from '../../components/ui'
+import { Advanced, Button, Field, FieldLabel, IconButton, Input, Modal, Segmented, Spinner, Switch, useToast } from '../../components/ui'
 import { errorText } from './fields'
 import { validateHostForm, type HostForm, type HostFormErrors } from './hostForm'
 
@@ -128,7 +128,7 @@ export function HostDialog({
           </Field>
         </div>
         <div className="flex flex-col gap-2">
-          <span className="text-caption font-medium text-ink-2">登录方式</span>
+          <FieldLabel>登录方式</FieldLabel>
           <Segmented<SshAuthMethod>
             label="登录方式"
             block
@@ -150,7 +150,7 @@ export function HostDialog({
                   onChange={(event) => set('identityFile', event.target.value)}
                 />
                 <IconButton label="选择私钥文件" onClick={() => void pickKey()}>
-                  <FolderOpen className="size-4" />
+                  <FolderOpen className="size-4" strokeWidth={1.6} />
                 </IconButton>
               </div>
             </Field>

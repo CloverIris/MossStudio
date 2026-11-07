@@ -322,7 +322,7 @@ function defaultHandlers(): Map<string, Handler> {
 
   // Models & downloads
   h.set(Ipc.modelsCatalog, (_, { state }) => state.catalog)
-  // 在原位置使用这个模型文件夹: like main with a MOSS-Image SFT diffusers folder picked
+  // 添加整个模型文件夹: like main with a MOSS-Image SFT diffusers folder picked
   // (state.localModelFolder; null = the dialog was canceled). Its bundle's components become ready.
   h.set(Ipc.modelsImportFolder, (_, { state }) => {
     const folder = state.localModelFolder

@@ -1,6 +1,6 @@
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
-import { Button, ConfirmDialog, Field, Input, Modal } from '../../components/ui'
+import { Button, ConfirmDialog, Field, FieldLabel, Input, Modal } from '../../components/ui'
 import { MenuGap, MenuItem, Popover } from '../../components/common/Popover'
 import { relative } from '../../lib/format'
 import type { StudioProject } from './useStudioProject'
@@ -29,7 +29,7 @@ export function ProjectSwitcher({ project }: { project: StudioProject }): React.
             className="inline-flex h-7 max-w-[260px] items-center gap-1.5 rounded-md px-2.5 text-ui font-semibold text-ink transition-colors hover:bg-well"
           >
             <span className="truncate">{project.projectName}</span>
-            <ChevronDown className="size-3.5 shrink-0 text-ink-2" aria-hidden="true" />
+            <ChevronDown className="size-3.5 shrink-0 text-ink-2" aria-hidden="true" strokeWidth={1.6} />
           </button>
         )}
       >
@@ -65,7 +65,7 @@ export function ProjectSwitcher({ project }: { project: StudioProject }): React.
             {others.length ? (
               <>
                 <MenuGap />
-                <div className="px-2.5 pb-1 text-caption font-medium text-ink-2">切换到</div>
+                <FieldLabel className="px-2.5 pb-1">切换到</FieldLabel>
                 <div className="flex max-h-[320px] flex-col gap-0.5 overflow-y-auto">
                   {others.map((item) => (
                     <MenuItem

@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { cn } from '../cn'
 
 /**
- * A small raised panel anchored under its trigger (menus, pickers). Closes on
- * Escape, on a click outside, and when an item calls `close`.
+ * A small raised panel anchored under its trigger (menus, pickers, small
+ * status panels). Closes on Escape, on a click outside, and when an item calls
+ * `close`. Pass `open` and `onOpenChange` when something else also opens it.
  */
 export function Popover({
   trigger,
@@ -11,6 +12,9 @@ export function Popover({
   align = 'start',
   className,
   label,
+  role = 'menu',
+  open: controlled,
+  onOpenChange,
 }: {
   /** Renders the trigger; spread `props` onto the button that opens the panel. */
   trigger: (props: {
@@ -24,8 +28,20 @@ export function Popover({
   align?: 'start' | 'center' | 'end'
   className?: string
   label?: string
+  /** `dialog` for a panel of information and buttons rather than a list of choices. */
+  role?: 'menu' | 'dialog'
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
+  const [uncontrolled, setUncontrolled] = useState(false)
+  const open = controlled ?? uncontrolled
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (controlled === undefined) setUncontrolled(next)
+      onOpenChange?.(next)
+    },
+    [controlled, onOpenChange],
+  )
   const root = useRef<HTMLDivElement>(null)
   const id = useId()
 
@@ -46,15 +62,15 @@ export function Popover({
       window.removeEventListener('pointerdown', onPointer, true)
       window.removeEventListener('keydown', onKey, true)
     }
-  }, [open])
+  }, [open, setOpen])
 
   return (
     <div ref={root} className="relative inline-flex">
-      {trigger({ open, toggle: () => setOpen((value) => !value), 'aria-expanded': open, 'aria-controls': id, 'aria-haspopup': 'menu' })}
+      {trigger({ open, toggle: () => setOpen(!open), 'aria-expanded': open, 'aria-controls': id, 'aria-haspopup': role })}
       {open ? (
         <div
           id={id}
-          role="menu"
+          role={role}
           aria-label={label}
           className={cn(
             'absolute top-full z-50 mt-1.5 flex min-w-[200px] flex-col gap-0.5 rounded-xl bg-raised p-1.5 text-ink shadow-float',

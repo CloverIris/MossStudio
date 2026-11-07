@@ -54,7 +54,8 @@ export function compareEngineTags(a: string, b: string): number {
 export function engineDisplayVersion(version: Pick<LocalEngineVersion, 'name' | 'source'> | null | undefined): string | null {
   if (!version) return null
   const stamp = parseEngineStamp(version.name)
-  if (!stamp) return version.name
+  // An unstamped folder named like a tag (v2.1.1) reads like a release: no leading "v".
+  if (!stamp) return version.name.replace(/^v(?=\d)/i, '')
   if (stamp.channel === 'dev') return `开发版 ${stamp.tag}`
   return stamp.tag.replace(/^v/i, '')
 }

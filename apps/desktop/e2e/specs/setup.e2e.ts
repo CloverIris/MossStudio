@@ -56,7 +56,7 @@ describe('first run', () => {
 
     await expect.poll(() => hash(page)).toBe('#/studio')
     expect((await app.calls<{ onboardingState?: string }>('settings:update')).at(-1)).toEqual({ onboardingState: 'active' })
-    const blockers = page.locator('li', { has: page.locator('span') }).filter({ hasText: /引擎|模型/ })
+    const blockers = page.locator('li').filter({ hasText: /引擎|模型/ })
     await expect.poll(() => page.getByText('引擎正在安装 · 40%', { exact: true }).isVisible()).toBe(true)
     // 输入 gives the same reason as the footer, not "no engine".
     await expect.poll(() => page.getByText('引擎正在安装 · 40%，就绪后才能添加图片').isVisible()).toBe(true)
@@ -174,7 +174,7 @@ describe('first run', () => {
     expect((await app.calls<{ onboardingState?: string }>('settings:update')).at(-1)).toEqual({ onboardingState: 'dismissed' })
     await expect.poll(() => page.getByText('引擎未就绪', { exact: true }).isVisible()).toBe(true)
     // The readiness line's action goes where the engine is managed now that setup was dismissed.
-    await page.getByText('引擎未就绪', { exact: true }).locator('..').getByRole('button', { name: '去设置' }).click()
+    await page.locator('li', { hasText: '引擎未就绪' }).getByRole('button', { name: '去设置' }).click()
     await expect.poll(() => hash(page)).toBe('#/settings/devices')
   })
 })

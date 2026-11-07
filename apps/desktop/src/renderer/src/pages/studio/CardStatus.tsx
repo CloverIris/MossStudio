@@ -120,12 +120,5 @@ export function StatusOverlay({ view, hasPicture }: { view: CardJobView; hasPict
       </div>
     )
   }
-  if (view.state === 'canceled' && view.outputs.length === 0) {
-    return (
-      <div data-card-status="canceled" className="absolute inset-0 flex items-center justify-center text-caption text-ink-2">
-        已取消
-      </div>
-    )
-  }
   return null
 }

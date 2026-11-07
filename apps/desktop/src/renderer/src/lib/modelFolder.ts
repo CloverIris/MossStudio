@@ -1,4 +1,4 @@
-/** What `models:import-folder` (在原位置使用这个模型文件夹) answers. */
+/** What `models:import-folder` (添加整个模型文件夹) answers. */
 export interface ImportFolderResult {
   canceled: boolean
   added: number
@@ -14,6 +14,6 @@ export function importFolderMessage(result: ImportFolderResult): string {
     const names = result.folders.join('、')
     return result.added ? `已在原位置使用 ${names}` : `${names} 已经在用了`
   }
-  if (result.added) return `已登记 ${result.added} 个模型文件${result.duplicates ? `，${result.duplicates} 个重复的已跳过` : ''}`
-  return '这个文件夹里的文件都已经登记过'
+  if (result.added) return `已添加 ${result.added} 个模型文件${result.duplicates ? `，${result.duplicates} 个重复的已跳过` : ''}`
+  return '这个文件夹里的文件都已经添加过'
 }

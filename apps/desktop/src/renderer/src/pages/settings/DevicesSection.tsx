@@ -7,7 +7,19 @@ import { engineDownloadActive, engineDownloadLabel, engineDownloadPercent, engin
 import { featureVisibility } from '../../lib/features'
 import { useGpuInventory } from '../../lib/useGpuInventory'
 import { useApp } from '../../store'
-import { Advanced, Button, Group, IconButton, ProgressBar, Row, Section, Spinner, StatusDot, useToast } from '../../components/ui'
+import {
+  Advanced,
+  Button,
+  Group,
+  IconButton,
+  LoadingRow,
+  ProgressBar,
+  Row,
+  Section,
+  Spinner,
+  StatusDot,
+  useToast,
+} from '../../components/ui'
 import { gpuEmptyMessage, gpuEngineInfo, gpuRows, savedGpuMissing } from './devicesModel'
 import { EngineAdvanced } from './EngineAdvanced'
 import { SectionBody, SwitchRow, useSaveSettings } from './fields'
@@ -26,11 +38,6 @@ export function DevicesSection(): React.JSX.Element {
     <SectionBody>
       <GpuGroup gpu={gpu} engine={engine} />
       <EngineGroup engine={engine} />
-      <Group>
-        <Advanced summary="显存模式、性能档位、每块 GPU 的引擎、渠道、版本、自定义引擎、引擎目录">
-          <EngineAdvanced engine={engine} inventory={gpu.inventory} />
-        </Advanced>
-      </Group>
       {remoteHosts ? (
         <RemoteHosts />
       ) : (
@@ -42,6 +49,12 @@ export function DevicesSection(): React.JSX.Element {
           </Group>
         </Section>
       )}
+      {/* 高级 closes the page, as on every other settings page. */}
+      <Group>
+        <Advanced summary="显存模式、性能档位、每块显卡的引擎、渠道、版本、自定义引擎、引擎目录">
+          <EngineAdvanced engine={engine} inventory={gpu.inventory} />
+        </Advanced>
+      </Group>
     </SectionBody>
   )
 }
@@ -67,28 +80,32 @@ function GpuGroup({ gpu, engine }: { gpu: ReturnType<typeof useGpuInventory>; en
 
   return (
     <Section
-      title="GPU"
+      title="显卡"
       description={
         rows.length > 1
           ? automatic
-            ? '自动把任务交给空闲且更快的 GPU。也可以固定一块作为默认。'
-            : '新的任务默认交给这块 GPU。'
+            ? '自动把任务交给空闲且更快的显卡。也可以固定一块作为默认。'
+            : '新的任务默认交给这块显卡。'
           : undefined
       }
       actions={
         <IconButton label="重新检测显卡" onClick={() => void redetect()} disabled={redetecting || gpu.refreshing}>
-          <RefreshCw className={redetecting || gpu.refreshing ? 'size-4 animate-spin' : 'size-4'} />
+          <RefreshCw className={redetecting || gpu.refreshing ? 'size-4 animate-spin' : 'size-4'} strokeWidth={1.6} />
         </IconButton>
       }
     >
       <Group>
         {rows.map((row) => (
+          // Status as on 远程主机 and 环境检查: a dot before the name, the word first in the line under it.
           <Row
             key={row.uuid}
+            leading={<StatusDot status={row.status} />}
             title={row.name}
             description={
               <span className="flex flex-col gap-0.5">
-                <span>{[row.detail, row.engine ? `引擎：${row.engine}` : null, row.reason].filter(Boolean).join(' · ')}</span>
+                <span>
+                  {[row.statusLabel, row.detail, row.engine ? `引擎：${row.engine}` : null, row.reason].filter(Boolean).join(' · ')}
+                </span>
                 {row.tip ? <span className="text-caption text-ink-2">{row.tip}</span> : null}
               </span>
             }
@@ -96,24 +113,23 @@ function GpuGroup({ gpu, engine }: { gpu: ReturnType<typeof useGpuInventory>; en
             {row.isDefault || rows.length === 1 ? null : (
               <Button onClick={() => void save({ gpuSelection: { uuid: row.uuid } })}>设为默认</Button>
             )}
-            <span className="flex items-center gap-1.5 text-caption text-ink-2">
-              <StatusDot status={row.status} />
-              {row.statusLabel}
-            </span>
           </Row>
         ))}
-        {rows.length === 0 ? (
+        {rows.length === 0 && !gpu.inventory && engine.plan?.os !== 'macos' ? (
+          <LoadingRow label="正在检测显卡…" className="px-3.5" />
+        ) : null}
+        {rows.length === 0 && (gpu.inventory || engine.plan?.os === 'macos') ? (
           <Row
-            title={engine.plan?.os === 'macos' ? '本机不能运行引擎' : gpu.inventory ? '没有可用的显卡' : '正在检测显卡…'}
+            title={engine.plan?.os === 'macos' ? '本机不能运行引擎' : '没有可用的显卡'}
             description={engine.plan?.blocked ?? (gpu.inventory ? gpuEmptyMessage(gpu.inventory) : undefined)}
           />
         ) : null}
         {missing ? (
-          <Row title="之前选的默认 GPU 没有连接" description="连接后会继续使用它；现在可以改为自动选择。">
+          <Row title="之前选的默认显卡没有连接" description="连接后会继续使用它；现在可以改为自动选择。">
             <Button onClick={() => void save({ gpuSelection: 'auto' })}>改为自动</Button>
           </Row>
         ) : !automatic && rows.length > 1 ? (
-          <Row title="自动选择" description="不固定默认 GPU，由 MossStudio 按空闲程度分配。">
+          <Row title="自动选择" description="不固定默认显卡，由 MossStudio 按空闲程度分配。">
             <Button onClick={() => void save({ gpuSelection: 'auto' })}>改为自动</Button>
           </Row>
         ) : null}
@@ -190,7 +206,7 @@ function EngineGroup({ engine }: { engine: EngineState }): React.JSX.Element {
   if (installing) {
     action = (
       <IconButton label="取消安装" onClick={() => void engine.cancelInstall()}>
-        <X className="size-4" />
+        <X className="size-4" strokeWidth={1.6} />
       </IconButton>
     )
   } else if (!ready) {
@@ -207,7 +223,8 @@ function EngineGroup({ engine }: { engine: EngineState }): React.JSX.Element {
     )
   } else if (status?.kind === 'available') {
     action = (
-      <Button onClick={() => void update()} disabled={starting}>
+      // An available update is the same state as MossStudio's own: the same primary tone.
+      <Button tone="primary" onClick={() => void update()} disabled={starting}>
         {starting ? <Spinner /> : null}更新
       </Button>
     )

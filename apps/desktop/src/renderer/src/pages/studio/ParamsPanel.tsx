@@ -1,5 +1,6 @@
-import { Lock, LockOpen, Plus, X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { Lock, LockOpen, Plus } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Notice } from '../../components/common/Notice'
 import type { Catalog, GpuInventorySnapshot, ManagedHost, ProjectCanvas, Settings } from '@shared/types'
 import {
   ADAPTER_STRENGTH_MAX,
@@ -14,6 +15,7 @@ import {
   Advanced,
   Button,
   EmptyState,
+  FieldLabel,
   IconButton,
   Input,
   Kbd,
@@ -33,6 +35,7 @@ import {
   parseSeed,
   qualityFor,
   qualityPreset,
+  qualityLabel,
   sizePresetFor,
   type QualityId,
   type SizePresetId,
@@ -42,26 +45,12 @@ import { installedBundles, type Blocker, type BundleChoice } from './readiness'
 import { resizeCanvas } from './canvases'
 import { useApp } from '../../store'
 import { ImageCardPanel } from './ImageCardPanel'
+import { SliderField, SlotHeader, SlotRow } from './InputControls'
 import { InputsSection, type InputsWiring } from './InputsSection'
 import { SamplingSection } from './SamplingSection'
 import { samplingSummary } from './sampling'
 
 const SHORTCUT = typeof window !== 'undefined' && window.clover?.platform === 'darwin' ? '⌘ ↵' : 'Ctrl ↵'
-
-function Label({ children, value, htmlFor }: { children: ReactNode; value?: ReactNode; htmlFor?: string }): React.JSX.Element {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      {htmlFor ? (
-        <label htmlFor={htmlFor} className="text-caption font-semibold text-ink-2">
-          {children}
-        </label>
-      ) : (
-        <span className="text-caption font-semibold text-ink-2">{children}</span>
-      )}
-      {value !== undefined ? <span className="tabular text-caption text-ink-2">{value}</span> : null}
-    </div>
-  )
-}
 
 /** Commit-on-blur number field, so typing "1" on the way to "1024" is not clamped. */
 function DimensionInput({
@@ -206,14 +195,20 @@ function CanvasParams({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-5">
-        {readOnly ? (
-          <p className="mb-5 rounded-lg bg-well px-3 py-2.5 text-caption text-ink-2">
-            这是一次生成的结果，参数已固定。想改动就复制成新画面。
-          </p>
-        ) : null}
+        {readOnly ? <Notice className="mb-5">这是一次生成的结果，参数已固定。想改动就复制成新画面。</Notice> : null}
         <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-6">
           <section className="flex flex-col gap-2.5">
-            <Label htmlFor="studio-description">描述</Label>
+            {/* What the model is finally sent sits next to the description it is built from. */}
+            <FieldLabel
+              htmlFor="studio-description"
+              value={
+                <Button tone="ghost" size="xs" className="-mr-2" onClick={() => setPromptOpen(true)}>
+                  查看最终提示词
+                </Button>
+              }
+            >
+              描述
+            </FieldLabel>
             <Textarea
               id="studio-description"
               aria-label="描述"
@@ -228,7 +223,7 @@ function CanvasParams({
           {inputs && !readOnly ? <InputsSection canvas={canvas} onChange={onChange} wiring={inputs} blockers={blockers} /> : null}
 
           <section className="flex flex-col gap-2.5">
-            <Label htmlFor="studio-model">模型</Label>
+            <FieldLabel htmlFor="studio-model">模型</FieldLabel>
             <Select
               id="studio-model"
               value={bundle.bundle?.id ?? ''}
@@ -243,62 +238,48 @@ function CanvasParams({
               ))}
             </Select>
             {loraUnsupported && !adapterRows.length ? null : (
-              <div className="flex items-center justify-between">
-                <span className="text-ui text-ink-2">LoRA</span>
+              <SlotHeader title="LoRA" hint="叠加一种画风或角色">
                 {readOnly || loraUnsupported ? null : (
-                  <Button tone="ghost" size="sm" className="-mr-2 h-[26px] px-2" onClick={onOpenAdapters} data-adapter-picker>
-                    <Plus className="size-3.5" aria-hidden="true" />
+                  <Button tone="ghost" size="xs" className="-mr-2" onClick={onOpenAdapters} data-adapter-picker>
+                    <Plus className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
                     添加
                   </Button>
                 )}
-              </div>
+              </SlotHeader>
             )}
             {adapterRows.length ? (
-              <ul className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1">
                 {adapterRows.map(({ adapter, name, installed: present }) => (
-                  <li key={adapter.id} data-adapter-row={adapter.id} className="flex items-center gap-2 rounded-lg bg-well py-1 pl-3 pr-1">
-                    <span
-                      className={cn('min-w-0 flex-1 truncate text-ui', present ? 'text-ink' : 'text-warn')}
-                      title={present ? name : `${name}（找不到文件）`}
-                    >
-                      {name}
-                    </span>
-                    <input
-                      type="range"
-                      aria-label={`${name} 强度`}
+                  <SlotRow
+                    key={adapter.id}
+                    data-adapter-row={adapter.id}
+                    title={present ? name : `${name}（找不到文件）`}
+                    titleTone={present ? 'ink' : 'warn'}
+                    removeLabel={`移除 ${name}`}
+                    onRemove={readOnly ? undefined : () => setAdapters(adapters.filter((item) => item.id !== adapter.id))}
+                  >
+                    <SliderField
+                      label="强度"
+                      ariaLabel={`${name} 强度`}
                       min={ADAPTER_STRENGTH_MIN}
                       max={ADAPTER_STRENGTH_MAX}
                       step={ADAPTER_STRENGTH_STEP}
                       value={adapter.strength}
-                      onChange={(event) =>
+                      format={formatAdapterStrength}
+                      onChange={(value) =>
                         setAdapters(
-                          adapters.map((item) =>
-                            item.id === adapter.id ? { ...item, strength: clampAdapterStrength(Number(event.target.value)) } : item,
-                          ),
+                          adapters.map((item) => (item.id === adapter.id ? { ...item, strength: clampAdapterStrength(value) } : item)),
                         )
                       }
-                      className="w-[72px] shrink-0 accent-ink"
                     />
-                    <span className="tabular w-8 shrink-0 text-right text-caption text-ink-2">
-                      {formatAdapterStrength(adapter.strength)}
-                    </span>
-                    {readOnly ? null : (
-                      <IconButton
-                        label={`移除 ${name}`}
-                        className="size-7"
-                        onClick={() => setAdapters(adapters.filter((item) => item.id !== adapter.id))}
-                      >
-                        <X className="size-3.5" />
-                      </IconButton>
-                    )}
-                  </li>
+                  </SlotRow>
                 ))}
-              </ul>
+              </div>
             ) : null}
           </section>
 
           <section className="flex flex-col gap-2.5">
-            <Label value={`${canvas.width} × ${canvas.height}`}>尺寸</Label>
+            <FieldLabel value={`${canvas.width} × ${canvas.height}`}>尺寸</FieldLabel>
             <Segmented<SizePresetId>
               block
               label="尺寸"
@@ -338,7 +319,7 @@ function CanvasParams({
           </section>
 
           <section className="flex flex-col gap-2.5">
-            <Label value={quality === 'custom' ? `自定义 · ${canvas.steps} 步` : `${canvas.steps} 步`}>质量</Label>
+            <FieldLabel value={qualityLabel(canvas.steps)}>质量</FieldLabel>
             <Segmented<QualityId | 'custom'>
               block
               label="质量"
@@ -352,10 +333,10 @@ function CanvasParams({
             />
           </section>
 
-          <Advanced summary={advancedSummary} className="-mx-3.5">
+          <Advanced dense summary={advancedSummary} className="-mx-3.5">
             <div className="flex flex-col gap-5 px-3.5 pb-2 pt-2">
               <section className="flex flex-col gap-2">
-                <Label htmlFor="studio-seed">种子</Label>
+                <FieldLabel htmlFor="studio-seed">种子</FieldLabel>
                 <div className="flex items-center gap-1.5">
                   <Input
                     id="studio-seed"
@@ -375,7 +356,7 @@ function CanvasParams({
                     className={cn(seedLocked && 'bg-well-strong text-ink')}
                     onClick={() => onChange((current) => ({ ...current, seedLocked: !isSeedLocked(current) }))}
                   >
-                    {seedLocked ? <Lock className="size-4" /> : <LockOpen className="size-4" />}
+                    {seedLocked ? <Lock className="size-4" strokeWidth={1.6} /> : <LockOpen className="size-4" strokeWidth={1.6} />}
                   </IconButton>
                 </div>
                 <p className="text-caption text-ink-2">
@@ -384,24 +365,21 @@ function CanvasParams({
               </section>
 
               <section className="flex flex-col gap-2">
-                <Label htmlFor="studio-cfg" value={canvas.cfg}>
-                  CFG
-                </Label>
-                <input
+                <SliderField
                   id="studio-cfg"
-                  type="range"
+                  label="CFG"
                   min={0}
                   max={10}
                   step={0.5}
                   value={canvas.cfg}
-                  onChange={(event) => onChange((current) => ({ ...current, cfg: Number(event.target.value) }))}
-                  className="w-full accent-ink"
+                  format={(value) => String(value)}
+                  onChange={(cfg) => onChange((current) => ({ ...current, cfg }))}
                 />
                 <p className="text-caption text-ink-2">越高越贴近描述，过高会生硬。快速档建议 1。</p>
               </section>
 
               <section className="flex flex-col gap-2">
-                <Label htmlFor="studio-negative">不想出现的内容</Label>
+                <FieldLabel htmlFor="studio-negative">不想出现的内容</FieldLabel>
                 <Textarea
                   id="studio-negative"
                   value={canvas.negative}
@@ -415,7 +393,7 @@ function CanvasParams({
 
               {remoteEnabled ? (
                 <section className="flex flex-col gap-2">
-                  <Label htmlFor="studio-location">运行位置</Label>
+                  <FieldLabel htmlFor="studio-location">运行位置</FieldLabel>
                   <Select id="studio-location" value={remoteHost?.id ?? ''} onChange={(event) => onRemoteHostChange(event.target.value)}>
                     <option value="">这台电脑</option>
                     {hosts.map((host) => (
@@ -430,7 +408,7 @@ function CanvasParams({
               {remoteHost ? (
                 remoteHost.devices.length ? (
                   <section className="flex flex-col gap-2">
-                    <Label htmlFor="studio-remote-gpu">GPU</Label>
+                    <FieldLabel htmlFor="studio-remote-gpu">显卡</FieldLabel>
                     <Select
                       id="studio-remote-gpu"
                       value={canvas.deviceId ?? ''}
@@ -447,7 +425,7 @@ function CanvasParams({
                 ) : null
               ) : (
                 <section className="flex flex-col gap-2">
-                  <Label htmlFor="studio-gpu">GPU</Label>
+                  <FieldLabel htmlFor="studio-gpu">显卡</FieldLabel>
                   <Select
                     id="studio-gpu"
                     value={canvas.deviceUuid ?? ''}
@@ -456,22 +434,18 @@ function CanvasParams({
                     <option value="">{defaultGpu ? `跟随默认（${defaultGpu}）` : '跟随默认'}</option>
                     {boundMissing ? (
                       <option value={canvas.deviceUuid} disabled>
-                        之前选的 GPU 现在找不到
+                        之前选的显卡现在找不到
                       </option>
                     ) : null}
                     {(gpuInventory?.devices ?? []).map((device) => (
                       <option key={device.uuid} value={device.uuid}>
-                        {device.name} · GPU {device.index}
+                        {device.name} · 显卡 {device.index}
                       </option>
                     ))}
                   </Select>
-                  {boundMissing ? <p className="text-caption text-warn">之前选的 GPU 现在找不到，生成前请换一个或改回默认。</p> : null}
+                  {boundMissing ? <Notice tone="warn">之前选的显卡现在找不到，生成前请换一个或改回默认。</Notice> : null}
                 </section>
               )}
-
-              <Button tone="ghost" size="sm" className="self-start" onClick={() => setPromptOpen(true)}>
-                查看最终提示词
-              </Button>
             </div>
           </Advanced>
         </fieldset>
@@ -487,18 +461,22 @@ function CanvasParams({
             {blockers.length ? (
               <ul aria-live="polite" className="flex flex-col gap-1.5">
                 {blockers.map((blocker, index) => (
-                  <li key={`${blocker.id}-${index}`} className="flex items-center gap-2 text-caption text-ink-2">
-                    <span className="min-w-0 flex-1">{blocker.message}</span>
-                    {blocker.action ? (
-                      <Button
-                        tone="secondary"
-                        size="sm"
-                        className="h-7 px-2.5"
-                        onClick={() => (blocker.action!.opens === 'update' ? openUpdate(true) : onNavigate(blocker.action!.to))}
-                      >
-                        {blocker.action.label}
-                      </Button>
-                    ) : null}
+                  // Every reason not to generate reads the same: a Notice with the action that fixes it.
+                  <li key={`${blocker.id}-${index}`}>
+                    <Notice
+                      action={
+                        blocker.action ? (
+                          <Button
+                            size="xs"
+                            onClick={() => (blocker.action!.opens === 'update' ? openUpdate(true) : onNavigate(blocker.action!.to))}
+                          >
+                            {blocker.action.label}
+                          </Button>
+                        ) : undefined
+                      }
+                    >
+                      {blocker.message}
+                    </Notice>
                   </li>
                 ))}
               </ul>

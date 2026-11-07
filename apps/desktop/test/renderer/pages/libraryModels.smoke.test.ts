@@ -136,7 +136,10 @@ describe('Models page', () => {
     expect(container.textContent).toContain('MOSS-Image SFT')
     expect(container.textContent).toContain('推荐模型')
     expect(container.textContent).toContain('其他模型')
-    expect(container.textContent).toMatch(/未下载|还差/)
+    // A model that is not downloaded shows its size and a 下载 action; its state is the action itself.
+    expect(container.textContent).toContain('27.2 GB')
+    expect(container.textContent).toContain('下载')
+    expect(container.textContent).not.toContain('未下载')
     expect(container.textContent).not.toContain('实例详情')
     expect(container.textContent).not.toContain('本机')
   })

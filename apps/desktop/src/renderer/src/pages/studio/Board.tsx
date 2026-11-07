@@ -32,7 +32,7 @@ import { LinkMenu } from './LinkMenu'
 import { controlKindLabel, linkSourceImage, roleLabel, type LinkRole, type PickTarget } from './links'
 import { BRUSH_DEFAULT, maskAvailability, startPictureSize } from './mask'
 import type { MaskBrush, MaskCommand } from './MaskLayer'
-import { rerunEligibility, type ReadinessInput } from './readiness'
+import { rerunEligibility, type Blocker, type ReadinessInput } from './readiness'
 import type { BoardTool } from './RegionLayer'
 import { MaskBar, Toolbar } from './Toolbar'
 import { useCardDrag } from './useCardDrag'
@@ -78,6 +78,8 @@ export interface BoardProps {
   onDelete: (canvas: ProjectCanvas) => void
   /** What the engine can do (undefined while loading, null when none is usable). */
   engineFeatures: EngineFeatures | null | undefined
+  /** The 生成 footer's readiness: says why the mask tool and the link menu are off while the engine is not ready. */
+  blockers: readonly Blocker[]
   controlAdapters: readonly ControlAdapterEntry[]
   onLink: (targetId: string, role: LinkRole, link: CanvasImageLink, kind?: string) => void
   onRemoveLink: (canvasId: string, role: LinkRole, at?: number | string) => void
@@ -114,7 +116,7 @@ export function Board(props: BoardProps): React.JSX.Element {
 
   const [hoveredWire, setHoveredWire] = useState<string | null>(null)
   const wires = useMemo(() => boardWires(props.canvases, view.zoom), [props.canvases, view.zoom])
-  const mask = maskAvailability(selected, props.engineFeatures)
+  const mask = maskAvailability(selected, props.engineFeatures, props.blockers)
 
   const viewportSize = (): { width: number; height: number } => {
     const rect = viewport.current?.getBoundingClientRect()
@@ -436,7 +438,7 @@ export function Board(props: BoardProps): React.JSX.Element {
           className="absolute flex items-center justify-center gap-1.5 rounded-md bg-well text-ui text-ink-2 transition-colors hover:bg-well-strong hover:text-ink"
           style={{ left: tileRect.x, top: tileRect.y + CARD_HEADER, width: tileRect.w, height: tileRect.h - CARD_HEADER }}
         >
-          <Plus className="size-4" aria-hidden="true" />
+          <Plus className="size-4" aria-hidden="true" strokeWidth={1.6} />
           新建画面
         </button>
       </div>
@@ -454,7 +456,7 @@ export function Board(props: BoardProps): React.JSX.Element {
       {connect.menu && menuTarget ? (
         <LinkMenu
           title={`把「${menuSource?.title ?? '图片'}」接到「${menuTarget.title}」`}
-          entries={linkMenu(menuTarget, connect.menu.sourceId, props.engineFeatures, props.controlAdapters)}
+          entries={linkMenu(menuTarget, connect.menu.sourceId, props.engineFeatures, props.controlAdapters, props.blockers)}
           at={connect.menu.at}
           bounds={viewportSize()}
           onClose={connect.closeMenu}

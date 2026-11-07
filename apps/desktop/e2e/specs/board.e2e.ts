@@ -364,7 +364,7 @@ describe('studio board', () => {
     await expect.poll(() => card.locator('[data-init-backdrop]').count()).toBe(0)
   })
 
-  it('forgets the strokes when the mask is cleared from the inspector, and never re-saves them', async () => {
+  it('forgets the strokes when the mask is cleared with 清除, and never re-saves them', async () => {
     const page = await openBoard(app, { inputs: { init: { link: { canvasId: 'img-1' }, strength: 0.6 } } })
     await page.getByRole('button', { name: '遮罩', exact: true }).click()
     await paintStroke(page)
@@ -373,7 +373,8 @@ describe('studio board', () => {
 
     // Paint again and clear before the delayed save runs.
     await paintStroke(page)
-    await page.getByLabel('生成设置').getByRole('button', { name: '清除', exact: true }).click()
+    // 清除 lives in the mask toolbar while painting (the panel shows the state and one toggle).
+    await page.getByRole('toolbar', { name: '遮罩工具' }).getByRole('button', { name: '清除' }).click()
     await expect.poll(() => paintedPixels(page)).toBe(0)
     await settle(page, 1200)
     expect((await app.calls('studio:save-mask')).length).toBe(saves)

@@ -3,13 +3,26 @@ import { Ipc } from '@shared/channels'
 import type { TrainerVersion, TrainingHost } from '@shared/types'
 import { call } from '../../lib/api'
 import { dateTime } from '../../lib/format'
-import { Advanced, Button, Group, Modal, Pill, Row, Section, Spinner, StatusDot, useToast } from '../../components/ui'
+import { Advanced, Button, Group, Pill, Row, Section, Spinner, useToast } from '../../components/ui'
+import { DoctorDialog, type DoctorResult } from './DoctorDialog'
 import { TrainerAdvanced } from './TrainerAdvanced'
-import { PREPARE_STEP_LABEL, RUNTIME_LABEL, currentVersion, prepareTrainer, trainerApi, type PrepareStep } from './trainerSetup'
+import { PREPARE_STEP_LABEL, currentVersion, prepareTrainer, trainerApi, type PrepareStep } from './trainerSetup'
 
-interface DoctorResult {
-  ok: boolean
-  output: string
+/** The environment's state in a word or two; the row title already says 环境. */
+const RUNTIME_STATE: Record<NonNullable<TrainerVersion['runtimeState']>, string> = {
+  missing: '未安装',
+  created: '未装完',
+  installing: '正在安装',
+  ready: '就绪',
+  error: '安装失败',
+}
+
+function runtimeTone(state: TrainerVersion['runtimeState'] | undefined): 'neutral' | 'accent' | 'ok' | 'warn' | 'danger' {
+  if (state === 'ready') return 'ok'
+  if (state === 'installing') return 'accent'
+  if (state === 'error') return 'danger'
+  if (state === 'created') return 'warn'
+  return 'neutral'
 }
 
 function errorText(error: unknown): string {
@@ -87,7 +100,7 @@ export function TrainerSection({
   const versionDescription = step
     ? PREPARE_STEP_LABEL[step]
     : version
-      ? `${version.branch} · ${dateTime(version.commitDate)}${version.dirty ? ' · 有本地修改' : ''}`
+      ? `版本 ${version.shortCommit} · ${version.branch} · ${dateTime(version.commitDate)}${version.dirty ? ' · 有本地修改' : ''}`
       : loading
         ? '正在读取…'
         : `${where}还没有训练器。准备时会下载训练器并安装所需环境，需要几分钟。`
@@ -95,20 +108,15 @@ export function TrainerSection({
   return (
     <Section title="训练器">
       <Group>
-        <Row
-          title={version ? `KohakuMossTrainer ${version.shortCommit}` : '训练器未准备'}
-          description={versionDescription}
-          leading={busy ? <Spinner className="text-ink-2" /> : undefined}
-        >
+        {/* Both rows show their state the same way: a Pill on the right, like the version rows. */}
+        <Row title="训练器" description={versionDescription}>
+          {busy ? <Pill tone="accent">正在准备</Pill> : <Pill tone={version ? 'ok' : 'neutral'}>{version ? '已准备' : '未准备'}</Pill>}
           <Button onClick={() => void prepare()} disabled={busy || loading}>
             {version ? '检查更新' : '准备训练器'}
           </Button>
         </Row>
-        <Row
-          title="环境"
-          description={version ? `${RUNTIME_LABEL[version.runtimeState]} · ${where}` : '准备训练器后自动安装'}
-          leading={<StatusDot status={ready ? 'ok' : version?.runtimeState === 'error' ? 'error' : 'unknown'} />}
-        >
+        <Row title="环境" description={version ? where : '准备训练器后自动安装'}>
+          <Pill tone={runtimeTone(version?.runtimeState)}>{version ? RUNTIME_STATE[version.runtimeState] : '未安装'}</Pill>
           {version && !ready ? (
             <Button onClick={() => void installEnvironment(version)} disabled={busy}>
               {version.runtimeState === 'error' ? '重新安装' : '安装环境'}
@@ -116,7 +124,7 @@ export function TrainerSection({
           ) : null}
           <Button tone="ghost" onClick={() => version && void runDoctor(version)} disabled={!ready || checking || busy}>
             {checking ? <Spinner /> : null}
-            体检
+            环境体检
           </Button>
         </Row>
         <Advanced summary="Python 路径、PyTorch、pip 源、训练器目录、版本管理">
@@ -124,27 +132,7 @@ export function TrainerSection({
         </Advanced>
       </Group>
 
-      <Modal
-        open={Boolean(doctor)}
-        onClose={() => setDoctor(null)}
-        title="环境体检"
-        description={doctor?.ok ? '没有发现问题。' : '发现了问题，详情见下方输出。'}
-        width="max-w-3xl"
-        footer={
-          <Button tone="secondary" size="md" onClick={() => setDoctor(null)}>
-            关闭
-          </Button>
-        }
-      >
-        <div className="flex flex-col gap-2">
-          <div>
-            <Pill tone={doctor?.ok ? 'ok' : 'warn'}>{doctor?.ok ? '通过' : '需要处理'}</Pill>
-          </div>
-          <pre className="selectable max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg bg-well p-3 font-mono text-caption text-ink-2">
-            {doctor?.output || '没有输出'}
-          </pre>
-        </div>
-      </Modal>
+      <DoctorDialog result={doctor} onClose={() => setDoctor(null)} />
     </Section>
   )
 }

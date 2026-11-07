@@ -43,7 +43,7 @@ export function WindowChrome({
         <span className="flex-1" />
         {mac ? null : (
           <IconButton label="关闭" className="no-drag" disabled={closeDisabled} onClick={onClose}>
-            <X className="size-4" />
+            <X className="size-4" strokeWidth={1.6} />
           </IconButton>
         )}
       </header>

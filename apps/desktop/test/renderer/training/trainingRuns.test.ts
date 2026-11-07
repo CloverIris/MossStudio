@@ -31,7 +31,7 @@ describe('trainingRuns', () => {
     )
     expect(run).toMatchObject({
       name: 'spring-style',
-      algo: 'LORA',
+      algo: 'LoRA',
       step: 1200,
       total: 2000,
       progressLabel: '1,200 / 2,000',

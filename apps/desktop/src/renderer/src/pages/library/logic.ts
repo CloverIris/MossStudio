@@ -1,4 +1,5 @@
 import type { GalleryDetail, GalleryItem } from '@shared/types'
+import { dateTime } from '../../lib/format'
 
 /** Pure helpers for the Library page: day groups, filters, the detail panel's facts. */
 
@@ -42,13 +43,6 @@ export function dayLabel(time: number, now: number = Date.now()): string {
   yesterday.setDate(yesterday.getDate() - 1)
   if (day === yesterday.getTime()) return '昨天'
   return dateLabel(time, now)
-}
-
-/** "11 月 4 日 14:32" (today: "今天 14:32"). */
-export function timeLabel(time: number, now: number = Date.now()): string {
-  const date = new Date(time)
-  const clock = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
-  return `${dayLabel(time, now)} ${clock}`
 }
 
 export interface DayGroup<T> {
@@ -157,7 +151,7 @@ export function detailFacts(detail: GalleryDetail, options: { projectName?: stri
   }
   if (options.projectName) facts.push({ label: '项目', value: options.projectName })
   const created = generation.createdAt ? Date.parse(generation.createdAt) : detail.mtime
-  const when = Number.isFinite(created) ? timeLabel(created, options.now) : null
+  const when = Number.isFinite(created) ? dateTime(created) : null
   if (when)
     facts.push({ label: generation.createdAt ? '生成于' : '修改于', value: generation.where ? `${when} · ${generation.where}` : when })
   return facts

@@ -229,7 +229,7 @@ describe('using an existing diffusers folder in place', () => {
     expect(loaded.models.find((model) => model.provider === 'local')!.installed).toBe(false)
   })
 
-  it('在原位置使用这个模型文件夹: picking a folder registers each diffusers folder inside it as one model', async () => {
+  it('添加整个模型文件夹: picking a folder registers each diffusers folder inside it as one model', async () => {
     diffusersFolder('sft')
     diffusersFolder('base', 'MOSS-Image-Base')
     const result = await models.importModelFolder(userDisk(), settings)

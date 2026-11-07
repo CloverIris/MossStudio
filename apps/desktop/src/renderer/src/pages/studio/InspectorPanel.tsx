@@ -1,7 +1,8 @@
-import { Eye, EyeOff, GripVertical, Lock } from 'lucide-react'
+import { Eye, EyeOff, GripVertical, Lock, LockOpen, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
-import { Button, ConfirmDialog, IconButton, Input, Segmented, Textarea, cn } from '../../components/ui'
+import { Button, ConfirmDialog, EmptyState, FieldLabel, IconButton, Input, Segmented, Textarea, cn } from '../../components/ui'
+import { SliderField } from './InputControls'
 import { reorderLayers } from './canvases'
 import { KIND_LABEL } from './RegionLayer'
 
@@ -26,17 +27,18 @@ export function InspectorPanel({
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
+  const [removing, setRemoving] = useState<string | null>(null)
 
   useEffect(() => {
     if (focusToken) requestAnimationFrame(() => caption.current?.focus())
   }, [focusToken])
 
-  if (!canvas) return <p className="px-1 py-8 text-center text-caption text-ink-2">选中一个画面后，这里显示它的区域。</p>
+  if (!canvas) return <EmptyState size="section" title="没有选中画面" description="选中一个画面后，这里显示它的区域。" />
   if (canvas.kind === 'image') {
-    return <p className="px-1 py-8 text-center text-caption text-ink-2">这是一张导入的图片，没有区域。把它连到画面上就能用它生成。</p>
+    return <EmptyState size="section" title="导入的图片没有区域" description="把它连到画面上就能用它生成。" />
   }
   if (canvas.kind === 'result') {
-    return <p className="px-1 py-8 text-center text-caption text-ink-2">这是一次生成的结果，区域不能再改。复制成新画面后就可以编辑。</p>
+    return <EmptyState size="section" title="生成结果的区域不能再改" description="复制成新画面后就可以编辑。" />
   }
 
   const layers = canvas.layers
@@ -48,7 +50,7 @@ export function InspectorPanel({
     <div className="flex flex-col gap-5">
       {region ? (
         <section aria-label="区域" className="flex flex-col gap-2.5">
-          <div className="text-caption font-semibold text-ink-2">{KIND_LABEL[region.kind]}区域</div>
+          <FieldLabel as="h3">{KIND_LABEL[region.kind]}区域</FieldLabel>
           <Segmented<ProjectLayerKind>
             block
             label="区域类型"
@@ -78,38 +80,33 @@ export function InspectorPanel({
               placeholder="要显示的文字"
             />
           ) : null}
-          <label className="flex items-center gap-3 text-caption">
-            <span className="w-12 shrink-0 text-ink-2">不透明度</span>
-            <input
-              type="range"
-              min={0.1}
-              max={1}
-              step={0.05}
-              value={region.opacity ?? 1}
-              onChange={(event) => patch(region.id, { opacity: Number(event.target.value) })}
-              className="min-w-0 flex-1 accent-ink"
-            />
-            <span className="tabular w-9 shrink-0 text-right text-ink">{Math.round((region.opacity ?? 1) * 100)}%</span>
-          </label>
-          <div className="flex items-center gap-1.5">
-            <Button tone="secondary" aria-pressed={region.locked} onClick={() => patch(region.id, { locked: !region.locked })}>
-              {region.locked ? '解锁' : '锁定'}
-            </Button>
-            <Button
-              tone="secondary"
+          <SliderField
+            label="不透明度"
+            min={0.1}
+            max={1}
+            step={0.05}
+            value={region.opacity ?? 1}
+            format={(value) => `${Math.round(value * 100)}%`}
+            onChange={(opacity) => patch(region.id, { opacity })}
+          />
+          <div className="flex items-center gap-1">
+            <IconButton
+              label={region.locked ? '解锁区域' : '锁定区域'}
+              aria-pressed={region.locked}
+              onClick={() => patch(region.id, { locked: !region.locked })}
+            >
+              {region.locked ? <Lock className="size-4" strokeWidth={1.6} /> : <LockOpen className="size-4" strokeWidth={1.6} />}
+            </IconButton>
+            <IconButton
+              label={region.visible === false ? '显示区域' : '隐藏区域'}
               aria-pressed={region.visible === false}
               onClick={() => patch(region.id, { visible: region.visible === false })}
             >
-              {region.visible === false ? '显示' : '隐藏'}
-            </Button>
+              {region.visible === false ? <EyeOff className="size-4" strokeWidth={1.6} /> : <Eye className="size-4" strokeWidth={1.6} />}
+            </IconButton>
             <span className="flex-1" />
-            <Button
-              tone="ghost"
-              onClick={() => {
-                onChangeLayers((items) => items.filter((item) => item.id !== region.id))
-                onSelectRegion(null)
-              }}
-            >
+            <Button tone="ghost-danger" size="xs" onClick={() => setRemoving(region.id)}>
+              <Trash2 className="size-3.5" strokeWidth={1.6} />
               删除
             </Button>
           </div>
@@ -122,9 +119,9 @@ export function InspectorPanel({
 
       <section aria-label="图层" className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between pb-2">
-          <span className="text-caption font-semibold text-ink-2">图层</span>
+          <FieldLabel as="h3">图层</FieldLabel>
           {layers.length ? (
-            <Button tone="ghost" size="sm" className="-mr-2 h-7 px-2" onClick={() => setClearing(true)}>
+            <Button tone="ghost-danger" size="xs" className="-mr-2" onClick={() => setClearing(true)}>
               清空
             </Button>
           ) : null}
@@ -169,7 +166,7 @@ export function InspectorPanel({
                 dropId === layer.id && 'bg-accent-soft',
               )}
             >
-              <GripVertical className="size-3.5 shrink-0 cursor-grab text-ink-3" aria-hidden="true" />
+              <GripVertical className="size-3.5 shrink-0 cursor-grab text-ink-3" aria-hidden="true" strokeWidth={1.6} />
               <button
                 type="button"
                 data-layer-select
@@ -181,13 +178,17 @@ export function InspectorPanel({
                 <span className="shrink-0 px-1 text-micro text-ink-2">{KIND_LABEL[layer.kind]}</span>
                 <span className="min-w-0 flex-1 truncate">{layer.caption || layer.text || '还没有描述'}</span>
               </button>
-              {layer.locked ? <Lock className="size-3.5 shrink-0 text-ink-2" aria-label="已锁定" /> : null}
+              {layer.locked ? <Lock className="size-3.5 shrink-0 text-ink-2" aria-label="已锁定" strokeWidth={1.6} /> : null}
               <IconButton
                 label={layer.visible === false ? `显示区域 ${index + 1}` : `隐藏区域 ${index + 1}`}
                 className="size-7"
                 onClick={() => patch(layer.id, { visible: layer.visible === false })}
               >
-                {layer.visible === false ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                {layer.visible === false ? (
+                  <EyeOff className="size-3.5" strokeWidth={1.6} />
+                ) : (
+                  <Eye className="size-3.5" strokeWidth={1.6} />
+                )}
               </IconButton>
             </li>
           ))}
@@ -195,6 +196,18 @@ export function InspectorPanel({
         {layers.length > 1 ? <p className="pt-2 text-caption text-ink-2">拖动调整顺序；排在前面的区域先被描述。</p> : null}
       </section>
 
+      <ConfirmDialog
+        open={removing !== null}
+        onClose={() => setRemoving(null)}
+        title="删除这个区域？"
+        description="区域和它的描述都会删除，画面的其他区域不受影响。"
+        confirmLabel="删除区域"
+        onConfirm={() => {
+          onChangeLayers((items) => items.filter((item) => item.id !== removing))
+          onSelectRegion(null)
+          setRemoving(null)
+        }}
+      />
       <ConfirmDialog
         open={clearing}
         onClose={() => setClearing(false)}

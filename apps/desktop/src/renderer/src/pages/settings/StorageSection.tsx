@@ -1,8 +1,9 @@
-import { FolderOpen, Plus, Trash2 } from 'lucide-react'
+import { FolderOpen, Plus, X } from 'lucide-react'
 import type { ModelDirectoryId } from '@shared/types'
 import { useApp } from '../../store'
 import { Advanced, Button, Group, IconButton, Row, Section, useToast } from '../../components/ui'
-import { FolderRow, SectionBody, errorText, pickFolder, useOpenPath, useSaveSettings } from './fields'
+import { PathValue } from '../../components/common/PathValue'
+import { FolderRow, SectionBody, StackRow, errorText, pickFolder, useOpenPath, useSaveSettings } from './fields'
 import { useAppInfo } from './useAppInfo'
 
 const MODEL_FOLDERS: Array<{ id: ModelDirectoryId; label: string }> = [
@@ -36,11 +37,15 @@ export function StorageSection(): React.JSX.Element {
     <SectionBody>
       <Section title="位置">
         <Group>
-          <Row title="数据文件夹" description={info?.dataPath ?? '正在读取…'}>
-            <IconButton label="打开数据文件夹" disabled={!info?.dataPath} onClick={() => openPath(info?.dataPath)}>
-              <FolderOpen className="size-4" />
-            </IconButton>
-          </Row>
+          {/* Every folder on this page reads the same: a title, then the path in a PathValue. */}
+          <StackRow title="数据文件夹" description="作品、设置和日志都在这里。">
+            <div className="flex min-w-0 items-center gap-2">
+              <PathValue value={info?.dataPath} empty="正在读取…" className="flex-1" />
+              <IconButton label="在文件管理器中打开" disabled={!info?.dataPath} onClick={() => openPath(info?.dataPath)}>
+                <FolderOpen className="size-4" strokeWidth={1.6} />
+              </IconButton>
+            </div>
+          </StackRow>
           <FolderRow
             title="模型文件夹"
             description="下载的模型保存在这里。更改后，新的下载会保存到新位置，已下载的模型不会移动。"
@@ -57,7 +62,7 @@ export function StorageSection(): React.JSX.Element {
         description="作品页默认显示生成的图片；也可以加入其他文件夹里的图片。"
         actions={
           <Button onClick={() => void addGalleryRoot()}>
-            <Plus className="size-4" />
+            <Plus className="size-4" strokeWidth={1.6} />
             添加文件夹
           </Button>
         }
@@ -67,14 +72,16 @@ export function StorageSection(): React.JSX.Element {
             <Row title="只显示生成的图片" description="还没有添加其他文件夹。" />
           ) : (
             galleryRoots.map((root) => (
-              <Row key={root} title={<span className="font-mono text-caption">{root}</span>}>
+              <div key={root} className="flex min-w-0 items-center gap-2 px-3.5 py-2">
+                <PathValue value={root} className="flex-1" />
                 <IconButton label="在文件管理器中打开" onClick={() => openPath(root)}>
-                  <FolderOpen className="size-4" />
+                  <FolderOpen className="size-4" strokeWidth={1.6} />
                 </IconButton>
+                {/* X: the folder only leaves the list; nothing on disk is deleted. */}
                 <IconButton label="移除这个来源" onClick={() => void save({ galleryRoots: galleryRoots.filter((item) => item !== root) })}>
-                  <Trash2 className="size-4" />
+                  <X className="size-4" strokeWidth={1.6} />
                 </IconButton>
-              </Row>
+              </div>
             ))
           )}
         </Group>
