@@ -6,13 +6,14 @@ import type { CanvasImageLink, CanvasInputs, ProjectCanvas } from '@shared/types
  * the board; every edit returns new objects.
  */
 
-export type LinkRole = 'init' | 'control' | 'reference'
+/** How a link feeds a canvas: a picture (start, control, reference), or a 风格 node's description and LoRA. */
+export type LinkRole = 'init' | 'control' | 'reference' | 'style'
 
 export interface CanvasLinkEntry {
   role: LinkRole
   /** Control kind, for `role: 'control'`. */
   kind?: string
-  /** Position in the reference list, for `role: 'reference'`. */
+  /** Position in the reference (or 风格) list, for `role: 'reference'` / `'style'`. */
   index?: number
   link: CanvasImageLink
   /** Short chip text, e.g. "起始图 60%", "控制 · 深度", "参考 2". */
@@ -22,6 +23,8 @@ export interface CanvasLinkEntry {
 export const DEFAULT_INIT_STRENGTH = 0.6
 export const DEFAULT_CONTROL_STRENGTH = 1
 export const MAX_REFERENCES = 4
+/** 风格 nodes one canvas can take. */
+export const MAX_STYLES = 3
 
 const CONTROL_KIND_LABELS: Record<string, string> = {
   depth: '深度',
@@ -35,7 +38,7 @@ export function controlKindLabel(kind: string): string {
 }
 
 export function roleLabel(role: LinkRole): string {
-  return role === 'init' ? '起始图' : role === 'control' ? '控制图' : '参考图'
+  return role === 'init' ? '起始图' : role === 'control' ? '控制图' : role === 'style' ? '风格' : '参考图'
 }
 
 export function percent(value: number): string {
@@ -53,6 +56,9 @@ export function linksOf(canvas: Pick<ProjectCanvas, 'inputs'>): CanvasLinkEntry[
   }
   ;(inputs.references?.links ?? []).forEach((link, index) => {
     entries.push({ role: 'reference', index, link, label: `参考 ${index + 1}` })
+  })
+  ;(inputs.styles?.links ?? []).forEach((link, index) => {
+    entries.push({ role: 'style', index, link, label: `风格 ${index + 1}` })
   })
   return entries
 }
@@ -79,7 +85,7 @@ function sameLink(a: CanvasImageLink, b: CanvasImageLink): boolean {
 }
 
 function withInputs(canvas: ProjectCanvas, inputs: CanvasInputs): ProjectCanvas {
-  const empty = !inputs.init && !inputs.mask && !inputs.control && !inputs.references
+  const empty = !inputs.init && !inputs.mask && !inputs.control && !inputs.references && !inputs.styles
   if (empty) {
     const { inputs: _drop, ...rest } = canvas
     return rest
@@ -135,6 +141,12 @@ export function setLink(canvas: ProjectCanvas, role: LinkRole, link: CanvasImage
     inputs.control = { ...control, images }
     return withInputs(canvas, inputs)
   }
+  if (role === 'style') {
+    const styles = inputs.styles?.links ?? []
+    if (styles.some((item) => item.canvasId === link.canvasId) || styles.length >= MAX_STYLES) return canvas
+    inputs.styles = { links: [...styles, { canvasId: link.canvasId }] }
+    return withInputs(canvas, inputs)
+  }
   const references = inputs.references ?? { links: [] }
   if (references.links.some((item) => sameLink(item, link)) || references.links.length >= MAX_REFERENCES) return canvas
   inputs.references = { ...references, links: [...references.links, { ...link }] }
@@ -161,6 +173,14 @@ export function removeLink(canvas: ProjectCanvas, role: LinkRole, which?: number
     const images = control.images.filter((image, index) => (typeof which === 'number' ? index !== which : image.kind !== which))
     if (images.length === control.images.length) return canvas
     inputs.control = { ...control, images }
+    return withInputs(canvas, inputs)
+  }
+  if (role === 'style') {
+    const styles = inputs.styles?.links ?? []
+    if (typeof which !== 'number' || which < 0 || which >= styles.length) return canvas
+    const links = styles.filter((_, index) => index !== which)
+    if (links.length) inputs.styles = { links }
+    else delete inputs.styles
     return withInputs(canvas, inputs)
   }
   const references = inputs.references

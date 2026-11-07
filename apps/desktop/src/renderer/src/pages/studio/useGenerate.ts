@@ -12,6 +12,7 @@ import { profileFor, randomSeed, seedForRun } from './defaults'
 import { resolveJobInputs } from './jobInputs'
 import { compileCanvasPrompt } from './prompt'
 import { resolveBundle } from './readiness'
+import { generationCanvas, nodeBlockers, withUpscaleSize } from './nodes'
 import { shownRun, staleRunIds } from './runs'
 import type { StudioProject } from './useStudioProject'
 
@@ -70,6 +71,7 @@ export function useGenerate(options: {
     const requestedId = canvasId ?? project.selectedRef.current
     const requested = project.canvasesRef.current.find((canvas) => canvas.id === requestedId)
     if (!requested) return fail('先选中一个画面')
+    if (requested.kind === 'style') return fail('风格不能单独生成，把它接到画面上')
 
     // Busy from here on, so a second click shows the state instead of slipping in.
     submittingRef.current = true
@@ -90,8 +92,12 @@ export function useGenerate(options: {
       : null
     // Everything below reads the canvases as they are now: edits made while the engine answered are kept.
     const canvases = project.canvasesRef.current
-    const source = canvases.find((canvas) => canvas.id === requested.id)
-    if (!source) return stop('这个画面已经删除了')
+    const found = canvases.find((canvas) => canvas.id === requested.id)
+    if (!found) return stop('这个画面已经删除了')
+    // A 放大 is sized from its 原图; the run uses that size.
+    const source = withUpscaleSize(found, canvases)
+    // What the engine gets: the description and LoRA with the 风格 nodes' added.
+    const generating = generationCanvas(source, canvases)
     const jobs = useApp.getState().jobs
     if (activeCanvasBranchIds(canvases, jobs).has(source.id)) return stop('这个画面正在生成，等它完成后再试')
 
@@ -101,14 +107,16 @@ export function useGenerate(options: {
     if (!choice.installed) return stop(`「${choice.bundle.name}」还没有下载完`)
     const remoteModelPath = remoteHost?.modelPath?.trim()
     if (remoteHost && !remoteModelPath) return stop(`「${remoteHost.name}」还没有设置模型位置，请到 设置 › 设备与引擎 填写`)
-    const adapters = normalizeCanvasAdapters(source.adapters)
+    const adapters = normalizeCanvasAdapters(generating.adapters)
     if (remoteHost && adapters.length) return stop('在其他电脑上运行时暂不支持 LoRA，请移除 LoRA 或改回这台电脑')
     const missing = adapterStatuses(adapters, catalog?.adapters).filter((item) => !item.installed)
     if (missing.length) return stop(`LoRA ${missing.map((item) => `「${item.name}」`).join('')}找不到了，请移除或到模型库重新安装`)
     // Regions are laid out on the first-pass size.
-    const compiled = compileCanvasPrompt(source.baseSize ? { ...source, ...source.baseSize } : source)
+    const compiled = compileCanvasPrompt(generating.baseSize ? { ...generating, ...generating.baseSize } : generating)
     if (!compiled.ok) return stop(compiled.errors[0] ?? '描述还不完整')
-    const resolved = resolveJobInputs(source, { canvases, features, controlAdapters, controlAdaptersLoaded })
+    const node = nodeBlockers(generating, canvases)
+    if (node.length) return stop(node[0]!.message)
+    const resolved = resolveJobInputs(generating, { canvases, features, controlAdapters, controlAdaptersLoaded })
     if (resolved.blockers.length) return stop(resolved.blockers[0]!.message)
 
     // 'same' repeats the picture on this card: the seed its run used, not the
@@ -129,7 +137,11 @@ export function useGenerate(options: {
         source.kind === 'layout'
           ? canvases
               .filter((canvas) => !stale.has(canvas.id))
-              .map((canvas) => (canvas.id === source.id ? { ...canvas, seed, modelBundleId: choice.bundle!.id } : canvas))
+              .map((canvas) =>
+                canvas.id === source.id
+                  ? { ...canvas, width: source.width, height: source.height, seed, modelBundleId: choice.bundle!.id }
+                  : canvas,
+              )
           : canvases
       const task = taskCanvasFor(runSource, withSeed)
       taskId = task.taskId

@@ -40,6 +40,12 @@ export function InspectorPanel({
   if (canvas.kind === 'result') {
     return <EmptyState size="section" title="生成结果的区域不能再改" description="复制成新画面后就可以编辑。" />
   }
+  if (canvas.kind === 'style') {
+    return <EmptyState size="section" title="风格没有区域" description="风格的描述和 LoRA 在左侧编辑，接着它的画面都会用上。" />
+  }
+  if (canvas.upscale) {
+    return <EmptyState size="section" title="放大没有区域" description="放大按原图重画，不用画区域。" />
+  }
 
   const layers = canvas.layers
   const region = layers.find((layer) => layer.id === selectedRegionId) ?? null

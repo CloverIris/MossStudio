@@ -149,7 +149,8 @@ export const jobInputsSchema = z
 
 const projectCanvasSchema = z.object({
   id: z.string().min(1).max(120),
-  kind: z.enum(['layout', 'result', 'image']),
+  kind: z.enum(['layout', 'result', 'image', 'style']),
+  upscale: z.object({ scale: z.number().min(1).max(4) }).optional(),
   imagePath: z.string().max(4096).optional(),
   /** Pixel size of `imagePath` (up to studio:import-image's 16384 limit); width/height are the card's. */
   imageSize: z
@@ -186,6 +187,7 @@ const projectCanvasSchema = z.object({
           maxEdge: z.number().int().min(16).max(2048).optional(),
         })
         .optional(),
+      styles: z.object({ links: z.array(canvasImageLinkSchema).max(8) }).optional(),
     })
     .optional(),
   sampling: samplingSchema.optional(),

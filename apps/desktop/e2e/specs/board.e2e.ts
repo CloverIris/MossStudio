@@ -778,3 +778,77 @@ describe('filmstrip, 用作起始图 and recipes', () => {
     await expect.poll(() => page.getByRole('toolbar', { name: '遮罩工具' }).isVisible()).toBe(true)
   })
 })
+
+describe('风格 and 放大 nodes', () => {
+  const app = useApp()
+  const card = (page: Page, id: string) => page.locator(`article[data-canvas-card="${id}"]`)
+  const selectedId = (page: Page) => page.locator('article[data-canvas-card][aria-current="true"]').getAttribute('data-canvas-card')
+  const jobs = (page: Page) => page.evaluate((channel) => window.__mock.callsTo(channel) as Array<Record<string, unknown>>, ENGINE_JOBS)
+
+  it('放大 a picture: a node with one 原图 socket, its size from the 原图, and a run that redraws it larger', async () => {
+    // 线稿 is a 640 × 1024 picture card (no imageSize recorded): ×2 is 1280 × 2048.
+    for (const theme of ['light', 'dark'] as const) {
+      const page = await openBoard(app, { theme })
+      await card(page, 'img-2').hover()
+      await card(page, 'img-2').getByRole('button', { name: '线稿 更多操作' }).click()
+      await page.getByRole('menuitem', { name: '放大', exact: true }).click()
+      await expect.poll(() => page.locator('article[data-node="upscale"]').count()).toBe(1)
+      const id = (await selectedId(page))!
+      expect(await card(page, id).locator('header').textContent()).toContain('放大 1')
+      // One socket, the 原图, already wired; the size is the 原图's times two, within 2048.
+      expect(await page.locator(`[data-wire-chip="input:${id}:init:"]`).textContent()).toBe('原图')
+      expect(await page.locator(`[data-empty-port^="${id}/"]`).count()).toBe(0)
+      expect(await card(page, id).locator('[data-card-chips]').textContent()).toContain('放大 ×2')
+      expect(await card(page, id).locator('[data-card-chips]').textContent()).toContain('1280 × 2048')
+      // The left panel: 放大倍数 and 细节 instead of 尺寸, no 输入 section.
+      expect(await page.getByRole('group', { name: '放大倍数' }).isVisible()).toBe(true)
+      expect(await page.getByRole('group', { name: '尺寸' }).count()).toBe(0)
+      await app.screenshot(`board-upscale-${theme}`)
+      if (theme === 'dark') break
+
+      await page.getByRole('group', { name: '放大倍数' }).getByRole('button', { name: '×1.5' }).click()
+      await expect.poll(() => card(page, id).locator('[data-card-chips]').textContent()).toContain('960 × 1536')
+      await page.getByRole('group', { name: '细节' }).getByRole('button', { name: '更多细节' }).click()
+      await page.locator('[data-studio-generate]').click()
+      await expect.poll(async () => (await jobs(page)).length, { timeout: 10_000 }).toBe(1)
+      const [job] = await jobs(page)
+      expect(job).toMatchObject({ width: 960, height: 1536, prompt: '高清，细节清晰，画质细腻' })
+      expect(job!['initImage']).toMatchObject({ strength: 0.55, resize: 'stretch' })
+      expect(String((job!['initImage'] as { path: string }).path)).toContain('lines-800x1280.png')
+    }
+  })
+
+  it('a 风格 wired into a 画面 adds its description to what the 画面 generates', async () => {
+    const page = await openBoard(app)
+    await page.locator('[data-new-canvas]').getByRole('button', { name: '新建风格' }).click()
+    await expect.poll(() => page.locator('article[data-canvas-kind="style"]').count()).toBe(1)
+    const styleId = (await selectedId(page))!
+    await page.getByRole('textbox', { name: '风格描述' }).fill('水彩插画，柔和的粉色调')
+    await expect.poll(() => card(page, styleId).locator('[data-face-description]').textContent()).toBe('水彩插画，柔和的粉色调')
+    expect(await card(page, styleId).locator('footer').textContent()).toContain('还没接画面')
+    // The 画面 now offers a 风格 socket; a wire from the 风格 dropped on the 画面 links it.
+    await expect.poll(() => page.locator('[data-empty-port="canvas-1/style"]').count()).toBe(1)
+    await dragWire(page, styleId, 'canvas-1')
+    await expect.poll(async () => (await savedInputs(page))?.styles?.links, { timeout: 10_000 }).toEqual([{ canvasId: styleId }])
+    expect(await page.locator('[data-wire-chip="input:canvas-1:style:0"]').textContent()).toBe('风格 1')
+    await expect.poll(() => card(page, styleId).locator('footer').textContent()).toContain('用在 1 个画面')
+    await app.screenshot('board-style-light')
+
+    await card(page, 'canvas-1').locator('header button').first().click()
+    await page.locator('[data-studio-generate]').click()
+    await expect.poll(async () => (await jobs(page)).length, { timeout: 10_000 }).toBe(1)
+    expect((await jobs(page))[0]!['prompt']).toBe('一只橘猫坐在窗台上，水彩插画，柔和的粉色调')
+    // The 画面's own description is unchanged.
+    expect(await page.getByRole('textbox', { name: '描述' }).first().inputValue()).toBe('一只橘猫坐在窗台上')
+  })
+
+  it('一组同风格的图: a 风格 and three 画面 wired to it', async () => {
+    const page = await openBoard(app)
+    await page.locator('[data-recipes]').getByRole('button', { name: '一组同风格的图' }).click()
+    await expect.poll(() => page.locator('article[data-canvas-kind="style"]').count()).toBe(1)
+    const styleId = (await selectedId(page))!
+    await expect.poll(() => page.locator(`[data-wire^="input:"][data-wire$=":style:0"]`).count()).toBe(3)
+    expect(await card(page, styleId).locator('footer').textContent()).toContain('用在 3 个画面')
+    expect(await page.locator('[data-style-users]').textContent()).toContain('3 个')
+  })
+})

@@ -30,6 +30,7 @@ import {
 import {
   QUALITY_PRESETS,
   SIZE_PRESETS,
+  MAX_DIMENSION,
   clampDimension,
   isSeedLocked,
   parseSeed,
@@ -48,6 +49,8 @@ import { ImageCardPanel } from './ImageCardPanel'
 import { SliderField, SlotHeader, SlotRow } from './InputControls'
 import { InputsSection, type InputsWiring } from './InputsSection'
 import { SamplingSection } from './SamplingSection'
+import { patchInit } from './links'
+import { styleUsers, UPSCALE_DETAIL, UPSCALE_DETAIL_DEFAULT, UPSCALE_SCALES, withUpscaleScale } from './nodes'
 import { samplingSummary } from './sampling'
 
 const SHORTCUT = typeof window !== 'undefined' && window.clover?.platform === 'darwin' ? '⌘ ↵' : 'Ctrl ↵'
@@ -129,6 +132,7 @@ export function ParamsPanel(props: ParamsPanelProps): React.JSX.Element {
     )
   }
   if (canvas.kind === 'image') return <ImageCardPanel canvas={canvas} onUseAsStart={props.onUseAsStart} />
+  if (canvas.kind === 'style') return <StylePanel {...props} canvas={canvas} />
   return <CanvasParams {...props} canvas={canvas} />
 }
 
@@ -163,7 +167,6 @@ function CanvasParams({
   const quality = qualityFor(canvas.steps)
   const installed = installedBundles(catalog)
   const adapters = normalizeCanvasAdapters(canvas.adapters)
-  const adapterRows = adapterStatuses(adapters, catalog?.adapters)
   // An engine without LoRA (兼容模式 / AMD 原生): nothing to add; rows already there stay so they can be removed.
   const loraUnsupported = inputs?.features ? !inputs.features.lora : false
   const remoteEnabled = settings?.remoteHostsEnabled === true
@@ -214,13 +217,16 @@ function CanvasParams({
               aria-label="描述"
               value={description}
               onChange={(event) => onChange((current) => withDescription(current, event.target.value))}
-              placeholder="想要什么样的画面？例如：春日街景，暖色调，午后阳光，胶片质感"
+              placeholder={canvas.upscale ? '可以不写：会沿用原图的描述' : '想要什么样的画面？例如：春日街景，暖色调，午后阳光，胶片质感'}
               className="h-[116px] resize-none"
             />
             {regionCount > 0 ? <p className="text-caption text-ink-2">另有 {regionCount} 个区域，在画面上编辑</p> : null}
           </section>
 
-          {inputs && !readOnly ? <InputsSection canvas={canvas} onChange={onChange} wiring={inputs} blockers={blockers} /> : null}
+          {/* A 放大's one input, its 原图, is wired on the board. */}
+          {inputs && !readOnly && !canvas.upscale ? (
+            <InputsSection canvas={canvas} onChange={onChange} wiring={inputs} blockers={blockers} />
+          ) : null}
 
           <section className="flex flex-col gap-2.5">
             <FieldLabel htmlFor="studio-model">模型</FieldLabel>
@@ -237,86 +243,59 @@ function CanvasParams({
                 </option>
               ))}
             </Select>
-            {loraUnsupported && !adapterRows.length ? null : (
-              <SlotHeader title="LoRA" hint="叠加一种画风或角色">
-                {readOnly || loraUnsupported ? null : (
-                  <Button tone="ghost" size="xs" className="-mr-2" onClick={onOpenAdapters} data-adapter-picker>
-                    <Plus className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
-                    添加
-                  </Button>
-                )}
-              </SlotHeader>
-            )}
-            {adapterRows.length ? (
-              <div className="flex flex-col gap-1">
-                {adapterRows.map(({ adapter, name, installed: present }) => (
-                  <SlotRow
-                    key={adapter.id}
-                    data-adapter-row={adapter.id}
-                    title={present ? name : `${name}（找不到文件）`}
-                    titleTone={present ? 'ink' : 'warn'}
-                    removeLabel={`移除 ${name}`}
-                    onRemove={readOnly ? undefined : () => setAdapters(adapters.filter((item) => item.id !== adapter.id))}
-                  >
-                    <SliderField
-                      label="强度"
-                      ariaLabel={`${name} 强度`}
-                      min={ADAPTER_STRENGTH_MIN}
-                      max={ADAPTER_STRENGTH_MAX}
-                      step={ADAPTER_STRENGTH_STEP}
-                      value={adapter.strength}
-                      format={formatAdapterStrength}
-                      onChange={(value) =>
-                        setAdapters(
-                          adapters.map((item) => (item.id === adapter.id ? { ...item, strength: clampAdapterStrength(value) } : item)),
-                        )
-                      }
-                    />
-                  </SlotRow>
-                ))}
-              </div>
-            ) : null}
+            <LoraSection
+              adapters={adapters}
+              catalog={catalog}
+              readOnly={readOnly}
+              unsupported={loraUnsupported}
+              onOpenAdapters={onOpenAdapters}
+              onChange={setAdapters}
+            />
           </section>
 
-          <section className="flex flex-col gap-2.5">
-            <FieldLabel value={`${canvas.width} × ${canvas.height}`}>尺寸</FieldLabel>
-            <Segmented<SizePresetId>
-              block
-              label="尺寸"
-              value={sizePreset}
-              onChange={(value) => {
-                if (value === 'custom') {
-                  setCustomSize(true)
-                  return
-                }
-                setCustomSize(false)
-                const preset = SIZE_PRESETS.find((item) => item.id === value)
-                if (preset) onChange((current) => resizeCanvas(current, preset.width, preset.height))
-              }}
-              options={[
-                ...SIZE_PRESETS.map((preset) => ({ value: preset.id, label: preset.id, hint: `${preset.width} × ${preset.height}` })),
-                { value: 'custom' as const, label: '自定义' },
-              ]}
-              className="[&>button]:px-1"
-            />
-            {sizePreset === 'custom' && !readOnly ? (
-              <div className="flex items-center gap-2">
-                <DimensionInput
-                  label="宽度"
-                  value={canvas.width}
-                  onCommit={(width) => onChange((current) => resizeCanvas(current, width, current.height))}
-                />
-                <span aria-hidden="true" className="text-ink-2">
-                  ×
-                </span>
-                <DimensionInput
-                  label="高度"
-                  value={canvas.height}
-                  onCommit={(height) => onChange((current) => resizeCanvas(current, current.width, height))}
-                />
-              </div>
-            ) : null}
-          </section>
+          {canvas.upscale ? (
+            <UpscaleSection canvas={canvas} canvases={inputs?.canvases ?? []} onChange={onChange} />
+          ) : (
+            <section className="flex flex-col gap-2.5">
+              <FieldLabel value={`${canvas.width} × ${canvas.height}`}>尺寸</FieldLabel>
+              <Segmented<SizePresetId>
+                block
+                label="尺寸"
+                value={sizePreset}
+                onChange={(value) => {
+                  if (value === 'custom') {
+                    setCustomSize(true)
+                    return
+                  }
+                  setCustomSize(false)
+                  const preset = SIZE_PRESETS.find((item) => item.id === value)
+                  if (preset) onChange((current) => resizeCanvas(current, preset.width, preset.height))
+                }}
+                options={[
+                  ...SIZE_PRESETS.map((preset) => ({ value: preset.id, label: preset.id, hint: `${preset.width} × ${preset.height}` })),
+                  { value: 'custom' as const, label: '自定义' },
+                ]}
+                className="[&>button]:px-1"
+              />
+              {sizePreset === 'custom' && !readOnly ? (
+                <div className="flex items-center gap-2">
+                  <DimensionInput
+                    label="宽度"
+                    value={canvas.width}
+                    onCommit={(width) => onChange((current) => resizeCanvas(current, width, current.height))}
+                  />
+                  <span aria-hidden="true" className="text-ink-2">
+                    ×
+                  </span>
+                  <DimensionInput
+                    label="高度"
+                    value={canvas.height}
+                    onCommit={(height) => onChange((current) => resizeCanvas(current, current.width, height))}
+                  />
+                </div>
+              ) : null}
+            </section>
+          )}
 
           <section className="flex flex-col gap-2.5">
             <FieldLabel value={qualityLabel(canvas.steps)}>质量</FieldLabel>
@@ -531,6 +510,175 @@ function CanvasParams({
           <p className="text-control text-ink-2">{prompt?.errors[0] ?? '描述还不完整'}</p>
         )}
       </Modal>
+    </div>
+  )
+}
+
+/** The LoRA rows of a 画面 or a 风格: each with its strength, plus 添加. */
+export function LoraSection({
+  adapters,
+  catalog,
+  readOnly = false,
+  unsupported = false,
+  hint = '叠加一种画风或角色',
+  onOpenAdapters,
+  onChange,
+}: {
+  adapters: ReturnType<typeof normalizeCanvasAdapters>
+  catalog: Catalog | null
+  readOnly?: boolean
+  /** The engine has no LoRA: nothing to add; rows already there stay so they can be removed. */
+  unsupported?: boolean
+  hint?: string
+  onOpenAdapters: () => void
+  onChange: (next: ProjectCanvas['adapters']) => void
+}): React.JSX.Element | null {
+  const adapterRows = adapterStatuses(adapters, catalog?.adapters)
+  const loraUnsupported = unsupported
+  const setAdapters = onChange
+  return (
+    <>
+      {loraUnsupported && !adapterRows.length ? null : (
+        <SlotHeader title="LoRA" hint={hint}>
+          {readOnly || loraUnsupported ? null : (
+            <Button tone="ghost" size="xs" className="-mr-2" onClick={onOpenAdapters} data-adapter-picker>
+              <Plus className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
+              添加
+            </Button>
+          )}
+        </SlotHeader>
+      )}
+      {adapterRows.length ? (
+        <div className="flex flex-col gap-1">
+          {adapterRows.map(({ adapter, name, installed: present }) => (
+            <SlotRow
+              key={adapter.id}
+              data-adapter-row={adapter.id}
+              title={present ? name : `${name}（找不到文件）`}
+              titleTone={present ? 'ink' : 'warn'}
+              removeLabel={`移除 ${name}`}
+              onRemove={readOnly ? undefined : () => setAdapters(adapters.filter((item) => item.id !== adapter.id))}
+            >
+              <SliderField
+                label="强度"
+                ariaLabel={`${name} 强度`}
+                min={ADAPTER_STRENGTH_MIN}
+                max={ADAPTER_STRENGTH_MAX}
+                step={ADAPTER_STRENGTH_STEP}
+                value={adapter.strength}
+                format={formatAdapterStrength}
+                onChange={(value) =>
+                  setAdapters(adapters.map((item) => (item.id === adapter.id ? { ...item, strength: clampAdapterStrength(value) } : item)))
+                }
+              />
+            </SlotRow>
+          ))}
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+/** A 放大's size: how many times the 原图, and how much it redraws. */
+function UpscaleSection({
+  canvas,
+  canvases,
+  onChange,
+}: {
+  canvas: ProjectCanvas
+  canvases: readonly ProjectCanvas[]
+  onChange: (update: (canvas: ProjectCanvas) => ProjectCanvas) => void
+}): React.JSX.Element {
+  const strength = canvas.inputs?.init?.strength ?? UPSCALE_DETAIL_DEFAULT
+  const detail = UPSCALE_DETAIL.reduce((best, item) =>
+    Math.abs(item.strength - strength) < Math.abs(best.strength - strength) ? item : best,
+  )
+  return (
+    <>
+      <section className="flex flex-col gap-2.5">
+        <FieldLabel value={canvas.inputs?.init ? `${canvas.width} × ${canvas.height}` : '先接一张原图'}>放大倍数</FieldLabel>
+        <Segmented<string>
+          block
+          label="放大倍数"
+          value={String(canvas.upscale?.scale ?? 2)}
+          onChange={(value) => onChange((current) => withUpscaleScale(current, Number(value), canvases))}
+          options={UPSCALE_SCALES.map((scale) => ({ value: String(scale), label: `×${scale}` }))}
+        />
+        <p className="text-caption text-ink-2">最长边最多 {MAX_DIMENSION} 像素。放大是按原图重画，不是单纯拉伸。</p>
+      </section>
+      <section className="flex flex-col gap-2.5">
+        <FieldLabel value={`重绘 ${Math.round(strength * 100)}%`}>细节</FieldLabel>
+        <Segmented<string>
+          block
+          label="细节"
+          value={detail.id}
+          onChange={(value) => {
+            const choice = UPSCALE_DETAIL.find((item) => item.id === value)
+            if (choice) onChange((current) => patchInit(current, { strength: choice.strength }))
+          }}
+          options={UPSCALE_DETAIL.map((item) => ({ value: item.id, label: item.label }))}
+        />
+      </section>
+    </>
+  )
+}
+
+/** A 风格: its name, the description and LoRA it adds, and the 画面 that use it. */
+function StylePanel({
+  canvas,
+  catalog,
+  inputs,
+  onChange,
+  onOpenAdapters,
+}: ParamsPanelProps & { canvas: ProjectCanvas }): React.JSX.Element {
+  const users = styleUsers(canvas.id, inputs?.canvases ?? [])
+  const loraUnsupported = inputs?.features ? !inputs.features.lora : false
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto px-5 pb-4 pt-5">
+      <div className="flex min-w-0 flex-col gap-6">
+        <section className="flex flex-col gap-2.5">
+          <FieldLabel htmlFor="studio-style-name">风格名称</FieldLabel>
+          <Input
+            id="studio-style-name"
+            value={canvas.title}
+            maxLength={40}
+            onChange={(event) => onChange((current) => ({ ...current, title: event.target.value }))}
+            onBlur={(event) => {
+              if (!event.target.value.trim()) onChange((current) => ({ ...current, title: '风格' }))
+            }}
+          />
+        </section>
+        <section className="flex flex-col gap-2.5">
+          <FieldLabel htmlFor="studio-style-text">风格描述</FieldLabel>
+          <Textarea
+            id="studio-style-text"
+            aria-label="风格描述"
+            value={canvas.prompt}
+            onChange={(event) => onChange((current) => withDescription(current, event.target.value))}
+            placeholder="这组图共同的样子，例如：水彩插画，柔和的粉色调，留白多"
+            className="h-[116px] resize-none"
+          />
+          <p className="text-caption text-ink-2">接着它的画面，生成时会把这段话加在自己的描述后面。</p>
+        </section>
+        <section className="flex flex-col gap-2.5">
+          <LoraSection
+            adapters={normalizeCanvasAdapters(canvas.adapters)}
+            catalog={catalog}
+            unsupported={loraUnsupported}
+            hint="接着它的画面都会用上"
+            onOpenAdapters={onOpenAdapters}
+            onChange={(next) => onChange((current) => ({ ...current, adapters: normalizeCanvasAdapters(next) }))}
+          />
+        </section>
+        <section className="flex flex-col gap-1.5" data-style-users>
+          <FieldLabel value={users.length ? `${users.length} 个` : undefined}>用在</FieldLabel>
+          {users.length ? (
+            <p className="text-ui text-ink">{users.map((user) => user.title).join('、')}</p>
+          ) : (
+            <p className="text-caption text-ink-2">还没有画面用它。把它右边的连线拖到画面上。</p>
+          )}
+        </section>
+      </div>
     </div>
   )
 }
