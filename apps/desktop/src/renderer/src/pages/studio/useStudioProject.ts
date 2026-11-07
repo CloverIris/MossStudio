@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JobRecord, ProjectCanvas, ProjectDocument, ProjectSummary } from '@shared/types'
 import { electronStudioClient, type StudioClient } from '../../lib/studioClient'
 import { applyJobs, copyAsLayout, createLayoutCanvas, migrateCanvases, removeCanvasFrom, settingsFrom } from './canvases'
+import { foldedRunIds } from './runs'
 import { UNTITLED_PROJECT, nextProjectName } from './defaults'
 import { useLiveState } from './useLiveState'
 
@@ -182,8 +183,10 @@ export function useStudioProject(options: {
       token.current += 1
       setSessionKey(token.current)
       const list = doc.canvases
-      const selected =
-        list.find((canvas) => canvas.id === doc.selectedCanvasId) ?? list.find((canvas) => canvas.kind === 'layout') ?? list[0]
+      // A run folded into a filmstrip is selected through its 画面.
+      const wanted = list.find((canvas) => canvas.id === doc.selectedCanvasId)
+      const shown = wanted && foldedRunIds(list).has(wanted.id) ? list.find((canvas) => canvas.id === wanted.sourceCanvasId) : wanted
+      const selected = shown ?? list.find((canvas) => canvas.kind === 'layout') ?? list[0]
       meta.current = { seriesId: doc.seriesId, page: doc.page }
       knownUpdatedAt.current = doc.updatedAt ?? null
       // Loading is not an edit; a document that still needs writing (an empty

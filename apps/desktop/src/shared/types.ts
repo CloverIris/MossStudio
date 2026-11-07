@@ -1133,6 +1133,13 @@ export interface ProjectCanvas {
   deviceId?: string
   backgroundPath?: string
   sourceCanvasId?: string
+  /**
+   * A result kept on the board as its own card. Unpinned results of a layout
+   * canvas stack in that canvas's filmstrip instead (see pages/studio/runs.ts).
+   */
+  pinned?: boolean
+  /** The filmstrip picture a layout canvas shows on its face and gives to wires; absent = the newest. */
+  shownOutput?: CanvasImageLink
   jobId?: string
   jobState?: JobState
   progress?: JobProgress

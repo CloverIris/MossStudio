@@ -1,16 +1,11 @@
 import type { ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
-import { canvasPicture, controlKindLabel, linksOf, MAX_REFERENCES, wouldCycle, type LinkRole } from './links'
+import { controlKindLabel, linksOf, MAX_REFERENCES, wouldCycle, type LinkRole } from './links'
 import { engineUnavailableReason, type Blocker } from './readiness'
 
 /**
  * Connecting cards by dragging a wire: which cards offer a picture, which
  * drops are allowed, and what the role menu offers. Pure, no React.
  */
-
-/** A card has an output port once it has a picture to give. */
-export function hasPicture(canvas: ProjectCanvas): boolean {
-  return canvasPicture(canvas) !== null
-}
 
 export type ConnectCheck = { ok: true } | { ok: false; reason: string }
 
@@ -94,4 +89,16 @@ export function linkMenu(
   }
   if (!entries.length) return [{ type: 'note', label: '当前引擎不支持把图片接进来' }]
   return entries
+}
+
+/**
+ * The menu of a wire dropped on the empty board: a new 画面 fed by the
+ * picture, as its start picture or as a reference.
+ */
+export function newCanvasMenu(features: EngineFeatures | null | undefined, blockers: readonly Blocker[] = []): LinkMenuEntry[] {
+  if (!features) return [{ type: 'note', label: engineUnavailableReason(features, blockers, '把图片接进来') ?? '' }]
+  const entries: LinkMenuEntry[] = []
+  if (features.imageInput) entries.push({ type: 'item', role: 'init', label: '新画面 · 起始图' })
+  if (features.references) entries.push({ type: 'item', role: 'reference', label: '新画面 · 参考图' })
+  return entries.length ? entries : [{ type: 'note', label: '现在的引擎不能把图片接进新画面' }]
 }

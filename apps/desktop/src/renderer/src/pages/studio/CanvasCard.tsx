@@ -1,10 +1,11 @@
-import { ImageOff, MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ImageResizeMode, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { Button, IconButton, Pill, cn } from '../../components/ui'
 import { dimensions } from '../../lib/format'
 import { MenuItem, Popover } from '../../components/common/Popover'
 import { cloverUrl } from '../../lib/clover'
+import { OutputImage } from './OutputImage'
 import { CARD_FOOTER, CARD_HEADER, cardBodyHeight, cardWidth } from './boardLayout'
 import { LivePreview, ProgressStrip, StatusOverlay } from './CardStatus'
 import type { CardJobView } from './jobStatus'
@@ -13,48 +14,34 @@ import type { Size } from './mask'
 import type { RerunCheck } from './readiness'
 import { qualityLabel } from './defaults'
 import { canvasDescription } from './prompt'
+import { Filmstrip } from './Filmstrip'
 import { RegionLayer, type BoardTool } from './RegionLayer'
+import type { StripItem } from './runs'
 import { StartPicture } from './StartPicture'
-
-/** Result picture with a readable fallback when the file on disk is gone. */
-export function OutputImage({
-  path,
-  alt,
-  className,
-  compact,
-}: {
-  path: string
-  alt: string
-  className?: string
-  compact?: boolean
-}): React.JSX.Element {
-  const [broken, setBroken] = useState(false)
-  if (broken) {
-    return (
-      <span
-        title={`图片文件找不到了：${path}`}
-        className="flex size-full items-center justify-center px-3 text-center text-caption text-ink-2"
-      >
-        {compact ? <ImageOff className="size-4 text-ink-3" aria-label="图片文件找不到了" strokeWidth={1.6} /> : '图片文件找不到了'}
-      </span>
-    )
-  }
-  return (
-    <img
-      src={cloverUrl(path)}
-      alt={alt}
-      draggable={false}
-      onError={() => setBroken(true)}
-      className={cn('size-full object-cover', className)}
-    />
-  )
-}
 
 export interface CardMask {
   interactive: boolean
   brush: MaskBrush
   command?: MaskCommand
   onSave: (png: Uint8Array | null) => void
+}
+
+/** A 画面's filmstrip: its pictures, the one on its face, and how each run is doing. */
+export interface CardStrip {
+  items: readonly StripItem[]
+  shown: number
+  views: ReadonlyMap<string, CardJobView>
+  onShow: (index: number) => void
+  /** Open the viewer at this picture (double-click a thumbnail). */
+  onOpen: (index: number) => void
+  /** A press on a thumbnail: a click shows it, a drag onto the board pins it (see Board). */
+  onPointerDown: (index: number, event: React.PointerEvent<HTMLButtonElement>) => void
+}
+
+export interface CardMenuAction {
+  label: string
+  onSelect: () => void
+  tone?: 'danger'
 }
 
 export interface CanvasCardProps {
@@ -72,6 +59,15 @@ export interface CanvasCardProps {
   mask?: CardMask | null
   /** The card has a picture to give: show its output port. */
   hasOutput: boolean
+  /**
+   * A 画面's filmstrip, once it has run. `view` is then the shown run's, and
+   * the face shows the picture picked in the strip.
+   */
+  strip?: CardStrip | null
+  /** The job of the run the card shows (a 画面's filmstrip pick); default: its own. */
+  jobId?: string
+  /** Entries of the ⋯ menu: 用作起始图, 固定到画板 and so on (danger ones next to 删除). */
+  menuActions?: readonly CardMenuAction[]
   /** While a wire is dragged over this card: whether it can be dropped here. */
   dropTarget?: 'ok' | 'no'
   /** Board pick mode: 'ok' = a click picks this card's picture, 'inert' = it cannot be picked. */
@@ -176,12 +172,17 @@ function SettingChips({ canvas, model }: { canvas: ProjectCanvas; model?: { labe
  */
 export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
   const { canvas, view, selected } = props
+  // A 画面 acts on the job of the run it shows.
+  const jobId = props.jobId ?? canvas.jobId
   const [shown, setShown] = useState(0)
   const width = cardWidth(canvas)
   const bodyHeight = cardBodyHeight(canvas)
   const isImage = canvas.kind === 'image'
   const outputs = isImage ? [] : view.outputs
-  const current = outputs[Math.min(shown, Math.max(0, outputs.length - 1))]
+  const strip = props.strip?.items.length ? props.strip : null
+  const stripItem = strip ? strip.items[strip.shown] : undefined
+  const faceIndex = stripItem ? stripItem.output : shown
+  const current = outputs[Math.min(faceIndex, Math.max(0, outputs.length - 1))]
   const editable = canvas.kind === 'layout' && selected && !view.active
   const showRegions = canvas.kind === 'layout' && (selected || outputs.length === 0)
   const maxThumbs = Math.max(1, Math.floor((width - 116) / 42))
@@ -193,7 +194,13 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
   // An empty face (nothing generated, no start picture or underlay) shows the description instead.
   const blankFace =
     canvas.kind === 'layout' && !preview && !current && !painting && !props.initPicture && !canvas.backgroundPath && !view.active
-  const statusLabel = isImage ? '' : view.label || (canvas.kind === 'layout' && outputs.length === 0 && !view.active ? '尚未生成' : '')
+  const runLabel = view.label || (canvas.kind === 'layout' && !strip && outputs.length === 0 && !view.active ? '尚未生成' : '')
+  // A filmstrip of several pictures says which one the face shows (or how its run is going).
+  const statusLabel = isImage
+    ? ''
+    : strip && strip.items.length > 1 && stripItem && stripItem.path
+      ? `${stripItem.number} / ${strip.items.length}`
+      : runLabel
 
   return (
     <article
@@ -265,6 +272,20 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
         >
           {(close) => (
             <>
+              {props.menuActions
+                ?.filter((action) => action.tone !== 'danger')
+                .map((action) => (
+                  <MenuItem
+                    key={action.label}
+                    tone={action.tone}
+                    onSelect={() => {
+                      close()
+                      action.onSelect()
+                    }}
+                  >
+                    {action.label}
+                  </MenuItem>
+                ))}
               <MenuItem
                 onSelect={() => {
                   close()
@@ -273,7 +294,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
               >
                 {isImage ? '复制' : '复制为新画面'}
               </MenuItem>
-              {canvas.jobId && !isImage ? (
+              {jobId && !isImage ? (
                 <MenuItem
                   onSelect={() => {
                     close()
@@ -283,6 +304,20 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
                   查看详情
                 </MenuItem>
               ) : null}
+              {props.menuActions
+                ?.filter((action) => action.tone === 'danger')
+                .map((action) => (
+                  <MenuItem
+                    key={action.label}
+                    tone="danger"
+                    onSelect={() => {
+                      close()
+                      action.onSelect()
+                    }}
+                  >
+                    {action.label}
+                  </MenuItem>
+                ))}
               <MenuItem
                 tone="danger"
                 onSelect={() => {
@@ -325,11 +360,11 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           <button
             type="button"
             aria-label={`查看 ${canvas.title} 的结果`}
-            onDoubleClick={() => props.onOpenViewer(Math.min(shown, outputs.length - 1))}
+            onDoubleClick={() => props.onOpenViewer(Math.min(faceIndex, outputs.length - 1))}
             onClick={(event) => {
               if (!selected) return
               event.stopPropagation()
-              props.onOpenViewer(Math.min(shown, outputs.length - 1))
+              props.onOpenViewer(Math.min(faceIndex, outputs.length - 1))
             }}
             className="absolute inset-0 block cursor-zoom-in"
           >
@@ -439,7 +474,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             >
               查看详情
             </Button>
-            {canvas.jobId ? (
+            {jobId ? (
               <Button
                 tone="ghost"
                 size="xs"
@@ -452,6 +487,59 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
               </Button>
             ) : null}
           </div>
+        ) : strip ? (
+          <>
+            <Filmstrip
+              items={strip.items}
+              shown={strip.shown}
+              views={strip.views}
+              max={strip.items.length > maxThumbs ? Math.max(1, maxThumbs - 1) : maxThumbs}
+              onShow={strip.onShow}
+              onOpen={strip.onOpen}
+              onPointerDown={strip.onPointerDown}
+            />
+            <span className="flex-1" />
+            {view.state === 'failed' ? (
+              <Button
+                size="xs"
+                aria-label={`重试 ${canvas.title}`}
+                disabled={!props.rerun.ok}
+                title={props.rerun.reason}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.onRerun('same')
+                }}
+              >
+                重试
+              </Button>
+            ) : (
+              <>
+                <Button
+                  size="xs"
+                  disabled={!props.rerun.ok}
+                  title={props.rerun.reason}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    props.onRerun('new')
+                  }}
+                >
+                  换个种子
+                </Button>
+                <Button
+                  size="xs"
+                  aria-label={`重新生成 ${canvas.title}`}
+                  disabled={!props.rerun.ok}
+                  title={props.rerun.reason ?? '用现在的设置和这张图的种子再生成一次'}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    props.onRerun('same')
+                  }}
+                >
+                  重新生成
+                </Button>
+              </>
+            )}
+          </>
         ) : outputs.length > 0 ? (
           <>
             {outputs.slice(0, maxThumbs).map((output, index) => (
@@ -524,7 +612,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             >
               重试
             </Button>
-            {canvas.jobId ? (
+            {jobId ? (
               <Button
                 tone="ghost"
                 size="xs"

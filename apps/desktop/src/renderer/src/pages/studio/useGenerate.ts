@@ -12,6 +12,7 @@ import { profileFor, randomSeed, seedForRun } from './defaults'
 import { resolveJobInputs } from './jobInputs'
 import { compileCanvasPrompt } from './prompt'
 import { resolveBundle } from './readiness'
+import { shownRun, staleRunIds } from './runs'
 import type { StudioProject } from './useStudioProject'
 
 export type SeedMode = 'auto' | 'new' | 'same'
@@ -112,7 +113,9 @@ export function useGenerate(options: {
 
     // 'same' repeats the picture on this card: the seed its run used, not the
     // source's latest seed (a later 换个种子 from this card records a new one).
-    const shownSeed = jobs.find((job) => job.id === source.jobId)?.params.seed ?? source.outputs?.[0]?.seed ?? source.seed
+    // A 画面 repeats the run picked in its filmstrip.
+    const shown = source.kind === 'layout' ? (shownRun(source, canvases)?.run ?? source) : source
+    const shownSeed = jobs.find((job) => job.id === shown.jobId)?.params.seed ?? shown.outputs?.[0]?.seed ?? source.seed
     const seed = seedMode === 'same' ? shownSeed : seedMode === 'new' ? randomSeed() : seedForRun(source)
     const runSource: ProjectCanvas = { ...source, seed, modelBundleId: choice.bundle.id }
     let taskId: string | null = null
@@ -120,14 +123,18 @@ export function useGenerate(options: {
     try {
       // An editable source remembers the seed this run used, so 种子 shows it
       // afterwards. A result card's parameters are frozen and stay as they were.
+      // A 画面's old failed or stopped runs (no longer shown in its filmstrip) are cleared.
+      const stale = new Set(source.kind === 'layout' ? staleRunIds(source.id, canvases, jobs) : [])
       const withSeed =
         source.kind === 'layout'
-          ? canvases.map((canvas) => (canvas.id === source.id ? { ...canvas, seed, modelBundleId: choice.bundle!.id } : canvas))
+          ? canvases
+              .filter((canvas) => !stale.has(canvas.id))
+              .map((canvas) => (canvas.id === source.id ? { ...canvas, seed, modelBundleId: choice.bundle!.id } : canvas))
           : canvases
       const task = taskCanvasFor(runSource, withSeed)
       taskId = task.taskId
       board = task.canvases
-      // The selection stays where the user is working; the result card appears on the board.
+      // The selection stays where the user is working; a 画面's run joins its filmstrip.
       project.setCanvases(board)
       const saved = await project.saveNow({ canvases: board, selectedCanvasId: project.selectedRef.current })
       if (!saved) throw new Error('项目没有保存成功，请稍后再试')
@@ -146,7 +153,8 @@ export function useGenerate(options: {
           projectId: saved.id,
           canvasId: taskId,
           // Activity names the job after the card it draws on, as the card itself does.
-          canvasTitle: board.find((canvas) => canvas.id === taskId)?.title ?? source.title,
+          // A 画面's runs are named after the 画面, where they show.
+          canvasTitle: source.kind === 'layout' ? source.title : (board.find((canvas) => canvas.id === taskId)?.title ?? source.title),
           // Lineage starts at the source, as the scheduler expects.
           canvasLineage: canvasLineage(source, canvases),
           modelBinding: { bundleId: choice.bundle.id, ...choice.bundle.components },

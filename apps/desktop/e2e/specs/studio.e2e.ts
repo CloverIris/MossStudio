@@ -130,28 +130,39 @@ describe('studio', () => {
     await cancel.click()
     await expect.poll(() => app.calls('jobs:cancel')).toEqual([{ id }])
 
-    // A second run that completes with four outputs.
+    // A second run that completes with four outputs. It stacks in the 画面's
+    // filmstrip (the canceled run without a picture drops out of it).
     await page.locator('[data-studio-generate]').click()
     await submitted(page, 2)
     const second = await lastJobId(page)
     await page.evaluate((jobId) => window.__mock.finishJob(jobId, { outputs: 4 }), second)
-    // Thumbnails that fit, then "+N" for the rest: every output is reachable.
+    expect(await page.locator('article[data-canvas-card]').count()).toBe(1)
+    // The newest thumbnails, then "+N" for the older ones: every output is reachable.
     const footer = page.locator('article[data-canvas-card] footer').filter({ has: page.getByRole('button', { name: '换个种子' }) })
     const thumbs = footer.getByRole('button', { name: /^第 \d 张$/ })
     await expect.poll(() => thumbs.count()).toBeGreaterThan(0)
     const visibleThumbs = await thumbs.count()
     if (visibleThumbs < 4) expect(await footer.getByRole('button', { name: `+${4 - visibleThumbs}` }).isVisible()).toBe(true)
+    // The face shows the run's first picture until another is picked.
+    const face = page.getByRole('button', { name: '查看 画面 1 的结果' })
+    expect(decodeURIComponent((await face.locator('img').getAttribute('src')) ?? '')).toContain(`${second}-0.png`)
     await app.screenshot('studio-outputs-light')
 
-    await thumbs.nth(1).click()
+    // Picking a thumbnail puts it on the face; the face opens the viewer there.
+    const third = footer.getByRole('button', { name: '第 3 张' })
+    await third.click()
+    await expect.poll(() => third.getAttribute('aria-pressed')).toBe('true')
+    await expect.poll(async () => decodeURIComponent((await face.locator('img').getAttribute('src')) ?? '')).toContain(`${second}-2.png`)
+    await face.click()
     const viewer = page.getByRole('dialog')
-    await expect.poll(() => viewer.getByText(/第 2 \/ 4 张/).count()).toBeGreaterThan(0)
-    await viewer.getByRole('button', { name: '下一张' }).click()
     await expect.poll(() => viewer.getByText(/第 3 \/ 4 张/).count()).toBeGreaterThan(0)
     await viewer.getByRole('button', { name: '下一张' }).click()
     await expect.poll(() => viewer.getByText(/第 4 \/ 4 张/).count()).toBeGreaterThan(0)
     await page.keyboard.press('ArrowRight')
     await expect.poll(() => viewer.getByText(/第 1 \/ 4 张/).count()).toBeGreaterThan(0)
+    await viewer.getByRole('button', { name: '下一张' }).click()
+    await expect.poll(() => viewer.getByText(/第 2 \/ 4 张/).count()).toBeGreaterThan(0)
+    await viewer.getByRole('button', { name: '上一张' }).click()
     const shown = await viewer.locator('img').first().getAttribute('src')
     expect(decodeURIComponent(shown ?? '')).toContain(`${second}-0.png`)
     // The prompt and what to avoid sit above the parameters, as copyable blocks.
@@ -175,13 +186,12 @@ describe('studio', () => {
     expect(fresh).toMatchObject({ prompt: first!.prompt, width: first!.width, height: first!.height, steps: first!.steps })
     expect(fresh!.seed).not.toBe(first!.seed)
 
-    // Once that run is done, 重新生成 repeats the first one exactly.
+    // Once that run is done, both stack on the one 画面.
     await page.evaluate((jobId) => window.__mock.finishJob(jobId, { outputs: 1 }), await lastJobId(page))
-    // 重新生成 on the first run's card repeats it exactly, seed included.
-    await page
-      .locator(`article[data-canvas-card="${first!.canvasId}"]`)
-      .getByRole('button', { name: /^重新生成/ })
-      .click()
+    expect(await page.locator('article[data-canvas-card]').count()).toBe(1)
+    // Picking the first picture, 重新生成 repeats that run exactly, seed included.
+    await result.getByRole('button', { name: '第 1 张' }).click()
+    await result.getByRole('button', { name: /^重新生成/ }).click()
     const [, , same] = await submitted(page, 3)
     expect(same).toMatchObject({ prompt: first!.prompt, seed: first!.seed, steps: first!.steps })
   })
