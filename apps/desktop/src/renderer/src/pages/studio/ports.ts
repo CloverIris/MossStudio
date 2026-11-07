@@ -1,5 +1,5 @@
 import type { ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
-import { controlKindLabel, linksOf, MAX_REFERENCES, type CanvasLinkEntry, type LinkRole } from './links'
+import { controlKindLabel, linksOf, MAX_REFERENCES, MAX_STYLES, type CanvasLinkEntry, type LinkRole } from './links'
 import { engineUnavailableReason, type Blocker } from './readiness'
 
 /**
@@ -10,7 +10,7 @@ import { engineUnavailableReason, type Blocker } from './readiness'
  */
 
 export interface InputSlot {
-  /** Stable within a canvas: `init`, `control:<kind>`, `control`, `reference:<n>`, `reference`. */
+  /** Stable within a canvas: `init`, `control:<kind>`, `control`, `reference:<n>`, `reference`, `style:<n>`, `style`. */
   key: string
   role: LinkRole
   /** Control kind of this slot (control slots of a chosen adapter). */
@@ -34,12 +34,17 @@ export const ROLE_HINTS: Record<LinkRole, string> = {
   init: '从这张图开始改',
   control: '按这张图的深度或颜色构图',
   reference: '让结果参考这张图',
+  style: '用这个风格的描述和 LoRA',
 }
+
+/** What a 放大's one socket is called and does. */
+const UPSCALE_SLOT = { label: '原图', hint: '要放大的图' }
 
 /** The slot a link entry is drawn into. */
 export function linkSlotKey(entry: Pick<CanvasLinkEntry, 'role' | 'kind' | 'index'>): string {
   if (entry.role === 'control') return `control:${entry.kind ?? ''}`
   if (entry.role === 'reference') return `reference:${entry.index ?? 0}`
+  if (entry.role === 'style') return `style:${entry.index ?? 0}`
   return 'init'
 }
 
@@ -54,6 +59,8 @@ export function inputSlots(
   features: EngineFeatures | null | undefined,
   adapters: readonly ControlAdapterEntry[],
   blockers: readonly Blocker[] = [],
+  /** The board has 风格 nodes: a 画面 then offers a 风格 socket. */
+  styles = false,
 ): InputSlot[] {
   if (canvas.kind !== 'layout') return []
   const links = linksOf(canvas)
@@ -76,6 +83,14 @@ export function inputSlots(
     needs: null,
   })
   const slots: InputSlot[] = []
+
+  // A 放大 takes one picture, its 原图, and nothing else.
+  if (canvas.upscale) {
+    const source = links.find((entry) => entry.role === 'init')
+    if (source) slots.push({ ...linked(source), label: UPSCALE_SLOT.label, hint: UPSCALE_SLOT.hint })
+    else if (offers('imageInput')) slots.push(empty({ key: 'init', role: 'init', label: UPSCALE_SLOT.label, reason: undefined }))
+    return slots.map((slot) => ({ ...slot, hint: UPSCALE_SLOT.hint }))
+  }
 
   const init = links.find((entry) => entry.role === 'init')
   if (init) slots.push(linked(init))
@@ -113,13 +128,29 @@ export function inputSlots(
   if (offers('references') && references.length < MAX_REFERENCES)
     slots.push(empty({ key: 'reference', role: 'reference', label: '参考图' }))
 
+  // A 风格 is text and LoRA: no engine feature needed to wire one.
+  const styleLinks = links.filter((entry) => entry.role === 'style')
+  for (const entry of styleLinks) slots.push(linked(entry))
+  if (styles && styleLinks.length < MAX_STYLES)
+    slots.push({ key: 'style', role: 'style', label: '风格', hint: ROLE_HINTS.style, linked: false, needs: null })
+
   return slots
+}
+
+/** A 风格 wired onto a 画面 anywhere but a socket: linked, or why not. */
+export function styleDrop(canvas: ProjectCanvas, styleId: string): SlotDrop {
+  const styles = canvas.inputs?.styles?.links ?? []
+  if (styles.some((link) => link.canvasId === styleId)) return { ok: false, reason: '这个风格已经接上了' }
+  if (styles.length >= MAX_STYLES) return { ok: false, reason: `风格最多接 ${MAX_STYLES} 个` }
+  return { ok: true, role: 'style' }
 }
 
 /** What dropping a wire on a slot does: link into it, or why not. */
 export type SlotDrop = { ok: true; role: LinkRole; kind?: string } | { ok: false; reason: string }
 
-export function slotDrop(slot: InputSlot, canvas: ProjectCanvas, sourceId: string): SlotDrop {
+export function slotDrop(slot: InputSlot, canvas: ProjectCanvas, sourceId: string, sourceKind: ProjectCanvas['kind'] = 'image'): SlotDrop {
+  if (slot.role === 'style') return sourceKind === 'style' ? styleDrop(canvas, sourceId) : { ok: false, reason: '这里只能接风格' }
+  if (sourceKind === 'style') return { ok: false, reason: '把风格拖到画面上就能接上' }
   if (slot.needs) return { ok: false, reason: slot.reason ?? '现在还不能接图片' }
   if (slot.role === 'reference') {
     const links = canvas.inputs?.references?.links ?? []

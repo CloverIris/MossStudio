@@ -278,5 +278,11 @@ export function withRunSettings(layout: ProjectCanvas, run: ProjectCanvas): Proj
   }
   if (run.sampling) next.sampling = structuredClone(run.sampling)
   else delete next.sampling
+  // A 放大 also takes back its scale and how much it redrew.
+  if (layout.upscale && run.upscale) {
+    next.upscale = { ...run.upscale }
+    const strength = run.inputs?.init?.strength
+    if (strength !== undefined && next.inputs?.init) next.inputs = { ...next.inputs, init: { ...next.inputs.init, strength } }
+  }
   return next
 }

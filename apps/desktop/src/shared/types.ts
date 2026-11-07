@@ -1100,12 +1100,31 @@ export interface CanvasInputs {
     images: Array<{ kind: string; link: CanvasImageLink; strength: number; start: number; end: number }>
   }
   references?: { links: CanvasImageLink[]; maxEdge?: number }
+  /** 风格 nodes (`kind: 'style'`) whose description and LoRA this Canvas generates with. */
+  styles?: { links: CanvasImageLink[] }
+}
+
+/** A 放大 node: a layout Canvas that redraws its start picture (原图) larger. */
+export interface CanvasUpscale {
+  /** Times the 原图's size (the long edge stays within the engine's limit). */
+  scale: number
 }
 
 export interface ProjectCanvas {
   id: string
-  /** layout: a description to generate; result: a generation's output; image: a picture brought in from a file. */
-  kind: 'layout' | 'result' | 'image'
+  /**
+   * layout: a description to generate; result: a generation's output; image: a picture brought in from a file;
+   * style: a 风格 (a description and LoRA that the layout Canvases wired to it generate with).
+   */
+  kind: 'layout' | 'result' | 'image' | 'style'
+  /** A 放大 node (layout only): redraws its start picture at `scale` times its size. */
+  upscale?: CanvasUpscale
+  /**
+   * A result: the description and LoRA its run was actually generated with,
+   * when they differ from its own (its 风格 added, a 放大's inherited
+   * description). Running it again uses these.
+   */
+  generated?: { prompt: string; adapters?: CanvasAdapter[] }
   /** The picture of an `image` Canvas (copied into the project's assets). */
   imagePath?: string
   /** The real pixel size of `imagePath` (`width`/`height` are its card size on the board). */

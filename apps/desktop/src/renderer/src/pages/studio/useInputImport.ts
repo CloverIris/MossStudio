@@ -4,6 +4,7 @@ import type { ProjectCanvas } from '@shared/types'
 import { call } from '../../lib/api'
 import { createImageCanvas } from './canvases'
 import { MAX_REFERENCES, setLink, type LinkRole } from './links'
+import { withUpscaleSize } from './nodes'
 import type { StudioProject } from './useStudioProject'
 
 interface ImportedPicture {
@@ -77,7 +78,13 @@ export function useInputImport(options: {
       if (!created.length) return
       project.setCanvases((previous) =>
         previous.map((canvas) =>
-          canvas.id === targetId ? created.reduce((next, image) => setLink(next, role, { canvasId: image.id }, kind), canvas) : canvas,
+          canvas.id === targetId
+            ? // A 放大 takes its size from its 原图.
+              withUpscaleSize(
+                created.reduce((next, image) => setLink(next, role, { canvasId: image.id }, kind), canvas),
+                [...previous, ...created],
+              )
+            : canvas,
         ),
       )
     },

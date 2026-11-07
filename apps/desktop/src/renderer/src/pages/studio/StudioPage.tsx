@@ -31,6 +31,18 @@ import { useEngineFeatures } from './useEngineFeatures'
 import { useControlAdapters } from '../../lib/useControlAdapters'
 import { removeLink, setControlAdapter, setLink, type CanvasLinkEntry, type LinkRole, type PickTarget } from './links'
 import type { Recipe } from './recipes'
+import { BOARD_GAP, cardWidth } from './boardLayout'
+import {
+  createStyleCanvas,
+  generationCanvas,
+  nodeBlockers,
+  seriesFromStyle,
+  STYLE_CARD,
+  styleLoraNote,
+  upscaleFromPicture,
+  upscaleProblem,
+  withUpscaleSize,
+} from './nodes'
 import { dropRun, givesPicture, isActiveRun, keepCardsShown, pictureLink, pinRun, runsOf, unpinRun, withRunSettings } from './runs'
 import { resolveJobInputs } from './jobInputs'
 import { useGenerate } from './useGenerate'
@@ -137,16 +149,24 @@ export function StudioPage(): React.JSX.Element {
   const { adapters: controlAdapters, loaded: controlAdaptersLoaded } = useControlAdapters()
   const boardAssets = useBoardAssets({ project, notify: toast.push })
   // Inspector: what the selected canvas's pictures and sampling resolve to.
+  // What the selected 画面 generates with: its 风格 applied, a 放大 sized from its 原图.
+  const generating = useMemo(
+    () => (selected?.kind === 'layout' ? generationCanvas(selected, project.canvases) : null),
+    [selected, project.canvases],
+  )
   const inputBlockers = useMemo(
     () =>
-      selected?.kind === 'layout'
-        ? resolveJobInputs(selected, { canvases: project.canvases, features: boardFeatures, controlAdapters, controlAdaptersLoaded })
-            .blockers
+      generating
+        ? [
+            ...nodeBlockers(generating, project.canvases),
+            ...resolveJobInputs(generating, { canvases: project.canvases, features: boardFeatures, controlAdapters, controlAdaptersLoaded })
+              .blockers,
+          ]
         : [],
-    [selected, project.canvases, boardFeatures, controlAdapters, controlAdaptersLoaded],
+    [generating, project.canvases, boardFeatures, controlAdapters, controlAdaptersLoaded],
   )
-  const readiness = deriveReadiness({
-    canvas: selected?.kind === 'layout' ? selected : null,
+  const derived = deriveReadiness({
+    canvas: generating,
     catalog,
     bundle,
     engine: engineReadiness,
@@ -157,6 +177,18 @@ export function StudioPage(): React.JSX.Element {
     update,
     features: boardFeatures,
   })
+  // A LoRA blocker says when some of the LoRA come from a 风格 (the 画面's own list does not show them).
+  const loraNote = selected?.kind === 'layout' ? styleLoraNote(selected, project.canvases) : ''
+  const readiness = loraNote
+    ? {
+        ...derived,
+        blockers: derived.blockers.map((blocker) =>
+          ['adapters', 'remote-adapters', 'lora-unsupported'].includes(blocker.id)
+            ? { ...blocker, message: `${blocker.message}${loraNote}` }
+            : blocker,
+        ),
+      }
+    : derived
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false
   const { submitting, generate } = useGenerate({
@@ -294,7 +326,9 @@ export function StudioPage(): React.JSX.Element {
       const resolved = pictureLink(previous, link)
       const linked = setLink(target, role, resolved, kind)
       if (linked === target) return previous
-      return pinRun(previous, resolved.canvasId).map((canvas) => (canvas.id === targetId ? linked : canvas))
+      const next = pinRun(previous, resolved.canvasId)
+      // A 放大 takes its size from its 原图.
+      return next.map((canvas) => (canvas.id === targetId ? withUpscaleSize(linked, next) : canvas))
     })
   }
 
@@ -309,16 +343,77 @@ export function StudioPage(): React.JSX.Element {
   const newCanvasFromPicture = (sourceId: string, role: 'init' | 'reference' = 'init', at?: { x: number; y: number }): void => {
     const list = project.canvasesRef.current
     // A picture card has no generation settings; the new 画面 takes the latest canvas's.
-    const latestCanvas = [...list].reverse().find((canvas) => canvas.kind !== 'image')
-    const made = canvasFromPicture(list, sourceId, { role, at, fallback: settingsFrom(latestCanvas) })
+    const made = canvasFromPicture(list, sourceId, { role, at, fallback: latestSettings() })
     if (!made) return
     project.setCanvases(made.canvases)
     project.select(made.created.id)
     requestAnimationFrame(() => board.current?.reveal(made.created.id))
   }
 
-  /** A recipe: a new 画面, then the picture it starts from, chosen from a file. */
+  const latestSettings = (): ReturnType<typeof settingsFrom> =>
+    settingsFrom([...project.canvasesRef.current].reverse().find((canvas) => canvas.kind === 'layout' || canvas.kind === 'result'))
+
+  /** 放大: a 放大 node fed by a card's picture, to its right (or where a wire was dropped). */
+  const upscaleFrom = (sourceId: string, at?: { x: number; y: number }): void => {
+    const list = project.canvasesRef.current
+    const problem = upscaleProblem(list, pictureLink(list, { canvasId: sourceId }))
+    if (problem) {
+      toast.push(problem, 'info')
+      return
+    }
+    const made = upscaleFromPicture(list, sourceId, { fallback: latestSettings(), at })
+    if (!made) return
+    project.setCanvases(made.canvases)
+    project.select(made.created.id)
+    requestAnimationFrame(() => board.current?.reveal(made.created.id))
+  }
+
+  /** A new 风格, wired into `canvasId` when given; selected so its description can be written. */
+  const addStyle = (canvasId?: string, styleId?: string): void => {
+    if (canvasId && styleId) {
+      linkInto(canvasId, 'style', { canvasId: styleId })
+      return
+    }
+    const list = project.canvasesRef.current
+    const near = canvasId ? list.find((canvas) => canvas.id === canvasId) : undefined
+    const style = createStyleCanvas(list, near ? { at: { x: near.x - cardWidth(STYLE_CARD) - BOARD_GAP * 2, y: near.y } } : {})
+    project.setCanvases((previous) => {
+      const next = [...previous, style]
+      return canvasId ? next.map((canvas) => (canvas.id === canvasId ? setLink(canvas, 'style', { canvasId: style.id }) : canvas)) : next
+    })
+    project.select(style.id)
+    requestAnimationFrame(() => board.current?.reveal(style.id))
+  }
+
+  /** Pick one picture file and bring it onto the board as a picture card. */
+  const pickPicture = async (): Promise<ProjectCanvas | null> => {
+    let paths: string[]
+    try {
+      paths = await call<string[]>(Ipc.pickImages, { title: '选择要放大的图' })
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+      return null
+    }
+    if (!paths?.length) return null
+    const [image] = await inputImport.importPaths(paths.slice(0, 1))
+    return image ?? null
+  }
+
+  /** A recipe: nodes laid out and wired, most starting from a picture chosen from a file. */
   const startRecipe = async (recipe: Recipe): Promise<void> => {
+    if (recipe.id === 'series') {
+      const series = seriesFromStyle(project.canvasesRef.current, latestSettings())
+      project.setCanvases(series.canvases)
+      project.select(series.style.id)
+      requestAnimationFrame(() => board.current?.fit())
+      return
+    }
+    if (recipe.id === 'upscale') {
+      const image = await pickPicture()
+      if (image) upscaleFrom(image.id)
+      return
+    }
+    if (!recipe.role) return
     const created = project.addCanvas()
     requestAnimationFrame(() => board.current?.reveal(created.id))
     if (recipe.role === 'control') {
@@ -372,6 +467,7 @@ export function StudioPage(): React.JSX.Element {
     const editable = (): ProjectCanvas => {
       const canvas = current()
       if (!canvas) throw new Error('先在画布上选中一个画面')
+      if (canvas.kind === 'style') throw new Error('选中的是风格，只能改它的描述')
       if (canvas.kind !== 'layout') throw new Error('选中的是生成结果，不能修改；请先复制成新画面')
       return canvas
     }
@@ -433,12 +529,16 @@ export function StudioPage(): React.JSX.Element {
         }
       },
       setPrompt: (value) => {
-        const canvas = editable()
+        // A 风格's description is written the same way.
+        const selectedStyle = current()
+        const canvas = selectedStyle?.kind === 'style' ? selectedStyle : editable()
         live.current.project.updateCanvas(canvas.id, (item) => withDescription(item, value))
         return { written: value.length }
       },
       setSampler: (patch) => {
         const canvas = editable()
+        if (canvas.upscale && (patch.width !== undefined || patch.height !== undefined))
+          throw new Error('放大的尺寸跟着原图走，只能改放大倍数')
         let next = canvas
         if (patch.width !== undefined || patch.height !== undefined) {
           next = resizeCanvas(
@@ -458,6 +558,7 @@ export function StudioPage(): React.JSX.Element {
       },
       addLayer: ({ label, caption, bbox }) => {
         const canvas = editable()
+        if (canvas.upscale) throw new Error('放大按原图重画，没有区域')
         const box = clampBox(
           bbox
             ? [bbox.x * canvas.width, bbox.y * canvas.height, (bbox.x + bbox.w) * canvas.width, (bbox.y + bbox.h) * canvas.height]
@@ -636,6 +737,7 @@ export function StudioPage(): React.JSX.Element {
             onAddFromFile: (canvasId, role, kind) => void inputImport.addFromFile(canvasId, role, kind),
             onSetControlAdapter: (canvasId, adapterId) => project.updateCanvas(canvasId, (canvas) => setControlAdapter(canvas, adapterId)),
             onNavigate: (to) => void navigate(to),
+            onAddStyle: addStyle,
           }}
           describeModel={(canvas) => {
             if (!catalog) return null
@@ -666,6 +768,8 @@ export function StudioPage(): React.JSX.Element {
             toast.push('已删除这次生成，图片仍保留在作品里', 'info')
           }}
           onRecipe={(recipe) => void startRecipe(recipe)}
+          onUpscale={upscaleFrom}
+          onAddStyle={() => addStyle()}
         />
       </main>
 
@@ -718,11 +822,13 @@ export function StudioPage(): React.JSX.Element {
         onClose={() => setDeleting(null)}
         title={deleting ? `删除「${deleting.title}」？` : '删除画面？'}
         description={
-          deletingRuns
-            ? `画面、它的区域和 ${deletingRuns} 次生成会从项目里删除。已经生成的图片仍保留在作品里。`
-            : '画面和它的区域会从项目里删除。已经生成的图片仍保留在作品里。'
+          deleting?.kind === 'style'
+            ? '风格会从项目里删除，接着它的画面不再用它的描述和 LoRA。'
+            : deletingRuns
+              ? `画面、它的区域和 ${deletingRuns} 次生成会从项目里删除。已经生成的图片仍保留在作品里。`
+              : '画面和它的区域会从项目里删除。已经生成的图片仍保留在作品里。'
         }
-        confirmLabel="删除画面"
+        confirmLabel={deleting?.kind === 'style' ? '删除风格' : '删除画面'}
         onConfirm={() => {
           if (deleting) {
             const removedLinks = project.removeCanvas(deleting.id)

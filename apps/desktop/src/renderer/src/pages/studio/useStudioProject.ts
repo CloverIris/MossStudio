@@ -340,8 +340,9 @@ export function useStudioProject(options: {
     (source?: ProjectCanvas) => {
       const list = canvasesRef.current
       const selectedCanvas = list.find((canvas) => canvas.id === selectedRef.current)
-      // A picture card has no generation settings; carry over the latest canvas's instead.
-      const current = selectedCanvas?.kind === 'image' ? [...list].reverse().find((canvas) => canvas.kind !== 'image') : selectedCanvas
+      // A picture card or a 风格 has no generation settings; carry over the latest canvas's instead.
+      const generates = (canvas: ProjectCanvas | undefined): boolean => canvas?.kind === 'layout' || canvas?.kind === 'result'
+      const current = generates(selectedCanvas) ? selectedCanvas : [...list].reverse().find(generates)
       const canvas = source ? copyAsLayout(source, list) : createLayoutCanvas(list, settingsFrom(current))
       editCanvases([...list, canvas])
       select(canvas.id)

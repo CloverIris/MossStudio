@@ -218,7 +218,8 @@ export function boardPorts(
           targetId: canvas.id,
           role: entry.role,
           at,
-          label: entry.label,
+          // The socket names the wire (a 放大's start picture is its 原图).
+          label: labels[index] ?? entry.label,
           from: outputPort(source),
           to: ports[index]!,
         }),

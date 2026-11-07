@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react'
-import type { ControlAdapterEntry } from '@shared/types'
+import type { ControlAdapterEntry, ProjectCanvas } from '@shared/types'
 import { cn } from '../../components/ui'
 import { MenuItem, Popover } from '../../components/common/Popover'
 import type { LinkRole } from './links'
@@ -14,10 +14,14 @@ export interface PortActions {
   onAddFromFile: (canvasId: string, role: LinkRole, kind?: string) => void
   onSetControlAdapter: (canvasId: string, adapterId: string) => void
   onNavigate: (to: string) => void
+  /** Wire a 风格 into the canvas: an existing one, or a new one when `styleId` is absent. */
+  onAddStyle: (canvasId: string, styleId?: string) => void
 }
 
 function slotTitle(slot: InputSlot): string {
-  return slot.reason ? `${slot.label}：${slot.reason}` : `${slot.label}：${slot.hint}。点击添加，或把一张图的连线拖到这里`
+  if (slot.reason) return `${slot.label}：${slot.reason}`
+  const from = slot.role === 'style' ? '一个风格' : '一张图'
+  return `${slot.label}：${slot.hint}。点击添加，或把${from}的连线拖到这里`
 }
 
 /**
@@ -31,6 +35,7 @@ export function EmptyPortChips({
   selectedCanvasId,
   active,
   adapters,
+  styles = [],
   actions,
 }: {
   ports: readonly EmptyPort[]
@@ -38,6 +43,8 @@ export function EmptyPortChips({
   selectedCanvasId: string | null
   active: string | null
   adapters: readonly ControlAdapterEntry[]
+  /** The 风格 nodes on the board, for a 风格 socket's menu. */
+  styles?: readonly ProjectCanvas[]
   actions: PortActions
 }): React.JSX.Element {
   const scale = 1 / Math.max(0.01, zoom)
@@ -99,7 +106,7 @@ export function EmptyPortChips({
                 </button>
               )}
             >
-              {(close) => <SlotMenu canvasId={canvasId} slot={slot} adapters={adapters} actions={actions} close={close} />}
+              {(close) => <SlotMenu canvasId={canvasId} slot={slot} adapters={adapters} styles={styles} actions={actions} close={close} />}
             </Popover>
           </div>,
         ]
@@ -112,16 +119,44 @@ function SlotMenu({
   canvasId,
   slot,
   adapters,
+  styles,
   actions,
   close,
 }: {
   canvasId: string
   slot: InputSlot
   adapters: readonly ControlAdapterEntry[]
+  styles: readonly ProjectCanvas[]
   actions: PortActions
   close: () => void
 }): React.JSX.Element {
   const note = (text: string): React.JSX.Element => <p className="px-2 pb-1 pt-1.5 text-caption text-ink-2">{text}</p>
+  if (slot.role === 'style') {
+    return (
+      <>
+        {note(slot.hint)}
+        {styles.map((style) => (
+          <MenuItem
+            key={style.id}
+            onSelect={() => {
+              close()
+              actions.onAddStyle(canvasId, style.id)
+            }}
+          >
+            用「{style.title}」
+          </MenuItem>
+        ))}
+        <MenuItem
+          onSelect={() => {
+            close()
+            actions.onAddStyle(canvasId)
+          }}
+        >
+          新建风格
+        </MenuItem>
+      </>
+    )
+  }
   if (slot.needs === 'engine') return note(slot.reason ?? '现在还不能接图片')
   if (slot.needs === 'adapter-missing') {
     return (

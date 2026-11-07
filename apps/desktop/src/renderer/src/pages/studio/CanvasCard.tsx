@@ -66,6 +66,8 @@ export interface CanvasCardProps {
   strip?: CardStrip | null
   /** The job of the run the card shows (a 画面's filmstrip pick); default: its own. */
   jobId?: string
+  /** A 风格 card: how many 画面 use it. */
+  styleUsers?: number
   /** Entries of the ⋯ menu: 用作起始图, 固定到画板 and so on (danger ones next to 删除). */
   menuActions?: readonly CardMenuAction[]
   /** While a wire is dragged over this card: whether it can be dropped here. */
@@ -98,10 +100,13 @@ export interface CanvasCardProps {
 function FaceDescription({
   text,
   editing,
+  placeholder = '双击这里写描述',
   onDone,
 }: {
   text: string
   editing: boolean
+  /** What the empty face says. */
+  placeholder?: string
   onDone: (text: string | null) => void
 }): React.JSX.Element {
   const field = useRef<HTMLTextAreaElement>(null)
@@ -143,7 +148,7 @@ function FaceDescription({
       // Ink, not ink-2: the empty face is well-strong, where ink-2 falls below 4.5:1 in the light theme.
       className="pointer-events-none absolute inset-x-3 top-2.5 z-[1] line-clamp-4 text-caption leading-snug text-ink"
     >
-      {text.trim() || '双击这里写描述'}
+      {text.trim() || placeholder}
     </p>
   )
 }
@@ -158,6 +163,7 @@ function SettingChips({ canvas, model }: { canvas: ProjectCanvas; model?: { labe
           <span className="truncate">{model.label}</span>
         </Pill>
       ) : null}
+      {canvas.upscale ? <Pill className="tabular">放大 ×{canvas.upscale.scale}</Pill> : null}
       <Pill className="tabular">{qualityLabel(canvas.steps)}</Pill>
       <Pill className="tabular">{dimensions(canvas.width, canvas.height)}</Pill>
       {loras ? <Pill>LoRA {loras}</Pill> : null}
@@ -178,13 +184,16 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
   const width = cardWidth(canvas)
   const bodyHeight = cardBodyHeight(canvas)
   const isImage = canvas.kind === 'image'
-  const outputs = isImage ? [] : view.outputs
+  const isStyle = canvas.kind === 'style'
+  // A 放大 redraws its 原图: it has no regions of its own.
+  const drawsRegions = canvas.kind === 'layout' && !canvas.upscale
+  const outputs = isImage || isStyle ? [] : view.outputs
   const strip = props.strip?.items.length ? props.strip : null
   const stripItem = strip ? strip.items[strip.shown] : undefined
   const faceIndex = stripItem ? stripItem.output : shown
   const current = outputs[Math.min(faceIndex, Math.max(0, outputs.length - 1))]
-  const editable = canvas.kind === 'layout' && selected && !view.active
-  const showRegions = canvas.kind === 'layout' && (selected || outputs.length === 0)
+  const editable = drawsRegions && selected && !view.active
+  const showRegions = drawsRegions && (selected || outputs.length === 0)
   const maxThumbs = Math.max(1, Math.floor((width - 116) / 42))
   const preview = view.active ? view.preview : undefined
   // While painting the mask, the start picture shows even over earlier results.
@@ -192,20 +201,24 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
   const pictureSize = usePictureSize(props.mask ? props.initPicture?.path : undefined, props.initPicture?.size ?? null)
   const [editing, setEditing] = useState(false)
   // An empty face (nothing generated, no start picture or underlay) shows the description instead.
+  // A 风格 always shows its description.
   const blankFace =
-    canvas.kind === 'layout' && !preview && !current && !painting && !props.initPicture && !canvas.backgroundPath && !view.active
+    isStyle ||
+    (canvas.kind === 'layout' && !preview && !current && !painting && !props.initPicture && !canvas.backgroundPath && !view.active)
   const runLabel = view.label || (canvas.kind === 'layout' && !strip && outputs.length === 0 && !view.active ? '尚未生成' : '')
   // A filmstrip of several pictures says which one the face shows (or how its run is going).
-  const statusLabel = isImage
-    ? ''
-    : strip && strip.items.length > 1 && stripItem && stripItem.path
-      ? `${stripItem.number} / ${strip.items.length}`
-      : runLabel
+  const statusLabel =
+    isImage || isStyle
+      ? ''
+      : strip && strip.items.length > 1 && stripItem && stripItem.path
+        ? `${stripItem.number} / ${strip.items.length}`
+        : runLabel
 
   return (
     <article
       data-canvas-card={canvas.id}
       data-canvas-kind={canvas.kind}
+      data-node={canvas.upscale ? 'upscale' : undefined}
       aria-label={`${canvas.title}${selected ? '，已选中' : ''}`}
       aria-current={selected ? 'true' : undefined}
       onClick={props.onSelect}
@@ -248,88 +261,91 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
         <span className={cn('tabular min-w-0 flex-1 truncate text-right', view.state === 'failed' ? 'text-danger' : 'text-ink-2')}>
           {statusLabel}
         </span>
-        <Popover
-          align="end"
-          label={`${canvas.title} 操作`}
-          trigger={(menu) => (
-            <IconButton
-              label={`${canvas.title} 更多操作`}
-              className={cn(
-                '-mr-1.5 size-6',
-                !selected && 'opacity-0 focus-visible:opacity-100 [article:hover_&]:opacity-100',
-                menu.open && 'opacity-100',
-              )}
-              onClick={(event) => {
-                event.stopPropagation()
-                menu.toggle()
-              }}
-              aria-expanded={menu['aria-expanded']}
-              aria-haspopup="menu"
-            >
-              <MoreHorizontal className="size-4" strokeWidth={1.6} />
-            </IconButton>
-          )}
-        >
-          {(close) => (
-            <>
-              {props.menuActions
-                ?.filter((action) => action.tone !== 'danger')
-                .map((action) => (
-                  <MenuItem
-                    key={action.label}
-                    tone={action.tone}
-                    onSelect={() => {
-                      close()
-                      action.onSelect()
-                    }}
-                  >
-                    {action.label}
-                  </MenuItem>
-                ))}
-              <MenuItem
-                onSelect={() => {
-                  close()
-                  props.onCopy()
+        {/* A menu choice acts on its own; the click must not reach the card and select it again. */}
+        <div className="contents" onClick={(event) => event.stopPropagation()}>
+          <Popover
+            align="end"
+            label={`${canvas.title} 操作`}
+            trigger={(menu) => (
+              <IconButton
+                label={`${canvas.title} 更多操作`}
+                className={cn(
+                  '-mr-1.5 size-6',
+                  !selected && 'opacity-0 focus-visible:opacity-100 [article:hover_&]:opacity-100',
+                  menu.open && 'opacity-100',
+                )}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  menu.toggle()
                 }}
+                aria-expanded={menu['aria-expanded']}
+                aria-haspopup="menu"
               >
-                {isImage ? '复制' : '复制为新画面'}
-              </MenuItem>
-              {jobId && !isImage ? (
+                <MoreHorizontal className="size-4" strokeWidth={1.6} />
+              </IconButton>
+            )}
+          >
+            {(close) => (
+              <>
+                {props.menuActions
+                  ?.filter((action) => action.tone !== 'danger')
+                  .map((action) => (
+                    <MenuItem
+                      key={action.label}
+                      tone={action.tone}
+                      onSelect={() => {
+                        close()
+                        action.onSelect()
+                      }}
+                    >
+                      {action.label}
+                    </MenuItem>
+                  ))}
                 <MenuItem
                   onSelect={() => {
                     close()
-                    props.onShowActivity()
+                    props.onCopy()
                   }}
                 >
-                  查看详情
+                  {isImage || isStyle ? '复制' : '复制为新画面'}
                 </MenuItem>
-              ) : null}
-              {props.menuActions
-                ?.filter((action) => action.tone === 'danger')
-                .map((action) => (
+                {jobId && !isImage ? (
                   <MenuItem
-                    key={action.label}
-                    tone="danger"
                     onSelect={() => {
                       close()
-                      action.onSelect()
+                      props.onShowActivity()
                     }}
                   >
-                    {action.label}
+                    查看详情
                   </MenuItem>
-                ))}
-              <MenuItem
-                tone="danger"
-                onSelect={() => {
-                  close()
-                  props.onDelete()
-                }}
-              >
-                {isImage ? '删除' : '删除画面'}
-              </MenuItem>
-            </>
-          )}
-        </Popover>
+                ) : null}
+                {props.menuActions
+                  ?.filter((action) => action.tone === 'danger')
+                  .map((action) => (
+                    <MenuItem
+                      key={action.label}
+                      tone="danger"
+                      onSelect={() => {
+                        close()
+                        action.onSelect()
+                      }}
+                    >
+                      {action.label}
+                    </MenuItem>
+                  ))}
+                <MenuItem
+                  tone="danger"
+                  onSelect={() => {
+                    close()
+                    props.onDelete()
+                  }}
+                >
+                  {isImage ? '删除' : isStyle ? '删除风格' : '删除画面'}
+                </MenuItem>
+              </>
+            )}
+          </Popover>
+        </div>
       </header>
 
       <div
@@ -394,6 +410,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           <FaceDescription
             text={canvasDescription(canvas)}
             editing={editing}
+            placeholder={isStyle ? '双击写下这组图共同的风格' : undefined}
             onDone={(text) => {
               setEditing(false)
               if (text !== null && text !== canvasDescription(canvas)) props.onChangeDescription?.(text)
@@ -415,7 +432,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           />
         ) : null}
 
-        {isImage ? null : <StatusOverlay view={view} hasPicture={Boolean(preview)} />}
+        {isImage || isStyle ? null : <StatusOverlay view={view} hasPicture={Boolean(preview)} />}
         {view.active && (view.phase === 'denoise' || view.phase === 'decode' || view.phase === 'save' || view.phase === 'text') ? (
           <ProgressStrip percent={view.phase === 'denoise' ? view.percent : undefined} />
         ) : null}
@@ -459,6 +476,13 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
       <footer className="flex items-center gap-1.5" style={{ height: CARD_FOOTER }}>
         {isImage ? (
           <span className="text-caption text-ink-2">图片</span>
+        ) : isStyle ? (
+          <div data-card-chips className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-caption text-ink-2">
+            <span>风格</span>
+            {canvas.adapters?.length ? <Pill>LoRA {canvas.adapters.length}</Pill> : null}
+            <span className="flex-1" />
+            <span className="tabular">{props.styleUsers ? `用在 ${props.styleUsers} 个画面` : '还没接画面'}</span>
+          </div>
         ) : view.active ? (
           <div className="tabular flex min-w-0 flex-1 items-center gap-2 text-caption">
             <span data-card-progress className="min-w-0 flex-1 truncate text-ink">

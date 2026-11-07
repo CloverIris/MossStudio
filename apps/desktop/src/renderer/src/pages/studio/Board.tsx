@@ -42,7 +42,19 @@ import { EmptyPortChips, type PortActions } from './EmptyPorts'
 import { inputSlots } from './ports'
 import { WireChips, WireLayer } from './WireLayer'
 import { recipes, type Recipe } from './recipes'
-import { boardCanvases, canDropRun, canUnpin, filmstripOf, foldedRunIds, givesPicture, isActiveRun, unpinRun, type StripItem } from './runs'
+import { upscaleProblem } from './nodes'
+import {
+  boardCanvases,
+  canDropRun,
+  canUnpin,
+  filmstripOf,
+  foldedRunIds,
+  givesPicture,
+  isActiveRun,
+  pictureLink,
+  unpinRun,
+  type StripItem,
+} from './runs'
 import { useRunDrag } from './useRunDrag'
 import { boardPorts, type Point } from './wires'
 import { OutputImage } from './OutputImage'
@@ -116,6 +128,10 @@ export interface BoardProps {
   onDropRun: (runId: string) => void
   /** A recipe from the new-canvas tile: a 画面 wired to a picture the user chooses. */
   onRecipe: (recipe: Recipe) => void
+  /** 放大: a 放大 node fed by this card's picture (to its right, or at a board point). */
+  onUpscale: (sourceId: string, at?: Point) => void
+  /** A new 风格 node from the new-canvas tile. */
+  onAddStyle: () => void
 }
 
 function isTyping(target: EventTarget | null): boolean {
@@ -139,15 +155,17 @@ export function Board(props: BoardProps): React.JSX.Element {
   // Results folded into a 画面's filmstrip are not cards on the board.
   const folded = useMemo(() => foldedRunIds(props.canvases), [props.canvases])
   const cards = useMemo(() => boardCanvases(props.canvases, folded), [props.canvases, folded])
-  const tileSize = selected && selected.kind !== 'image' ? selected : { width: 1024, height: 1024 }
+  const tileSize = selected && (selected.kind === 'layout' || selected.kind === 'result') ? selected : { width: 1024, height: 1024 }
   const newSpot = nextFreeSpot(cards, tileSize)
   const tileRect = { x: newSpot.x, y: newSpot.y, w: cardWidth(tileSize), h: CARD_HEADER + cardBodyHeight(tileSize) }
 
   const [hoveredWire, setHoveredWire] = useState<string | null>(null)
   const { engineFeatures, controlAdapters, blockers } = props
+  const styleNodes = useMemo(() => props.canvases.filter((canvas) => canvas.kind === 'style'), [props.canvases])
+  const hasStyles = styleNodes.length > 0
   const slotsFor = useCallback(
-    (canvas: ProjectCanvas) => inputSlots(canvas, engineFeatures, controlAdapters, blockers),
-    [engineFeatures, controlAdapters, blockers],
+    (canvas: ProjectCanvas) => inputSlots(canvas, engineFeatures, controlAdapters, blockers, hasStyles),
+    [engineFeatures, controlAdapters, blockers, hasStyles],
   )
   const ports = useMemo(() => boardPorts(cards, view.zoom, slotsFor), [cards, view.zoom, slotsFor])
   const wires = ports.wires
@@ -359,12 +377,16 @@ export function Board(props: BoardProps): React.JSX.Element {
   const menuTarget = connect.menu?.targetId ? props.canvases.find((canvas) => canvas.id === connect.menu!.targetId) : undefined
   const menuSource = connect.menu ? props.canvases.find((canvas) => canvas.id === connect.menu!.sourceId) : undefined
 
+  // 放大 is offered when the engine takes a start picture and the picture can still grow.
+  const canUpscale = (canvas: ProjectCanvas): boolean =>
+    props.engineFeatures?.imageInput !== false && !upscaleProblem(props.canvases, pictureLink(props.canvases, { canvasId: canvas.id }))
   // The ⋯ menu of a card: what can be done with the picture it shows.
   const cardActions = (canvas: ProjectCanvas, run: ProjectCanvas, item: StripItem | undefined): CardMenuAction[] => {
     const actions: CardMenuAction[] = []
     if (canvas.kind === 'layout') {
       if (!item) return actions
       if (item.path) actions.push({ label: '用作起始图', onSelect: () => props.onNewFromPicture(canvas.id, 'init') })
+      if (item.path && canUpscale(canvas)) actions.push({ label: '放大', onSelect: () => props.onUpscale(canvas.id) })
       if (folded.has(run.id) && item.path) actions.push({ label: '固定到画板', onSelect: () => props.onPinRun(run.id) })
       if (run.kind === 'result') actions.push({ label: '用这次的设置', onSelect: () => props.onUseRunSettings(canvas.id, run.id) })
       // A run that is also a card is deleted from its card.
@@ -372,8 +394,10 @@ export function Board(props: BoardProps): React.JSX.Element {
         actions.push({ label: '删除这次生成', tone: 'danger', onSelect: () => props.onDropRun(run.id) })
       return actions
     }
-    if (givesPicture(canvas, props.canvases))
+    if (givesPicture(canvas, props.canvases)) {
       actions.push({ label: '用作起始图', onSelect: () => props.onNewFromPicture(canvas.id, 'init') })
+      if (canUpscale(canvas)) actions.push({ label: '放大', onSelect: () => props.onUpscale(canvas.id) })
+    }
     // A pinned result goes back into its 画面's filmstrip, unless it feeds another canvas.
     if (canUnpin(canvas, props.canvases) && foldedRunIds(unpinRun(props.canvases, canvas.id)).has(canvas.id)) {
       const source = props.canvases.find((item) => item.id === canvas.sourceCanvasId)
@@ -420,7 +444,7 @@ export function Board(props: BoardProps): React.JSX.Element {
         onTool={props.onTool}
         regionKind={props.regionKind}
         onRegionKind={props.onRegionKind}
-        canEditLayout={selected?.kind === 'layout'}
+        canEditLayout={selected?.kind === 'layout' && !selected.upscale}
         underlay={selected?.kind === 'layout' ? selected.backgroundPath : undefined}
         onUnderlay={props.onUnderlay}
         zoom={view.zoom}
@@ -507,7 +531,15 @@ export function Board(props: BoardProps): React.JSX.Element {
                     }
                   : null
               }
-              hasOutput={givesPicture(canvas, props.canvases)}
+              // A 风格 always offers its wire; a picture card once it has a picture.
+              hasOutput={canvas.kind === 'style' || givesPicture(canvas, props.canvases)}
+              styleUsers={
+                canvas.kind === 'style'
+                  ? props.canvases.filter(
+                      (item) => item.kind === 'layout' && item.inputs?.styles?.links.some((link) => link.canvasId === canvas.id),
+                    ).length
+                  : undefined
+              }
               model={canvas.kind === 'layout' ? (props.describeModel?.(canvas) ?? null) : null}
               onChangeDescription={(text) => props.onChangeDescription(canvas.id, text)}
               dropTarget={draft?.targetId === canvas.id ? (draft.ok ? 'ok' : 'no') : undefined}
@@ -558,6 +590,7 @@ export function Board(props: BoardProps): React.JSX.Element {
           selectedCanvasId={props.selectedCanvasId}
           active={activePort}
           adapters={props.controlAdapters}
+          styles={styleNodes}
           actions={portActions}
         />
         {connect.draft && !connect.draft.ok && connect.draft.reason ? (
@@ -584,6 +617,15 @@ export function Board(props: BoardProps): React.JSX.Element {
           >
             <Plus className="size-4" aria-hidden="true" strokeWidth={1.6} />
             新建画面
+          </button>
+          <button
+            type="button"
+            onClick={props.onAddStyle}
+            title="一段描述和 LoRA，接到几个画面上，让它们保持同一个风格"
+            className="-mt-2 flex h-7 items-center gap-1 rounded-md px-2.5 text-caption text-ink-2 transition-colors hover:bg-well-strong hover:text-ink"
+          >
+            <Plus className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
+            新建风格
           </button>
           <div role="group" aria-label="从一张图开始" data-recipes className="flex flex-wrap justify-center gap-1.5">
             {recipeList.map((recipe) => (
@@ -645,9 +687,11 @@ export function Board(props: BoardProps): React.JSX.Element {
           at={connect.menu.at}
           bounds={viewportSize()}
           onClose={connect.closeMenu}
-          onPick={(role) => {
+          onPick={(role, kind) => {
             const menu = connect.menu!
-            if (role !== 'control') props.onNewFromPicture(menu.sourceId, role, { x: menu.point.x, y: menu.point.y - CARD_HEADER })
+            const at = { x: menu.point.x, y: menu.point.y - CARD_HEADER }
+            if (kind === 'upscale') props.onUpscale(menu.sourceId, at)
+            else if (role === 'init' || role === 'reference') props.onNewFromPicture(menu.sourceId, role, at)
             connect.closeMenu()
           }}
         />

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import type { ProjectCanvas } from '@shared/types'
 import { toBoardPoint, type View } from './boardLayout'
 import { canConnect } from './connect'
-import { slotDrop, type SlotDrop } from './ports'
+import { slotDrop, styleDrop, type SlotDrop } from './ports'
 import { cardAt, outputPort, slotAt, type Point, type SlotPort } from './wires'
 
 /** How close (screen pixels) the pointer must be to an input port to drop straight into it. */
@@ -68,8 +68,10 @@ export function useWireConnect(options: {
     const to = toBoardPoint(options.view.current, at.x, at.y)
     // A port sits on the card's left edge, half outside it: look for one first.
     const radius = SLOT_SNAP / Math.max(0.01, options.view.current.zoom)
+    const sourceKind = options.cards.current.find((canvas) => canvas.id === sourceId)?.kind
+    // A 风格 wire snaps only to 风格 sockets; near a picture socket it still links as a 风格.
     const hit = slotAt(
-      options.slots.current.filter((item) => item.canvasId !== sourceId),
+      options.slots.current.filter((item) => item.canvasId !== sourceId && (sourceKind !== 'style' || item.slot.role === 'style')),
       to,
       radius,
     )
@@ -78,7 +80,7 @@ export function useWireConnect(options: {
     const targetId = target && target.id !== sourceId ? target.id : undefined
     if (!check.ok) return { sourceId, from, to, targetId, ok: false, reason: check.reason || undefined }
     if (hit && target) {
-      const drop = slotDrop(hit.slot, target, sourceId)
+      const drop = slotDrop(hit.slot, target, sourceId, sourceKind)
       return {
         sourceId,
         from,
@@ -88,6 +90,11 @@ export function useWireConnect(options: {
         slot: { id: `${hit.canvasId}/${hit.slot.key}`, drop },
         reason: drop.ok ? undefined : drop.reason,
       }
+    }
+    // A 风格 has one way in: anywhere on a 画面 links it.
+    if (sourceKind === 'style' && target) {
+      const drop = styleDrop(target, sourceId)
+      return { sourceId, from, to, targetId, ok: drop.ok, reason: drop.ok ? undefined : drop.reason }
     }
     return { sourceId, from, to, targetId, ok: true }
   }
@@ -121,14 +128,18 @@ export function useWireConnect(options: {
       if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId)
       const end = aim(canvas.id, from, next)
       const pulled = Math.hypot(next.clientX - startX, next.clientY - startY) >= NEW_CANVAS_PULL
+      const style = canvas.kind === 'style'
       if (next.type === 'pointerup' && end.ok && end.targetId && end.slot?.drop.ok) {
         options.onSlotDrop(end.targetId, canvas.id, end.slot.drop)
+        setDraft(null)
+      } else if (next.type === 'pointerup' && end.ok && end.targetId && style) {
+        options.onSlotDrop(end.targetId, canvas.id, { ok: true, role: 'style' })
         setDraft(null)
       } else if (next.type === 'pointerup' && end.ok && end.targetId) {
         // Keep the wire drawn to the drop point while the menu is open.
         setDraft(end)
         setMenu({ sourceId: canvas.id, targetId: end.targetId, at: local(next), point: end.to })
-      } else if (next.type === 'pointerup' && !end.targetId && pulled) {
+      } else if (next.type === 'pointerup' && !end.targetId && pulled && !style) {
         // Dropped on the empty board: offer a new 画面 fed by this picture.
         setDraft({ ...end, ok: true, reason: undefined })
         setMenu({ sourceId: canvas.id, at: local(next), point: end.to })

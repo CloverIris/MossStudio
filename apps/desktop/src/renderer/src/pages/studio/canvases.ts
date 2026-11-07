@@ -3,7 +3,16 @@ import { normalizeCanvasAdapters } from '@shared/adapters'
 import { clampBox } from '../../lib/layout'
 import type { StudioReuseRequest } from '../../lib/studioReuse'
 import { BOARD_GAP, cardRect, cardWidth, imageNodeSize, resultSpot, nextFreeSpot } from './boardLayout'
-import { DEFAULT_NEGATIVE, DEFAULT_QUALITY, DEFAULT_SIZE, clampDimension, isSeedLocked, nextCanvasTitle, qualityPreset } from './defaults'
+import {
+  DEFAULT_NEGATIVE,
+  DEFAULT_QUALITY,
+  DEFAULT_SIZE,
+  clampDimension,
+  isSeedLocked,
+  nextCanvasTitle,
+  nextNodeTitle,
+  qualityPreset,
+} from './defaults'
 import { DEFAULT_INIT_STRENGTH, dropLinksTo, linksOf, setLink, type LinkRole } from './links'
 import { boardCanvases, foldedRunIds, givesPicture, pictureLink, pinRun, spotBeside } from './runs'
 import { cleanSampling, generationSize, outputSize, scaleHires } from './sampling'
@@ -64,7 +73,8 @@ function migrateInputs(inputs: CanvasInputs): CanvasInputs | undefined {
   }
   if (inputs.references?.links?.length)
     next.references = { ...inputs.references, links: inputs.references.links.filter((link) => link?.canvasId) }
-  return next.init || next.control || next.references ? next : undefined
+  if (inputs.styles?.links?.length) next.styles = { links: inputs.styles.links.filter((link) => link?.canvasId) }
+  return next.init || next.control || next.references || next.styles ? next : undefined
 }
 
 /**
@@ -101,7 +111,7 @@ export function migrateCanvases(canvases: readonly ProjectCanvas[]): ProjectCanv
 
 /** Settings a new canvas inherits, so a user's choices carry over to the next one. */
 export function settingsFrom(canvas: ProjectCanvas | null | undefined): CanvasSettings {
-  if (!canvas || canvas.kind === 'image') return defaultSettings()
+  if (!canvas || canvas.kind === 'image' || canvas.kind === 'style') return defaultSettings()
   const size = generationSize(canvas)
   // Sampler choices carry over; the costly second pass is turned on per canvas.
   const sampling = cleanSampling({ ...canvas.sampling, hires: undefined })
@@ -154,6 +164,20 @@ export function copyAsLayout(source: ProjectCanvas, existing: readonly ProjectCa
     const pixels = source.imageSize ?? { width: source.width, height: source.height }
     return createImageCanvas(existing, { path: source.imagePath, ...pixels }, undefined, id, source.title)
   }
+  // A copied 风格 is another 风格 with the same description and LoRA.
+  if (source.kind === 'style') {
+    const spot = nextFreeSpot(boardCanvases(existing), source)
+    return {
+      ...structuredClone(source),
+      id,
+      title: nextNodeTitle(
+        '风格',
+        existing.map((item) => item.title),
+      ),
+      x: spot.x,
+      y: spot.y,
+    }
+  }
   const placed = createLayoutCanvas(existing, settingsFrom(source), id)
   const copy: ProjectCanvas = {
     ...placed,
@@ -164,6 +188,16 @@ export function copyAsLayout(source: ProjectCanvas, existing: readonly ProjectCa
   }
   if (source.inputs) copy.inputs = structuredClone(source.inputs)
   if (source.sampling) copy.sampling = structuredClone(source.sampling)
+  if (source.upscale) {
+    // A copied 放大 is another 放大 of the same 原图, at the 放大's size.
+    copy.upscale = { ...source.upscale }
+    copy.width = source.width
+    copy.height = source.height
+    copy.title = nextNodeTitle(
+      '放大',
+      existing.map((item) => item.title),
+    )
+  }
   return copy
 }
 

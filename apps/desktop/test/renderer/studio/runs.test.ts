@@ -274,7 +274,7 @@ describe('studio/recipes', () => {
     controlKinds: ['depth'],
     addedAt: '2026-11-05T00:00:00Z',
   }
-  const brief = (list: ReturnType<typeof recipes>) => list.map((recipe) => [recipe.id, recipe.role, recipe.disabled ?? null])
+  const brief = (list: ReturnType<typeof recipes>) => list.map((recipe) => [recipe.id, recipe.role ?? null, recipe.disabled ?? null])
 
   it('offers every recipe the engine can do, and says why the others are off', () => {
     expect(brief(recipes(features(), [adapter]))).toEqual([
@@ -282,10 +282,15 @@ describe('studio/recipes', () => {
       ['inpaint', 'init', null],
       ['compose', 'control', null],
       ['style', 'reference', null],
+      ['upscale', 'init', null],
+      ['series', null, null],
     ])
     expect(recipes(features(), [])[2]!.disabled).toBe('需要先在模型页添加控制适配器')
     expect(recipes(features({ references: false }), [adapter])[3]!.disabled).toBe('现在的引擎不支持这个做法')
-    expect(recipes(null, [], [{ id: 'engine', message: '引擎还没装好' }])[0]!.disabled).toBe('引擎还没装好，就绪后才能使用')
+    const noEngine = recipes(null, [], [{ id: 'engine', message: '引擎还没装好' }])
+    expect(noEngine[0]!.disabled).toBe('引擎还没装好，就绪后才能使用')
+    // A 风格 and three 画面 are only laid out: no engine needed.
+    expect(noEngine.find((recipe) => recipe.id === 'series')!.disabled).toBeUndefined()
     // Still reading what the engine can do: offered.
     expect(recipes(undefined, [adapter]).every((recipe) => !recipe.disabled)).toBe(true)
   })
@@ -294,6 +299,7 @@ describe('studio/recipes', () => {
     expect(newCanvasMenu(features())).toEqual([
       { type: 'item', role: 'init', label: '新画面 · 起始图' },
       { type: 'item', role: 'reference', label: '新画面 · 参考图' },
+      { type: 'item', role: 'init', kind: 'upscale', label: '放大' },
     ])
     expect(newCanvasMenu(features({ imageInput: false, references: false }))).toEqual([
       { type: 'note', label: '现在的引擎不能把图片接进新画面' },
