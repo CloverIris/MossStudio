@@ -1,8 +1,9 @@
 import type { JobProgress, JobRecord, ProjectCanvas } from '@shared/types'
+import { ACTIVE_JOB_STATES, duration, jobProgressDetail, jobStateLabel } from '../../lib/format'
 
-/** How a canvas card describes its generation state. Pure, no React. */
+/** How a canvas card describes its generation state, in the shared job vocabulary (lib/format). Pure, no React. */
 
-export const ACTIVE_JOB_STATES = new Set(['queued', 'starting', 'running'])
+export { ACTIVE_JOB_STATES }
 
 export type CardState = 'idle' | 'queued' | 'starting' | 'running' | 'succeeded' | 'failed' | 'canceled' | 'lost'
 
@@ -30,41 +31,9 @@ export interface CardJobView {
   retry?: boolean
 }
 
-const STAGE_LABELS: Record<string, string> = {
-  idle: '正在加载模型',
-  ready: '正在加载模型',
-  load: '正在加载模型',
-  text: '理解描述',
-  denoise: '绘制',
-  decode: '还原图像',
-  save: '保存结果',
-}
-
-export function stageLabel(progress: Pick<JobProgress, 'stage'> | undefined): string {
-  return STAGE_LABELS[progress?.stage ?? 'idle'] ?? '处理中'
-}
-
 function phaseOf(stage: JobProgress['stage']): CardPhase {
   if (stage === 'denoise' || stage === 'decode' || stage === 'save' || stage === 'text') return stage
   return 'loading'
-}
-
-export function formatEta(ms: number | undefined): string {
-  if (ms === undefined || !Number.isFinite(ms) || ms <= 0) return ''
-  const seconds = Math.ceil(ms / 1000)
-  if (seconds < 60) return `约 ${seconds} 秒`
-  return `约 ${Math.ceil(seconds / 60)} 分钟`
-}
-
-export function formatDuration(startedAt: string | undefined, endedAt: string | undefined): string {
-  if (!startedAt || !endedAt) return ''
-  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime()
-  if (!Number.isFinite(ms) || ms < 0) return ''
-  const seconds = Math.max(1, Math.round(ms / 1000))
-  if (seconds < 60) return `${seconds} 秒`
-  const minutes = Math.floor(seconds / 60)
-  const rest = seconds % 60
-  return rest ? `${minutes} 分 ${rest} 秒` : `${minutes} 分钟`
 }
 
 /** 1-based position among queued inference jobs on the same GPU and machine. */
@@ -94,7 +63,7 @@ export function cardJobView(canvas: ProjectCanvas, job: JobRecord | undefined, j
     return {
       state,
       active,
-      label: '排队中',
+      label: jobStateLabel({ state }),
       detail: position > 0 ? `排队中 · 第 ${position} 个` : '排队中',
       outputs,
       phase: 'queued',
@@ -104,27 +73,27 @@ export function cardJobView(canvas: ProjectCanvas, job: JobRecord | undefined, j
   if (state === 'starting' || state === 'running') {
     const stage = progress?.stage ?? 'idle'
     const phase = phaseOf(stage)
-    const label = state === 'starting' ? '准备中' : '生成中'
+    const label = jobStateLabel({ state })
     // The last preview stays up while the picture is decoded and saved, so the card never goes blank.
     const preview =
       job?.preview?.path && (phase === 'denoise' || phase === 'decode' || phase === 'save')
         ? { path: job.preview.path, seq: job.preview.seq }
         : undefined
+    const detail = jobProgressDetail(progress)
     if (phase === 'denoise' && progress && progress.total > 0) {
       const percent = Math.min(100, Math.max(0, progress.percent))
-      const detail = [`${progress.current} / ${progress.total}`, formatEta(progress.etaMs)].filter(Boolean).join(' · ')
       return { state, active, label, detail, percent, outputs, phase, preview }
     }
-    const detail = [stageLabel(progress), formatEta(progress?.etaMs)].filter(Boolean).join(' · ')
     return { state, active, label, detail, outputs, phase, ...(preview ? { preview } : {}) }
   }
   if (state === 'succeeded') {
-    const duration = formatDuration(job?.startedAt, job?.endedAt)
-    const label = outputs.length ? [`${outputs.length} 张`, duration].filter(Boolean).join(' · ') : '没有返回图片'
+    const took = duration(job?.startedAt, job?.endedAt)
+    const label = outputs.length ? [`${outputs.length} 张`, took].filter(Boolean).join(' · ') : '没有返回图片'
     return { state, active, label, detail: '', outputs, error: outputs.length ? undefined : '任务完成了，但没有返回图片' }
   }
-  if (state === 'failed') return { state, active, label: '失败', detail: '', outputs, error: error ?? '生成失败', retry: true }
-  if (state === 'canceled') return { state, active, label: '已取消', detail: '', outputs }
+  if (state === 'failed')
+    return { state, active, label: jobStateLabel({ state }), detail: '', outputs, error: error ?? '生成失败', retry: true }
+  if (state === 'canceled') return { state, active, label: jobStateLabel({ state }), detail: '', outputs }
   if (state === 'lost') return { state, active, label: '状态未知', detail: '', outputs, error: '应用重启过，这次生成的进度已无法找回' }
   return { state: 'idle', active: false, label: outputs.length ? `${outputs.length} 张` : '', detail: '', outputs }
 }

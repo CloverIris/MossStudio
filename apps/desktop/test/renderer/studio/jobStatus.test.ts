@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { JobRecord } from '@shared/types'
-import { cardJobView, formatDuration, formatEta, queuePosition } from '@renderer/pages/studio/jobStatus'
+import { jobSummary } from '@renderer/lib/format'
+import { cardJobView, queuePosition } from '@renderer/pages/studio/jobStatus'
 import { canvas } from './fixtures'
 
 function job(patch: Partial<JobRecord> = {}): JobRecord {
@@ -20,13 +21,15 @@ function job(patch: Partial<JobRecord> = {}): JobRecord {
 }
 
 describe('studio/jobStatus formatting', () => {
-  it('formats ETA and duration in plain words', () => {
-    expect(formatEta(5200)).toBe('约 6 秒')
-    expect(formatEta(125_000)).toBe('约 3 分钟')
-    expect(formatEta(undefined)).toBe('')
-    expect(formatDuration('2026-11-04T10:00:00Z', '2026-11-04T10:00:18Z')).toBe('18 秒')
-    expect(formatDuration('2026-11-04T10:00:00Z', '2026-11-04T10:02:05Z')).toBe('2 分 5 秒')
-    expect(formatDuration(undefined, '2026-11-04T10:00:18Z')).toBe('')
+  it('words a job like the Activity panel does (one vocabulary)', () => {
+    const running = cardJobView(canvas({ jobId: 'j1' }), job())
+    expect(jobSummary(job())).toBe(`${running.label} · ${running.detail}`)
+    const loading = job({ state: 'starting', progress: { stage: 'load', current: 0, total: 0, percent: 0 } })
+    const starting = cardJobView(canvas({ jobId: 'j1' }), loading)
+    expect(jobSummary(loading)).toBe(`${starting.label} · ${starting.detail}`)
+    const queued = job({ state: 'queued', queuePosition: 2 })
+    expect(jobSummary(queued)).toBe(cardJobView(canvas({ jobId: 'j1' }), queued).detail)
+    expect(jobSummary(job({ state: 'canceled' }))).toBe(cardJobView(canvas({ jobId: 'j1' }), job({ state: 'canceled' })).label)
   })
 
   it('finds the queue position among jobs on the same GPU', () => {

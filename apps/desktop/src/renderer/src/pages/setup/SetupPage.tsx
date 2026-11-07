@@ -53,14 +53,7 @@ function StepRow({ step, index }: { step: SetupStep; index: number }): React.JSX
         <span className={cn('tabular text-ui [overflow-wrap:anywhere]', step.state === 'error' ? 'text-danger' : 'text-ink-2')}>
           {step.detail}
         </span>
-        {current ? (
-          <ProgressBar
-            className="mt-2"
-            value={step.percent ?? 100}
-            tone={step.percent === undefined ? 'neutral' : 'accent'}
-            label={`${step.title}进度`}
-          />
-        ) : null}
+        {current ? <ProgressBar className="mt-2" value={step.percent ?? null} label={`${step.title}进度`} /> : null}
       </div>
       <span className="tabular text-ui text-ink-2">{current && step.percent !== undefined ? `${Math.round(step.percent)}%` : null}</span>
     </li>
@@ -160,13 +153,19 @@ export function SetupPage(): React.JSX.Element {
                 ? '也可以添加一台装有 NVIDIA 显卡的远程主机，在它上面运行。'
                 : '也可以使用一台装有 NVIDIA 显卡的远程主机：在 设置 › 功能 中开启「远程主机」。'}
             </p>
+            {/* Blocked, these are the actions that work: 重新检测 is the main one (a Mac cannot redetect its way out). */}
             <div className="flex flex-wrap gap-2">
               {mac ? null : (
-                <Button onClick={() => void redetect()} disabled={redetecting}>
-                  {redetecting ? <Spinner /> : <RefreshCw className="size-4" />}重新检测
+                <Button tone="primary" size="md" onClick={() => void redetect()} disabled={redetecting}>
+                  {redetecting ? <Spinner /> : <RefreshCw className="size-4" strokeWidth={1.6} />}重新检测
                 </Button>
               )}
-              <Button onClick={() => void leave('active', remoteHosts ? '/settings/devices' : '/settings/features')} disabled={leaving}>
+              <Button
+                tone={mac ? 'primary' : 'secondary'}
+                size="md"
+                onClick={() => void leave('active', remoteHosts ? '/settings/devices' : '/settings/features')}
+                disabled={leaving}
+              >
                 {remoteHosts ? '添加远程主机' : '去开启远程主机'}
               </Button>
             </div>
@@ -211,15 +210,13 @@ export function SetupPage(): React.JSX.Element {
               <Button tone="ghost" size="lg" disabled={leaving} onClick={() => void leave('dismissed', '/studio')}>
                 跳过
               </Button>
-              <Button
-                tone="primary"
-                size="lg"
-                disabled={starting || view.phase === 'checking' || view.phase === 'blocked'}
-                onClick={() => void start()}
-              >
-                {starting ? <Spinner /> : null}
-                {view.phase === 'error' ? '重试' : '开始准备'}
-              </Button>
+              {/* Nothing to start while blocked: the way forward is in the box above. */}
+              {view.phase === 'blocked' ? null : (
+                <Button tone="primary" size="lg" disabled={starting || view.phase === 'checking'} onClick={() => void start()}>
+                  {starting ? <Spinner /> : null}
+                  {view.phase === 'error' ? '重试' : '开始准备'}
+                </Button>
+              )}
             </>
           )}
         </div>

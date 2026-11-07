@@ -30,6 +30,7 @@
     'ok',
     'warn',
     'danger',
+    'on-danger',
     'ok-soft',
     'warn-soft',
     'danger-soft',
@@ -37,7 +38,7 @@
     'image-placeholder',
     'scrollbar',
   ]
-  const TEXT_TOKENS = ['ink', 'ink-2', 'ink-3', 'on-ink', 'accent', 'on-accent', 'ok', 'warn', 'danger']
+  const TEXT_TOKENS = ['ink', 'ink-2', 'ink-3', 'on-ink', 'accent', 'on-accent', 'ok', 'warn', 'danger', 'on-danger']
   const READABLE = ['ink', 'ink-2']
   const RING_OK = ['accent', 'ink', 'frame', 'board', 'panel', 'surface', 'raised']
 

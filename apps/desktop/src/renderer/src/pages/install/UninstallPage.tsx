@@ -1,10 +1,10 @@
-import { AlertTriangle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Ipc } from '@shared/channels'
 import type { UninstallInfo } from '@shared/setup'
 import { call } from '../../lib/api'
 import { Button, Spinner } from '../../components/ui'
 import { Checkbox } from '../../components/common/Checkbox'
+import { Notice } from '../../components/common/Notice'
 import { FailureBlock, ProgressBlock, Screen } from './parts'
 import { dataChoiceText, uninstallSummary } from './uninstallModel'
 import { ScreenHeading, WindowChrome } from './WindowChrome'
@@ -106,16 +106,11 @@ export function UninstallPage(): React.JSX.Element {
                 description={dataChoiceText({ dataBytes: state.dataBytes, dataRoot: state.dataRoot })}
               />
             </div>
-            {removeData ? (
-              <p className="px-1 text-ui text-danger" role="status">
-                作品、模型和设置会被永久删除，无法恢复。需要的话请先备份。
-              </p>
-            ) : null}
+            {removeData ? <Notice tone="danger">作品、模型和设置会被永久删除，无法恢复。需要的话请先备份。</Notice> : null}
             {state.running ? (
-              <p className="flex items-start gap-2 rounded-lg bg-warn-soft px-3.5 py-2.5 text-ui text-ink" role="status" data-app-running>
-                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden="true" />
-                <span>MossStudio 还开着。点“卸载”后，请在它弹出的对话框里关闭它，然后回到这里重试。</span>
-              </p>
+              <Notice tone="warn" data-app-running>
+                MossStudio 还开着。点“卸载”后，请在它弹出的对话框里关闭它，然后回到这里重试。
+              </Notice>
             ) : null}
           </Screen>
         ) : null}

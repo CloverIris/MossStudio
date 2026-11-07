@@ -143,12 +143,7 @@ export function ProgressBlock({
 }): React.JSX.Element {
   return (
     <div className="flex flex-col gap-2.5 pt-2" role="status" aria-live="polite">
-      <ProgressBar
-        value={percent ?? 100}
-        tone={percent === null ? 'neutral' : 'accent'}
-        label={label}
-        className={cn('h-1.5', percent === null && 'animate-pulse')}
-      />
+      <ProgressBar value={percent} label={label} className="h-1.5" />
       <div className="flex items-baseline justify-between gap-4">
         <span className="text-ui text-ink">{label}</span>
         {percent !== null && percent < 100 ? <span className="tabular text-ui text-ink-2">{Math.round(percent)}%</span> : null}

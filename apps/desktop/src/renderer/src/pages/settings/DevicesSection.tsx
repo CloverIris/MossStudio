@@ -231,11 +231,7 @@ function EngineGroup({ engine }: { engine: EngineState }): React.JSX.Element {
           </Row>
           {installing ? (
             <div className="px-3.5 pb-3">
-              {percent === null ? (
-                <ProgressBar value={100} tone="neutral" className="animate-pulse" label="正在安装引擎" />
-              ) : (
-                <ProgressBar value={percent} label="引擎下载进度" />
-              )}
+              {percent === null ? <ProgressBar value={null} label="正在安装引擎" /> : <ProgressBar value={percent} label="引擎下载进度" />}
             </div>
           ) : null}
         </div>

@@ -2,11 +2,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect } from 'react'
 import type { Catalog, JobRecord, ProjectCanvas } from '@shared/types'
 import { Ipc } from '@shared/channels'
-import { Button, IconButton, Modal, useToast } from '../../components/ui'
+import { PromptBlock } from '../../components/common/PromptBlock'
+import { Button, IconButton, Modal, cn, useToast } from '../../components/ui'
 import { call } from '../../lib/api'
+import { dimensions, duration } from '../../lib/format'
 import { OutputImage } from './CanvasCard'
 import { qualityFor, qualityPreset } from './defaults'
-import { formatDuration } from './jobStatus'
 import { canvasDescription } from './prompt'
 
 /** Every output of a run, one at a time, with the parameters that made it. */
@@ -48,7 +49,9 @@ export function OutputViewer({
   const model = canvas?.modelBundleId
     ? (catalog?.bundles.find((bundle) => bundle.id === canvas.modelBundleId)?.name ?? canvas.modelBundleId)
     : '—'
-  const duration = formatDuration(job?.startedAt, job?.endedAt)
+  const took = duration(job?.startedAt, job?.endedAt)
+  // What this run was told to avoid: the job's own record when there is one, else the canvas.
+  const negative = (job ? job.params.negativePrompt : canvas?.negative)?.trim() ?? ''
 
   return (
     <Modal
@@ -75,11 +78,11 @@ export function OutputViewer({
       {canvas && current ? (
         <div className="flex flex-col gap-4">
           <div className="relative flex items-center justify-center rounded-lg bg-well p-2">
-            {/* Leaves room for the thumbnails and the parameters below without scrolling, down to the 760px minimum window. */}
+            {/* Leaves room for the thumbnails, the prompt and the parameters below without scrolling, down to the 760px minimum window. */}
             <div
               style={{
                 aspectRatio: `${current.width || canvas.width} / ${current.height || canvas.height}`,
-                height: 'max(200px, calc(100vh - 480px))',
+                height: 'max(200px, calc(100vh - 580px))',
                 maxWidth: '100%',
               }}
             >
@@ -124,12 +127,14 @@ export function OutputViewer({
               ))}
             </div>
           ) : null}
+          <div className={cn('grid gap-4', negative && 'sm:grid-cols-2')}>
+            <PromptBlock title="描述" text={canvasDescription(canvas)} empty="没有描述" />
+            {negative ? <PromptBlock title="不想出现的内容" text={negative} /> : null}
+          </div>
           <dl className="tabular grid grid-cols-2 gap-x-6 gap-y-2 text-caption sm:grid-cols-4">
             <div>
               <dt className="text-ink-2">尺寸</dt>
-              <dd className="text-ink">
-                {current.width || canvas.width} × {current.height || canvas.height}
-              </dd>
+              <dd className="text-ink">{dimensions(current.width || canvas.width, current.height || canvas.height)}</dd>
             </div>
             <div>
               <dt className="text-ink-2">质量</dt>
@@ -145,19 +150,13 @@ export function OutputViewer({
               <dt className="text-ink-2">模型</dt>
               <dd className="truncate text-ink">{model}</dd>
             </div>
-            {duration ? (
+            {took ? (
               <div>
                 <dt className="text-ink-2">用时</dt>
-                <dd className="text-ink">{duration}</dd>
+                <dd className="text-ink">{took}</dd>
               </div>
             ) : null}
           </dl>
-          <div className="flex flex-col gap-1">
-            <div className="text-caption text-ink-2">描述</div>
-            <p className="selectable max-h-28 overflow-y-auto whitespace-pre-wrap break-words text-ui text-ink">
-              {canvasDescription(canvas) || '—'}
-            </p>
-          </div>
         </div>
       ) : null}
     </Modal>

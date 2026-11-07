@@ -34,6 +34,7 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
   --color-ok-soft: var(--ok-soft);
   --color-warn-soft: var(--warn-soft);
   --color-danger-soft: var(--danger-soft);
@@ -96,6 +97,7 @@
   --ok: #26864b;
   --warn: #946400;
   --danger: #c4372a;
+  --on-danger: #ffffff;
   --ok-soft: rgb(38 134 75 / 0.12);
   --warn-soft: rgb(164 111 0 / 0.12);
   --danger-soft: rgb(196 55 42 / 0.11);
@@ -143,6 +145,7 @@ html[data-theme='dark'] {
   --ok: #4cc27a;
   --warn: #e2b341;
   --danger: #f06b5c;
+  --on-danger: #0e0e0f;
   --ok-soft: rgb(76 194 122 / 0.14);
   --warn-soft: rgb(226 179 65 / 0.14);
   --danger-soft: rgb(240 107 92 / 0.14);
@@ -211,6 +214,24 @@ button:disabled {
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Indeterminate progress: a segment that keeps moving. Without motion it rests
+ * in the middle, so it never reads as a bar that is filling up or done.
+ */
+@keyframes ui-progress-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(334%);
+  }
+}
+
+.ui-progress-indeterminate {
+  transform: translateX(117%);
+  animation: ui-progress-indeterminate 1.4s var(--motion-ease) infinite;
 }
 
 /* Title bar: the OS paints its own controls on top of our frame. */

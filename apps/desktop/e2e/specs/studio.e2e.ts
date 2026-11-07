@@ -154,6 +154,9 @@ describe('studio', () => {
     await expect.poll(() => viewer.getByText(/第 1 \/ 4 张/).count()).toBeGreaterThan(0)
     const shown = await viewer.locator('img').first().getAttribute('src')
     expect(decodeURIComponent(shown ?? '')).toContain(`${second}-0.png`)
+    // The prompt and what to avoid sit above the parameters, as copyable blocks.
+    expect(await viewer.locator('[data-prompt-block="描述"]').getByText('a quiet forest path').isVisible()).toBe(true)
+    expect(await viewer.locator('[data-prompt-block="不想出现的内容"]').count()).toBe(1)
     await app.screenshot('studio-viewer-light')
     await viewer.getByRole('button', { name: '关闭' }).last().click()
     await expect.poll(() => viewer.count()).toBe(0)
