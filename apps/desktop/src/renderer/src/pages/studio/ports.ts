@@ -137,6 +137,21 @@ export function inputSlots(
   return slots
 }
 
+/**
+ * Where a dragged wire can land on a card, top to bottom: each input it
+ * could fill (a linked start or control picture is replaced; references
+ * take one more), or the 风格 socket for a 风格.
+ */
+export function dropZones(slots: readonly InputSlot[], sourceKind: ProjectCanvas['kind'] | undefined): InputSlot[] {
+  if (sourceKind === 'style') return slots.filter((slot) => slot.role === 'style' && !slot.linked)
+  return slots.filter((slot) => slot.role !== 'style' && !(slot.role === 'reference' && slot.linked))
+}
+
+/** The zone under a point on a card's face (`fraction` 0 at its top, 1 at its bottom). */
+export function zoneAt(count: number, fraction: number): number {
+  return Math.min(count - 1, Math.max(0, Math.floor(fraction * count)))
+}
+
 /** A 风格 wired onto a 画面 anywhere but a socket: linked, or why not. */
 export function styleDrop(canvas: ProjectCanvas, styleId: string): SlotDrop {
   const styles = canvas.inputs?.styles?.links ?? []

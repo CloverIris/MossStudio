@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ControlAdapterEntry, EngineFeatures } from '@shared/types'
-import { inputSlots, slotDrop, type InputSlot } from '@renderer/pages/studio/ports'
+import { dropZones, inputSlots, slotDrop, zoneAt, type InputSlot } from '@renderer/pages/studio/ports'
 import { boardPorts, slotAt } from '@renderer/pages/studio/wires'
 import { canvas } from './fixtures'
 
@@ -118,5 +118,28 @@ describe('studio/wires boardPorts', () => {
     const target = slots[1]!.port
     expect(slotAt(slots, { x: target.x + 3, y: target.y + 2 }, 10)?.slot.key).toBe('control')
     expect(slotAt(slots, { x: target.x + 30, y: target.y }, 10)).toBeUndefined()
+  })
+})
+
+describe('studio/ports dropZones', () => {
+  it('a picture can go into every input the card has (a linked start or control picture is replaced, references take one more)', () => {
+    const linked = canvas({
+      inputs: {
+        init: { link: { canvasId: 'p' }, strength: 0.6 },
+        references: { links: [{ canvasId: 'p' }] },
+      },
+    })
+    const zones = dropZones(inputSlots(linked, features(), [adapter], [], true), 'image')
+    expect(zones.map((slot) => slot.key)).toEqual(['init', 'control', 'reference'])
+  })
+
+  it('a 风格 only goes into the 风格 socket', () => {
+    const slots = inputSlots(canvas(), features(), [], [], true)
+    expect(dropZones(slots, 'style').map((slot) => slot.key)).toEqual(['style'])
+    expect(dropZones(inputSlots(canvas(), features(), []), 'style')).toEqual([])
+  })
+
+  it('splits the face evenly, top to bottom', () => {
+    expect([0, 0.2, 0.34, 0.5, 0.99, 1.4, -1].map((fraction) => zoneAt(3, fraction))).toEqual([0, 0, 1, 1, 2, 2, 0])
   })
 })

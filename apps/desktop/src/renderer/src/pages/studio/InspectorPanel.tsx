@@ -117,22 +117,17 @@ export function InspectorPanel({
             </Button>
           </div>
         </section>
-      ) : (
-        <p className="rounded-lg bg-well px-3 py-2.5 text-caption text-ink-2">
-          用工具栏的「画框」在画面上拖出一个框，就能告诉模型哪里画什么。
-        </p>
-      )}
+      ) : null}
 
-      <section aria-label="图层" className="flex flex-col gap-0.5">
+      <section aria-label="全部区域" className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between pb-2">
-          <FieldLabel as="h3">图层</FieldLabel>
+          <FieldLabel as="h3">区域</FieldLabel>
           {layers.length ? (
             <Button tone="ghost-danger" size="xs" className="-mr-2" onClick={() => setClearing(true)}>
               清空
             </Button>
           ) : null}
         </div>
-        {layers.length === 0 ? <p className="text-caption text-ink-2">还没有区域。</p> : null}
         <ul className="flex flex-col gap-0.5">
           {layers.map((layer, index) => (
             <li
@@ -199,7 +194,6 @@ export function InspectorPanel({
             </li>
           ))}
         </ul>
-        {layers.length > 1 ? <p className="pt-2 text-caption text-ink-2">拖动调整顺序；排在前面的区域先被描述。</p> : null}
       </section>
 
       <ConfirmDialog

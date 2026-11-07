@@ -1,4 +1,3 @@
-import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react'
 import type {
   CanvasImageLink,
@@ -25,7 +24,7 @@ import {
   type View,
 } from './boardLayout'
 import { CanvasCard, type CardMenuAction, type CardStrip } from './CanvasCard'
-import { canConnect, linkMenu, newCanvasMenu } from './connect'
+import { canConnect, newCanvasMenu } from './connect'
 import { isImageFile } from './imageNodes'
 import { cardJobView, type CardJobView } from './jobStatus'
 import { LinkMenu } from './LinkMenu'
@@ -34,11 +33,12 @@ import { BRUSH_DEFAULT, maskAvailability, startPictureSize } from './mask'
 import type { MaskBrush, MaskCommand } from './MaskLayer'
 import { rerunEligibility, type Blocker, type ReadinessInput } from './readiness'
 import type { BoardTool } from './RegionLayer'
-import { MaskBar, Toolbar } from './Toolbar'
+import { CardToolbar, MaskBar, Toolbar } from './Toolbar'
 import { useCardDrag } from './useCardDrag'
 import { useWireConnect } from './useWireConnect'
 import { useWireSelection } from './useWireSelection'
-import { EmptyPortChips, type PortActions } from './EmptyPorts'
+import { InputAdder, InputThumbs, NewMenu, StartRow } from './BoardControls'
+import type { PortActions } from './SlotMenu'
 import { inputSlots } from './ports'
 import { WireChips, WireLayer } from './WireLayer'
 import { recipes, type Recipe } from './recipes'
@@ -52,6 +52,7 @@ import {
   givesPicture,
   isActiveRun,
   pictureLink,
+  runsOf,
   unpinRun,
   type StripItem,
 } from './runs'
@@ -59,7 +60,7 @@ import { useRunDrag } from './useRunDrag'
 import { boardPorts, type Point } from './wires'
 import { OutputImage } from './OutputImage'
 
-const FIT_PADDING = { top: 72, side: 48 }
+const FIT_PADDING = { top: 116, side: 48 }
 
 export interface BoardHandle {
   fit: () => void
@@ -160,6 +161,8 @@ export function Board(props: BoardProps): React.JSX.Element {
   const tileRect = { x: newSpot.x, y: newSpot.y, w: cardWidth(tileSize), h: CARD_HEADER + cardBodyHeight(tileSize) }
 
   const [hoveredWire, setHoveredWire] = useState<string | null>(null)
+  /** The card under the pointer: its wires show their labels, and it shows its ＋. */
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const { engineFeatures, controlAdapters, blockers } = props
   const styleNodes = useMemo(() => props.canvases.filter((canvas) => canvas.kind === 'style'), [props.canvases])
   const hasStyles = styleNodes.length > 0
@@ -167,10 +170,12 @@ export function Board(props: BoardProps): React.JSX.Element {
     (canvas: ProjectCanvas) => inputSlots(canvas, engineFeatures, controlAdapters, blockers, hasStyles),
     [engineFeatures, controlAdapters, blockers, hasStyles],
   )
-  const ports = useMemo(() => boardPorts(cards, view.zoom, slotsFor), [cards, view.zoom, slotsFor])
+  // Only linked inputs have a port on the card; empty ones are added through the card's ＋.
+  const linkedSlotsFor = useCallback((canvas: ProjectCanvas) => slotsFor(canvas).filter((slot) => slot.linked), [slotsFor])
+  const ports = useMemo(() => boardPorts(cards, view.zoom, linkedSlotsFor), [cards, view.zoom, linkedSlotsFor])
   const wires = ports.wires
-  const slotsRef = useRef(ports.slots)
-  slotsRef.current = ports.slots
+  const slotsForRef = useRef(slotsFor)
+  slotsForRef.current = slotsFor
   const mask = maskAvailability(selected, props.engineFeatures, props.blockers)
 
   const viewportSize = (): { width: number; height: number } => {
@@ -202,10 +207,9 @@ export function Board(props: BoardProps): React.JSX.Element {
     viewport,
     view: viewRef,
     cards: orderedRef,
-    slots: slotsRef,
+    slotsFor: slotsForRef,
     onSlotDrop: (targetId, sourceId, drop) => latest.current.onLink(targetId, drop.role, { canvasId: sourceId }, drop.kind),
   })
-  const activePort = connect.draft?.slot?.id ?? null
   // An empty slot's menu acts on its card: select it first, as the inputs panel does.
   const portActions: PortActions = {
     ...props.portActions,
@@ -374,7 +378,6 @@ export function Board(props: BoardProps): React.JSX.Element {
       : roleLabel(props.pickTarget.role)
     : ''
 
-  const menuTarget = connect.menu?.targetId ? props.canvases.find((canvas) => canvas.id === connect.menu!.targetId) : undefined
   const menuSource = connect.menu ? props.canvases.find((canvas) => canvas.id === connect.menu!.sourceId) : undefined
 
   // 放大 is offered when the engine takes a start picture and the picture can still grow.
@@ -406,6 +409,34 @@ export function Board(props: BoardProps): React.JSX.Element {
     return actions
   }
   const recipeList = recipes(props.engineFeatures, props.controlAdapters, props.blockers)
+  // Wire labels show for the cards being looked at: the selected one and the one under the pointer.
+  const focusIds = new Set([props.selectedCanvasId, hoveredCard].filter((id): id is string => Boolean(id)))
+  // The ＋ that adds an input: on the hovered or selected 画面, below its linked inputs.
+  const adderCanvas =
+    connect.draft || props.pickTarget ? undefined : cards.find((canvas) => canvas.id === (hoveredCard ?? props.selectedCanvasId))
+  const adderSlots = adderCanvas?.kind === 'layout' ? slotsFor(adderCanvas).filter((slot) => !slot.linked) : []
+  const adderPorts = adderCanvas
+    ? wires.filter((wire) => wire.kind === 'input' && wire.targetId === adderCanvas.id).map((wire) => wire.to.y)
+    : []
+  const adderFor =
+    adderCanvas && adderSlots.length
+      ? {
+          canvas: adderCanvas,
+          slots: adderSlots,
+          point: {
+            x: adderCanvas.x,
+            y: adderPorts.length
+              ? Math.max(...adderPorts) + 30 / Math.max(0.01, view.zoom)
+              : adderCanvas.y + CARD_HEADER + cardBodyHeight(adderCanvas) / 2,
+          },
+        }
+      : null
+  // An empty project: one blank 画面, with the ways to start from a picture under it.
+  const only = cards.length === 1 ? cards[0]! : null
+  const startFor =
+    only && only.kind === 'layout' && !only.inputs && !only.jobState && !only.outputs?.length && !runsOf(only, props.canvases).length
+      ? only
+      : null
   const dragged = runDrag.drag
 
   return (
@@ -439,19 +470,7 @@ export function Board(props: BoardProps): React.JSX.Element {
       }}
       onPaste={onPaste}
     >
-      <Toolbar
-        tool={props.tool}
-        onTool={props.onTool}
-        regionKind={props.regionKind}
-        onRegionKind={props.onRegionKind}
-        canEditLayout={selected?.kind === 'layout' && !selected.upscale}
-        underlay={selected?.kind === 'layout' ? selected.backgroundPath : undefined}
-        onUnderlay={props.onUnderlay}
-        zoom={view.zoom}
-        onZoom={zoomBy}
-        onFit={fit}
-        mask={mask}
-      />
+      <Toolbar tool={props.tool} onTool={props.onTool} zoom={view.zoom} onZoom={zoomBy} onFit={fit} />
       {props.tool === 'mask' && mask.enabled ? (
         <MaskBar
           brush={brush}
@@ -506,9 +525,14 @@ export function Board(props: BoardProps): React.JSX.Element {
           const showMask = Boolean(init && isSelected && (props.tool === 'mask' || canvas.inputs?.mask))
           const draft = connect.draft
           const pick = pickState(canvas)
+          const zones = draft?.targetId === canvas.id ? draft.zones : undefined
+          // While a wire is dragged, cards that cannot take it step back.
+          const inert = Boolean(draft && canvas.id !== draft.sourceId && !canConnect(props.canvases, draft.sourceId, canvas).ok)
           return (
             <CanvasCard
               key={canvas.id}
+              onHoverChange={(on: boolean) => setHoveredCard((current) => (on ? canvas.id : current === canvas.id ? null : current))}
+              inert={inert}
               canvas={canvas}
               view={views.get(shownRun.id) ?? viewOf(shownRun)}
               strip={strip}
@@ -542,7 +566,19 @@ export function Board(props: BoardProps): React.JSX.Element {
               }
               model={canvas.kind === 'layout' ? (props.describeModel?.(canvas) ?? null) : null}
               onChangeDescription={(text) => props.onChangeDescription(canvas.id, text)}
-              dropTarget={draft?.targetId === canvas.id ? (draft.ok ? 'ok' : 'no') : undefined}
+              dropZones={
+                zones
+                  ? {
+                      items: zones.slots.map((slot, index) => {
+                        const drop = zones.drops[index]!
+                        return { label: slot.label, ok: drop.ok, reason: drop.ok ? undefined : drop.reason }
+                      }),
+                      active: zones.active,
+                    }
+                  : draft?.targetId === canvas.id
+                    ? { items: [], active: -1 }
+                    : undefined
+              }
               onPortDown={(event) => connect.start(canvas, event)}
               pick={pick}
               onSelect={() => {
@@ -572,9 +608,30 @@ export function Board(props: BoardProps): React.JSX.Element {
             />
           )
         })}
+        <InputThumbs wires={wires} canvases={props.canvases} zoom={view.zoom} />
+        {selected && selected.kind === 'layout' && !selected.upscale && !connect.draft ? (
+          // A 画面's tools sit on the selected card, above its title.
+          <div
+            className="absolute left-0 top-0 z-[7] origin-top-left"
+            style={{
+              transform: `translate(${selected.x}px, ${selected.y}px) scale(${1 / Math.max(0.01, view.zoom)}) translate(0, calc(-100% - 6px))`,
+            }}
+          >
+            <CardToolbar
+              tool={props.tool}
+              onTool={props.onTool}
+              regionKind={props.regionKind}
+              onRegionKind={props.onRegionKind}
+              underlay={selected.backgroundPath}
+              onUnderlay={props.onUnderlay}
+              mask={mask}
+            />
+          </div>
+        ) : null}
         <WireChips
           wires={wires}
           zoom={view.zoom}
+          focus={focusIds}
           selectedWireId={selectedWireId}
           hovered={hoveredWire}
           onHover={setHoveredWire}
@@ -584,16 +641,23 @@ export function Board(props: BoardProps): React.JSX.Element {
           }}
           onRemove={wireSelection.remove}
         />
-        <EmptyPortChips
-          ports={ports.empties}
-          zoom={view.zoom}
-          selectedCanvasId={props.selectedCanvasId}
-          active={activePort}
-          adapters={props.controlAdapters}
-          styles={styleNodes}
-          actions={portActions}
-        />
-        {connect.draft && !connect.draft.ok && connect.draft.reason ? (
+        {adderFor ? (
+          <InputAdder
+            canvasId={adderFor.canvas.id}
+            title={adderFor.canvas.title}
+            slots={adderFor.slots}
+            point={adderFor.point}
+            zoom={view.zoom}
+            adapters={props.controlAdapters}
+            styles={styleNodes}
+            actions={portActions}
+            onHoverChange={(on: boolean) =>
+              setHoveredCard((current) => (on ? adderFor.canvas.id : current === adderFor.canvas.id ? null : current))
+            }
+          />
+        ) : null}
+        {/* A refusal that is not a drop zone's (a zone says its own) shows by the pointer. */}
+        {connect.draft && !connect.draft.ok && connect.draft.reason && !connect.draft.zones ? (
           <div
             role="status"
             data-wire-refused
@@ -605,44 +669,22 @@ export function Board(props: BoardProps): React.JSX.Element {
             {connect.draft.reason}
           </div>
         ) : null}
-        <div
-          data-new-canvas
-          className="absolute flex flex-col items-center justify-center gap-3 rounded-md bg-well px-3"
-          style={{ left: tileRect.x, top: tileRect.y + CARD_HEADER, width: tileRect.w, height: tileRect.h - CARD_HEADER }}
-        >
-          <button
-            type="button"
-            onClick={props.onAddCanvas}
-            className="flex h-9 items-center gap-1.5 rounded-md px-3 text-ui text-ink-2 transition-colors hover:bg-well-strong hover:text-ink"
-          >
-            <Plus className="size-4" aria-hidden="true" strokeWidth={1.6} />
-            新建画面
-          </button>
-          <button
-            type="button"
-            onClick={props.onAddStyle}
-            title="一段描述和 LoRA，接到几个画面上，让它们保持同一个风格"
-            className="-mt-2 flex h-7 items-center gap-1 rounded-md px-2.5 text-caption text-ink-2 transition-colors hover:bg-well-strong hover:text-ink"
-          >
-            <Plus className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
-            新建风格
-          </button>
-          <div role="group" aria-label="从一张图开始" data-recipes className="flex flex-wrap justify-center gap-1.5">
-            {recipeList.map((recipe) => (
-              <button
-                key={recipe.id}
-                type="button"
-                data-recipe={recipe.id}
-                disabled={Boolean(recipe.disabled)}
-                title={recipe.disabled ?? recipe.hint}
-                onClick={() => props.onRecipe(recipe)}
-                className="h-6 rounded-full bg-raised px-2.5 text-caption text-ink transition-colors hover:bg-well-strong disabled:cursor-not-allowed disabled:bg-transparent disabled:text-ink-2"
-              >
-                {recipe.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <NewMenu
+          point={{ x: tileRect.x, y: tileRect.y + CARD_HEADER + Math.min(cardBodyHeight(tileSize), 256) / 2 }}
+          zoom={view.zoom}
+          recipes={recipeList}
+          onAddCanvas={props.onAddCanvas}
+          onAddStyle={props.onAddStyle}
+          onRecipe={props.onRecipe}
+        />
+        {startFor ? (
+          <StartRow
+            point={{ x: startFor.x, y: startFor.y + cardRect(startFor).h + 12 / view.zoom }}
+            zoom={view.zoom}
+            recipes={recipeList}
+            onRecipe={props.onRecipe}
+          />
+        ) : null}
         {dragged?.item.path ? (
           <div
             aria-hidden="true"
@@ -667,20 +709,7 @@ export function Board(props: BoardProps): React.JSX.Element {
           点一张有图片的卡片作为{pickRole} · Esc 取消
         </div>
       ) : null}
-      {connect.menu && menuTarget ? (
-        <LinkMenu
-          title={`把「${menuSource?.title ?? '图片'}」接到「${menuTarget.title}」`}
-          entries={linkMenu(menuTarget, connect.menu.sourceId, props.engineFeatures, props.controlAdapters, props.blockers)}
-          at={connect.menu.at}
-          bounds={viewportSize()}
-          onClose={connect.closeMenu}
-          onPick={(role, kind) => {
-            const menu = connect.menu!
-            props.onLink(menu.targetId!, role, { canvasId: menu.sourceId }, kind)
-            connect.closeMenu()
-          }}
-        />
-      ) : connect.menu && !connect.menu.targetId ? (
+      {connect.menu ? (
         <LinkMenu
           title={`用「${menuSource?.title ?? '图片'}」新建画面`}
           entries={newCanvasMenu(props.engineFeatures, props.blockers)}

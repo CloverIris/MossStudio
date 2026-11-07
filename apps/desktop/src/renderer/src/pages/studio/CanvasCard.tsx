@@ -1,8 +1,7 @@
-import { MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal, PenLine } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ImageResizeMode, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { Button, IconButton, Pill, cn } from '../../components/ui'
-import { dimensions } from '../../lib/format'
 import { MenuItem, Popover } from '../../components/common/Popover'
 import { cloverUrl } from '../../lib/clover'
 import { OutputImage } from './OutputImage'
@@ -12,7 +11,6 @@ import type { CardJobView } from './jobStatus'
 import { MaskLayer, usePictureSize, type MaskBrush, type MaskCommand } from './MaskLayer'
 import type { Size } from './mask'
 import type { RerunCheck } from './readiness'
-import { qualityLabel } from './defaults'
 import { canvasDescription } from './prompt'
 import { Filmstrip } from './Filmstrip'
 import { RegionLayer, type BoardTool } from './RegionLayer'
@@ -70,8 +68,14 @@ export interface CanvasCardProps {
   styleUsers?: number
   /** Entries of the ⋯ menu: 用作起始图, 固定到画板 and so on (danger ones next to 删除). */
   menuActions?: readonly CardMenuAction[]
-  /** While a wire is dragged over this card: whether it can be dropped here. */
-  dropTarget?: 'ok' | 'no'
+  /**
+   * While a wire is dragged over this card: the inputs it could fill, one
+   * zone each, top to bottom (empty: it cannot take the wire).
+   */
+  dropZones?: { items: { label: string; ok: boolean; reason?: string }[]; active: number }
+  /** A wire is being dragged that this card cannot take: it steps back. */
+  inert?: boolean
+  onHoverChange?: (on: boolean) => void
   /** Board pick mode: 'ok' = a click picks this card's picture, 'inert' = it cannot be picked. */
   pick?: 'ok' | 'inert'
   /** The model this canvas generates with, for its chip; null on cards that do not generate. */
@@ -100,13 +104,13 @@ export interface CanvasCardProps {
 function FaceDescription({
   text,
   editing,
-  placeholder = '双击这里写描述',
+  invite,
   onDone,
 }: {
   text: string
   editing: boolean
-  /** What the empty face says. */
-  placeholder?: string
+  /** Show that an empty face can be written on (the card is selected). */
+  invite: boolean
   onDone: (text: string | null) => void
 }): React.JSX.Element {
   const field = useRef<HTMLTextAreaElement>(null)
@@ -142,31 +146,35 @@ function FaceDescription({
       />
     )
   }
+  if (!text.trim()) {
+    // Nothing to read on an empty face; a selected one shows it can be written on (double-click).
+    return invite ? (
+      <span data-face-description="" className="pointer-events-none absolute inset-0 z-[1] grid place-items-center text-ink-2">
+        <PenLine className="size-5" aria-label="双击写描述" strokeWidth={1.6} />
+      </span>
+    ) : (
+      <span data-face-description="" hidden />
+    )
+  }
   return (
     <p
       data-face-description
       // Ink, not ink-2: the empty face is well-strong, where ink-2 falls below 4.5:1 in the light theme.
       className="pointer-events-none absolute inset-x-3 top-2.5 z-[1] line-clamp-4 text-caption leading-snug text-ink"
     >
-      {text.trim() || placeholder}
+      {text}
     </p>
   )
 }
 
-/** What a layout canvas will generate with, before its first run: model, quality, size, LoRA. */
-function SettingChips({ canvas, model }: { canvas: ProjectCanvas; model?: { label: string; ready: boolean } | null }): React.JSX.Element {
-  const loras = canvas.adapters?.length ?? 0
+/** A layout canvas's settings stay in the panel; the card only shows a model that cannot be used. */
+function ModelWarning({ model }: { model?: { label: string; ready: boolean } | null }): React.JSX.Element | null {
+  if (!model || model.ready) return null
   return (
-    <div data-card-chips className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-      {model ? (
-        <Pill tone={model.ready ? 'neutral' : 'warn'} className="min-w-0 shrink">
-          <span className="truncate">{model.label}</span>
-        </Pill>
-      ) : null}
-      {canvas.upscale ? <Pill className="tabular">放大 ×{canvas.upscale.scale}</Pill> : null}
-      <Pill className="tabular">{qualityLabel(canvas.steps)}</Pill>
-      <Pill className="tabular">{dimensions(canvas.width, canvas.height)}</Pill>
-      {loras ? <Pill>LoRA {loras}</Pill> : null}
+    <div data-card-chips className="flex min-w-0 flex-1 items-center overflow-hidden">
+      <Pill tone="warn" className="min-w-0 shrink">
+        <span className="truncate">{model.label}</span>
+      </Pill>
     </div>
   )
 }
@@ -205,14 +213,12 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
   const blankFace =
     isStyle ||
     (canvas.kind === 'layout' && !preview && !current && !painting && !props.initPicture && !canvas.backgroundPath && !view.active)
-  const runLabel = view.label || (canvas.kind === 'layout' && !strip && outputs.length === 0 && !view.active ? '尚未生成' : '')
-  // A filmstrip of several pictures says which one the face shows (or how its run is going).
-  const statusLabel =
-    isImage || isStyle
-      ? ''
-      : strip && strip.items.length > 1 && stripItem && stripItem.path
-        ? `${stripItem.number} / ${strip.items.length}`
-        : runLabel
+  // The header speaks only while something is happening or went wrong.
+  const loud = view.active || view.state === 'failed' || view.state === 'lost'
+  const statusLabel = isImage || isStyle || !loud ? '' : view.label
+  // Buttons and the filmstrip show on hover, focus or selection; a model that cannot be used always shows.
+  const modelProblem = canvas.kind === 'layout' && !strip && !view.active && props.model && !props.model.ready
+  const quietFooter = !selected && !modelProblem
 
   return (
     <article
@@ -222,6 +228,8 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
       aria-label={`${canvas.title}${selected ? '，已选中' : ''}`}
       aria-current={selected ? 'true' : undefined}
       onClick={props.onSelect}
+      onPointerEnter={() => props.onHoverChange?.(true)}
+      onPointerLeave={() => props.onHoverChange?.(false)}
       // In pick mode a click anywhere on the card picks it; nothing inside reacts.
       onClickCapture={
         props.pick
@@ -234,7 +242,8 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
       }
       data-pick={props.pick}
       className={cn(
-        'group/card absolute flex flex-col',
+        'group/card absolute flex flex-col transition-opacity',
+        props.inert && 'opacity-40',
         props.dragging && 'z-10',
         props.pick === 'ok' && 'cursor-pointer',
         props.pick === 'inert' && 'cursor-not-allowed opacity-50',
@@ -410,7 +419,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           <FaceDescription
             text={canvasDescription(canvas)}
             editing={editing}
-            placeholder={isStyle ? '双击写下这组图共同的风格' : undefined}
+            invite={selected}
             onDone={(text) => {
               setEditing(false)
               if (text !== null && text !== canvasDescription(canvas)) props.onChangeDescription?.(text)
@@ -437,17 +446,43 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           <ProgressStrip percent={view.phase === 'denoise' ? view.percent : undefined} />
         ) : null}
 
+        {strip && strip.items.length > 1 && !selected ? (
+          // How many pictures the filmstrip holds; the strip itself shows when the card is selected.
+          <span
+            data-strip-count
+            aria-label={`共 ${strip.items.length} 张`}
+            className="tabular pointer-events-none absolute bottom-1.5 right-1.5 z-[2] rounded-full bg-raised px-1.5 text-micro font-medium text-ink shadow-float"
+          >
+            {strip.items.length}
+          </span>
+        ) : null}
         {props.pick === 'ok' ? (
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 z-[4] opacity-0 transition-opacity [article:hover_&]:bg-accent-soft [article:hover_&]:opacity-100"
           />
         ) : null}
-        {props.dropTarget ? (
-          <div
-            aria-hidden="true"
-            className={cn('pointer-events-none absolute inset-0 z-[4]', props.dropTarget === 'ok' ? 'bg-accent-soft' : 'bg-well')}
-          />
+        {props.dropZones ? (
+          <div data-drop-zones className="pointer-events-none absolute inset-0 z-[4] flex flex-col gap-1 bg-well-strong p-1.5">
+            {props.dropZones.items.map((zone, index) => {
+              const on = index === props.dropZones!.active
+              return (
+                <div
+                  key={`${zone.label}-${index}`}
+                  data-drop-zone={zone.label}
+                  data-active={on || undefined}
+                  className={cn(
+                    'flex min-h-0 flex-1 flex-col items-center justify-center rounded-md px-2 text-center text-caption transition-colors',
+                    on && zone.ok ? 'bg-accent-soft font-medium text-accent' : 'bg-raised text-ink',
+                  )}
+                >
+                  <span className="truncate">{zone.label}</span>
+                  {/* Why not, only for the zone under the pointer. */}
+                  {on && !zone.ok && zone.reason ? <span className="truncate text-micro text-ink-2">{zone.reason}</span> : null}
+                </div>
+              )
+            })}
+          </div>
         ) : null}
       </div>
 
@@ -473,17 +508,15 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
         </button>
       ) : null}
 
-      <footer className="flex items-center gap-1.5" style={{ height: CARD_FOOTER }}>
-        {isImage ? (
-          <span className="text-caption text-ink-2">图片</span>
-        ) : isStyle ? (
-          <div data-card-chips className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-caption text-ink-2">
-            <span>风格</span>
-            {canvas.adapters?.length ? <Pill>LoRA {canvas.adapters.length}</Pill> : null}
-            <span className="flex-1" />
-            <span className="tabular">{props.styleUsers ? `用在 ${props.styleUsers} 个画面` : '还没接画面'}</span>
-          </div>
-        ) : view.active ? (
+      <footer
+        className={cn(
+          'flex items-center gap-1.5 transition-opacity',
+          quietFooter &&
+            'pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100',
+        )}
+        style={{ height: CARD_FOOTER }}
+      >
+        {isImage || isStyle ? null : view.active ? (
           <div className="tabular flex min-w-0 flex-1 items-center gap-2 text-caption">
             <span data-card-progress className="min-w-0 flex-1 truncate text-ink">
               {view.detail}
@@ -663,7 +696,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             重新生成
           </Button>
         ) : canvas.kind === 'layout' ? (
-          <SettingChips canvas={canvas} model={props.model} />
+          <ModelWarning model={props.model} />
         ) : null}
       </footer>
     </article>

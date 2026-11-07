@@ -37,6 +37,8 @@ export interface Wire {
   role?: LinkRole
   /** What removes the link: the control kind, or the reference index. */
   at?: number | string
+  /** Which of the source's pictures the link takes. */
+  output?: number
   label?: string
   from: Point
   to: Point
@@ -218,6 +220,7 @@ export function boardPorts(
           targetId: canvas.id,
           role: entry.role,
           at,
+          ...(entry.link.output ? { output: entry.link.output } : {}),
           // The socket names the wire (a 放大's start picture is its 原图).
           label: labels[index] ?? entry.label,
           from: outputPort(source),

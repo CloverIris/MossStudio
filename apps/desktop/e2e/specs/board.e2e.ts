@@ -86,8 +86,12 @@ async function center(page: Page, selector: string): Promise<{ x: number; y: num
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
-/** Drag a wire from a card's output port and drop it on another card's picture. */
-async function dragWire(page: Page, from: string, to: string): Promise<void> {
+/**
+ * Drag a wire from a card's output port over another card; its face shows
+ * one drop zone per input. Returns the zone labels; with `zone`, lets go on
+ * that zone, with `hold` keeps the button down over it.
+ */
+async function dragToZone(page: Page, from: string, to: string, zone?: string, hold = false): Promise<string[]> {
   await page.locator(`article[data-canvas-card="${from}"]`).hover()
   const start = await center(page, `[data-output-port="${from}"]`)
   const end = await center(page, `article[data-canvas-card="${to}"] [data-card-body]`)
@@ -95,7 +99,24 @@ async function dragWire(page: Page, from: string, to: string): Promise<void> {
   await page.mouse.down()
   await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2, { steps: 5 })
   await page.mouse.move(end.x, end.y, { steps: 5 })
-  await page.mouse.up()
+  const zones = page.locator(`article[data-canvas-card="${to}"] [data-drop-zone]`)
+  await expect.poll(() => zones.count()).toBeGreaterThan(0)
+  const labels = await zones.evaluateAll((items) => items.map((item) => item.getAttribute('data-drop-zone') ?? ''))
+  if (zone) {
+    const target = await center(page, `article[data-canvas-card="${to}"] [data-drop-zone="${zone}"]`)
+    await page.mouse.move(target.x, target.y, { steps: 3 })
+    if (!hold) await page.mouse.up()
+  } else if (!hold) await page.mouse.up()
+  return labels
+}
+
+/** Open the ＋ beside a card and choose an input (and, when given, how to fill it). */
+async function addInput(page: Page, canvasId: string, input: string, how?: string): Promise<void> {
+  await page.locator(`article[data-canvas-card="${canvasId}"]`).hover()
+  await page.locator(`[data-input-adder="${canvasId}"] button`).first().click()
+  const items = page.getByRole('menuitem', { name: input, exact: true })
+  if (await items.count()) await items.first().click()
+  if (how) await page.getByRole('menuitem', { name: how }).click()
 }
 
 async function savedInputs(page: Page, canvasId = 'canvas-1'): Promise<CanvasInputs | null> {
@@ -159,34 +180,26 @@ const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
 describe('studio board', () => {
   const app = useApp()
 
-  it('connects a picture by dragging a wire, as the start picture', async () => {
+  it('connects a picture by dragging a wire onto the start-picture zone', async () => {
     const page = await openBoard(app, { adapters: true })
     expect(await page.locator('[data-wire-kind="input"]').count()).toBe(0)
-    await dragWire(page, 'img-1', 'canvas-1')
-
-    const menu = page.getByRole('menu', { name: /把「小猫照片」接到「画面 1」/ })
-    await menu.waitFor()
-    // Every role the engine supports; no control adapter chosen yet.
-    expect(await menu.getByRole('menuitem', { name: '作为起始图' }).isEnabled()).toBe(true)
-    expect(await menu.getByRole('menuitem', { name: '先在右侧选择控制适配器' }).isDisabled()).toBe(true)
-    expect(await menu.getByRole('menuitem', { name: '作为参考图' }).isEnabled()).toBe(true)
-    await menu.getByRole('menuitem', { name: '作为起始图' }).click()
+    // Over the card, its face shows what it can take, one zone each (no control adapter chosen yet).
+    const zones = await dragToZone(page, 'img-1', 'canvas-1', '起始图')
+    expect(zones).toEqual(['起始图', '控制', '参考图'])
 
     const chip = page.getByRole('button', { name: '连线：起始图 60%' })
     await chip.waitFor()
     expect(await page.locator('[data-wire-kind="input"]').count()).toBe(1)
-    // The linked picture becomes the canvas's backdrop.
+    // The linked picture shows as its thumbnail at the wire's end, and as the canvas's backdrop.
+    expect(await page.locator('[data-input-thumb="input:canvas-1:init:"]').count()).toBe(1)
     expect(await page.locator('article[data-canvas-card="canvas-1"] [data-init-backdrop]').count()).toBe(1)
     await expect.poll(() => savedInputs(page), { timeout: 10_000 }).toMatchObject({ init: { link: { canvasId: 'img-1' }, strength: 0.6 } })
   })
 
-  it('lists the kinds of the chosen control adapter and links one', async () => {
+  it('offers one zone per kind of the chosen control adapter and links one', async () => {
     const page = await openBoard(app, { adapters: true, inputs: { control: { adapterId: 'control-union', images: [] } } })
-    await dragWire(page, 'img-2', 'canvas-1')
-    const menu = page.getByRole('menu', { name: /接到「画面 1」/ })
-    await menu.waitFor()
-    for (const kind of ['深度', '边缘', '姿态']) expect(await menu.getByRole('menuitem', { name: kind }).isVisible()).toBe(true)
-    await menu.getByRole('menuitem', { name: '深度' }).click()
+    const zones = await dragToZone(page, 'img-2', 'canvas-1', '控制 · 深度')
+    expect(zones).toEqual(['起始图', '控制 · 深度', '控制 · 边缘', '控制 · 姿态', '参考图'])
     await page.getByRole('button', { name: '连线：控制 · 深度' }).waitFor()
     await expect
       .poll(() => savedInputs(page), { timeout: 10_000 })
@@ -195,14 +208,7 @@ describe('studio board', () => {
 
   it('leaves out roles the engine does not support', async () => {
     const page = await openBoard(app, { adapters: true, features: { control: false, references: false } })
-    await dragWire(page, 'img-1', 'canvas-1')
-    const menu = page.getByRole('menu', { name: /接到「画面 1」/ })
-    await menu.waitFor()
-    expect(await menu.getByRole('menuitem').allTextContents()).toEqual(['作为起始图'])
-    expect(await menu.getByText('作为控制图').count()).toBe(0)
-    await page.keyboard.press('Escape')
-    await expect.poll(() => menu.count()).toBe(0)
-    expect(await page.locator('[data-wire-draft]').count()).toBe(0)
+    expect(await dragToZone(page, 'img-1', 'canvas-1')).toEqual(['起始图'])
   })
 
   it('removes a selected wire with the keyboard', async () => {
@@ -491,7 +497,7 @@ describe('studio board', () => {
       expect(overlapping(far)).toEqual([])
       await app.screenshot(`board-wires-zoomed-out-${theme}`)
       // Too far out for labels: the cards are tiny, so the chips step aside.
-      for (let step = 0; step < 2; step += 1) await zoomOut.click()
+      for (let step = 0; step < 3; step += 1) await zoomOut.click()
       await expect.poll(() => chipBoxes(page).then((list) => list.length)).toBe(0)
       expect(await page.locator('[data-wire-kind="input"]').count()).toBe(4)
     })
@@ -500,58 +506,36 @@ describe('studio board', () => {
 
 describe('readable nodes', () => {
   const app = useApp()
-  const card = (page: Page) => page.locator('article[data-canvas-card="canvas-1"]')
-  const slot = (page: Page, key: string) => page.locator(`[data-empty-port="canvas-1/${key}"]`)
+  const card = (page: Page, id = 'canvas-1') => page.locator(`article[data-canvas-card="${id}"]`)
 
-  /** Drag a wire from a card's output port onto one of canvas-1's input sockets; `hold` keeps the button down. */
-  async function dragToSocket(page: Page, from: string, key: string, hold = false): Promise<void> {
-    await page.locator(`article[data-canvas-card="${from}"]`).hover()
-    const start = await center(page, `[data-output-port="${from}"]`)
-    const end = await center(page, `[data-empty-port-dot="canvas-1/${key}"]`)
-    await page.mouse.move(start.x, start.y)
-    await page.mouse.down()
-    await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2, { steps: 5 })
-    await page.mouse.move(end.x, end.y, { steps: 5 })
-    if (!hold) await page.mouse.up()
-  }
-
-  it('shows what a canvas takes in and what it will make before its first run', async () => {
+  it('shows only the picture or description and the title at rest; the rest on hover or selection', async () => {
     for (const theme of ['light', 'dark'] as const) {
       const page = await openBoard(app, { theme })
-      // Every input it can take, named, even with nothing linked.
-      expect(await page.locator('[data-empty-port^="canvas-1/"]').evaluateAll((items) => items.map((item) => item.textContent))).toEqual([
-        '起始图',
-        '控制',
-        '参考图',
-      ])
-      expect(await page.locator('[data-empty-port-dot^="canvas-1/"]').count()).toBe(3)
-      // The face carries the description; the footer what it will generate with.
+      // Nothing to read on the board but content: no empty sockets, settings pills or "尚未生成".
       expect(await card(page).locator('[data-face-description]').textContent()).toBe('一只橘猫坐在窗台上')
-      const chips = await card(page).locator('[data-card-chips]').textContent()
-      expect(chips).toContain('MOSS-Image SFT')
-      expect(chips).toContain('自定义 · 28 步')
-      expect(chips).toContain('1024 × 1024')
-      expect(await card(page).locator('header').textContent()).toContain('尚未生成')
-      // Picture cards take nothing in: no sockets.
-      expect(await page.locator('[data-empty-port^="img-1/"]').count()).toBe(0)
+      expect(await card(page).locator('[data-card-chips]').count()).toBe(0)
+      expect((await card(page).locator('header').textContent())?.replace('画面 1', '').trim()).toBe('')
+      expect(await page.locator('[data-empty-port], [data-empty-port-dot]').count()).toBe(0)
+      // The selected 画面 offers one ＋ for inputs; a picture card takes nothing in.
+      await page.locator('[data-input-adder="canvas-1"] button').click()
+      expect(await page.getByRole('menuitem').allTextContents()).toEqual(['起始图', '控制', '参考图'])
+      await page.keyboard.press('Escape')
+      await card(page, 'img-1').hover()
+      expect(await page.locator('[data-input-adder="img-1"]').count()).toBe(0)
       await app.screenshot(`board-readable-node-${theme}`)
     }
   })
 
-  it('fills an empty socket from a file or from the board', async () => {
+  it('adds an input from the ＋: from a file or from the board', async () => {
     const page = await openBoard(app)
     await page.evaluate(() => window.__mock.handle(window.__mock.Ipc.pickImages, () => ['/home/me/pictures/sofa.png']))
-    await slot(page, 'init').getByRole('button').click()
-    await page.getByRole('menuitem', { name: '从文件…' }).click()
+    await addInput(page, 'canvas-1', '起始图', '从文件…')
     await expect.poll(async () => (await savedInputs(page))?.init?.link.canvasId ?? '', { timeout: 10_000 }).toMatch(/.+/)
     const picture = (await savedInputs(page))!.init!.link.canvasId
     expect(await page.locator(`article[data-canvas-card="${picture}"]`).count()).toBe(1)
-    // The socket is now a wire with its chip; the empty one is gone.
-    await expect.poll(() => slot(page, 'init').count()).toBe(0)
     await expect.poll(() => page.locator('[data-wire-chip="input:canvas-1:init:"]').textContent()).toBe('起始图 60%')
-
-    await slot(page, 'reference').getByRole('button').click()
-    await page.getByRole('menuitem', { name: '从画板选择' }).click()
+    // A linked start picture is no longer offered.
+    await addInput(page, 'canvas-1', '参考图', '从画板选择')
     await expect.poll(() => page.locator('[data-pick-hint]').textContent()).toContain('参考图')
     await page.locator('article[data-canvas-card="img-2"] [data-card-body]').click()
     await expect
@@ -559,30 +543,31 @@ describe('readable nodes', () => {
       .toEqual(['img-2'])
   })
 
-  it('links a wire dropped on a socket straight into it, and says why when it cannot', async () => {
+  it('a zone that cannot take the wire says why, only while the wire is over it', async () => {
     const page = await openBoard(app)
-    await dragToSocket(page, 'img-2', 'reference')
+    await dragToZone(page, 'img-2', 'canvas-1', '参考图')
     await expect.poll(async () => (await savedInputs(page))?.references?.links, { timeout: 10_000 }).toEqual([{ canvasId: 'img-2' }])
-    // No role menu: the socket already said what the picture is for.
+    // No role menu: the zone already said what the picture is for.
     expect(await page.getByRole('menu').count()).toBe(0)
 
-    // No control adapter installed: the 控制 socket refuses and says what to do.
-    await dragToSocket(page, 'img-1', 'control', true)
-    await expect.poll(() => page.locator('[data-wire-refused]').textContent()).toBe('需要先添加控制适配器')
+    // No control adapter installed: the 控制 zone refuses and says what to do.
+    await dragToZone(page, 'img-1', 'canvas-1', '控制', true)
+    const zone = page.locator('article[data-canvas-card="canvas-1"] [data-drop-zone="控制"]')
+    await expect.poll(() => zone.textContent()).toContain('需要先添加控制适配器')
+    expect(await page.locator('article[data-canvas-card="canvas-1"] [data-drop-zone="起始图"]').textContent()).toBe('起始图')
     await app.screenshot('board-socket-refused-light')
     await page.mouse.up()
     expect((await savedInputs(page))?.control).toBeUndefined()
-    await expect.poll(() => page.locator('[data-wire-refused]').count()).toBe(0)
+    await expect.poll(() => page.locator('[data-drop-zones]').count()).toBe(0)
   })
 
-  it('asks which control adapter to use, then offers one socket per kind', async () => {
+  it('asks which control adapter to use, then offers one input per kind', async () => {
     const page = await openBoard(app, { adapters: true })
-    await slot(page, 'control').getByRole('button').click()
-    await page.getByRole('menuitem', { name: 'moss-control-union.safetensors' }).click()
-    await expect
-      .poll(() => page.locator('[data-empty-port^="canvas-1/control"]').evaluateAll((items) => items.map((item) => item.textContent)))
-      .toEqual(['控制 · 深度', '控制 · 边缘', '控制 · 姿态'])
-    await dragToSocket(page, 'img-2', 'control:canny')
+    await addInput(page, 'canvas-1', '控制', 'moss-control-union.safetensors')
+    await page.locator('[data-input-adder="canvas-1"] button').click()
+    expect(await page.getByRole('menuitem').allTextContents()).toEqual(['起始图', '控制 · 深度', '控制 · 边缘', '控制 · 姿态', '参考图'])
+    await page.keyboard.press('Escape')
+    await dragToZone(page, 'img-2', 'canvas-1', '控制 · 边缘')
     await expect
       .poll(async () => (await savedInputs(page))?.control?.images.map((image) => image.kind), { timeout: 10_000 })
       .toEqual(['canny'])
@@ -682,11 +667,13 @@ describe('filmstrip, 用作起始图 and recipes', () => {
       // Every run is in the strip, the pinned one too.
       const strip = card(page).locator('[data-filmstrip]')
       expect(await strip.getByRole('button', { name: /^第 \d 张$/ }).count()).toBe(3)
-      // The newest is on the face, and the header says which of how many.
+      // The newest is on the face.
       expect(await strip.getByRole('button', { name: '第 3 张' }).getAttribute('aria-pressed')).toBe('true')
-      expect(await card(page).locator('header').textContent()).toContain('3 / 3')
       expect(await page.locator('[data-wire="lineage:kept"]').count()).toBe(1)
       await app.screenshot(`board-filmstrip-${theme}`)
+      // Not selected, the strip steps back to a count on the face.
+      await card(page, 'img-1').locator('[data-card-body]').click()
+      await expect.poll(() => card(page).locator('[data-strip-count]').textContent()).toBe('3')
     }
   })
 
@@ -764,15 +751,15 @@ describe('filmstrip, 用作起始图 and recipes', () => {
 
   it('starts from a recipe: the picture comes from a file, and 局部重绘 opens the mask', async () => {
     const page = await openWithRuns()
-    const recipes = page.locator('[data-recipes]')
-    // No control adapter yet: 按构图生成 says what is missing.
-    const compose = recipes.getByRole('button', { name: '按构图生成' })
+    // One ＋ holds the ways to start. No control adapter yet: 按构图生成 is off and says why on hover.
+    await page.getByRole('button', { name: '新建', exact: true }).click()
+    const compose = page.getByRole('menuitem', { name: /按构图生成/ })
     expect(await compose.isDisabled()).toBe(true)
     expect(await compose.getAttribute('title')).toBe('需要先在模型页添加控制适配器')
     await app.screenshot('board-recipes-light')
 
     await page.evaluate(() => window.__mock.handle(window.__mock.Ipc.pickImages, () => ['/home/me/pictures/sofa.png']))
-    await recipes.getByRole('button', { name: '局部重绘' }).click()
+    await page.getByRole('menuitem', { name: '局部重绘' }).click()
     await expect.poll(async () => (await cardIds(page)).length, { timeout: 10_000 }).toBe(5)
     // The new 画面 (selected) and the picture card that feeds it.
     const created = await page.locator('article[data-canvas-kind="layout"][aria-current="true"]').getAttribute('data-canvas-card')
@@ -801,16 +788,18 @@ describe('风格 and 放大 nodes', () => {
       // One socket, the 原图, already wired; the size is the 原图's times two, within 2048.
       expect(await page.locator(`[data-wire-chip="input:${id}:init:"]`).textContent()).toBe('原图')
       expect(await page.locator(`[data-empty-port^="${id}/"]`).count()).toBe(0)
-      expect(await card(page, id).locator('[data-card-chips]').textContent()).toContain('放大 ×2')
-      expect(await card(page, id).locator('[data-card-chips]').textContent()).toContain('1280 × 2048')
-      // The left panel: 放大倍数 and 细节 instead of 尺寸, no 输入 section.
+      // The left panel sums it up; opened, 放大倍数 and 细节 instead of 尺寸, and no 输入 section.
+      const summary = page.locator('[data-settings-summary]')
+      expect(await summary.textContent()).toContain('放大 ×2')
+      await summary.click()
+      expect(await page.getByText('1280 × 2048').isVisible()).toBe(true)
       expect(await page.getByRole('group', { name: '放大倍数' }).isVisible()).toBe(true)
       expect(await page.getByRole('group', { name: '尺寸' }).count()).toBe(0)
       await app.screenshot(`board-upscale-${theme}`)
       if (theme === 'dark') break
 
       await page.getByRole('group', { name: '放大倍数' }).getByRole('button', { name: '×1.5' }).click()
-      await expect.poll(() => card(page, id).locator('[data-card-chips]').textContent()).toContain('1200 × 1920')
+      await expect.poll(() => page.getByText('1200 × 1920').isVisible()).toBe(true)
       await page.getByRole('group', { name: '细节' }).getByRole('button', { name: '更多细节' }).click()
       await page.locator('[data-studio-generate]').click()
       await expect.poll(async () => (await jobs(page)).length, { timeout: 10_000 }).toBe(1)
@@ -823,18 +812,22 @@ describe('风格 and 放大 nodes', () => {
 
   it('a 风格 wired into a 画面 adds its description to what the 画面 generates', async () => {
     const page = await openBoard(app)
-    await page.locator('[data-new-canvas]').getByRole('button', { name: '新建风格' }).click()
+    await page.getByRole('button', { name: '新建', exact: true }).click()
+    await page.getByRole('menuitem', { name: '新建风格' }).click()
     await expect.poll(() => page.locator('article[data-canvas-kind="style"]').count()).toBe(1)
     const styleId = (await selectedId(page))!
     await page.getByRole('textbox', { name: '风格描述' }).fill('水彩插画，柔和的粉色调')
     await expect.poll(() => card(page, styleId).locator('[data-face-description]').textContent()).toBe('水彩插画，柔和的粉色调')
-    expect(await card(page, styleId).locator('footer').textContent()).toContain('还没接画面')
-    // The 画面 now offers a 风格 socket; a wire from the 风格 dropped on the 画面 links it.
-    await expect.poll(() => page.locator('[data-empty-port="canvas-1/style"]').count()).toBe(1)
-    await dragWire(page, styleId, 'canvas-1')
+    // The 画面's ＋ now offers 风格; a wire from the 风格 dropped on the 画面 links it.
+    await page.locator('article[data-canvas-card="canvas-1"]').hover()
+    await page.locator('[data-input-adder="canvas-1"] button').click()
+    expect(await page.getByRole('menuitem').allTextContents()).toContain('风格')
+    await page.keyboard.press('Escape')
+    expect(await dragToZone(page, styleId, 'canvas-1', '风格')).toEqual(['风格'])
     await expect.poll(async () => (await savedInputs(page))?.styles?.links, { timeout: 10_000 }).toEqual([{ canvasId: styleId }])
     expect(await page.locator('[data-wire-chip="input:canvas-1:style:0"]').textContent()).toBe('风格 1')
-    await expect.poll(() => card(page, styleId).locator('footer').textContent()).toContain('用在 1 个画面')
+    await card(page, styleId).locator('[data-card-body]').click()
+    await expect.poll(() => page.locator('[data-style-users]').textContent()).toContain('1 个')
     await app.screenshot('board-style-light')
 
     await card(page, 'canvas-1').locator('header button').first().click()
@@ -847,11 +840,13 @@ describe('风格 and 放大 nodes', () => {
 
   it('一组同风格的图: a 风格 and three 画面 wired to it', async () => {
     const page = await openBoard(app)
-    await page.locator('[data-recipes]').getByRole('button', { name: '一组同风格的图' }).click()
+    await page.getByRole('button', { name: '新建', exact: true }).click()
+    await page.getByRole('menuitem', { name: '一组同风格的图' }).click()
     await expect.poll(() => page.locator('article[data-canvas-kind="style"]').count()).toBe(1)
+    // The 风格 is selected, ready to be described.
     const styleId = (await selectedId(page))!
+    expect(await page.locator(`article[data-canvas-card="${styleId}"]`).getAttribute('data-canvas-kind')).toBe('style')
     await expect.poll(() => page.locator(`[data-wire^="input:"][data-wire$=":style:0"]`).count()).toBe(3)
-    expect(await card(page, styleId).locator('footer').textContent()).toContain('用在 3 个画面')
     expect(await page.locator('[data-style-users]').textContent()).toContain('3 个')
   })
 })

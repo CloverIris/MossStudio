@@ -77,7 +77,7 @@ function UnderlayMenu({
   }, [])
   return (
     <div className="flex w-[280px] flex-col gap-2 p-1">
-      <FieldLabel className="px-1">选一张作品垫在画面下面，作为构图参考</FieldLabel>
+      <FieldLabel className="px-1">底图</FieldLabel>
       {items === null && !error ? (
         <LoadingRow className="justify-center py-6" />
       ) : error ? (
@@ -124,30 +124,19 @@ function UnderlayMenu({
   )
 }
 
+/** The board's own tools: select, pan, zoom and fit. A 画面's tools sit on the card (CardToolbar). */
 export function Toolbar({
   tool,
   onTool,
-  regionKind,
-  onRegionKind,
-  canEditLayout,
-  underlay,
-  onUnderlay,
   zoom,
   onZoom,
   onFit,
-  mask,
 }: {
   tool: BoardTool
   onTool: (tool: BoardTool) => void
-  regionKind: ProjectLayerKind
-  onRegionKind: (kind: ProjectLayerKind) => void
-  canEditLayout: boolean
-  underlay?: string
-  onUnderlay: (item: GalleryItem | null) => void
   zoom: number
   onZoom: (factor: number) => void
   onFit: () => void
-  mask: MaskToolState
 }): React.JSX.Element {
   return (
     <div
@@ -156,10 +145,10 @@ export function Toolbar({
       data-board-ui
       className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[10px] bg-raised p-1 shadow-float"
     >
-      {TOOLS.map((item) => (
+      {TOOLS.filter((item) => item.id !== 'draw').map((item) => (
         <ToolButton
           key={item.id}
-          on={tool === item.id}
+          on={tool === item.id || (item.id === 'select' && (tool === 'draw' || tool === 'mask'))}
           aria-label={item.label}
           title={`${item.label}（${item.key}）`}
           onClick={() => onTool(item.id)}
@@ -168,12 +157,68 @@ export function Toolbar({
         </ToolButton>
       ))}
       <span aria-hidden="true" className="w-2" />
+      <IconButton label="缩小" onClick={() => onZoom(1 / 1.25)} className="text-ink">
+        <Minus className="size-4" strokeWidth={1.6} />
+      </IconButton>
+      <button
+        type="button"
+        onClick={onFit}
+        title="适应窗口"
+        className="tabular h-8 w-12 rounded-md text-center text-caption text-ink hover:bg-well"
+      >
+        {Math.round(zoom * 100)}%
+      </button>
+      <IconButton label="放大" onClick={() => onZoom(1.25)} className="text-ink">
+        <Plus className="size-4" strokeWidth={1.6} />
+      </IconButton>
+      <IconButton label="适应窗口" onClick={onFit} className="text-ink">
+        <Maximize2 className="size-4" strokeWidth={1.6} />
+      </IconButton>
+    </div>
+  )
+}
+
+/** A selected 画面's tools, on the card: 画框 (and what it draws), 底图 and 遮罩. */
+export function CardToolbar({
+  tool,
+  onTool,
+  regionKind,
+  onRegionKind,
+  underlay,
+  onUnderlay,
+  mask,
+}: {
+  tool: BoardTool
+  onTool: (tool: BoardTool) => void
+  regionKind: ProjectLayerKind
+  onRegionKind: (kind: ProjectLayerKind) => void
+  underlay?: string
+  onUnderlay: (item: GalleryItem | null) => void
+  mask: MaskToolState
+}): React.JSX.Element {
+  const draw = TOOLS.find((item) => item.id === 'draw')!
+  return (
+    <div
+      role="toolbar"
+      aria-label="画面工具"
+      data-board-ui
+      data-card-tools
+      className="flex w-max items-center gap-0.5 whitespace-nowrap rounded-[10px] bg-raised p-1 shadow-float"
+    >
+      <ToolButton
+        on={tool === 'draw'}
+        aria-label={draw.label}
+        title={`${draw.label}（${draw.key}）`}
+        onClick={() => onTool(tool === 'draw' ? 'select' : 'draw')}
+      >
+        {draw.icon}
+      </ToolButton>
       <Popover
-        align="center"
+        align="start"
         label="新区域的类型"
         className="min-w-[140px]"
         trigger={(menu) => (
-          <ToolButton title="新画的框是什么" onClick={menu.toggle} aria-expanded={menu['aria-expanded']} aria-haspopup="menu">
+          <ToolButton title="画什么" onClick={menu.toggle} aria-expanded={menu['aria-expanded']} aria-haspopup="menu">
             {KIND_LABEL[regionKind]}
             <ChevronDown className="size-3.5 text-ink-2" aria-hidden="true" strokeWidth={1.6} />
           </ToolButton>
@@ -196,13 +241,12 @@ export function Toolbar({
         }
       </Popover>
       <Popover
-        align="center"
+        align="start"
         label="底图"
         trigger={(menu) => (
           <ToolButton
             on={Boolean(underlay)}
-            disabled={!canEditLayout}
-            title={canEditLayout ? '在画面下面垫一张参考图' : '选中一个可编辑的画面后再选底图'}
+            title="底图"
             onClick={menu.toggle}
             aria-expanded={menu['aria-expanded']}
             aria-haspopup="dialog"
@@ -218,31 +262,13 @@ export function Toolbar({
           on={tool === 'mask'}
           disabled={!mask.enabled}
           aria-label="遮罩"
-          title={mask.enabled ? '涂出要重画的部分（M）' : mask.reason}
+          title={mask.enabled ? '遮罩（M）' : mask.reason}
           onClick={() => onTool(tool === 'mask' ? 'select' : 'mask')}
         >
           <Brush className="size-4" strokeWidth={1.6} />
           遮罩
         </ToolButton>
       )}
-      <span aria-hidden="true" className="w-2" />
-      <IconButton label="缩小" onClick={() => onZoom(1 / 1.25)} className="text-ink">
-        <Minus className="size-4" strokeWidth={1.6} />
-      </IconButton>
-      <button
-        type="button"
-        onClick={onFit}
-        title="适应窗口"
-        className="tabular h-8 w-12 rounded-md text-center text-caption text-ink hover:bg-well"
-      >
-        {Math.round(zoom * 100)}%
-      </button>
-      <IconButton label="放大" onClick={() => onZoom(1.25)} className="text-ink">
-        <Plus className="size-4" strokeWidth={1.6} />
-      </IconButton>
-      <IconButton label="适应窗口" onClick={onFit} className="text-ink">
-        <Maximize2 className="size-4" strokeWidth={1.6} />
-      </IconButton>
     </div>
   )
 }

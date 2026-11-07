@@ -4,7 +4,8 @@ import type { GalleryItem, GpuInventorySnapshot, ManagedHost, ProjectCanvas, Pro
 import { ADAPTER_STRENGTH_DEFAULT, normalizeCanvasAdapters } from '@shared/adapters'
 import { activeCanvasBranchIds } from '@shared/canvasJobBranch'
 import { Events, Ipc } from '@shared/channels'
-import { ConfirmDialog, Segmented, useToast } from '../../components/ui'
+import { Sparkles } from 'lucide-react'
+import { Button, ConfirmDialog, useToast } from '../../components/ui'
 import { TitlebarPortal } from '../../components/shell/Titlebar'
 import { AdapterPicker } from '../../components/studio/AdapterPicker'
 import { StudioSidebar } from '../../components/studio/StudioSidebar'
@@ -130,7 +131,8 @@ export function StudioPage(): React.JSX.Element {
   const [tool, setTool] = useState<BoardTool>('select')
   const [regionKind, setRegionKind] = useState<ProjectLayerKind>('object')
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null)
-  const [rightTab, setRightTab] = useState<'inspector' | 'assistant'>('inspector')
+  /** 助手 opens beside the board from the title bar; closed, the board takes the room. */
+  const [assistantOpen, setAssistantOpen] = useState(false)
   const [focusToken, setFocusToken] = useState(0)
   const [widths, setWidths] = useState(initialWidths)
   const [viewer, setViewer] = useState<{ canvasId: string; index: number } | null>(null)
@@ -456,8 +458,8 @@ export function StudioPage(): React.JSX.Element {
   }
 
   // The assistant drives the canvas through these; every call reads live state.
-  const live = useRef({ project, generate, setRightTab })
-  live.current = { project, generate, setRightTab }
+  const live = useRef({ project, generate })
+  live.current = { project, generate }
   useEffect(() => installStudioToolBridge(), [])
   useEffect(() => {
     const current = (): ProjectCanvas | null => {
@@ -624,6 +626,17 @@ export function StudioPage(): React.JSX.Element {
       {shown && project.loaded ? (
         <TitlebarPortal>
           <ProjectSwitcher project={project} />
+          <Button
+            tone={assistantOpen ? 'secondary' : 'ghost'}
+            size="xs"
+            aria-pressed={assistantOpen}
+            data-assistant-toggle
+            onClick={() => setAssistantOpen((open) => !open)}
+            className="no-drag ml-1"
+          >
+            <Sparkles className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
+            助手
+          </Button>
         </TitlebarPortal>
       ) : null}
 
@@ -660,6 +673,17 @@ export function StudioPage(): React.JSX.Element {
           onNavigate={(to) => navigate(to)}
           inputs={inputsWiring}
           onUseAsStart={(id) => newCanvasFromPicture(id)}
+          regions={
+            <InspectorPanel
+              canvas={selected}
+              selectedRegionId={selectedRegionId}
+              focusToken={focusToken}
+              onSelectRegion={setSelectedRegionId}
+              onChangeLayers={(update) => {
+                if (selected) changeLayers(selected.id, update)
+              }}
+            />
+          }
         />
       </StudioSidebar>
 
@@ -682,7 +706,6 @@ export function StudioPage(): React.JSX.Element {
           onSelectRegion={setSelectedRegionId}
           onOpenRegion={(id) => {
             setSelectedRegionId(id)
-            setRightTab('inspector')
             setFocusToken((value) => value + 1)
           }}
           onSelectCanvas={(id) => project.select(id)}
@@ -773,40 +796,19 @@ export function StudioPage(): React.JSX.Element {
         />
       </main>
 
-      <StudioSidebar
-        side="right"
-        label="检查器与助手"
-        width={widths.right}
-        onWidthChange={(right) => setWidths((value) => ({ ...value, right }))}
-      >
-        <div className="flex h-full min-h-0 flex-col gap-5 p-4">
-          <Segmented
-            block
-            label="右侧面板"
-            value={rightTab}
-            onChange={setRightTab}
-            options={[
-              { value: 'inspector', label: '检查器' },
-              { value: 'assistant', label: '助手' },
-            ]}
-          />
-          <div hidden={rightTab !== 'inspector'} className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4">
-            <InspectorPanel
-              canvas={selected}
-              selectedRegionId={selectedRegionId}
-              focusToken={focusToken}
-              onSelectRegion={setSelectedRegionId}
-              onChangeLayers={(update) => {
-                if (selected) changeLayers(selected.id, update)
-              }}
-            />
-          </div>
-          {/* Stays mounted so a running conversation survives tab switches. */}
-          <div hidden={rightTab !== 'assistant'} className="min-h-0 flex-1">
+      {/* Stays mounted while closed, so a running conversation survives. */}
+      <div hidden={!assistantOpen} className="contents">
+        <StudioSidebar
+          side="right"
+          label="助手"
+          width={widths.right}
+          onWidthChange={(right) => setWidths((value) => ({ ...value, right }))}
+        >
+          <div className="flex h-full min-h-0 flex-col p-4">
             <Assistant />
           </div>
-        </div>
-      </StudioSidebar>
+        </StudioSidebar>
+      </div>
 
       <OutputViewer
         canvas={viewerCanvas}

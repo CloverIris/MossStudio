@@ -66,7 +66,12 @@ describe('studio', () => {
     await expect.poll(() => page.getByText('先写一句描述', { exact: true }).isVisible()).toBe(true)
 
     await describeCanvas(page, '海边的灯塔，黄昏，暖色调')
+    // Model, size and LoRA fold into one line under the description.
+    const summary = page.locator('[data-settings-summary]')
+    expect(await summary.textContent()).toBe('MOSS-Image SFT · 1:1')
+    await summary.click()
     await page.getByRole('group', { name: '尺寸' }).getByRole('button', { name: '16:9' }).click()
+    expect(await summary.textContent()).toBe('MOSS-Image SFT · 16:9')
     await page.getByRole('group', { name: '质量' }).getByRole('button', { name: '精细' }).click()
     await expect.poll(() => generate.isEnabled()).toBe(true)
     await generate.click()
@@ -205,7 +210,8 @@ describe('studio', () => {
     await caption.fill('一只橘猫')
     await drawRegion(page, [0.65, 0.6], [0.95, 0.95])
     await caption.fill('一盆绿植')
-    await expect.poll(() => page.getByText('另有 2 个区域，在画面上编辑').isVisible()).toBe(true)
+    // The regions are listed under the description.
+    await expect.poll(() => page.getByRole('region', { name: '全部区域' }).locator('[data-layer-id]').count()).toBe(2)
     // Regions alone are not a prompt: the overall description is still asked for.
     await expect.poll(() => page.getByText('先写一句整体描述').isVisible()).toBe(true)
     await describeCanvas(page, '阳光明媚的客厅')
