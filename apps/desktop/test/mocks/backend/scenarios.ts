@@ -185,7 +185,7 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
       settings: settingsFixture({ onboardingState: 'active' }),
       catalog: catalogFixture(),
     }),
-    /** Engine ready on an RTX 5090 (NVFP4 runs here), no model downloaded yet. */
+    /** Engine ready on an RTX 5090 (the only kind that runs NVFP4), no model downloaded yet. */
     modelMissingRtx50: () => ({
       settings: settingsFixture({ onboardingState: 'completed' }),
       catalog: catalogFixture(),

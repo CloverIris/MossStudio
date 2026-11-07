@@ -113,11 +113,11 @@ export interface BestBundle {
 }
 
 /**
- * The certified model that suits this computer best: one made for its GPU
- * (NVFP4 on an RTX 50), the INT8 model when VRAM is limited, otherwise the
- * catalog's recommended official model. The GPU judged is the one automatic
- * assignment prefers (full engine first, then newest, then most memory).
- * Without a known NVIDIA GPU it is the recommended one.
+ * The certified model that suits this computer best. The official model comes
+ * first: it is picked whenever the GPU has the memory for it. Only when VRAM is
+ * limited does the INT8 model take its place. The GPU judged is the one
+ * automatic assignment prefers (full engine first, then newest, then most
+ * memory). Without a known NVIDIA GPU it is the recommended one.
  */
 export function bestBundleFor(
   bundles: readonly ModelBundle[],
@@ -134,12 +134,9 @@ export function bestBundleFor(
     .at(0)
   if (!gpu) return { bundle: fallback, reason: null }
   if (cliGpus.has(gpu.uuid)) return { bundle: fallback, reason: `${gpu.name} 上的引擎只能运行官方模型` }
-  const runnable = certified.filter((bundle) => bundleGpuProblem(bundle, gpu) === null)
-  const made = runnable.find((bundle) => bundle.requires)
-  if (made) return { bundle: made, reason: `为 ${gpu.name} 这类显卡做的版本，速度最快` }
   const memory = gpu.memoryTotalBytes
   if (memory !== undefined && memory > 0 && memory < LIMITED_VRAM_BYTES) {
-    const limited = runnable.find((bundle) => bundle.recommendedFor === 'limited-vram')
+    const limited = certified.find((bundle) => bundle.recommendedFor === 'limited-vram' && bundleGpuProblem(bundle, gpu) === null)
     if (limited) return { bundle: limited, reason: `${gpu.name} 显存不算多，这个版本更省显存，也更快` }
   }
   return { bundle: fallback, reason: `${gpu.name} 显存充足，可以用画质最原汁原味的官方模型` }

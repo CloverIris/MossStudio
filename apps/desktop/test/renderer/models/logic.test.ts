@@ -240,11 +240,11 @@ describe('modelSections', () => {
     expect(ids(result.others)).toEqual(['moss-sft-fp16', 'moss-base-fp16'])
   })
 
-  it('features NVFP4 on an RTX 50 card', () => {
+  it('features the official SFT on an RTX 50 card with VRAM to spare, and still lists NVFP4', () => {
     const result = sections([rtx5090])
-    expect(result.featured?.bundle.id).toBe('moss-sft-nvfp4')
+    expect(result.featured?.bundle.id).toBe('moss-sft')
     expect(result.pick?.reason).toContain('RTX 5090')
-    expect(ids(result.certified)).toContain('moss-sft')
+    expect(ids(result.certified)).toContain('moss-sft-nvfp4')
   })
 
   it('features INT8 when VRAM is limited and the official model when it is not', () => {

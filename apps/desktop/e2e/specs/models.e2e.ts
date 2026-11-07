@@ -89,14 +89,18 @@ describe('models', () => {
     ])
   })
 
-  it('features the NVFP4 model on an RTX 50 card', async () => {
+  it('features the official SFT on an RTX 50 card with VRAM to spare, NVFP4 listed below it', async () => {
     const page = await app.open({ scenario: 'modelMissingRtx50', route: '/models', theme: 'dark' })
     const card = featured(page)
-    await expect.poll(() => card.getByRole('heading', { name: 'SFT · NVFP4' }).isVisible()).toBe(true)
+    await expect.poll(() => card.getByRole('heading', { name: 'MOSS-Image SFT' }).isVisible()).toBe(true)
     expect(await card.getByText('最适合这台电脑').isVisible()).toBe(true)
-    expect(await card.getByText(/RTX 5090 这类显卡做的版本/).isVisible()).toBe(true)
+    expect(await card.getByText(/RTX 5090 显存充足/).isVisible()).toBe(true)
+    // NVFP4 runs here, so it is offered with a download, just not featured.
+    const nvfp4 = page.getByText('SFT · NVFP4', { exact: true }).locator('xpath=ancestor::*[.//button or .//span[text()="用不了"]][1]')
+    await expect.poll(() => nvfp4.getByRole('button', { name: '下载' }).isVisible()).toBe(true)
+    expect(await nvfp4.getByText('用不了', { exact: true }).count()).toBe(0)
     await card.getByRole('button', { name: '下载' }).click()
-    await expect.poll(() => app.calls('models:install-bundle')).toEqual([{ id: 'moss-sft-nvfp4' }])
+    await expect.poll(() => app.calls('models:install-bundle')).toEqual([{ id: 'moss-sft' }])
     await app.screenshot('models-rtx50-dark')
   })
 

@@ -138,8 +138,18 @@ describe('generationGpus', () => {
 describe('bestBundleFor', () => {
   const pick = (devices: GpuInventoryDevice[]) => bestBundleFor(catalog.bundles, devices)
 
-  it('picks NVFP4 on an RTX 50 card', () => {
-    expect(pick([rtx5090])).toEqual({ bundle: bundle('moss-sft-nvfp4'), reason: '为 NVIDIA GeForce RTX 5090 这类显卡做的版本，速度最快' })
+  it('picks the official SFT on an RTX 50 card with VRAM to spare, and INT8 (not NVFP4) on one without', () => {
+    expect(pick([rtx5090])).toEqual({
+      bundle: bundle('moss-sft'),
+      reason: 'NVIDIA GeForce RTX 5090 显存充足，可以用画质最原汁原味的官方模型',
+    })
+    const rtx5060 = gpuDeviceFixture({
+      uuid: 'GPU-5060',
+      name: 'NVIDIA GeForce RTX 5060',
+      computeCapability: { major: 12, minor: 0 },
+      memoryTotalBytes: 8 * 1024 ** 3,
+    })
+    expect(pick([rtx5060])?.bundle.id).toBe('moss-sft-int8')
   })
 
   it('picks INT8 when VRAM is limited', () => {
@@ -154,7 +164,7 @@ describe('bestBundleFor', () => {
 
   it('judges the GPU automatic assignment prefers: newest architecture first, then most memory', () => {
     expect(pick([GPU_RTX_3060(), rtx4090])?.bundle.id).toBe('moss-sft')
-    expect(pick([rtx4090, rtx5090])?.bundle.id).toBe('moss-sft-nvfp4')
+    expect(pick([rtx4090, rtx5090])?.bundle.id).toBe('moss-sft')
     // A 32 GB V100 loses to a 12 GB RTX 3060, as in the scheduler.
     const v100 = gpuDeviceFixture({
       uuid: 'GPU-v100',

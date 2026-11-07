@@ -185,7 +185,8 @@ describe('getOnboardingStatus (local)', () => {
       memoryTotalBytes: 32 * 1024 ** 3,
     }
     expect((await status({ gpus: [rtx3060] })).bundleId).toBe('moss-sft-int8')
-    expect((await status({ gpus: [rtx5090] })).bundleId).toBe('moss-sft-nvfp4')
+    // The official model comes first whenever the GPU has the VRAM for it, RTX 50 included.
+    expect((await status({ gpus: [rtx5090] })).bundleId).toBe('moss-sft')
     // What is already downloaded still wins.
     expect((await status({ gpus: [rtx3060], installed: sft })).bundleId).toBe('moss-sft')
     // An NVIDIA GPU on 兼容模式 reads only the official folders.

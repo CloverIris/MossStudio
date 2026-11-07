@@ -222,16 +222,11 @@ describe('mock backend', () => {
       expect(result.data.steps[2]!.modelIds).toEqual([...SFT_BUNDLE_IDS])
     })
 
-    it('suggests the NVFP4 model on an RTX 50 card, as main does', async () => {
+    it('suggests the official SFT on an RTX 50 card with VRAM to spare, as main does', async () => {
       const result = await status('modelMissingRtx50')
       if (!result.ok) throw new Error(result.error.message)
-      expect(result.data).toMatchObject({ bundleId: 'moss-sft-nvfp4', bundleName: 'SFT · NVFP4', ready: false })
-      expect(result.data.steps[2]!.modelIds).toEqual([
-        'moss-sft-comfy-nvfp4',
-        'qwen35-comfy-int8_convrot',
-        'flux2-vae-comfy-small',
-        'moss-runtime-config',
-      ])
+      expect(result.data).toMatchObject({ bundleId: 'moss-sft', ready: false })
+      expect(result.data.steps[2]!.modelIds).toEqual([...SFT_BUNDLE_IDS])
     })
 
     it('rejects an unknown host', async () => {
