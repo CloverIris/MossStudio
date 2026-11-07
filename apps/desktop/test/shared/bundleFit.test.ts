@@ -53,8 +53,13 @@ describe('the certified catalog', () => {
         catalog.models.find((model) => model.id === id)!,
       )
       expect(parts.every((model) => model.format === 'comfyui' && model.family === 'moss-image')).toBe(true)
-      // Pinned to the revision whose files the engine tested (a full commit sha).
-      expect(parts.every((model) => /^[a-f0-9]{40}$/.test(model.revision))).toBe(true)
+      // Files added for certification are pinned to the revision the engine tested. The Comfy-Org
+      // files older app versions already download stay on main: older versions read this catalog
+      // from main and would otherwise list those downloads as missing (the files are unchanged).
+      for (const model of parts) {
+        if (model.repo === 'Comfy-Org/MOSS-Image') expect(model.revision, model.id).toBe('main')
+        else expect(model.revision, model.id).toMatch(/^[a-f0-9]{40}$/)
+      }
     }
   })
 
