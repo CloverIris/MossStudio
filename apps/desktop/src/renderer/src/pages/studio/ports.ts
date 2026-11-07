@@ -1,4 +1,5 @@
 import type { ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
+import { CARD_HEADER, cardBodyHeight } from './boardLayout'
 import { controlKindLabel, linksOf, MAX_REFERENCES, MAX_STYLES, type CanvasLinkEntry, type LinkRole } from './links'
 import { engineUnavailableReason, type Blocker } from './readiness'
 
@@ -147,9 +148,24 @@ export function dropZones(slots: readonly InputSlot[], sourceKind: ProjectCanvas
   return slots.filter((slot) => slot.role !== 'style' && !(slot.role === 'reference' && slot.linked))
 }
 
-/** The zone under a point on a card's face (`fraction` 0 at its top, 1 at its bottom). */
-export function zoneAt(count: number, fraction: number): number {
-  return Math.min(count - 1, Math.max(0, Math.floor(fraction * count)))
+/** Screen pixels between the sockets a dragged wire can land on. */
+export const SOCKET_SPACING = 34
+/** How far left of a card's edge (screen pixels) a dragged wire still aims at the card. */
+export const SOCKET_REACH = 64
+
+type Placed = Pick<ProjectCanvas, 'x' | 'y' | 'width' | 'height'>
+
+/** Board y of drop socket `index` of `count` on a card's left edge: centred on the picture, a screen size apart. */
+export function socketY(card: Placed, index: number, count: number, zoom: number): number {
+  const middle = card.y + CARD_HEADER + cardBodyHeight(card) / 2
+  return middle + ((index - (count - 1) / 2) * SOCKET_SPACING) / Math.max(0.01, zoom)
+}
+
+/** The socket nearest to board height `y`. */
+export function socketAt(card: Placed, count: number, zoom: number, y: number): number {
+  const middle = card.y + CARD_HEADER + cardBodyHeight(card) / 2
+  const index = Math.round(((y - middle) * Math.max(0.01, zoom)) / SOCKET_SPACING + (count - 1) / 2)
+  return Math.min(count - 1, Math.max(0, index))
 }
 
 /** A 风格 wired onto a 画面 anywhere but a socket: linked, or why not. */

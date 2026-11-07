@@ -39,7 +39,7 @@ import { useWireConnect } from './useWireConnect'
 import { useWireSelection } from './useWireSelection'
 import { InputAdder, InputThumbs, NewMenu, StartRow } from './BoardControls'
 import type { PortActions } from './SlotMenu'
-import { inputSlots } from './ports'
+import { inputSlots, socketY } from './ports'
 import { WireChips, WireLayer } from './WireLayer'
 import { recipes, type Recipe } from './recipes'
 import { upscaleProblem } from './nodes'
@@ -220,6 +220,10 @@ export function Board(props: BoardProps): React.JSX.Element {
     onAddFromFile: (canvasId, role, kind) => {
       if (canvasId !== latest.current.selectedCanvasId) latest.current.onSelectCanvas(canvasId)
       latest.current.portActions.onAddFromFile(canvasId, role, kind)
+    },
+    onAddFromGallery: (canvasId, role, kind) => {
+      if (canvasId !== latest.current.selectedCanvasId) latest.current.onSelectCanvas(canvasId)
+      latest.current.portActions.onAddFromGallery(canvasId, role, kind)
     },
   }
   const showRef = useRef((layoutId: string, item: StripItem) =>
@@ -438,6 +442,9 @@ export function Board(props: BoardProps): React.JSX.Element {
       ? only
       : null
   const dragged = runDrag.drag
+  // The card a wire is aimed at shows its sockets; its linked inputs' thumbnails and labels step aside.
+  const aimedId = connect.draft?.zones ? connect.draft.targetId : undefined
+  const labelled = aimedId ? wires.filter((wire) => wire.kind !== 'input' || wire.targetId !== aimedId) : wires
 
   return (
     <div
@@ -571,12 +578,14 @@ export function Board(props: BoardProps): React.JSX.Element {
                   ? {
                       items: zones.slots.map((slot, index) => {
                         const drop = zones.drops[index]!
-                        return { label: slot.label, ok: drop.ok, reason: drop.ok ? undefined : drop.reason }
+                        const y = socketY(canvas, index, zones.slots.length, view.zoom) - canvas.y - CARD_HEADER
+                        return { label: slot.label, ok: drop.ok, reason: drop.ok ? undefined : drop.reason, y }
                       }),
                       active: zones.active,
+                      scale: 1 / Math.max(0.01, view.zoom),
                     }
                   : draft?.targetId === canvas.id
-                    ? { items: [], active: -1 }
+                    ? { items: [], active: -1, scale: 1 }
                     : undefined
               }
               onPortDown={(event) => connect.start(canvas, event)}
@@ -608,7 +617,7 @@ export function Board(props: BoardProps): React.JSX.Element {
             />
           )
         })}
-        <InputThumbs wires={wires} canvases={props.canvases} zoom={view.zoom} />
+        <InputThumbs wires={labelled} canvases={props.canvases} zoom={view.zoom} />
         {selected && selected.kind === 'layout' && !selected.upscale && !connect.draft ? (
           // A 画面's tools sit on the selected card, above its title.
           <div
@@ -629,7 +638,7 @@ export function Board(props: BoardProps): React.JSX.Element {
           </div>
         ) : null}
         <WireChips
-          wires={wires}
+          wires={labelled}
           zoom={view.zoom}
           focus={focusIds}
           selectedWireId={selectedWireId}

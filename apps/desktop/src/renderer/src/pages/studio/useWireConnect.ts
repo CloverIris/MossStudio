@@ -1,15 +1,15 @@
 import { useRef, useState } from 'react'
 import type { ProjectCanvas } from '@shared/types'
-import { CARD_HEADER, cardBodyHeight, toBoardPoint, type View } from './boardLayout'
+import { toBoardPoint, type View } from './boardLayout'
 import { canConnect } from './connect'
-import { dropZones, slotDrop, styleDrop, zoneAt, type InputSlot, type SlotDrop } from './ports'
+import { dropZones, slotDrop, SOCKET_REACH, socketAt, socketY, styleDrop, type InputSlot, type SlotDrop } from './ports'
 import { cardAt, outputPort, type Point } from './wires'
 
-/** Where a dragged wire would land on the card under it: one zone per input it could fill. */
+/** Where a dragged wire would land on the card it aims at: one socket on its left edge per input it could fill. */
 export interface DropZones {
   slots: InputSlot[]
   drops: SlotDrop[]
-  /** The zone under the pointer. */
+  /** The socket nearest the pointer. */
   active: number
 }
 
@@ -36,10 +36,11 @@ export interface ConnectMenu {
 export const NEW_CANVAS_PULL = 48
 
 /**
- * Dragging a wire out of a card's output port. Over a card that takes it,
- * the card's face shows the inputs it could fill, one zone each; letting go
- * on a zone links into it. A zone that cannot take it says why. Letting go on
- * the empty board offers a new 画面 fed by the picture.
+ * Dragging a wire out of a card's output port. Aimed at a card that takes it
+ * (over it, or just left of it), the card's left edge shows a socket per input
+ * it could fill and the wire snaps to the nearest; letting go links into it.
+ * A socket that cannot take it says why. Letting go on the empty board offers
+ * a new 画面 fed by the picture.
  */
 export function useWireConnect(options: {
   viewport: React.RefObject<HTMLDivElement | null>
@@ -67,8 +68,15 @@ export function useWireConnect(options: {
   const aim = (sourceId: string, from: Point, event: PointerEvent | React.PointerEvent): ConnectDraft => {
     const at = local(event)
     const to = toBoardPoint(options.view.current, at.x, at.y)
+    const zoom = options.view.current.zoom
     const source = options.cards.current.find((canvas) => canvas.id === sourceId)
-    const target = cardAt(options.cards.current, to)
+    // Just left of a card's edge, where its sockets are, still aims at it.
+    const target =
+      cardAt(options.cards.current, to) ??
+      cardAt(
+        options.cards.current.filter((canvas) => canvas.id !== sourceId),
+        { x: to.x + SOCKET_REACH / Math.max(0.01, zoom), y: to.y },
+      )
     const targetId = target && target.id !== sourceId ? target.id : undefined
     const check = canConnect(options.cards.current, sourceId, target)
     if (!target) return { sourceId, from, to, ok: false }
@@ -79,14 +87,14 @@ export function useWireConnect(options: {
       const reason = source?.kind === 'style' ? (styleDrop(target, sourceId) as { reason?: string }).reason : '这里接不了图片'
       return { sourceId, from, to, targetId, ok: false, reason }
     }
-    const top = target.y + CARD_HEADER
-    const index = zoneAt(slots.length, (to.y - top) / Math.max(1, cardBodyHeight(target)))
+    const index = socketAt(target, slots.length, zoom, to.y)
     const drops = slots.map((slot) => slotDrop(slot, target, sourceId, source?.kind))
     const drop = drops[index]!
     return {
       sourceId,
       from,
-      to,
+      // A socket that takes the wire holds its end.
+      to: drop.ok ? { x: target.x, y: socketY(target, index, slots.length, zoom) } : to,
       targetId,
       ok: drop.ok,
       zones: { slots, drops, active: index },

@@ -206,6 +206,35 @@ describe('studio board', () => {
       .toMatchObject({ control: { adapterId: 'control-union', images: [{ kind: 'depth', link: { canvasId: 'img-2' } }] } })
   })
 
+  it('a wire let go just left of a card links into the socket it snapped to', async () => {
+    const page = await openBoard(app)
+    const labels = await dragToZone(page, 'img-1', 'canvas-1', undefined, true)
+    expect(labels).toEqual(['起始图', '控制', '参考图'])
+    // The sockets sit on the card's left edge; aim from outside the card, beside 参考图.
+    const body = await page.locator('article[data-canvas-card="canvas-1"] [data-card-body]').boundingBox()
+    const socket = await center(page, 'article[data-canvas-card="canvas-1"] [data-drop-zone="参考图"]')
+    await page.mouse.move(body!.x - 20, socket.y, { steps: 4 })
+    await expect.poll(() => page.locator('[data-drop-zone="参考图"]').getAttribute('data-active')).toBe('true')
+    await page.mouse.up()
+    await expect.poll(async () => (await savedInputs(page))?.references?.links, { timeout: 10_000 }).toEqual([{ canvasId: 'img-1' }])
+  })
+
+  it('links a picture from 作品 through the ＋ beside a card', async () => {
+    const page = await openBoard(app)
+    await addInput(page, 'canvas-1', '参考图', '从作品选择')
+    const dialog = page.getByRole('dialog', { name: '选择参考图' })
+    await dialog.locator('[data-gallery-picker] button').first().waitFor()
+    expect(await dialog.locator('[data-gallery-picker] button').count()).toBe(3)
+    await app.screenshot('board-gallery-picker-light')
+    await dialog.getByRole('button', { name: 'prompt 1' }).click()
+    await expect.poll(() => dialog.count()).toBe(0)
+    const imports = await app.calls<{ path: string }>('studio:import-image')
+    expect(imports.at(-1)?.path).toBe('/fixture/outputs/moss_0001.png')
+    // The picture lands on the board as a card, wired into 参考图.
+    await expect.poll(async () => (await savedInputs(page))?.references?.links.length, { timeout: 10_000 }).toBe(1)
+    expect(await page.locator('[data-input-thumb]').count()).toBe(1)
+  })
+
   it('leaves out roles the engine does not support', async () => {
     const page = await openBoard(app, { adapters: true, features: { control: false, references: false } })
     expect(await dragToZone(page, 'img-1', 'canvas-1')).toEqual(['起始图'])

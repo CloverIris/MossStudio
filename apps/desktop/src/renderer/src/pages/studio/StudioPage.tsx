@@ -30,7 +30,8 @@ import { deriveReadiness, resolveBundle } from './readiness'
 import { useBoardAssets } from './useBoardAssets'
 import { useEngineFeatures } from './useEngineFeatures'
 import { useControlAdapters } from '../../lib/useControlAdapters'
-import { removeLink, setControlAdapter, setLink, type CanvasLinkEntry, type LinkRole, type PickTarget } from './links'
+import { GalleryPicker } from './GalleryPicker'
+import { removeLink, roleLabel, setControlAdapter, setLink, type CanvasLinkEntry, type LinkRole, type PickTarget } from './links'
 import type { Recipe } from './recipes'
 import { BOARD_GAP, cardWidth } from './boardLayout'
 import {
@@ -140,6 +141,8 @@ export function StudioPage(): React.JSX.Element {
   const [adapterPickerOpen, setAdapterPickerOpen] = useState(false)
   /** 输入 › 从画板选择: the next card clicked on the board fills this slot. */
   const [pickTarget, setPickTarget] = useState<PickTarget | null>(null)
+  // 从作品选择: the input a picture from 作品 goes into.
+  const [galleryTarget, setGalleryTarget] = useState<PickTarget | null>(null)
 
   const remoteEnabled = settings?.remoteHostsEnabled === true
   const remoteHost = remoteEnabled ? (hosts.find((host) => host.id === remoteHostId) ?? null) : null
@@ -439,6 +442,9 @@ export function StudioPage(): React.JSX.Element {
     onPickTarget: setPickTarget,
     onAddFromFile: (role, kind) => {
       if (selected) void inputImport.addFromFile(selected.id, role, kind)
+    },
+    onAddFromGallery: (role, kind) => {
+      if (selected) setGalleryTarget({ canvasId: selected.id, role, ...(kind ? { kind } : {}) })
     },
     maskTool: tool === 'mask',
     onToggleMask: () => setTool((current) => (current === 'mask' ? 'select' : 'mask')),
@@ -758,6 +764,7 @@ export function StudioPage(): React.JSX.Element {
           portActions={{
             onPick: (canvasId, role, kind) => setPickTarget({ canvasId, role, ...(kind ? { kind } : {}) }),
             onAddFromFile: (canvasId, role, kind) => void inputImport.addFromFile(canvasId, role, kind),
+            onAddFromGallery: (canvasId, role, kind) => setGalleryTarget({ canvasId, role, ...(kind ? { kind } : {}) }),
             onSetControlAdapter: (canvasId, adapterId) => project.updateCanvas(canvasId, (canvas) => setControlAdapter(canvas, adapterId)),
             onNavigate: (to) => void navigate(to),
             onAddStyle: addStyle,
@@ -809,6 +816,17 @@ export function StudioPage(): React.JSX.Element {
           </div>
         </StudioSidebar>
       </div>
+
+      <GalleryPicker
+        open={galleryTarget !== null}
+        title={galleryTarget ? `选择${roleLabel(galleryTarget.role)}` : '选择图片'}
+        onClose={() => setGalleryTarget(null)}
+        onPick={(path) => {
+          const target = galleryTarget
+          setGalleryTarget(null)
+          if (target) void inputImport.addPaths(target.canvasId, target.role, target.kind, [path])
+        }}
+      />
 
       <OutputViewer
         canvas={viewerCanvas}

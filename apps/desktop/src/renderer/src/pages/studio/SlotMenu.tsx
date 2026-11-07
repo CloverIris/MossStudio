@@ -9,13 +9,15 @@ export interface PortActions {
   onPick: (canvasId: string, role: LinkRole, kind?: string) => void
   /** Choose picture files and link them in. */
   onAddFromFile: (canvasId: string, role: LinkRole, kind?: string) => void
+  /** Choose a picture from 作品 and link it in. */
+  onAddFromGallery: (canvasId: string, role: LinkRole, kind?: string) => void
   onSetControlAdapter: (canvasId: string, adapterId: string) => void
   onNavigate: (to: string) => void
   /** Wire a 风格 into the canvas: an existing one, or a new one when `styleId` is absent. */
   onAddStyle: (canvasId: string, styleId?: string) => void
 }
 
-/** What filling one input slot offers: pick from the board or a file, choose an adapter or a 风格. */
+/** What filling one input slot offers: pick from the board, 作品 or a file, choose an adapter or a 风格. */
 export function SlotMenu({
   canvasId,
   slot,
@@ -99,6 +101,14 @@ export function SlotMenu({
         }}
       >
         从画板选择
+      </MenuItem>
+      <MenuItem
+        onSelect={() => {
+          close()
+          actions.onAddFromGallery(canvasId, slot.role, slot.kind)
+        }}
+      >
+        从作品选择
       </MenuItem>
       <MenuItem
         onSelect={() => {

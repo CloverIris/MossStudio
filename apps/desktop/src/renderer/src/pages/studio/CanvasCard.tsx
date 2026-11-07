@@ -69,10 +69,12 @@ export interface CanvasCardProps {
   /** Entries of the ⋯ menu: 用作起始图, 固定到画板 and so on (danger ones next to 删除). */
   menuActions?: readonly CardMenuAction[]
   /**
-   * While a wire is dragged over this card: the inputs it could fill, one
-   * zone each, top to bottom (empty: it cannot take the wire).
+   * While a wire is aimed at this card: the inputs it could fill, one socket
+   * each on the left edge, top to bottom (empty: it cannot take the wire).
+   * `y` is board pixels from the top of the picture; `scale` keeps the
+   * sockets at screen size.
    */
-  dropZones?: { items: { label: string; ok: boolean; reason?: string }[]; active: number }
+  dropZones?: { items: { label: string; ok: boolean; reason?: string; y: number }[]; active: number; scale: number }
   /** A wire is being dragged that this card cannot take: it steps back. */
   inert?: boolean
   onHoverChange?: (on: boolean) => void
@@ -463,7 +465,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           />
         ) : null}
         {props.dropZones ? (
-          <div data-drop-zones className="pointer-events-none absolute inset-0 z-[4] flex flex-col gap-1 bg-well-strong p-1.5">
+          <div data-drop-zones className="pointer-events-none absolute inset-0 z-[4]">
             {props.dropZones.items.map((zone, index) => {
               const on = index === props.dropZones!.active
               return (
@@ -472,13 +474,14 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
                   data-drop-zone={zone.label}
                   data-active={on || undefined}
                   className={cn(
-                    'flex min-h-0 flex-1 flex-col items-center justify-center rounded-md px-2 text-center text-caption transition-colors',
-                    on && zone.ok ? 'bg-accent-soft font-medium text-accent' : 'bg-raised text-ink',
+                    'absolute left-0 top-0 flex h-6 origin-top-left items-center whitespace-nowrap rounded-full px-2.5 text-caption shadow-float transition-colors',
+                    on && zone.ok ? 'bg-accent font-medium text-on-accent' : 'bg-raised text-ink',
                   )}
+                  style={{ transform: `translate(0, ${zone.y}px) scale(${props.dropZones!.scale}) translate(8px, -50%)` }}
                 >
-                  <span className="truncate">{zone.label}</span>
-                  {/* Why not, only for the zone under the pointer. */}
-                  {on && !zone.ok && zone.reason ? <span className="truncate text-micro text-ink-2">{zone.reason}</span> : null}
+                  {zone.label}
+                  {/* Why not, only for the socket the wire is at. */}
+                  {on && !zone.ok && zone.reason ? <span className="ml-1.5 text-ink-2">{zone.reason}</span> : null}
                 </div>
               )
             })}

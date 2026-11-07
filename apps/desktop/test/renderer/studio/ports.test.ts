@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ControlAdapterEntry, EngineFeatures } from '@shared/types'
-import { dropZones, inputSlots, slotDrop, zoneAt, type InputSlot } from '@renderer/pages/studio/ports'
+import { dropZones, inputSlots, slotDrop, SOCKET_SPACING, socketAt, socketY, type InputSlot } from '@renderer/pages/studio/ports'
 import { boardPorts, slotAt } from '@renderer/pages/studio/wires'
 import { canvas } from './fixtures'
 
@@ -139,7 +139,20 @@ describe('studio/ports dropZones', () => {
     expect(dropZones(inputSlots(canvas(), features(), []), 'style')).toEqual([])
   })
 
-  it('splits the face evenly, top to bottom', () => {
-    expect([0, 0.2, 0.34, 0.5, 0.99, 1.4, -1].map((fraction) => zoneAt(3, fraction))).toEqual([0, 0, 1, 1, 2, 2, 0])
+  it('stacks the sockets a screen size apart around the middle of the picture, at any zoom', () => {
+    const card = canvas({ x: 0, y: 0 })
+    const middle = socketY(card, 1, 3, 1)
+    for (const zoom of [0.5, 1, 2]) {
+      expect(socketY(card, 1, 3, zoom)).toBe(middle)
+      expect((socketY(card, 2, 3, zoom) - socketY(card, 0, 3, zoom)) * zoom).toBeCloseTo(2 * SOCKET_SPACING)
+    }
+  })
+
+  it('picks the socket nearest the pointer, clamped to the ends', () => {
+    const card = canvas({ x: 0, y: 0 })
+    const at = (index: number, nudge = 0): number => socketY(card, index, 3, 1) + nudge
+    expect([at(0), at(0, 16), at(1, -16), at(1), at(2, 10), at(0, -500), at(2, 500)].map((y) => socketAt(card, 3, 1, y))).toEqual([
+      0, 0, 1, 1, 2, 0, 2,
+    ])
   })
 })

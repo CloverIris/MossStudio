@@ -18,7 +18,7 @@ function message(error: unknown): string {
 }
 
 /**
- * 输入 › 添加 › 从文件: choose picture files, copy them into the project's
+ * 输入 › 添加 › 从文件 / 从作品选择: choose pictures, copy them into the project's
  * assets, put each on the board as a picture card next to the canvas and link
  * it into the role. The project is saved first when it is new (assets live in
  * its folder).
@@ -29,6 +29,8 @@ export function useInputImport(options: {
 }): {
   /** Import files as picture cards placed beside `near`; returns the new cards. */
   importPaths: (paths: readonly string[], near?: ProjectCanvas) => Promise<ProjectCanvas[]>
+  /** Import pictures (a gallery item, say) and link them into `targetId`'s role. */
+  addPaths: (targetId: string, role: LinkRole, kind: string | undefined, paths: readonly string[]) => Promise<void>
   /** Pick files, then link them into `targetId`'s role. */
   addFromFile: (targetId: string, role: LinkRole, kind?: string) => Promise<void>
 } {
@@ -57,22 +59,14 @@ export function useInputImport(options: {
     return created
   }, [])
 
-  const addFromFile = useCallback(
-    async (targetId: string, role: LinkRole, kind?: string): Promise<void> => {
+  /** Copies pictures into the project and links them into a card's input. */
+  const addPaths = useCallback(
+    async (targetId: string, role: LinkRole, kind: string | undefined, paths: readonly string[]): Promise<void> => {
       const { project, notify } = live.current
       const target = project.canvasesRef.current.find((canvas) => canvas.id === targetId)
       if (!target) return
-      let paths: string[]
-      try {
-        paths = await call<string[]>(Ipc.pickImages, {
-          title: role === 'reference' ? '选择参考图' : role === 'control' ? '选择控制图' : '选择起始图',
-        })
-      } catch (error) {
-        notify(message(error), 'error')
-        return
-      }
       const room = role === 'reference' ? Math.max(0, MAX_REFERENCES - (target.inputs?.references?.links.length ?? 0)) : 1
-      if (!paths?.length || room === 0) return
+      if (!paths.length || room === 0) return
       if (paths.length > room) notify(`参考图最多 ${MAX_REFERENCES} 张，只放入了前 ${room} 张`, 'info')
       const created = await importPaths(paths.slice(0, room), target)
       if (!created.length) return
@@ -91,5 +85,23 @@ export function useInputImport(options: {
     [importPaths],
   )
 
-  return useMemo(() => ({ importPaths, addFromFile }), [importPaths, addFromFile])
+  const addFromFile = useCallback(
+    async (targetId: string, role: LinkRole, kind?: string): Promise<void> => {
+      const { project, notify } = live.current
+      if (!project.canvasesRef.current.some((canvas) => canvas.id === targetId)) return
+      let paths: string[]
+      try {
+        paths = await call<string[]>(Ipc.pickImages, {
+          title: role === 'reference' ? '选择参考图' : role === 'control' ? '选择控制图' : '选择起始图',
+        })
+      } catch (error) {
+        notify(message(error), 'error')
+        return
+      }
+      await addPaths(targetId, role, kind, paths ?? [])
+    },
+    [addPaths],
+  )
+
+  return useMemo(() => ({ importPaths, addPaths, addFromFile }), [importPaths, addPaths, addFromFile])
 }

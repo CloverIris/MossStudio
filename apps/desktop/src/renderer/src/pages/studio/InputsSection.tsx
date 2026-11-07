@@ -34,6 +34,7 @@ export interface InputsWiring {
   onPickTarget: (target: PickTarget | null) => void
   /** Choose picture files and link them into a role (references may take several). */
   onAddFromFile: (role: LinkRole, kind?: string) => void
+  onAddFromGallery: (role: LinkRole, kind?: string) => void
   maskTool: boolean
   onToggleMask: () => void
   onNavigate: (to: string) => void
@@ -136,6 +137,14 @@ function AddButton({
             }}
           >
             从画板选择
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              close()
+              wiring.onAddFromGallery(role, kind)
+            }}
+          >
+            从作品选择
           </MenuItem>
           <MenuItem
             onSelect={() => {
