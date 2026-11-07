@@ -141,9 +141,15 @@ beforeEach(async () => {
 })
 
 describe('resolveGithubToken', () => {
-  it('prefers settings, then GH_TOKEN/GITHUB_TOKEN, then the gh CLI', () => {
-    const base = { githubToken: null } as Settings
-    expect(download.resolveGithubToken({ githubToken: 'from-settings' } as Settings)).toBe('from-settings')
+  it('prefers the saved (encrypted) token, then GH_TOKEN/GITHUB_TOKEN, then the gh CLI', async () => {
+    const base = { hasGithubToken: false } as Settings
+    const { saveGithubToken } = await import('@main/services/githubCredentials')
+    const { safeStorage } = await import('electron')
+    // A real keyring, as on a desktop (the mock defaults to plain text on Linux).
+    vi.spyOn(safeStorage, 'getSelectedStorageBackend').mockReturnValue('gnome_libsecret')
+    saveGithubToken('from-store')
+    expect(download.resolveGithubToken({ hasGithubToken: true } as Settings)).toBe('from-store')
+    saveGithubToken(null)
     vi.stubEnv('GITHUB_TOKEN', ' env-token ')
     expect(download.resolveGithubToken(base)).toBe('env-token')
     vi.stubEnv('GH_TOKEN', 'gh-env')

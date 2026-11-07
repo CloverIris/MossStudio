@@ -349,7 +349,7 @@ export const schemas = {
           tier: z.enum(['reference', 'high', 'turbo']).optional(),
         }),
       ),
-      githubToken: z.string().max(200).nullable(),
+      githubToken: z.string().max(200).nullable().optional(),
       remoteHostsEnabled: z.boolean(),
       trainingEnabled: z.boolean(),
       engineAutoUpdate: z.boolean(),

@@ -29,7 +29,7 @@ import {
 import { galleryDetail, listGallery, recordJobOutputs, revealInFolder, trashGalleryItem } from './services/gallery'
 import { activeJobInputPaths, cancelJob, getJob, getJobLogs, inputJob, listJobs, onJobCompleted } from './services/supervisor'
 import { clearDiagnostics, dismissDiagnostic, listDiagnostics } from './services/diagnostics'
-import { getSettings, updateSettings } from './services/settings'
+import { clearLegacyGithubToken, getSettings, updateSettings } from './services/settings'
 import { updaterApi } from './update'
 import { clearEngineAutoUpdateHold, recordManualEngineInstall, startEngineAutoUpdate } from './services/engineAutoUpdate'
 import { cancelMossInferDownload, getMossInferDownloadState, listMossInferReleases } from './services/mossInferDownload'
@@ -51,6 +51,7 @@ import { detectSystemCuda } from './services/systemCuda'
 import { engineReadiness, invalidateEngineReadiness } from './services/engineReadiness'
 import { installMossInferCudaLibs } from './services/cudaWheels'
 import { saveHfToken } from './services/hfCredentials'
+import { saveGithubToken } from './services/githubCredentials'
 import { controlRemoteDownload, listRemoteDownloads, refreshRemoteDownloads } from './services/remoteDownloads'
 import { deleteRemoteModels, prepareRemoteDefaultModel, prepareRemoteModel, scanRemoteModels } from './services/remoteModels'
 import { installRemoteEngine } from './services/remoteEngineInstall'
@@ -391,8 +392,12 @@ export function registerIpc(): void {
 
   handle(Ipc.settingsUpdate, schemas.settingsUpdate, async (patch) => {
     const before = getSettings()
-    const { hfToken, ...settingsPatch } = patch
+    const { hfToken, githubToken, ...settingsPatch } = patch
     if (hfToken !== undefined) saveHfToken('local', hfToken)
+    if (githubToken !== undefined) {
+      saveGithubToken(githubToken)
+      clearLegacyGithubToken()
+    }
     const settings = updateSettings(settingsPatch)
     // A GPU switched to another engine frees its old moss-server's memory now, not at its next job.
     releaseAfterSettingsChange(before, settings)

@@ -123,17 +123,19 @@ export function NetworkSection(): React.JSX.Element {
                 />
               </Row>
             ) : null}
+            {/* Write-only and encrypted, exactly like the Hugging Face token above. */}
             <TextSetting<string | null>
               title="GitHub 令牌"
-              description="正式版引擎不需要。安装开发版引擎，或 GitHub 限制访问次数时需要。只用于本机访问 GitHub。"
+              description="正式版引擎不需要。安装开发版引擎，或 GitHub 限制访问次数时需要。令牌只保存在本机，并加密存放。"
               type="password"
-              value={settings.githubToken}
-              placeholder="github_pat_…"
+              value={null}
+              placeholder={settings.hasGithubToken ? '已保存，留空不修改' : 'github_pat_…'}
               validate={singleLineToken}
-              onSave={(githubToken) => save({ githubToken }, githubToken ? 'GitHub 令牌已保存' : 'GitHub 令牌已清除')}
+              clearOnSave
+              onSave={(githubToken) => (githubToken ? save({ githubToken }, 'GitHub 令牌已保存') : Promise.resolve(true))}
               trailing={
                 // Both tokens clear the same way: a ghost 清除 next to the field.
-                settings.githubToken ? (
+                settings.hasGithubToken ? (
                   <Button tone="ghost" onClick={() => void save({ githubToken: null }, 'GitHub 令牌已清除')}>
                     清除
                   </Button>

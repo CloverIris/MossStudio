@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { compareEngineTags, parseEngineStamp } from '@shared/engineUpdate'
+import { hasGithubToken, saveGithubToken } from './githubCredentials'
 import { hasHfToken } from './hfCredentials'
 import type { Settings } from '@shared/types'
 import { isInside, paths, setEngineRoot } from '../lib/paths'
@@ -53,7 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gpuSelection: 'auto',
   gpuProfileMode: 'auto',
   gpuProfileOverrides: {},
-  githubToken: null,
+  hasGithubToken: false,
   disabledDevices: [],
   deviceLabels: {},
   remoteHostsEnabled: false,
@@ -62,6 +63,27 @@ export const DEFAULT_SETTINGS: Settings = {
 }
 
 let cache: Settings | null = null
+
+/**
+ * A GitHub token still in settings.json as plain text: saved before tokens were encrypted, and
+ * not moved yet because this system has no secure storage. It keeps working and stays in the
+ * file until it can be moved or the user replaces or clears it.
+ */
+let plainGithubToken: string | null = null
+
+export function legacyGithubToken(): string | null {
+  return plainGithubToken
+}
+
+/** Forget the plain token (the user saved a new one or cleared it). */
+export function clearLegacyGithubToken(): void {
+  plainGithubToken = null
+}
+
+/** settings.json as written: the settings plus a plain token that could not be moved yet. */
+function persisted(settings: Settings): Settings & { githubToken?: string } {
+  return plainGithubToken ? { ...settings, githubToken: plainGithubToken } : settings
+}
 
 export function getSettings(): Settings {
   if (cache) return cache
@@ -96,6 +118,7 @@ export function getSettings(): Settings {
     cache = { ...DEFAULT_SETTINGS }
   }
   cache.hasHfToken = hasHfToken()
+  migratePlainGithubToken(cache)
   setEngineRoot(cache.engineRoot)
   if (legacyEnginePin(cache)) cache.mossInferServerPath = null
   if (legacyBundledPending) {
@@ -242,7 +265,9 @@ export function updateSettings(patch: Partial<Settings>): Settings {
     next.dismissedAnnouncements = Array.from(new Set(patch.dismissedAnnouncements)).slice(-200)
   }
   next.hasHfToken = hasHfToken()
-  atomicWriteJson(paths.settings(), next)
+  next.hasGithubToken = hasGithubToken() || plainGithubToken !== null
+  delete (next as Settings & { githubToken?: unknown }).githubToken
+  atomicWriteJson(paths.settings(), persisted(next))
   cache = next
   setEngineRoot(next.engineRoot)
   return next
@@ -261,4 +286,25 @@ export function readJson<T>(file: string, fallback: T): T {
   } catch {
     return fallback
   }
+}
+
+/**
+ * settings.json used to hold the GitHub token as plain text. Move it into the encrypted store
+ * once and drop it from the file; where the system has no secure storage, keep using it as it
+ * is (legacyGithubToken) rather than lose it.
+ */
+function migratePlainGithubToken(settings: Settings): void {
+  const record = settings as Settings & { githubToken?: unknown }
+  const plain = typeof record.githubToken === 'string' && record.githubToken.trim() ? record.githubToken.trim() : null
+  delete record.githubToken
+  if (plain) {
+    try {
+      saveGithubToken(plain)
+      plainGithubToken = null
+      atomicWriteJson(paths.settings(), settings)
+    } catch {
+      plainGithubToken = plain
+    }
+  }
+  settings.hasGithubToken = hasGithubToken() || plainGithubToken !== null
 }
