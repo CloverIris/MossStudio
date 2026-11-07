@@ -245,6 +245,11 @@ button:disabled {
   padding-left: 80px;
 }
 
+.app-titlebar[data-platform='linux'] {
+  /* The drawn window buttons sit flush with the window's right edge. */
+  padding-right: 0;
+}
+
 .app-titlebar[data-platform='win32'] {
   height: max(40px, env(titlebar-area-height, 40px));
   padding-left: calc(env(titlebar-area-x, 0px) + 12px);

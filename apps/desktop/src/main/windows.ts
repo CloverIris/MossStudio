@@ -1,5 +1,6 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { join } from 'node:path'
+import { Events } from '@shared/channels'
 import { applyAppDetails } from './install/identity'
 
 export type WindowKind = 'studio' | 'trainer'
@@ -10,8 +11,10 @@ const screenshot = process.argv.includes('--screenshot')
 const smoke = process.argv.includes('--smoke')
 
 const config: Record<WindowKind, { width: number; height: number; minWidth: number; minHeight: number; route: string; title: string }> = {
-  studio: { width: 1600, height: 1000, minWidth: 1280, minHeight: 760, route: '/studio', title: 'MossStudio' },
-  trainer: { width: 1280, height: 840, minWidth: 980, minHeight: 640, route: '/trainer', title: 'Kohaku Trainer' },
+  // Tiling window managers (Hyprland, Sway) may give a window less than its minimum, and the page is then
+  // laid out at the minimum and cut off on the right. Keep the minimum at a size every screen layout can hold.
+  studio: { width: 1600, height: 1000, minWidth: 1024, minHeight: 640, route: '/studio', title: 'MossStudio' },
+  trainer: { width: 1280, height: 840, minWidth: 960, minHeight: 600, route: '/trainer', title: 'Kohaku Trainer' },
 }
 
 const TITLEBAR_HEIGHT = 40
@@ -69,7 +72,8 @@ export function createAppWindow(kind: WindowKind, show = true): BrowserWindow {
             titleBarStyle: 'hidden' as const,
             titleBarOverlay: { color: '#00000000', symbolColor: currentChrome().symbol, height: TITLEBAR_HEIGHT },
           }
-        : {}),
+        : // Linux: no system frame or menu bar; the renderer draws the title bar and its window buttons.
+          { frame: false }),
     backgroundColor: currentChrome().background,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -119,6 +123,12 @@ export function createAppWindow(kind: WindowKind, show = true): BrowserWindow {
     void win.loadFile(join(__dirname, '../renderer/index.html'), { hash: meta.route })
   }
 
+  const sendMaximized = (): void => {
+    if (!win.isDestroyed()) win.webContents.send(Events.windowState, { maximized: win.isMaximized() })
+  }
+  win.on('maximize', sendMaximized)
+  win.on('unmaximize', sendMaximized)
+
   windows.set(kind, win)
   win.on('closed', () => {
     if (windows.get(kind) === win) windows.delete(kind)
@@ -149,4 +159,17 @@ export function openWindow(kind: WindowKind, route?: string): BrowserWindow {
 export function getWindow(kind: WindowKind): BrowserWindow | undefined {
   const win = windows.get(kind)
   return win && !win.isDestroyed() ? win : undefined
+}
+
+export type WindowAction = 'minimize' | 'toggle-maximize' | 'close'
+
+/** The buttons of a frameless title bar (Linux), for the window that sent them. */
+export function controlWindow(win: BrowserWindow | null, action: WindowAction | 'state'): { maximized: boolean } {
+  if (!win || win.isDestroyed()) return { maximized: false }
+  if (action === 'minimize') win.minimize()
+  else if (action === 'toggle-maximize') {
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+  } else if (action === 'close') win.close()
+  return { maximized: win.isMaximized() }
 }

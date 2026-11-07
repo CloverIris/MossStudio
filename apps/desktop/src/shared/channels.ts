@@ -2,6 +2,8 @@ export const Ipc = {
   appInfo: 'app:info',
   backendInfo: 'backend:info',
   windowOpen: 'window:open',
+  /** `{ action: minimize | toggle-maximize | close | state }` → `{ maximized }`, for the window that sent it. */
+  windowControl: 'window:control',
   sshTerminalOpen: 'ssh-terminal:open',
   sshTerminalList: 'ssh-terminal:list',
   sshTerminalInput: 'ssh-terminal:input',
@@ -219,6 +221,8 @@ export const Events = {
   job: 'event:job',
   jobLog: 'event:job-log',
   diagnostic: 'event:diagnostic',
+  /** `{ maximized }` when the window is maximized or restored (frameless title bar). */
+  windowState: 'event:window-state',
   /** UpdaterState, on every change of the update runtime (progress throttled). */
   updateState: 'event:update-state',
   mossInferDownload: 'event:mossinfer-download',

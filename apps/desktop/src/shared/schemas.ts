@@ -491,6 +491,8 @@ export const schemas = {
 
   announcementsDismiss: z.object({ id: z.string().min(1).max(120) }),
 
+  windowControl: z.object({ action: z.enum(['minimize', 'toggle-maximize', 'close', 'state']) }),
+
   windowOpen: z.object({
     kind: z.enum(['studio', 'trainer']),
     route: z
