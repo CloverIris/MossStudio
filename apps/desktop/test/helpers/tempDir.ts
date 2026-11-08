@@ -15,8 +15,8 @@ export function useTempDir(prefix = 'mossstudio-test-'): () => string {
   beforeEach(() => {
     dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)))
   })
-  // Retries: code under test may still be finishing a fire-and-forget write (the supervisor's
-  // job list, a log line) into the folder while it is removed (ENOTEMPTY, EBUSY).
+  // Retries: other modules' fire-and-forget writes may still land in the folder while it is removed
+  // (ENOTEMPTY, EBUSY); supervisor tests settle first (settleJobWrites).
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   })

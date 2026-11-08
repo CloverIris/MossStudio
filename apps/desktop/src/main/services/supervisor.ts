@@ -109,30 +109,26 @@ async function loadJobs(): Promise<void> {
 }
 
 /**
- * Job list and log writes in flight. Callers do not wait for them (a job's state never waits for the disk),
- * so they are kept here for settleJobWrites.
+ * Work the caller does not wait for (a job's state never waits for the disk): job list, log and
+ * preview-removal writes, and engine queue pumps from the moment they are scheduled.
  */
-const pendingWrites = new Set<Promise<unknown>>()
+const pendingWork = new Set<Promise<unknown>>()
 
-function inBackground(write: Promise<unknown>): void {
-  pendingWrites.add(write)
+function inBackground(work: Promise<unknown>): void {
+  pendingWork.add(work)
   const done = (): void => {
-    pendingWrites.delete(write)
+    pendingWork.delete(work)
   }
-  write.then(done, done)
+  work.then(done, done)
 }
 
 /**
- * Resolves once every job list, log and preview write started so far has finished, including writes those
- * lead to (a queued job that starts). Tests call it before they remove the data folder.
+ * Resolves once all background work started or scheduled so far has finished: job list, log and
+ * preview-removal writes, and engine queue pumps, with the writes and pumps those start in turn.
+ * Not called by the app; tests use it before removing the data root.
  */
 export async function settleJobWrites(): Promise<void> {
-  for (;;) {
-    // A queue pump scheduled with setTimeout(0) may still start a write.
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    if (pendingWrites.size === 0) return
-    await Promise.allSettled([...pendingWrites])
-  }
+  while (pendingWork.size > 0) await Promise.allSettled([...pendingWork])
 }
 
 async function saveJobs(): Promise<void> {
@@ -547,9 +543,8 @@ function engineSlotKey(job: { deviceUuid?: string; hostId?: string }): string | 
 }
 
 function scheduleEngineQueue(slot: string): void {
-  setTimeout(() => {
-    void pumpEngineQueue(slot)
-  }, 0)
+  // Tracked from now, not from when it runs: its first write comes after awaited reads.
+  inBackground(new Promise<void>((resolve) => setTimeout(() => resolve(pumpEngineQueue(slot)), 0)))
 }
 
 async function pumpEngineQueue(slot: string): Promise<void> {
