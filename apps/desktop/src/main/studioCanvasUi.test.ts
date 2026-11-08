@@ -98,7 +98,15 @@ export async function runStudioCanvasUiTests(): Promise<void> {
     await evaluate('document.querySelector(\'article[aria-label^="画面 2"]\')?.click()')
     assert.equal(await setPrompt('second canvas prompt'), true)
 
-    await new Promise((resolve) => setTimeout(resolve, 2200))
+    // Autosave writes 1.2 s after the last edit; a busy CI runner can take longer to land it,
+    // so wait (bounded) until the last edit is on disk instead of sleeping a fixed time.
+    const savedDeadline = Date.now() + 10_000
+    const lastEditSaved = (): boolean => {
+      const id = listProjects()[0]?.id
+      const saved = id ? getProject(id) : null
+      return saved?.canvases.find((canvas) => canvas.title === '画面 2')?.prompt === 'second canvas prompt'
+    }
+    while (!lastEditSaved() && Date.now() < savedDeadline) await new Promise((resolve) => setTimeout(resolve, 100))
     const projectId = listProjects()[0]?.id
     assert.ok(projectId, 'Canvas autosave should create a Project')
     let project = getProject(projectId!)
