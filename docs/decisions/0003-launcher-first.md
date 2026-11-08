@@ -55,4 +55,4 @@ V1 **不实现**：模型图、kernel、量化运行时、VAE 解码器、采样
 ADR-0001 的结论（MNN 为主、MPS 仅 oracle、MLX 条件触发）仍然有效，
 但触发时间改为 **V2**：当启动器积累了足够的真实设备数据、且用户明确抱怨性能时，
 再启动 M0 spike。MNN 相关文档保留在
-[future-inference-engine.md](../future-inference-engine.md)，不删除。
+[future-inference-engine.md](../archive/future-inference-engine.md)，不删除。

@@ -66,10 +66,12 @@ docs/initial-plan.md
 # 新增正文引用时，在下面补一条 ! 例外
 # ------------------------------------------------------------------
 docs/assets/*
-!docs/assets/mossstudio-logo.svg
-!docs/assets/logo.jpg
+!docs/assets/brand/mossstudio-logo.svg
 !docs/assets/home.webp
 !docs/assets/notifications.webp
 !docs/assets/studio.webp
 !docs/assets/gallery.webp
 !docs/assets/sidebar-collapsed.webp
+
+# Agent state inside docs/ (the root .omc/ pattern is anchored)
+docs/.omc/

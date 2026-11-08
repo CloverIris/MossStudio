@@ -33,7 +33,7 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
 
 ## 已知事项
 
-- 发布流水线可构建 Windows、Linux、macOS 安装包；生产更新签名密钥尚未配置（见 [docs/release.md](../docs/release.md)），程序本身也尚未代码签名。
+- 发布流水线可构建 Windows、Linux、macOS 安装包；生产更新签名密钥尚未配置（见 [docs/how-to/release.md](../docs/how-to/release.md)），程序本身也尚未代码签名。
 - 本机推理依赖兼容的 NVIDIA GPU、驱动、引擎和模型；首次使用需先完成准备。
 - 远端引擎暂不支持 LoRA：选择远端引擎时提交会给出明确提示。
 - Linux SSH 远端功能仍需在真实 GPU 主机环境中进一步验收。
@@ -41,4 +41,4 @@ MossStudio 是面向 MOSS-Image 的桌面创作工作台。它将画布创作、
 
 ## 发布与更新（维护者）
 
-发布流程已改为由 CI 构建、签名并发布：见 [docs/release.md](../docs/release.md)。旧的 `release:build` / `manifest.json` 步骤已不再使用。
+发布流程已改为由 CI 构建、签名并发布：见 [docs/how-to/release.md](../docs/how-to/release.md)。旧的 `release:build` / `manifest.json` 步骤已不再使用。

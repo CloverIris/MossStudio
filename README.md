@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/mossstudio-logo.svg" alt="MossStudio" width="180">
+  <img src="docs/assets/brand/mossstudio-logo.svg" alt="MossStudio" width="180">
 </p>
 
 <h1 align="center">MossStudio</h1>
@@ -52,7 +52,7 @@ MossInfer 是这个工作台的推理引擎，独立开源在 **[mossimage-cpp/m
 - **构建矩阵**：Windows x64 / Linux x86-64，CUDA 12 与 13，完整包与 `-system-cuda` 包；Turing（RTX 2080，`sm_75`）和 Volta（V100，`sm_70`）有专门构建。
 - **模型范围**：MOSS-Image Base 与 SFT；其它模型会被明确拒绝，而不是悄悄出错。
 - **LoRA**：`generate` 可直接接收 `loras: [{ path, strength }]`；MossStudio 把它做成每张画布独立的权重与强度选择。
-- **可复现**：重复运行输出逐位一致；1024² / 50 步 27.8 秒、峰值 11.7 GiB（RTX 5090，见[性能报告](docs/mossinfer-performance.md)）。
+- **可复现**：重复运行输出逐位一致；1024² / 50 步 27.8 秒、峰值 11.7 GiB（RTX 5090，见[性能报告](docs/records/2026-10-31-mossinfer-1.0.0-performance.md)）。
 
 更细的内容在引擎仓库里：[集成指南](https://github.com/mossimage-cpp/mossimage.cpp/blob/main/docs/integration.md)、[server 协议](https://github.com/mossimage-cpp/mossimage.cpp/blob/main/docs/server-protocol.md)、[C API](https://github.com/mossimage-cpp/mossimage.cpp/blob/main/docs/c-api.md)、[Turing / sm_75 支持](https://github.com/mossimage-cpp/mossimage.cpp/blob/main/docs/sm75.md)。MossStudio 只安装上游发布的 Release 资产（`SHA256SUMS` 校验后安装），不修改引擎源码。
 
@@ -72,7 +72,7 @@ MossInfer 是这个工作台的推理引擎，独立开源在 **[mossimage-cpp/m
 
 ## 引擎性能
 
-数据来自 [MossInfer 1.0.0 性能报告](docs/mossinfer-performance.md)（RTX 5090 32 GB 实测）。
+数据来自 [MossInfer 1.0.0 性能报告](docs/records/2026-10-31-mossinfer-1.0.0-performance.md)（RTX 5090 32 GB 实测）。
 
 **生成一张 1024² 图（50 步）**
 
@@ -136,12 +136,12 @@ pnpm dev
 | 文档 | 内容 |
 | --- | --- |
 | [MossInfer 引擎](https://github.com/mossimage-cpp/mossimage.cpp) | 推理引擎源码、集成指南与发布包 |
-| [MossInfer 性能报告](docs/mossinfer-performance.md) | 引擎实测数据与对比 |
-| [实现状态](docs/status.md) | 完成度、验证证据、已知限制 |
+| [MossInfer 性能报告](docs/records/2026-10-31-mossinfer-1.0.0-performance.md) | 引擎实测数据与对比 |
+| [实现状态](docs/archive/status.md) | 完成度、验证证据、已知限制 |
 | [产品设计](docs/product-design.md) | 工作台信息架构与交互 |
 | [架构](docs/architecture.md) | 进程、服务、引擎协议 |
-| [后端与 Project](docs/backend-and-project.md) | 项目结构、Engine Job |
-| [Layout JSON](docs/layout-schema.md) | 布局编译契约 |
+| [后端与 Project](docs/reference/project-and-backend.md) | 项目结构、Engine Job |
+| [Layout JSON](docs/reference/layout-schema.md) | 布局编译契约 |
 | [文档索引](docs/README.md) | 全部文档与阅读顺序 |
 
 ## 开发

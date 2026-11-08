@@ -106,7 +106,7 @@
 - KohakuMossTrainer：稳定基线 `v0.1.0`；`main` 的 ComfyUI 权重、量化、
   FSDP/流水线等作为可选实验特性，不阻塞 Studio 改造；
 - 训练仍通过外部 commit/worktree 接入，不 vendor、不 import；
-- 上游变更记录见 [upstream-2026-10-20.md](../research/upstream-2026-10-20.md)。
+- 上游变更记录见 [upstream-2026-10-20.md](../records/2026-10-20-upstream-research.md)。
 
 ## 5. 实施阶段
 

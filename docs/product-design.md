@@ -117,5 +117,5 @@ Python、PyTorch、pip 归入「训练与外部工具」，并明确标注 **Mos
 ## 9. 验收原则
 
 - UI 路径存在 ≠ 已验收。
-- 真实 NVIDIA/Windows/Linux、安装包、远端 host 必须以实机结果更新 [status.md](status.md)。
+- 真实 NVIDIA/Windows/Linux、安装包、远端 host 必须以实机结果更新 [status.md](archive/status.md)。
 - 旧文档/截图只作历史。
