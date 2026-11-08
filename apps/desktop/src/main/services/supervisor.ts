@@ -20,7 +20,7 @@ import { getSettings } from './settings'
 import { refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 import { selectAutomaticGpu } from '@shared/gpuScheduling'
-import { gpuMemoryTooSmall } from '@shared/machineFit'
+import { gpuMemoryTooSmall, memoryGb } from '@shared/machineFit'
 import { judgeEngineSupport } from '@shared/engineProtocol'
 import { CLI_ENGINE_LABEL, cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
 import { isCliEngine } from '@shared/enginePackages'
@@ -588,16 +588,12 @@ async function resolveLocalGpu(
   const settings = getSettings()
   const inventory = await refreshGpuInventory()
   if (!deviceUuid && settings.gpuSelection === 'auto') {
-    // A card with too little memory for the model would only fail the job: any other GPU comes first,
-    // the integrated one included. It is used only when nothing else is left.
-    const roomy = inventory.devices.filter((device) => !gpuMemoryTooSmall(device.memoryTotalBytes))
-    const candidates = roomy.length ? roomy : inventory.devices
     // GPUs that run a CLI engine (兼容模式 / AMD 原生) are judged by their package, not by moss-server.
-    const cliGpus = candidates.filter((device) => cliEngineOf(device.uuid))
-    const cliUuids = new Set(cliGpus.map((device) => device.uuid))
-    const cudaGpus = candidates.filter((device) => !cliUuids.has(device.uuid) && (device.vendor ?? 'nvidia') === 'nvidia')
-    let cudaUuids = new Set<string>()
-    if (cudaGpus.length) {
+    const cliAll = inventory.devices.filter((device) => cliEngineOf(device.uuid))
+    const cliAllUuids = new Set(cliAll.map((device) => device.uuid))
+    const cudaAll = inventory.devices.filter((device) => !cliAllUuids.has(device.uuid) && (device.vendor ?? 'nvidia') === 'nvidia')
+    const cudaCompatible = async (cudaGpus: GpuInventoryDevice[]): Promise<Set<string>> => {
+      if (!cudaGpus.length) return new Set()
       let probe: Awaited<ReturnType<typeof probeLocalEngineGpuCompatibility>>
       try {
         probe = await probeLocalEngineGpuCompatibility()
@@ -606,7 +602,7 @@ async function resolveLocalGpu(
           `自动分配无法验证引擎与 GPU 的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备，或手动指定 GPU。`,
         )
       }
-      cudaUuids = new Set(
+      return new Set(
         cudaGpus
           .filter(
             (device) =>
@@ -620,6 +616,18 @@ async function resolveLocalGpu(
           .map((device) => device.uuid),
       )
     }
+    // A card with too little memory for the model would only fail the job: the GPUs that can run and are big
+    // enough come first, the integrated one included. When none is, every GPU that can run stays in.
+    const roomy = (device: GpuInventoryDevice): boolean => !gpuMemoryTooSmall(device.memoryTotalBytes)
+    let cliGpus = cliAll.filter(roomy)
+    let cudaGpus = cudaAll.filter(roomy)
+    let cudaUuids = await cudaCompatible(cudaGpus)
+    if (!cliGpus.length && !cudaUuids.size) {
+      cliGpus = cliAll
+      cudaGpus = cudaAll
+      cudaUuids = await cudaCompatible(cudaAll)
+    }
+    const cliUuids = new Set(cliGpus.map((device) => device.uuid))
     // Automatic assignment prefers the full engine: CLI GPUs only on a machine without a CUDA one,
     // and only for plain text to image; integrated GPUs only when there is no discrete one.
     const needsCuda = cliUnsupported(cliEngineOf(cliGpus[0]?.uuid)?.kind ?? 'vulkan', params)
@@ -662,7 +670,7 @@ async function resolveLocalGpu(
       current.queuedTasks += count
       loads[uuid] = current
     }
-    const automatic = selectAutomaticGpu(candidates, compatibleUuids, loads)
+    const automatic = selectAutomaticGpu(inventory.devices, compatibleUuids, loads)
     if (automatic) {
       pendingAutoGpuAssignments.set(automatic.uuid, (pendingAutoGpuAssignments.get(automatic.uuid) ?? 0) + 1)
       return automatic
@@ -681,6 +689,14 @@ async function resolveLocalGpu(
       throw new Error('设置中选择的默认 GPU 当前不可用；请在引擎页重新扫描或选择其他设备。')
     }
     throw new Error(inventory.error ?? '没有可用的 NVIDIA GPU；请在引擎页检查设备或选择远端推理引擎。')
+  }
+  // Picked by hand (the default GPU in settings, or a canvas bound to it), a card too small for the model has no
+  // engine: the plan gives it none while another GPU runs one. Say so instead of "no engine installed".
+  if (gpuMemoryTooSmall(device.memoryTotalBytes) && !resolveDeviceEngine(device.uuid)) {
+    throw codedError(
+      'E_GPU_TOO_SMALL',
+      `${device.name} 显存太小（${memoryGb(device.memoryTotalBytes!)} GB），没有安装引擎。在「设置 › 设备与引擎」里改用另一块显卡。`,
+    )
   }
   const pickedCli = cliEngineOf(device.uuid)
   if (pickedCli) {

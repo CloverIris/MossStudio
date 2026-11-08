@@ -48,6 +48,7 @@ import { bundleComponentIds, sizeText } from '../models/logic'
 import type { Preparation } from '../../lib/preparation'
 import { resizeCanvas } from './canvases'
 import { useApp } from '../../store'
+import { gpuPickerLabel } from '../settings/devicesModel'
 import { ImageCardPanel } from './ImageCardPanel'
 import { SliderField, SlotHeader, SlotRow } from './InputControls'
 import { InputsSection, type InputsWiring } from './InputsSection'
@@ -468,7 +469,7 @@ function CanvasParams({
                     ) : null}
                     {(gpuInventory?.devices ?? []).map((device) => (
                       <option key={device.uuid} value={device.uuid}>
-                        {device.name} · 显卡 {device.index}
+                        {gpuPickerLabel(device)}
                       </option>
                     ))}
                   </Select>

@@ -20,6 +20,7 @@ import type {
   GpuProfileOverride,
 } from '@shared/types'
 import { memorySize } from '../../lib/format'
+import { gpuMemoryTooSmall } from '@shared/machineFit'
 
 export interface GpuRow {
   uuid: string
@@ -127,6 +128,11 @@ export function defaultGpuUuid(inventory: GpuInventorySnapshot | null, selection
 
 export function gpuMemoryLabel(device: Pick<GpuInventoryDevice, 'memoryTotalBytes'>): string {
   return device.memoryTotalBytes ? memorySize(device.memoryTotalBytes) : '显存未知'
+}
+
+/** A GPU in a picker: "RTX 4090 · 显卡 0"; a card too small for the model says so, since a job there is refused. */
+export function gpuPickerLabel(device: Pick<GpuInventoryDevice, 'name' | 'index' | 'memoryTotalBytes'>): string {
+  return `${device.name} · 显卡 ${device.index}${gpuMemoryTooSmall(device.memoryTotalBytes) ? '（显存太小）' : ''}`
 }
 
 /** Rows for the GPU group: name, memory, which one is the default, and whether the engine can use it. */

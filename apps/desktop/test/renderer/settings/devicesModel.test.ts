@@ -12,6 +12,7 @@ import {
   engineOverrideOptions,
   fixedEngineSettingsNote,
   gpuEngineInfo,
+  gpuPickerLabel,
 } from '@renderer/pages/settings/devicesModel'
 import { RELEASE_220, enginePlanFor, inventoryDevicesFor, machineFixture } from '@test/mocks/backend/machines'
 import { planLines } from '@renderer/lib/engineInstall'
@@ -166,6 +167,18 @@ describe('engine per GPU', () => {
     const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(laptop)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), p))
     expect(rows[1]).toMatchObject({ status: 'unknown', statusLabel: '未使用', reason: expect.stringContaining('集成显卡') })
     expect(planLines(p)[1]).toMatchObject({ detail: '不使用（已有独立显卡）', skipped: true })
+  })
+
+  it('a GPU picker marks a card too small for the model, and only that one', () => {
+    const GiB = 1024 ** 3
+    expect(gpuPickerLabel({ name: 'NVIDIA GeForce MX250', index: 0, memoryTotalBytes: 2 * GiB })).toBe(
+      'NVIDIA GeForce MX250 · 显卡 0（显存太小）',
+    )
+    expect(gpuPickerLabel({ name: 'NVIDIA GeForce RTX 4090', index: 1, memoryTotalBytes: 24 * GiB })).toBe(
+      'NVIDIA GeForce RTX 4090 · 显卡 1',
+    )
+    // Unknown memory (an AMD or Intel GPU) is never called too small.
+    expect(gpuPickerLabel({ name: 'Intel(R) UHD Graphics 620', index: 2 })).toBe('Intel(R) UHD Graphics 620 · 显卡 2')
   })
 
   it('a 2 GB card next to a GPU that runs is quietly unused, and says why', () => {
