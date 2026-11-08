@@ -95,6 +95,8 @@ export interface CanvasCardProps {
   onPortDown: (event: React.PointerEvent<HTMLElement>) => void
   /** The description typed on the card itself (double-click the empty face). */
   onChangeDescription?: (text: string) => void
+  /** Things to try, on the face of a new board's only 画面; a click writes one as the description. */
+  ideas?: readonly string[]
   onSelect: () => void
   onSelectRegion: (id: string | null) => void
   onChangeLayers: (update: (layers: ProjectLayer[]) => ProjectLayer[]) => void
@@ -405,6 +407,24 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
               if (text !== null && text !== canvasDescription(canvas)) props.onChangeDescription?.(text)
             }}
           />
+        ) : null}
+
+        {blankFace && !editing && props.ideas?.length && !canvasDescription(canvas).trim() ? (
+          <div data-board-ui data-face-ideas className="absolute inset-x-3 bottom-3 z-[2] flex flex-col gap-1.5">
+            {props.ideas.map((idea) => (
+              <button
+                key={idea}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.onChangeDescription?.(idea)
+                }}
+                className="truncate rounded-lg bg-raised px-2.5 py-1.5 text-left text-caption text-ink shadow-float transition-colors hover:bg-surface"
+              >
+                {idea}
+              </button>
+            ))}
+          </div>
         ) : null}
 
         {showRegions && !preview ? (

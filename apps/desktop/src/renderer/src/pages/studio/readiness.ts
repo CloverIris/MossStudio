@@ -17,6 +17,7 @@ export interface Blocker {
     | 'update-required'
     | 'model-none'
     | 'model-missing'
+    | 'model-incomplete'
     | 'model-engine'
     | 'engine'
     | 'remote-path'
@@ -122,7 +123,7 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
     } else if (!input.bundle.bundle) {
       blockers.push({ id: 'model-none', message: '还没有可用的模型', action: toModels })
     } else if (!input.bundle.installed) {
-      blockers.push({ id: 'model-missing', message: `「${input.bundle.bundle.name}」还没有下载完`, action: toModels })
+      blockers.push({ id: 'model-incomplete', message: `「${input.bundle.bundle.name}」还没有下载完`, action: toModels })
     }
   }
 

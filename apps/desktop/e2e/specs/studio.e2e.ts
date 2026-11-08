@@ -231,6 +231,21 @@ describe('studio', () => {
     expect(again!.seed).not.toBe(run!.seed)
   })
 
+  it('the only 画面 of a new board offers three ideas; one click writes it as the description', async () => {
+    const page = await app.open({ scenario: 'ready', route: '/studio', theme: 'light' })
+    await openStudio(page)
+    const ideas = page.locator('[data-face-ideas] button')
+    await expect
+      .poll(() => ideas.allTextContents())
+      .toEqual(['海边的灯塔，黄昏，暖色调', '窗台上睡觉的橘猫，午后阳光', '雨夜的霓虹街道，电影感'])
+    await app.screenshot('studio-first-ideas-light')
+    await ideas.nth(1).click()
+    await expect.poll(() => page.getByRole('textbox', { name: '描述', exact: true }).inputValue()).toBe('窗台上睡觉的橘猫，午后阳光')
+    // Written: the face shows the description, and the ideas are gone.
+    await expect.poll(() => ideas.count()).toBe(0)
+    expect(await page.locator('[data-face-description]').textContent()).toBe('窗台上睡觉的橘猫，午后阳光')
+  })
+
   it('draws a box by dragging on the selected 画面 and says what goes there on the box', async () => {
     const page = await app.open({ scenario: 'ready', route: '/studio', theme: 'light' })
     await openStudio(page)

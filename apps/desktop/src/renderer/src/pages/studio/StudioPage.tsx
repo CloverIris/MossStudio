@@ -26,7 +26,8 @@ import { ParamsPanel } from './ParamsPanel'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { canvasDescription, withDescription } from './prompt'
 import type { BoardTool } from './RegionLayer'
-import { deriveReadiness, resolveBundle } from './readiness'
+import { deriveReadiness, resolveBundle, type Blocker } from './readiness'
+import { usePreparation } from '../../lib/usePreparation'
 import { useBoardAssets } from './useBoardAssets'
 import { useEngineFeatures } from './useEngineFeatures'
 import { useControlAdapters } from '../../lib/useControlAdapters'
@@ -103,6 +104,8 @@ function isTyping(target: EventTarget | null): boolean {
   return Boolean(element?.closest('input, textarea, select, [contenteditable="true"]'))
 }
 
+/** Blockers the first-run download clears by itself. */
+const PREPARING_BLOCKERS = new Set<Blocker['id']>(['model-none', 'model-incomplete', 'engine'])
 export function StudioPage(): React.JSX.Element {
   const toast = useToast()
   const navigate = useNavigate()
@@ -191,6 +194,10 @@ export function StudioPage(): React.JSX.Element {
         ),
       }
     : derived
+  // While first-run preparation downloads, 生成 itself says so and fills up; its blockers step aside.
+  const { progress: preparing } = usePreparation()
+  const waiting = preparing?.active && !remoteHost ? preparing : null
+  const panelBlockers = waiting ? readiness.blockers.filter((blocker) => !PREPARING_BLOCKERS.has(blocker.id)) : readiness.blockers
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false
   const { submitting, generate } = useGenerate({
@@ -682,7 +689,8 @@ export function StudioPage(): React.JSX.Element {
             setRemoteHostId(id)
             writeStorage(HOST_KEY, id || null)
           }}
-          blockers={readiness.blockers}
+          blockers={panelBlockers}
+          waiting={waiting}
           prompt={selected ? (readiness.prompt ?? null) : null}
           busy={selectedBusy}
           submitting={submitting}

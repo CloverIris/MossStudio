@@ -12,6 +12,7 @@ import { Notice } from '../common/Notice'
 import { Popover } from '../common/Popover'
 import { Button, ProgressBar } from '../ui'
 import { UpdateChip } from '../update/UpdateChip'
+import { PreparationChip } from './PreparationChip'
 
 const GIB = 1024 ** 3
 
@@ -258,6 +259,7 @@ export function Titlebar({ appName = 'MossStudio', monitor = true }: { appName?:
       {/* Pages render their own context here, e.g. the Studio project switcher. */}
       <div ref={setTitlebarSlot} className="no-drag flex min-w-0 items-center gap-1" />
       <div className="min-w-0 flex-1" />
+      <PreparationChip />
       <UpdateChip />
       {monitor ? <PerfMonitor /> : null}
     </TitlebarFrame>

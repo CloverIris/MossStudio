@@ -1,5 +1,5 @@
 import { Check, FileText, Info } from 'lucide-react'
-import { Advanced, Button, FieldLabel, Spinner } from '../../components/ui'
+import { Advanced, Button, Spinner, cn } from '../../components/ui'
 import { Checkbox } from '../../components/common/Checkbox'
 import {
   downgradeText,
@@ -14,7 +14,7 @@ import {
   type FolderCheck,
 } from './installModel'
 import { legacyWarning } from '@shared/setup'
-import { ChoiceList, FailureBlock, FolderField, FolderProblem, PathText, ProgressBlock, Screen } from './parts'
+import { FailureBlock, FolderField, FolderProblem, PathText, ProgressBlock, Screen } from './parts'
 import { useInstall, type SetupController } from './useInstall'
 import { ScreenHeading, WindowChrome } from './WindowChrome'
 
@@ -30,6 +30,11 @@ function FolderCheckLine({ check, onUse }: { check: FolderCheck | null; onUse: (
   )
 }
 
+const LEGACY_CHOICES = [
+  { value: 'reuse', short: '继续使用', label: '继续使用这些数据（不复制）', hint: '新版本直接使用它们' },
+  { value: 'fresh', short: '重新开始', label: '重新开始', hint: '旧数据留在原处，不会删除' },
+] as const
+
 function LegacyCard({ setup }: { setup: SetupController }): React.JSX.Element | null {
   const legacy = setup.legacy
   if (!legacy) return null
@@ -40,11 +45,37 @@ function LegacyCard({ setup }: { setup: SetupController }): React.JSX.Element | 
   const warning = legacyWarning(legacy, setup.legacyMode, inPlace)
   return (
     <section aria-label={kept ? '保留的数据' : '旧版数据'} className="flex flex-col gap-1 rounded-xl bg-surface p-1.5" data-legacy-card>
-      <div className="flex flex-col gap-0.5 px-3.5 pb-1.5 pt-2">
-        {/* Same shape as the location card: a label, the main line, then the detail. */}
-        <FieldLabel as="h2">{kept ? '保留的数据' : '旧版数据'}</FieldLabel>
-        <p className="text-control text-ink">{old.title}</p>
-        <p className="text-caption text-ink-2 [overflow-wrap:anywhere]">{old.description}</p>
+      {/* One row: what was found, and (unless installed in place) the choice beside it. */}
+      <div className="flex items-center gap-3 px-3.5 pb-1.5 pt-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="text-control text-ink">{old.title}</p>
+          <p className="text-caption text-ink-2 [overflow-wrap:anywhere]">{old.description}</p>
+        </div>
+        {inPlace ? null : (
+          <div role="radiogroup" aria-label={kept ? '保留的数据' : '旧版数据'} className="flex shrink-0 gap-0.5 rounded-lg bg-well p-0.5">
+            {LEGACY_CHOICES.map((choice) => {
+              const selected = setup.legacyMode === choice.value
+              return (
+                <button
+                  key={choice.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={choice.label}
+                  title={choice.hint}
+                  disabled={setup.starting}
+                  onClick={() => setup.setLegacyMode(choice.value)}
+                  className={cn(
+                    'h-7 rounded-md px-2.5 text-caption transition-colors disabled:opacity-40',
+                    selected ? 'bg-raised font-medium text-ink shadow-float' : 'text-ink-2 enabled:hover:text-ink',
+                  )}
+                >
+                  {choice.short}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
       {inPlace ? (
         <p className="px-3.5 pb-2.5 text-ui text-ink">
@@ -52,18 +83,7 @@ function LegacyCard({ setup }: { setup: SetupController }): React.JSX.Element | 
             ? '装在原来的文件夹里：会继续使用这些作品、模型和设置。'
             : '装在旧版所在的文件夹里：旧的程序文件会被替换，作品、模型和设置原地保留。'}
         </p>
-      ) : (
-        <ChoiceList
-          label={kept ? '保留的数据' : '旧版数据'}
-          value={setup.legacyMode}
-          onChange={setup.setLegacyMode}
-          disabled={setup.starting}
-          options={[
-            { value: 'reuse', title: '继续使用这些数据（不复制）', description: '新版本直接使用它们' },
-            { value: 'fresh', title: '重新开始', description: '旧数据留在原处，不会删除' },
-          ]}
-        />
-      )}
+      ) : null}
       {/* Per choice: reuse keeps using the old data\ (do not delete the folder); fresh may delete it. */}
       {warning ? (
         <p className="flex items-start gap-2 px-3.5 pb-2 pt-1 text-caption text-ink-2" data-legacy-warning={setup.legacyMode}>

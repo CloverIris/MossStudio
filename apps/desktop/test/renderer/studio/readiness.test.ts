@@ -112,7 +112,7 @@ describe('studio/readiness deriveReadiness', () => {
   it('names a model that is not downloaded yet', () => {
     const cat = catalog()
     const blockers = deriveReadiness(input({ bundle: resolveBundle(cat, 'big', null) })).blockers
-    expect(blockers[0]).toMatchObject({ id: 'model-missing', message: '「BIG」还没有下载完' })
+    expect(blockers[0]).toMatchObject({ id: 'model-incomplete', message: '「BIG」还没有下载完' })
   })
 
   it('does not block while the catalog or engine state is still loading', () => {

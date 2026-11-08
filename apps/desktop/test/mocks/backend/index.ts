@@ -566,6 +566,12 @@ function defaultHandlers(): Map<string, Handler> {
     emit(Events.hostsChanged, state.hosts)
     return host
   })
+  h.set(Ipc.hostsUpdatePaths, (payload, { state, emit }) => {
+    const { id, ...patch } = p<{ id: string; engineRoot?: string; outputRoot?: string }>(payload)
+    state.hosts = state.hosts.map((host) => (host.id === id ? { ...host, ...patch } : host))
+    emit(Events.hostsChanged, state.hosts)
+    return state.hosts.find((host) => host.id === id) ?? null
+  })
   h.set(Ipc.hostsRemove, (payload, { state, emit }) => {
     state.hosts = state.hosts.filter((item) => item.id !== p<{ id: string }>(payload).id)
     emit(Events.hostsChanged, state.hosts)

@@ -136,6 +136,9 @@ export interface BoardProps {
   onPicturesFromGallery: (at: Point) => void
 }
 
+/** Things to try on a new board's first 画面. */
+const FIRST_IDEAS = ['海边的灯塔，黄昏，暖色调', '窗台上睡觉的橘猫，午后阳光', '雨夜的霓虹街道，电影感'] as const
+
 function isTyping(target: EventTarget | null): boolean {
   return Boolean((target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable="true"]'))
 }
@@ -495,6 +498,18 @@ export function Board(props: BoardProps): React.JSX.Element {
     ]
   }
 
+  // A new board's only 画面, still blank: it offers a few things to try.
+  const firstCanvas = (canvas: ProjectCanvas): boolean =>
+    cards.length === 1 &&
+    canvas.kind === 'layout' &&
+    !canvas.upscale &&
+    canvas.layers.length === 0 &&
+    !canvas.jobId &&
+    !canvas.inputs?.init &&
+    !canvas.inputs?.control &&
+    !canvas.inputs?.references?.links.length &&
+    !canvas.inputs?.styles?.links.length
+
   const openMenu = (event: React.MouseEvent<HTMLDivElement>): void => {
     // Text fields keep the system menu (copy, paste).
     if (isTyping(event.target)) return
@@ -691,6 +706,7 @@ export function Board(props: BoardProps): React.JSX.Element {
               }
               model={canvas.kind === 'layout' ? (props.describeModel?.(canvas) ?? null) : null}
               onChangeDescription={(text) => props.onChangeDescription(canvas.id, text)}
+              ideas={firstCanvas(canvas) ? FIRST_IDEAS : undefined}
               dropZones={
                 offer
                   ? {

@@ -42,6 +42,7 @@ import {
 } from './defaults'
 import { canvasDescription, withDescription, type CompiledPrompt } from './prompt'
 import { installedBundles, type Blocker, type BundleChoice } from './readiness'
+import type { Preparation } from '../../lib/preparation'
 import { resizeCanvas } from './canvases'
 import { useApp } from '../../store'
 import { ImageCardPanel } from './ImageCardPanel'
@@ -97,6 +98,8 @@ export interface ParamsPanelProps {
   remoteHostId: string
   onRemoteHostChange: (id: string) => void
   blockers: Blocker[]
+  /** First-run preparation still downloading: 生成 fills up and says so. */
+  waiting?: Preparation | null
   prompt: CompiledPrompt | null
   busy: boolean
   submitting: boolean
@@ -148,6 +151,7 @@ function CanvasParams({
   remoteHostId,
   onRemoteHostChange,
   blockers,
+  waiting,
   prompt,
   busy,
   submitting,
@@ -494,13 +498,27 @@ function CanvasParams({
               block
               data-studio-generate
               aria-busy={submitting || busy}
-              disabled={submitting || busy || blockers.length > 0}
+              disabled={submitting || busy || blockers.length > 0 || Boolean(waiting)}
               onClick={onGenerate}
               title={busy ? '这个画面正在生成' : undefined}
+              className={waiting ? 'relative overflow-hidden' : undefined}
             >
-              {submitting || busy ? <Spinner /> : null}
-              {submitting ? '正在提交…' : busy ? '生成中…' : '生成'}
-              {!submitting && !busy ? <Kbd>{SHORTCUT}</Kbd> : null}
+              {waiting ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-y-0 left-0 bg-accent-soft"
+                    style={{ width: `${Math.round(waiting.percent)}%` }}
+                  />
+                  <span className="tabular relative">下载完成后就能生成 · {Math.round(waiting.percent)}%</span>
+                </>
+              ) : (
+                <>
+                  {submitting || busy ? <Spinner /> : null}
+                  {submitting ? '正在提交…' : busy ? '生成中…' : '生成'}
+                  {!submitting && !busy ? <Kbd>{SHORTCUT}</Kbd> : null}
+                </>
+              )}
             </Button>
           </>
         )}
