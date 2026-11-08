@@ -1,6 +1,6 @@
 # Contributing to MossStudio
 
-This page covers how the repository is laid out, how to build and test it, and how changes reach `main`. Product and architecture docs live in [docs/](docs/README.md); the release process is in [docs/release.md](docs/release.md).
+This page covers how the repository is laid out, how to build and test it, and how changes reach `main`. Product and architecture docs live in [docs/](docs/README.md); the release process is in [docs/release.md](docs/release.md). Coding agents follow [AGENTS.md](AGENTS.md), which keeps the same rules in short form; keep the two in step when a rule changes.
 
 ## Layout
 
