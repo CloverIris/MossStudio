@@ -41,6 +41,7 @@ export interface AtomicWriteOptions extends RenameRetryOptions {
  * Writes `contents` to `file` without blocking the main thread: a temp file next to it, then a rename
  * (retried while locked), so readers see the old file or the new one, never half of one. The temp file
  * is removed when the write fails. No fsync: a crash cannot tear the file, a power loss can.
+ * Callers must not write the same file concurrently: the temp name is fixed, and a failure removes it.
  */
 export async function writeFileAtomic(file: string, contents: string, options: AtomicWriteOptions = {}): Promise<void> {
   const temporary = `${file}.tmp`

@@ -45,9 +45,11 @@ vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async ()
  * Job list saves seen from the file system. While `hold` is set, a save waits for it at its first step
  * (making the jobs folder). `fail` makes the next saves fail at that step: 'throw' synchronously, 'reject'
  * as a rejected promise. `writing` / `maxWriting` count saves between their temp file write and rename.
+ * While `holdWrite` is set, a save waits for it at its temp file write, after it took its snapshot.
  */
 const jobListGate = vi.hoisted(() => ({
   hold: null as Promise<void> | null,
+  holdWrite: null as Promise<void> | null,
   fail: [] as Array<'throw' | 'reject'>,
   writing: 0,
   maxWriting: 0,
@@ -68,6 +70,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     if (String(file).endsWith('jobs.json.tmp')) {
       jobListGate.writing += 1
       jobListGate.maxWriting = Math.max(jobListGate.maxWriting, jobListGate.writing)
+      if (jobListGate.holdWrite) await jobListGate.holdWrite
     }
     return actual.writeFile(file, ...rest)
   }) as typeof actual.writeFile
@@ -257,6 +260,28 @@ describe('engine jobs: the job list on disk', () => {
     } finally {
       release()
       jobListGate.hold = null
+    }
+  })
+
+  it('a change made while a write is under way is written right after it', async () => {
+    let release!: () => void
+    jobListGate.holdWrite = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    jobListGate.maxWriting = 0
+    try {
+      const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+      // q1's save has taken its snapshot and is writing it; q2 arrives now.
+      await vi.waitFor(() => expect(jobListGate.writing).toBe(1))
+      jobListGate.holdWrite = null
+      jobs.push(await supervisor.startEngineJob(request('q2')))
+      release()
+      await supervisor.settleJobWrites()
+      expect(jobListGate.maxWriting).toBe(1)
+      expect(ids(jobList())).toEqual(ids(jobs))
+    } finally {
+      release()
+      jobListGate.holdWrite = null
     }
   })
 

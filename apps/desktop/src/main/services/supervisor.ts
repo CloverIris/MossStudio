@@ -174,12 +174,13 @@ function scheduleSaveRetry(): void {
   if (retry !== 'ready') return
   retry = 'scheduled'
   inBackground(
-    new Promise<void>((resolve) =>
+    new Promise<void>((resolve) => {
+      // The retry alone never keeps the process alive (quitting with a pending retry loses only that retry).
       setTimeout(() => {
         retry = 'used'
         resolve(saveJobs())
-      }, SAVE_RETRY_MS),
-    ),
+      }, SAVE_RETRY_MS).unref()
+    }),
   )
 }
 
