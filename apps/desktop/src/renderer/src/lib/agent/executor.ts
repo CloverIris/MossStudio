@@ -48,6 +48,19 @@ const HANDLERS: { [N in ToolName]: Handler<N> } = {
     card: makeCard({ kind: 'choice', title: question, why, multiple, allowFreeText, options }),
   }),
 
+  studio_ask_approval: ({ question, why, approveLabel, rejectLabel }) => ({
+    shown: true,
+    card: makeCard({
+      kind: 'confirm',
+      title: question,
+      why,
+      options: [
+        { id: 'approve', label: approveLabel ?? '批准' },
+        { id: 'reject', label: rejectLabel ?? '拒绝' },
+      ],
+    }),
+  }),
+
   studio_set_prompt: ({ prompt }, api) => api.setPrompt(prompt),
 
   studio_set_sampler: (args, api) => {

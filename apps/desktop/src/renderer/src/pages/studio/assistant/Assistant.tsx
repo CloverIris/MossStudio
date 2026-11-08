@@ -1,5 +1,5 @@
-import { AlertCircle, ArrowUp, Check, HelpCircle, History, Plus, Settings2, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowUp, HelpCircle, History, Plus, Settings2, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { AgentMode, AiConversationInfo, AiMessage, AiProviderInfo, AiStreamEvent, AiToolCall } from '@shared/ai'
 import { Notice } from '../../../components/common/Notice'
@@ -25,9 +25,11 @@ import { applyPlan, applyStudioDescription, formatStudioContext, readStudioSnaps
 import { relative } from '../../../lib/format'
 import type { AgentCard, AgentCardAnswer } from '@shared/agent/cards'
 import { ChoiceCard } from './ChoiceCard'
+import { ConfirmCard } from './ConfirmCard'
 import { PlanCard } from './PlanCard'
 import { ProviderDialog } from './ProviderDialog'
-import { toolDetail, toolLabel } from './format'
+import { ToolTrace, type TraceEntry } from './ToolTrace'
+import { toolDetail } from './format'
 
 /** Survives unmounts so the chat never loses its place. */
 const CONVERSATION_KEY = 'mossstudio.agentConversationId'
@@ -64,7 +66,7 @@ function writeStored(id: string | null): void {
   }
 }
 
-interface ToolTrace {
+interface StreamTrace {
   id: string
   name: string
   status: 'running' | 'ok' | 'error'
@@ -77,29 +79,15 @@ const SUGGESTIONS = [
   { label: '写一句描述', text: '帮我为当前画面写一句完整的描述，直接写回描述。' },
 ]
 
-function ToolLine({ status, name, detail }: { status: ToolTrace['status']; name: string; detail?: string }): React.JSX.Element {
-  return (
-    <div className="flex items-start gap-1.5 text-caption">
-      {status === 'running' ? (
-        <Spinner className="mt-0.5 size-3.5 shrink-0" />
-      ) : status === 'ok' ? (
-        <Check className="mt-0.5 size-3.5 shrink-0 text-ok" aria-hidden="true" strokeWidth={1.6} />
-      ) : (
-        <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-danger" aria-hidden="true" strokeWidth={1.6} />
-      )}
-      <span className="min-w-0 [overflow-wrap:anywhere]">
-        <span className="text-ink">{toolLabel(name)}</span>
-        {detail ? <span className="text-ink-2"> · {detail}</span> : null}
-      </span>
-    </div>
-  )
-}
-
 function followUpFor(card: AgentCard, answer: AgentCardAnswer, problems: string[]): string {
   if (answer.applied) {
     const count = card.steps?.length ?? 0
     const done = `已按方案改了 ${count} 处`
     return problems.length ? `${done}。还差：${problems[0]}` : `${done}，你看一下。`
+  }
+  if (card.kind === 'confirm') {
+    if (answer.freeText?.trim()) return `先改一下：${answer.freeText.trim()}`
+    return answer.selected.includes('approve') ? '批准，开始吧。' : '先别做。'
   }
   if (answer.skipped) return `「${card.title}」先跳过，你按默认继续。`
   const labels = (card.options ?? []).filter((option) => answer.selected.includes(option.id)).map((option) => option.label)
@@ -130,13 +118,16 @@ export function Assistant(): React.JSX.Element {
   const [failedText, setFailedText] = useState<string | null>(null)
   const [streaming, setStreaming] = useState(false)
   const [streamText, setStreamText] = useState('')
-  const [streamTools, setStreamTools] = useState<ToolTrace[]>([])
+  const [streamTools, setStreamTools] = useState<StreamTrace[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [removingChat, setRemovingChat] = useState<AiConversationInfo | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [proposal, setProposal] = useState<{ current: string; next: string } | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollFrame = useRef(0)
+  const [activeTurn, setActiveTurn] = useState(0)
   const endRef = useRef<HTMLDivElement>(null)
 
   async function refresh(): Promise<void> {
@@ -351,22 +342,66 @@ export function Assistant(): React.JSX.Element {
     return map
   }, [messages])
 
-  function renderToolCalls(calls: AiToolCall[]): React.JSX.Element {
-    return (
-      <div className="flex flex-col gap-1 rounded-lg bg-well px-2.5 py-2">
-        {calls.map((item) => {
-          const result = toolResults.get(item.id)
-          return (
-            <ToolLine
-              key={item.id}
-              name={item.name}
-              status={!result ? 'running' : result.error ? 'error' : 'ok'}
-              detail={result ? toolDetail(result.content) : undefined}
-            />
-          )
-        })}
-      </div>
-    )
+  /** One entry per call, with the result folded into a single line. */
+  function traceOf(calls: AiToolCall[]): TraceEntry[] {
+    return calls.map((item) => {
+      const result = toolResults.get(item.id)
+      return {
+        id: item.id,
+        name: item.name,
+        status: result ? (result.error ? 'error' : 'ok') : 'ok',
+        detail: result ? toolDetail(result.content) : undefined,
+      }
+    })
+  }
+
+  /** The card the user still has to answer; it sits in the dock, never in the scroll flow. */
+  const pendingCard = useMemo(() => [...messages].reverse().find((message) => message.card && !message.card.answer) ?? null, [messages])
+
+  /** One anchor per user turn, for the rail on the right. */
+  const turns = useMemo(
+    () =>
+      messages.filter((message) => message.role === 'user').map((message, index) => ({ id: message.id, index, label: message.content })),
+    [messages],
+  )
+
+  function jumpToTurn(id: string): void {
+    const container = scrollRef.current
+    if (!container) return
+    const target = container.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+    target?.scrollIntoView({ block: 'start', behavior: animate ? 'smooth' : 'auto' })
+  }
+
+  const onScroll = useCallback((): void => {
+    if (scrollFrame.current) return
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = 0
+      const container = scrollRef.current
+      if (!container) return
+      const edge = container.getBoundingClientRect().top + 32
+      let active = 0
+      turns.forEach((turn, index) => {
+        const element = container.querySelector<HTMLElement>(`[data-message-id="${turn.id}"]`)
+        if (element && element.getBoundingClientRect().top <= edge) active = index
+      })
+      setActiveTurn(active)
+    })
+  }, [turns])
+
+  // Keep the rail in step when the conversation grows or shrinks under it.
+  useEffect(() => {
+    const frame = requestAnimationFrame(onScroll)
+    return () => cancelAnimationFrame(frame)
+  }, [onScroll, messages.length])
+
+  function renderCard(message: AiMessage): React.JSX.Element | null {
+    const card = message.card
+    if (!card) return null
+    const onAnswer = (answer: AgentCardAnswer): void => void answerCard(message, answer)
+    const shared = { card, busy: busy || answering, onAnswer }
+    if (card.kind === 'plan') return <PlanCard {...shared} />
+    if (card.kind === 'confirm') return <ConfirmCard {...shared} />
+    return <ChoiceCard {...shared} />
   }
 
   return (
@@ -442,79 +477,109 @@ export function Assistant(): React.JSX.Element {
           <p className="text-caption text-ink-2">支持 OpenAI、DeepSeek、Anthropic、Gemini 和本地 Ollama。</p>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto py-4">
-          {messages.length === 0 && !streaming ? (
-            <div className="flex flex-col gap-2 text-ui text-ink-2">
-              <p>助手看得到当前选中的画面。可以直接说：</p>
-              <p className="text-ink">“做一张三段式的春季海报，标题写 SPRING”</p>
-              <p className="text-ink">“把描述改得更像电影剧照”</p>
-              <p className="text-ink">“做一套 6 镜的新年贺卡分镜”</p>
-            </div>
-          ) : null}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative min-h-0 flex-1">
+            <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto py-4 pr-5">
+              {messages.length === 0 && !streaming ? (
+                <div className="flex flex-col gap-2 text-ui text-ink-2">
+                  <p>助手看得到当前选中的画面。可以直接说：</p>
+                  <p className="text-ink">“做一张三段式的春季海报，标题写 SPRING”</p>
+                  <p className="text-ink">“把描述改得更像电影剧照”</p>
+                  <p className="text-ink">“做一套 6 镜的新年贺卡分镜”</p>
+                </div>
+              ) : null}
 
-          <div className="flex flex-col gap-4">
-            {messages
-              .filter((message) => message.role !== 'tool')
-              .map((message) =>
-                message.role === 'user' ? (
-                  <div key={message.id} className="ml-6 self-end rounded-lg bg-well px-3 py-2 text-ui text-ink">
-                    <div className="selectable whitespace-pre-wrap break-words">{message.content}</div>
-                  </div>
-                ) : (
-                  <div key={message.id} className="flex flex-col gap-2">
-                    {message.content ? <MarkdownBody>{message.content}</MarkdownBody> : null}
-                    {message.card ? (
-                      message.card.kind === 'plan' ? (
-                        <PlanCard card={message.card} busy={busy || answering} onAnswer={(answer) => void answerCard(message, answer)} />
-                      ) : (
-                        <ChoiceCard card={message.card} busy={busy || answering} onAnswer={(answer) => void answerCard(message, answer)} />
-                      )
-                    ) : null}
-                    {message.toolCalls?.length ? renderToolCalls(message.toolCalls) : null}
-                    {message.role === 'assistant' && message.content ? (
-                      <div className="-ml-2 flex items-center gap-0.5">
-                        <Button tone="ghost" size="xs" onClick={() => proposeDescription(message.content)}>
-                          用作描述
-                        </Button>
-                        <Button tone="ghost" size="xs" onClick={() => void copyText(message.content)}>
-                          复制
-                        </Button>
-                        {message.id === lastAssistantId ? (
-                          <Button tone="ghost" size="xs" disabled={busy} onClick={() => void regenerate()}>
-                            重新回答
-                          </Button>
+              <div className="flex flex-col gap-4">
+                {messages
+                  .filter((message) => message.role !== 'tool')
+                  .map((message) =>
+                    message.role === 'user' ? (
+                      <div
+                        key={message.id}
+                        data-message-id={message.id}
+                        className="ml-6 self-end rounded-lg bg-well px-3 py-2 text-ui text-ink"
+                      >
+                        <div className="selectable whitespace-pre-wrap break-words">{message.content}</div>
+                      </div>
+                    ) : (
+                      <div key={message.id} data-message-id={message.id} className="flex flex-col gap-2">
+                        {message.content ? <MarkdownBody>{message.content}</MarkdownBody> : null}
+                        {message.toolCalls?.length ? <ToolTrace entries={traceOf(message.toolCalls)} /> : null}
+                        {message.card?.answer ? renderCard(message) : null}
+                        {message.role === 'assistant' && message.content ? (
+                          <div className="-ml-2 flex items-center gap-0.5">
+                            <Button tone="ghost" size="xs" onClick={() => proposeDescription(message.content)}>
+                              用作描述
+                            </Button>
+                            <Button tone="ghost" size="xs" onClick={() => void copyText(message.content)}>
+                              复制
+                            </Button>
+                            {message.id === lastAssistantId ? (
+                              <Button tone="ghost" size="xs" disabled={busy} onClick={() => void regenerate()}>
+                                重新回答
+                              </Button>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
+                    ),
+                  )}
+
+                {streaming ? (
+                  <div className="flex flex-col gap-2">
+                    {streamText ? <MarkdownBody>{streamText}</MarkdownBody> : null}
+                    {streamTools.length ? <ToolTrace entries={streamTools} /> : null}
+                    {!streamText && !streamTools.length ? (
+                      <span className="inline-flex items-center gap-2 text-caption text-ink-2">
+                        <Spinner className="size-3.5" />
+                        思考中…
+                      </span>
                     ) : null}
                   </div>
-                ),
-              )}
-
-            {streaming ? (
-              <div className="flex flex-col gap-2">
-                {streamText ? <MarkdownBody>{streamText}</MarkdownBody> : null}
-                {streamTools.length ? (
-                  <div className="flex flex-col gap-1 rounded-lg bg-well px-2.5 py-2">
-                    {streamTools.map((trace) => (
-                      <ToolLine key={trace.id} name={trace.name} status={trace.status} detail={trace.detail} />
-                    ))}
-                  </div>
-                ) : null}
-                {!streamText && !streamTools.length ? (
+                ) : busy ? (
                   <span className="inline-flex items-center gap-2 text-caption text-ink-2">
                     <Spinner className="size-3.5" />
                     思考中…
                   </span>
                 ) : null}
               </div>
-            ) : busy ? (
-              <span className="inline-flex items-center gap-2 text-caption text-ink-2">
-                <Spinner className="size-3.5" />
-                思考中…
-              </span>
+              <div ref={endRef} />
+            </div>
+
+            {turns.length > 1 ? (
+              <nav aria-label="对话轮次" className="absolute inset-y-4 right-0 flex flex-col items-center justify-center gap-1.5">
+                {turns.map((turn) => (
+                  <button
+                    key={turn.id}
+                    type="button"
+                    title={turn.label.slice(0, 60)}
+                    aria-label={`第 ${turn.index + 1} 轮`}
+                    aria-current={activeTurn === turn.index ? 'true' : undefined}
+                    onClick={() => jumpToTurn(turn.id)}
+                    className={cn(
+                      'w-1.5 rounded-full transition-all',
+                      activeTurn === turn.index ? 'h-3 bg-accent' : 'h-1.5 bg-ink-3/40 enabled:hover:bg-ink-3/70',
+                    )}
+                  />
+                ))}
+              </nav>
             ) : null}
           </div>
-          <div ref={endRef} />
+
+          {pendingCard ? (
+            <div className="shrink-0 pt-2">
+              <div className="relative rounded-xl bg-raised p-1.5">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'pointer-events-none absolute inset-0 rounded-xl ring-1 ring-accent/40',
+                    animate && 'motion-safe:animate-pulse',
+                  )}
+                />
+                {renderCard(pendingCard)}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 

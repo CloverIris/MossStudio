@@ -44,6 +44,13 @@ export const TOOL_SCHEMAS = {
       .describe('Two to five concrete choices.'),
   }),
 
+  studio_ask_approval: z.strictObject({
+    question: z.string().trim().min(1).max(200).describe("The go/no-go question, in the user's language."),
+    why: z.string().trim().max(300).optional().describe('One sentence on what approving will do, shown under the question.'),
+    approveLabel: z.string().trim().min(1).max(12).optional().describe('Label of the approve button, for example 开始生成.'),
+    rejectLabel: z.string().trim().min(1).max(12).optional().describe('Label of the reject button, for example 先不生成.'),
+  }),
+
   studio_set_prompt: z.strictObject({
     prompt: z.string().trim().min(1).max(4000).describe('The full description to write.'),
   }),

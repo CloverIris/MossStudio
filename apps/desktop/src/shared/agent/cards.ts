@@ -10,7 +10,7 @@ import { z } from 'zod'
  * waits for a person inside a tool call.
  */
 
-export const AGENT_CARD_KINDS = ['choice', 'plan'] as const
+export const AGENT_CARD_KINDS = ['choice', 'plan', 'confirm'] as const
 
 export const agentCardOptionSchema = z.strictObject({
   id: z.string().min(1).max(40),

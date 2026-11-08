@@ -156,6 +156,27 @@ describe('lib/agentTools executeStudioTool', () => {
     expect((await run('studio_ask_user', { question: 'q', options: [{ id: 'a', label: 'A' }] })).ok).toBe(false)
   })
 
+  it('asks for approval with its own card and two fixed actions', async () => {
+    registerStudioTools(api())
+    const result = await run('studio_ask_approval', {
+      question: '现在开始生成 6 张？',
+      why: '会占用几分钟显卡',
+      approveLabel: '开始生成',
+      rejectLabel: '先不生成',
+    })
+    expect(result.ok).toBe(true)
+    const card = parse(result.content).card as Record<string, unknown>
+    expect(card).toMatchObject({
+      kind: 'confirm',
+      title: '现在开始生成 6 张？',
+      why: '会占用几分钟显卡',
+      options: [
+        { id: 'approve', label: '开始生成' },
+        { id: 'reject', label: '先不生成' },
+      ],
+    })
+  })
+
   it('builds a set of scenes and switches the selected canvas', async () => {
     const tools = api()
     registerStudioTools(tools)

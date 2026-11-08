@@ -37,7 +37,7 @@ export function PlanCard({
       </div>
 
       {steps.length > 1 ? (
-        <ul className="flex flex-col gap-1">
+        <ul className="flex max-h-32 flex-col gap-1 overflow-y-auto">
           {steps.map((step, index) => (
             <li key={`${step.tool}-${index}`} className="flex items-start gap-2 text-caption">
               <span aria-hidden="true" className="mt-[7px] size-1 shrink-0 rounded-full bg-ink-3" />

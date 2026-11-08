@@ -100,6 +100,12 @@ describe('agent tools', () => {
     expect(option.type).toBe('array')
   })
 
+  it('asks for a go/no-go with its own card', () => {
+    const approval = tool('studio_ask_approval')
+    expect(approval.required).toEqual(['question'])
+    expect(Object.keys(approval.properties!).sort()).toEqual(['approveLabel', 'question', 'rejectLabel', 'why'])
+  })
+
   it('builds one to twelve scenes, each with its own words', () => {
     const scenes = tool('studio_create_scenes').properties!.scenes!
     expect(scenes.minItems).toBe(1)
@@ -129,7 +135,12 @@ describe('resolveToolset', () => {
     expect(resolveToolset({ page: 'studio' })).toHaveLength(AGENT_TOOLS.length)
     const elsewhere = resolveToolset({ page: 'models' })
     expect(elsewhere.some((item) => item.pack === 'canvas.write')).toBe(false)
-    expect(elsewhere.map((item) => item.name)).toEqual(['studio_read_context', 'studio_select_canvas', 'studio_ask_user'])
+    expect(elsewhere.map((item) => item.name)).toEqual([
+      'studio_read_context',
+      'studio_select_canvas',
+      'studio_ask_user',
+      'studio_ask_approval',
+    ])
   })
 
   it('mounts the same tools in both modes: the mode changes how they apply', () => {

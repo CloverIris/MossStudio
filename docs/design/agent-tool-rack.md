@@ -19,7 +19,7 @@
 | `studio_add_layer` 一个工具带 `label: text`，用 JSON Schema `oneOf` 约束 | 拆成 `studio_add_layer`（object/character）与 `studio_add_text_layer`（`caption`、`text` 都必填） | Gemini 的 `FunctionDeclaration.parameters` 只接受对象根、不支持 `oneOf` / `const`；拆工具在所有 provider 上都能表达「文字必须给原文」，模型也更容易选对 |
 | 回执 `{ ok, data, note, blockers }` | `{ ...data, summary, problems }`；失败 `{ error, fix? }` | `blockers` 会让人以为是引擎就绪状态；实现的 `problems` 只来自布局编译（`compileCanvasPrompt`），是「还差什么才能生成」的最小子集 |
 | 按 `hasSelection` 卸载写工具 | 工具常驻，执行前用 `requires: ['editable']` 统一拦 | 一轮对话中途卸工具，历史里的 tool_calls 会引用未定义的工具，部分 provider 会报错 |
-| 交互卡：Choice / Plan / Review 三种 | 只做 Choice 与 Plan | 高级模式不放行写操作，`set_prompt` 本身就是一行方案卡，复核卡是重复的 |
+| 交互卡：Choice / Plan / Review 三种 | Choice / Plan / Confirm 三种，未答的卡停靠在输入框上方 | 复核卡被 PlanCard 覆盖；确认卡单独做，因为「要不要开始生成」需要一眼能点的批准/拒绝 |
 | 高级模式按工具逐个确认 | 执行器扣留 `write`/`run`，一轮里的所有扣留由主进程**聚合成一张** PlanCard | 一次改动常常是多步；让用户点五次「应用」没有意义 |
 | 分镜：`storyboard_plan` / `create` / `fill` | 一个 `studio_create_scenes` + `studio_select_canvas` | 模型本来就会先想清楚；多一个「只出方案」的工具只会多一轮 |
 | 切模式写一条「已切换」分隔线 | 只换简介文字 | 少一类需要持久化的对话条目；模式本来就随下一轮生效 |
@@ -238,7 +238,7 @@ resolveToolset({ mode?, page?, toolsSupported? }) → AgentTool[]
 ```ts
 interface AgentCard {
   id: string
-  kind: 'choice' | 'plan'
+  kind: 'choice' | 'plan' | 'confirm'
   title: string
   /** 为什么问这一句，或者这个方案要干什么。 */
   why?: string
@@ -262,18 +262,32 @@ interface AiMessage {
 - 应答走 `Ipc.aiCardAnswer`：先把 `answer` 写回对话，再把答案当作一条正常 user 消息发出去，触发下一轮。
 - 跳过永远可用；跳过也会留下一条 `「…」先跳过` 的 user 消息，记录不撒谎。
 
-### 3.3 两种卡
+### 3.3 三种卡
 
 | 卡 | 由谁发起 | 长什么样 | 答完之后 |
 | --- | --- | --- | --- |
 | **ChoiceCard** 选择 | `ask_user` | 单选（圆点）/ 多选（勾）列表，选项带副标题；可自由输入；底部「跳过」+「选好了」 | 追加 user 消息，自动续一轮 |
-| **PlanCard** 方案 | 高级模式里任何写操作 | 改动清单（每行一句工具摘要）；「放弃 / 调整 / 应用」 | 「应用」在本地按顺序执行，不经过模型；「调整」把意见当 user 消息发回 |
+| **PlanCard** 方案 | 高级模式里任何写操作 | 改动清单（每行一句工具摘要，超过一屏时列表内部滚动）；「放弃 / 调整 / 应用」 | 「应用」在本地按顺序执行，不经过模型；「调整」把意见当 user 消息发回 |
+| **ConfirmCard** 确认 | `ask_approval` | 一句 go/no-go；「拒绝」+「改一句」+ 主按钮（默认「批准」，可改成「开始生成」） | 批准/拒绝各回一句固定的话；「改一句」把用户的要求发回去 |
 
 原设计里的 ReviewCard 没有做：高级模式不直接放行写操作，`set_prompt` 本身就会变成一张只有一行的 PlanCard，再单独做复核卡是重复的。
 
 PlanCard 的「应用」很重要：它走的是 handler，不是模型，所以**确定、可测、不花钱**。模型提出方案、人点确认、机器执行——这也是高级模式的基本手感。
 
-### 3.4 备选从哪来
+### 3.4 卡片放在哪：底部停靠
+
+内联在消息流里是错的：一次 `read_context` 的回执有 4–8 KB，卡片会被挤到视口上方，看起来像"飞掉了"。
+
+- **未答的卡只出现在输入框上方的停靠区**，不随消息滚动；外面一圈 `ring-accent` 用 `animate-pulse` 呼吸（跟随应用的动效开关）。
+- 同一对话只有一张未答的卡（后出现的会顶掉前一张，前一张标记为跳过）。
+- 答过的卡留在原消息里，作为只读记录，不再占停靠区。
+- 工具回执默认折叠成一行：「查看画面 · 6 个画面 · 当前「画面 24」」，点开才看每一步。回执摘要由 `format.ts` 收口，**不再把整段 JSON 当详情打印**。
+
+### 3.5 轮次指示器
+
+聊天区右侧一列圆点，每个 user 回合一个：当前轮高亮成一小段强调色，点一下滚到那一轮。两轮以下不显示。这样长对话里既能看进度，也能跳回去改需求。
+
+### 3.6 备选从哪来
 
 | 要问的 | 选项怎么产生 | 要不要 GPU |
 | --- | --- | --- |
@@ -284,12 +298,13 @@ PlanCard 的「应用」很重要：它走的是 handler，不是模型，所以
 
 「文案」这张卡就是本次故障最缺的东西：一张图里把**样式**和**原文**分两栏摆出来，人在选的时候顺手就把两件事分开了。
 
-### 3.5 规则
+### 3.7 规则
 
 - 一张卡只问一件事；标题是问句，`why` 一句话说清为什么问。
 - 选项 2–5 个。超过 5 个说明应该分两次问，或者让模型先给方案。
 - 卡里不放大段提示词；要展示提示词用 PlanCard。
 - 卡上永远能看到「这会改动什么」；纯询问卡不写「将修改画面」。
+- 「要不要开始生成」一律走 ConfirmCard，不要用一句正文问句。
 
 
 ## 4. 分镜助手（已实现，做了简化）
@@ -348,7 +363,7 @@ PlanCard 的「应用」很重要：它走的是 handler，不是模型，所以
 
 | 文件 | 改动 |
 | --- | --- |
-| `shared/agent/schemas.ts` | 11 个工具的 zod 参数（读、写、问、分镜），`ToolName` / `ToolArgs` 从这里推导 |
+| `shared/agent/schemas.ts` | 12 个工具的 zod 参数（读、写、问、确认、分镜），`ToolName` / `ToolArgs` 从这里推导 |
 | `shared/agent/registry.ts` | `AGENT_TOOLS`（名字/包/风险/前置/摘要）、`toolSchema`、`toolDefinitions`、`resolveToolset`、`TOOL_RULES`、`MODE_RULES` |
 | `shared/agent/cards.ts` | `AgentCard` / `PlanStep` / 答案的 zod 结构与类型，`makeCard` |
 | `shared/mcp.ts` | 删除，内容并入注册表 |
@@ -360,8 +375,10 @@ PlanCard 的「应用」很重要：它走的是 handler，不是模型，所以
 | `renderer/lib/agent/executor.ts` | 穷举 handler 表、参数解析、前置检查、可行动错误、摘要与 `problems`、高级模式扣留写操作、`applyPlan` |
 | `renderer/lib/agentTools.ts` | 桥接层：`registerStudioTools`、`snapshot`、`formatStudioContext`、`installStudioToolBridge`、`applyPlan` |
 | `renderer/pages/studio/assistant/ChoiceCard.tsx` | 选择卡（单选/多选/自由输入/跳过） |
+| `renderer/pages/studio/assistant/ConfirmCard.tsx` | 确认卡（批准/拒绝/改一句） |
+| `renderer/pages/studio/assistant/ToolTrace.tsx` | 工具回执折叠成一行，点开看每一步 |
+| `renderer/pages/studio/assistant/Assistant.tsx` | 卡片渲染与停靠区（未答卡常驻输入框上方、呼吸描边）、右侧轮次指示器、答完自动续轮、模式开关与简介 |
 | `renderer/pages/studio/assistant/PlanCard.tsx` | 方案卡（放弃/调整/应用） |
-| `renderer/pages/studio/assistant/Assistant.tsx` | 卡片渲染、答完自动续轮、模式开关与简介、模式随对话保存 |
 | `pages/studio/StudioPage.tsx` | 工具 API 实现，含批量建画布与切换画面 |
 | `pages/studio/canvases.ts` | `addRegion`、`editLayer`、`sceneCanvas`，`newRegion` 接受初始文字 |
 | `pages/studio/assistant/format.ts` | 工具中文名来自注册表；结果行优先显示 `summary` / `problems` |

@@ -77,6 +77,16 @@ export const AGENT_TOOLS: AgentTool[] = [
     summarize: (args) => `问：${short(text(args.question), 24)}`,
   },
   {
+    name: 'studio_ask_approval',
+    title: '等你确认',
+    pack: 'ask',
+    risk: 'ask',
+    requires: [],
+    description:
+      'Ask the user to approve or reject one concrete next step: starting a generation, a batch of pictures, anything that spends GPU time or cannot be undone. Shows a card with approve, reject and "change it" buttons. Use it instead of asking "要开始吗" in prose. After calling it, stop your turn.',
+    summarize: (args) => `等你确认：${short(text(args.question), 22)}`,
+  },
+  {
     name: 'studio_set_prompt',
     title: '改写描述',
     pack: 'canvas.write',
@@ -219,6 +229,7 @@ export const TOOL_RULES = `How to work:
 - Objects and characters go through studio_add_layer.
 - Fix a region with studio_update_layer, addressed by its 1-based index from studio_read_context, instead of adding another one; delete it with studio_remove_layer.
 - Ask with studio_ask_user when the picture depends on a choice only the user can make: composition, how a character looks, the exact wording, a size. One question, two to five concrete options. After asking, stop and say in one line what you are waiting for; the answer arrives as the next message.
+- Before starting a generation the user did not just ask for, or any step that spends GPU time on several pictures, ask with studio_ask_approval: approve, reject, or change it. Never start a batch on your own.
 - A set of pictures (a series, a storyboard, "一套图") goes through studio_create_scenes: plan every scene, then build them in one call. Use studio_select_canvas to move between the new canvases and refine the ones that need it.
 - Every write result ends with problems: what still blocks generation. Clear them before calling studio_generate.
 - studio_generate returns immediately with a job id; call it once per request and do not wait for the picture.
