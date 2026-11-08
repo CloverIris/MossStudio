@@ -706,18 +706,27 @@ export function ConfirmDialog({
 
 type ToastTone = 'info' | 'success' | 'error'
 
+/** One thing to do from a toast, e.g. 看看新内容. Choosing it closes the toast. */
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
+type ToastPush = (message: string, tone?: ToastTone, action?: ToastAction) => void
+
 interface ToastItem {
   id: string
   message: string
   tone: ToastTone
+  action?: ToastAction
   open: boolean
 }
 
-const ToastContext = createContext<{ push: (message: string, tone?: ToastTone) => void }>({
+const ToastContext = createContext<{ push: ToastPush }>({
   push: () => undefined,
 })
 
-export function useToast(): { push: (message: string, tone?: ToastTone) => void } {
+export function useToast(): { push: ToastPush } {
   return useContext(ToastContext)
 }
 
@@ -761,9 +770,9 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
       }
     }
   }, [items])
-  const push = useCallback((message: string, tone: ToastTone = 'info') => {
+  const push = useCallback<ToastPush>((message, tone = 'info', action) => {
     const id = crypto.randomUUID()
-    setItems((previous) => [...previous.slice(-2), { id, message, tone, open: true }])
+    setItems((previous) => [...previous.slice(-2), { id, message, tone, action, open: true }])
     const timer = window.setTimeout(() => {
       timers.current.delete(id)
       setItems((previous) => previous.map((item) => (item.id === id ? { ...item, open: false } : item)))
@@ -787,6 +796,18 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
           >
             <span className="mt-0.5">{toastIcon[item.tone]}</span>
             <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{item.message}</span>
+            {item.action ? (
+              <button
+                type="button"
+                className="-my-1 h-7 shrink-0 rounded-md px-2 text-ui font-medium text-ink hover:bg-well"
+                onClick={() => {
+                  item.action!.onClick()
+                  setItems((previous) => previous.map((entry) => (entry.id === item.id ? { ...entry, open: false } : entry)))
+                }}
+              >
+                {item.action.label}
+              </button>
+            ) : null}
             <IconButton
               label="关闭提示"
               className="-my-1 size-7"

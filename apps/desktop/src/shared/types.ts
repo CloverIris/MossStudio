@@ -162,13 +162,15 @@ export interface Settings {
   lanWebPort: number | null
   lanWebInstanceId: string | null
   updateChannel: 'stable' | 'beta'
-  /** 自动下载更新: download and prepare new versions in the background (applied on restart). */
+  /** 自动更新: download and prepare new versions in the background; the next start installs them. */
   autoDownloadUpdates: boolean
   /** Set by 回到上一个版本: this version (and older) is not offered again until the user asks. */
   skippedUpdateVersion: string | null
   dismissedAnnouncements: string[]
   /** Versions whose automatic rollback the user has already been told about (once each). */
   noticedFailedUpdates: string[]
+  /** The version that ran last: a newer one starting says once that it was updated. */
+  lastRunVersion: string | null
   sidebarCollapsed: boolean
   onboardingState: 'pending' | 'active' | 'dismissed' | 'completed'
   onboardingHostId: string
@@ -181,6 +183,8 @@ export interface Settings {
   mossInferServerPath: string | null
   mossInferMemoryMode: 'min_memory' | 'balanced' | 'max_speed'
   mossInferTier: 'reference' | 'high' | 'turbo'
+  /** Restart the engine after this many generations (0 = never) to release GPU memory and re-read the weights. */
+  mossInferRefreshEvery: number
   mossInferChannel: 'stable' | 'dev'
   /** deviceUuid → engine package id (`cu13`, `vulkan`, …) chosen in 设置 › 设备 › 高级; absent = automatic. */
   engineDeviceOverrides: Record<string, string>
@@ -924,6 +928,10 @@ export interface JobRecord {
   progress: JobProgress
   metrics?: { step?: number; loss?: number; lr?: number; gradNorm?: number }
   startedAt: string
+  /** When the engine actually began this job; absent on older records, where it equals `startedAt`. */
+  runStartedAt?: string
+  /** How many jobs were ahead of this one when it was queued (0 = it started at once). */
+  queuedBehind?: number
   endedAt?: string
   pid?: number
   exitCode?: number

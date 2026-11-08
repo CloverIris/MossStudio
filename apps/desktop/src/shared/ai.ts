@@ -1,4 +1,9 @@
+import type { AgentCard } from './agent/cards'
+
 export type AiProviderKind = 'openai' | 'anthropic' | 'gemini' | 'ollama'
+
+/** How much the Agent does on its own. Persisted per conversation. */
+export type AgentMode = 'auto' | 'advanced'
 
 export interface AiProviderInfo {
   id: string
@@ -48,6 +53,8 @@ export interface AiMessage {
   name?: string
   /** Tool result failed. */
   error?: boolean
+  /** The Agent asked something in the chat; the answer is filled in later. */
+  card?: AgentCard
 }
 
 export interface AiConversationInfo {
@@ -55,6 +62,8 @@ export interface AiConversationInfo {
   title: string
   providerId: string
   messages: AiMessage[]
+  /** auto: the Agent acts; advanced: it proposes and the user confirms. */
+  mode?: AgentMode
   createdAt: string
   updatedAt: string
 }
@@ -68,6 +77,8 @@ export interface AiChatInput {
   regenerate?: boolean
   /** Extra context appended to the system prompt (current Canvas, params…). */
   context?: string
+  /** How much the Agent may do on its own; defaults to the conversation's mode. */
+  mode?: AgentMode
 }
 
 export interface AiChatResult {
@@ -96,6 +107,8 @@ export interface AiToolCallRequest {
   callId: string
   name: string
   arguments: string
+  /** Advanced mode turns a write into a plan step instead of changing anything. */
+  mode?: AgentMode
 }
 
 export const AI_PROVIDER_PRESETS: Array<{

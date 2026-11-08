@@ -9,14 +9,24 @@ import { Button, ConfirmDialog, useToast } from '../../components/ui'
 import { TitlebarPortal } from '../../components/shell/Titlebar'
 import { AdapterPicker } from '../../components/studio/AdapterPicker'
 import { StudioSidebar } from '../../components/studio/StudioSidebar'
-import { installStudioToolBridge, registerStudioTools, type StudioToolApi } from '../../lib/agentTools'
+import { installStudioToolBridge, registerStudioTools, type AddedLayer, type LayerBox, type StudioToolApi } from '../../lib/agentTools'
 import { call, onEvent } from '../../lib/api'
 import { clampBox } from '../../lib/layout'
 import { useShell } from '../../lib/shell'
 import { useApp } from '../../store'
 import { Assistant } from './assistant/Assistant'
 import { Board, type BoardHandle } from './Board'
-import { canvasFromPicture, canvasFromReuse, newRegion, removedWith, resizeCanvas, settingsFrom } from './canvases'
+import {
+  addRegion,
+  canvasFromPicture,
+  canvasFromReuse,
+  editLayer,
+  removedWith,
+  resizeCanvas,
+  sceneCanvas,
+  settingsFrom,
+  type RegionInput,
+} from './canvases'
 import { clampDimension, isSeedLocked, nearestQuality, qualityPreset, SEED_MAX } from './defaults'
 import { InspectorPanel } from './InspectorPanel'
 import type { InputsWiring } from './InputsSection'
@@ -24,9 +34,10 @@ import { ACTIVE_JOB_STATES } from './jobStatus'
 import { OutputViewer } from './OutputViewer'
 import { ParamsPanel } from './ParamsPanel'
 import { ProjectSwitcher } from './ProjectSwitcher'
-import { canvasDescription, withDescription } from './prompt'
+import { canvasDescription, compileCanvasPrompt, withDescription } from './prompt'
 import type { BoardTool } from './RegionLayer'
-import { deriveReadiness, resolveBundle } from './readiness'
+import { deriveReadiness, resolveBundle, type Blocker } from './readiness'
+import { usePreparation } from '../../lib/usePreparation'
 import { useBoardAssets } from './useBoardAssets'
 import { useEngineFeatures } from './useEngineFeatures'
 import { useControlAdapters } from '../../lib/useControlAdapters'
@@ -103,6 +114,8 @@ function isTyping(target: EventTarget | null): boolean {
   return Boolean(element?.closest('input, textarea, select, [contenteditable="true"]'))
 }
 
+/** Blockers the first-run download clears by itself. */
+const PREPARING_BLOCKERS = new Set<Blocker['id']>(['model-none', 'model-incomplete', 'engine'])
 export function StudioPage(): React.JSX.Element {
   const toast = useToast()
   const navigate = useNavigate()
@@ -191,6 +204,10 @@ export function StudioPage(): React.JSX.Element {
         ),
       }
     : derived
+  // While first-run preparation downloads, 生成 itself says so and fills up; its blockers step aside.
+  const { progress: preparing } = usePreparation()
+  const waiting = preparing?.active && !remoteHost ? preparing : null
+  const panelBlockers = waiting ? readiness.blockers.filter((blocker) => !PREPARING_BLOCKERS.has(blocker.id)) : readiness.blockers
   const busyIds = useMemo(() => activeCanvasBranchIds(project.canvases, jobs), [project.canvases, jobs])
   const selectedBusy = selected ? busyIds.has(selected.id) : false
   const { submitting, generate } = useGenerate({
@@ -506,7 +523,30 @@ export function StudioPage(): React.JSX.Element {
       if (canvas.kind !== 'layout') throw new Error('选中的是生成结果，不能修改；请先复制成新画面')
       return canvas
     }
+    /** Normalised tool box to canvas pixels; edited boxes are clamped here, not invented. */
+    const pixelsOf = (value: LayerBox, canvas: ProjectCanvas): [number, number, number, number] =>
+      clampBox(
+        [value.x * canvas.width, value.y * canvas.height, (value.x + value.w) * canvas.width, (value.y + value.h) * canvas.height],
+        canvas.width,
+        canvas.height,
+      )
+    const layerAt = (canvas: ProjectCanvas, index: number): ProjectLayer => {
+      const layer = canvas.layers[index - 1]
+      if (!layer) throw new Error(`没有第 ${index} 个区域；先用 studio_read_context 看一遍画面`)
+      return layer
+    }
+    const addOne = (input: RegionInput): AddedLayer => {
+      const canvas = editable()
+      if (canvas.upscale) throw new Error('放大按原图重画，没有区域')
+      const { canvas: next, region } = addRegion(canvas, input)
+      live.current.project.updateCanvas(canvas.id, () => next)
+      return { added: region.id, bbox: region.bbox, index: canvas.layers.length + 1 }
+    }
     const api: StudioToolApi = {
+      state: () => {
+        const canvas = current()
+        return { hasSelection: canvas !== null, editable: canvas?.kind === 'layout' }
+      },
       readContext: () => {
         const { project: p } = live.current
         const canvas = current()
@@ -544,7 +584,7 @@ export function StudioPage(): React.JSX.Element {
               }
             : null,
           notes:
-            'prompt is the overall description; the final prompt is compiled from it plus the visible regions. bbox is [x1,y1,x2,y2] in canvas pixels; studio_add_layer takes normalised 0-1 x/y/w/h. steps snap to 8 (fast), 20 (standard) or 50 (fine).',
+            'prompt is the overall description; the final prompt is compiled from it plus the visible regions. bbox is [x1,y1,x2,y2] in canvas pixels; the tools take normalised 0-1 x/y/w/h. steps snap to 8 (fast), 20 (standard) or 50 (fine). A text region needs both strings: caption is the lettering style, text is exactly what is rendered.',
         }
       },
       snapshot: () => {
@@ -591,19 +631,45 @@ export function StudioPage(): React.JSX.Element {
         live.current.project.updateCanvas(canvas.id, () => next)
         return { width: next.width, height: next.height, steps: next.steps, cfg: next.cfg, seed: isSeedLocked(next) ? next.seed : 'random' }
       },
-      addLayer: ({ label, caption, bbox }) => {
+      addLayer: ({ label, caption, bbox }) => addOne({ kind: label, caption, bbox }),
+      addTextLayer: ({ caption, text, bbox }) => addOne({ kind: 'text', caption, text, bbox }),
+      updateLayer: ({ index, patch }) => {
         const canvas = editable()
-        if (canvas.upscale) throw new Error('放大按原图重画，没有区域')
-        const box = clampBox(
-          bbox
-            ? [bbox.x * canvas.width, bbox.y * canvas.height, (bbox.x + bbox.w) * canvas.width, (bbox.y + bbox.h) * canvas.height]
-            : [canvas.width * 0.2, canvas.height * 0.2, canvas.width * 0.8, canvas.height * 0.8],
-          canvas.width,
-          canvas.height,
-        )
-        const region = { ...newRegion(label, box), caption }
-        live.current.project.updateCanvas(canvas.id, (item) => ({ ...item, layers: [...item.layers, region] }))
-        return { added: region.id, bbox: region.bbox, index: canvas.layers.length + 1 }
+        const layer = layerAt(canvas, index)
+        const next = editLayer(layer, { ...patch, bbox: patch.bbox ? pixelsOf(patch.bbox, canvas) : undefined }, canvas)
+        live.current.project.updateCanvas(canvas.id, (item) => ({
+          ...item,
+          layers: item.layers.map((entry) => (entry.id === layer.id ? next : entry)),
+        }))
+        return { updated: layer.id, index }
+      },
+      removeLayer: (index) => {
+        const canvas = editable()
+        const layer = layerAt(canvas, index)
+        live.current.project.updateCanvas(canvas.id, (item) => ({
+          ...item,
+          layers: item.layers.filter((entry) => entry.id !== layer.id),
+        }))
+        return { removed: layer.id, index }
+      },
+      createScenes: (scenes) => {
+        const { project: p } = live.current
+        const base = settingsFrom(current())
+        const made: ProjectCanvas[] = []
+        for (const scene of scenes) {
+          made.push(sceneCanvas(scene, [...p.canvasesRef.current, ...made], base))
+        }
+        p.setCanvases([...p.canvasesRef.current, ...made])
+        const last = made[made.length - 1]
+        if (last) p.select(last.id)
+        return { created: made.map((item) => ({ id: item.id, title: item.title })) }
+      },
+      selectCanvas: (id) => {
+        const { project: p } = live.current
+        const canvas = p.canvasesRef.current.find((item) => item.id === id)
+        if (!canvas) throw new Error(`没有这个画面：${id}`)
+        p.select(id)
+        return { selected: id, title: canvas.title }
       },
       generate: async (value) => {
         const canvas = editable()
@@ -611,6 +677,12 @@ export function StudioPage(): React.JSX.Element {
         const result = await live.current.generate(canvas.id)
         if (!result.queued) throw new Error(result.error ?? '没有开始生成')
         return result
+      },
+      problems: () => {
+        const canvas = current()
+        if (!canvas) return []
+        const compiled = compileCanvasPrompt(canvas)
+        return compiled.ok ? [] : compiled.errors
       },
     }
     registerStudioTools(api)
@@ -682,7 +754,8 @@ export function StudioPage(): React.JSX.Element {
             setRemoteHostId(id)
             writeStorage(HOST_KEY, id || null)
           }}
-          blockers={readiness.blockers}
+          blockers={panelBlockers}
+          waiting={waiting}
           prompt={selected ? (readiness.prompt ?? null) : null}
           busy={selectedBusy}
           submitting={submitting}

@@ -1,7 +1,7 @@
 /**
  * App updates: the title bar chip through every phase (available, downloading,
  * ready, busy then 空闲后自动重启, required), its popover, and 设置 › 通知与更新
- * (channel, 自动下载更新, 回到上一个版本, a copy that cannot update here).
+ * (channel, 自动更新, 回到上一个版本, a copy that cannot update here).
  */
 import { describe, expect, it } from 'vitest'
 import type { Page } from 'playwright-core'
@@ -40,6 +40,44 @@ describe('update chip', () => {
     expect(await chip(page).count()).toBe(0)
   })
 
+  it('with 自动更新 on, an update downloads and waits for the next start without a word; after 3 days a quiet 重启以更新', async () => {
+    const page = await openWith(app, async (p) => {
+      await p.evaluate(() => {
+        const { updateAvailableFixture } = window.__mock.fixtures
+        window.__mock.state.update = updateAvailableFixture('1.1.0', { autoDownload: true })
+      })
+    })
+    await page.locator('[data-project-switcher]').waitFor()
+    expect(await chip(page).count()).toBe(0)
+    await push(page, 'updateDownloadingFixture', '1.1.0', 60)
+    await push(page, 'updateReadyFixture', '1.1.0', { autoDownload: true, readyAt: new Date().toISOString() })
+    expect(await chip(page).count()).toBe(0)
+    // Nothing in 活动 either.
+    expect(await page.evaluate(() => document.body.innerText)).not.toContain('发现新版本')
+    // Someone who never quits: three days later, a quiet reminder with the same popover.
+    const longAgo = new Date(Date.now() - 4 * 24 * 60 * 60_000).toISOString()
+    await push(page, 'updateReadyFixture', '1.1.0', { autoDownload: true, readyAt: longAgo })
+    await expect.poll(() => chip(page).textContent()).toBe('重启以更新')
+    expect(await chip(page).getAttribute('data-tone')).toBe('quiet')
+    await chip(page).click()
+    await expect.poll(() => popover(page).getByRole('button', { name: '重启以更新' }).isVisible()).toBe(true)
+  })
+
+  it('the first start after an update says so once, with the notes of that version', async () => {
+    const page = await openWith(app, async (p) => {
+      await p.evaluate(() => {
+        window.__mock.state.update = window.__mock.fixtures.updaterStateFixture({ updatedFrom: '1.0.2' })
+      })
+    })
+    const toast = page.getByRole('status').filter({ hasText: '已更新到 1.0.3' })
+    await expect.poll(() => toast.isVisible()).toBe(true)
+    await toast.getByRole('button', { name: '看看新内容' }).click()
+    await expect
+      .poll(() => app.calls<{ url: string }>('app:open-external'))
+      .toEqual([{ url: 'https://github.com/CloverIris/MossStudio/releases/tag/v1.0.3' }])
+    await expect.poll(() => toast.count()).toBe(0)
+  })
+
   it('available → 下载更新 → downloading with a thin bar → ready', async () => {
     const page = await app.open({ scenario: 'updateAvailable', route: '/studio', theme: 'light' })
     await expect.poll(() => chip(page).textContent()).toBe('新版本 1.1.0')
@@ -54,7 +92,7 @@ describe('update chip', () => {
     await panel.getByRole('button', { name: '下载更新' }).click()
     await expect.poll(() => app.calls('update:download').then((calls) => calls.length)).toBe(1)
     await expect.poll(() => chip(page).textContent()).toBe('正在下载更新')
-    await push(page, 'updateDownloadingFixture', '1.1.0', 60)
+    await push(page, 'updateDownloadingFixture', '1.1.0', 60, { autoDownload: false })
     await expect.poll(() => chip(page).getAttribute('aria-label')).toBe('正在下载 MossStudio 1.1.0 更新，60%')
     expect(
       await chip(page)
@@ -67,7 +105,7 @@ describe('update chip', () => {
     await expect.poll(() => app.calls('update:cancel').then((calls) => calls.length)).toBe(1)
     await expect.poll(() => chip(page).textContent()).toBe('新版本 1.1.0')
 
-    await push(page, 'updateReadyFixture', '1.1.0')
+    await push(page, 'updateReadyFixture', '1.1.0', { autoDownload: false })
     await expect.poll(() => chip(page).textContent()).toBe('重启以更新')
     expect(await chip(page).getAttribute('data-tone')).toBe('ready')
   })
@@ -75,7 +113,7 @@ describe('update chip', () => {
   it('ready → 重启以更新 restarts right away when nothing is running', async () => {
     const page = await openWith(app, async (p) => {
       await p.evaluate(() => {
-        window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0')
+        window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0', { autoDownload: false })
       })
     })
     await chip(page).click()
@@ -88,7 +126,7 @@ describe('update chip', () => {
   it('a restart the launcher cannot start says so, and nothing changes', async () => {
     const page = await openWith(app, async (p) => {
       await p.evaluate(() => {
-        window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0')
+        window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0', { autoDownload: false })
         window.__mock.handle(window.__mock.Ipc.updateRestart, () => ({ status: 'failed', error: '启动程序没有响应' }))
       })
     })
@@ -109,7 +147,7 @@ describe('update chip', () => {
         async (p) => {
           await p.evaluate(() => {
             const { updateReadyFixture, jobFixture } = window.__mock.fixtures
-            window.__mock.state.update = updateReadyFixture('1.1.0')
+            window.__mock.state.update = updateReadyFixture('1.1.0', { autoDownload: false })
             window.__mock.state.jobs = [jobFixture({ id: 'job-live', state: 'running', stage: 'denoise' })]
           })
         },
@@ -174,7 +212,7 @@ describe('update chip', () => {
     const page = await openWith(app, async (p) => {
       await p.evaluate(() => {
         const { updateReadyFixture, downloadFixture } = window.__mock.fixtures
-        window.__mock.state.update = updateReadyFixture('1.1.0')
+        window.__mock.state.update = updateReadyFixture('1.1.0', { autoDownload: false })
         window.__mock.state.downloads = [downloadFixture({ state: 'running' })]
       })
     })
@@ -295,7 +333,7 @@ describe('update chip', () => {
         app,
         async (p) => {
           await p.evaluate(() => {
-            window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0')
+            window.__mock.state.update = window.__mock.fixtures.updateReadyFixture('1.1.0', { autoDownload: false })
           })
         },
         { theme },
@@ -327,7 +365,7 @@ describe('设置 › 通知与更新', () => {
     await channel.getByRole('button', { name: '测试版' }).click()
     await expect.poll(() => app.calls('update:set-channel')).toEqual([{ channel: 'beta' }])
     await expect.poll(() => channel.getByRole('button', { name: '测试版' }).getAttribute('aria-pressed')).toBe('true')
-    const auto = page.getByRole('switch', { name: '自动下载更新' })
+    const auto = page.getByRole('switch', { name: '自动更新' })
     expect(await auto.getAttribute('aria-checked')).toBe('true')
     await auto.click()
     await expect.poll(() => app.calls('update:set-auto-download')).toEqual([{ enabled: false }])
@@ -381,7 +419,7 @@ describe('设置 › 通知与更新', () => {
 
   it('has no rollback row without a previous version', async () => {
     const page = await app.open({ scenario: 'ready', route: '/settings/updates' })
-    await expect.poll(() => page.getByText('自动下载更新').isVisible()).toBe(true)
+    await expect.poll(() => page.getByText('自动更新', { exact: true }).isVisible()).toBe(true)
     expect(await page.getByText('回到上一个版本').count()).toBe(0)
   })
 
@@ -393,8 +431,9 @@ describe('设置 › 通知与更新', () => {
       window.__mock.state.jobs = [jobFixture({ id: 'job-live', state: 'running' })]
     })
     await app.start()
-    await expect.poll(() => page.locator('[data-update-status]').textContent()).toContain('1.1.0 已准备好，重启即可更新')
-    await page.getByRole('main').getByRole('button', { name: '重启以更新' }).click()
+    // It installs on the next start; 现在重启 is only for now.
+    await expect.poll(() => page.locator('[data-update-status]').textContent()).toContain('1.1.0 已下载，下次打开时更新')
+    await page.getByRole('main').getByRole('button', { name: '现在重启' }).click()
     await expect.poll(() => popover(page).getByText('1 个生成任务正在进行，现在重启会中断。').isVisible()).toBe(true)
   })
 
@@ -412,7 +451,7 @@ describe('设置 › 通知与更新', () => {
       .poll(() => page.locator('[data-update-status]').textContent())
       .toBe('这是便携版，但缺少启动程序，不能在这里自动更新。请到发布页下载新版本。')
     for (const name of ['检查更新', '重启以更新']) expect(await page.getByRole('button', { name }).count()).toBe(0)
-    expect(await page.getByRole('switch', { name: '自动下载更新' }).count()).toBe(0)
+    expect(await page.getByRole('switch', { name: '自动更新' }).count()).toBe(0)
     expect(await page.getByRole('group', { name: '更新渠道' }).count()).toBe(0)
     expect(await chip(page).count()).toBe(0)
     await page.getByRole('button', { name: '查看', exact: true }).click()

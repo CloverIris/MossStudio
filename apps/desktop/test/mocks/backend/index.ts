@@ -566,6 +566,12 @@ function defaultHandlers(): Map<string, Handler> {
     emit(Events.hostsChanged, state.hosts)
     return host
   })
+  h.set(Ipc.hostsUpdatePaths, (payload, { state, emit }) => {
+    const { id, ...patch } = p<{ id: string; engineRoot?: string; outputRoot?: string }>(payload)
+    state.hosts = state.hosts.map((host) => (host.id === id ? { ...host, ...patch } : host))
+    emit(Events.hostsChanged, state.hosts)
+    return state.hosts.find((host) => host.id === id) ?? null
+  })
   h.set(Ipc.hostsRemove, (payload, { state, emit }) => {
     state.hosts = state.hosts.filter((item) => item.id !== p<{ id: string }>(payload).id)
     emit(Events.hostsChanged, state.hosts)
@@ -698,6 +704,23 @@ function defaultHandlers(): Map<string, Handler> {
     return { reply: 'Fixture reply', conversation }
   })
   h.set(Ipc.aiToolResult, () => null)
+  h.set(Ipc.aiCardAnswer, (payload, { state }) => {
+    const { conversationId, messageId, answer } = p<{
+      conversationId: string
+      messageId: string
+      answer: NonNullable<AiMessage['card']>['answer']
+    }>(payload)
+    const conversation = state.conversations.find((item) => item.id === conversationId)
+    if (!conversation) throw new MockIpcError('E_NOT_FOUND', '对话不存在')
+    const next: AiConversationInfo = {
+      ...conversation,
+      messages: conversation.messages.map((message) =>
+        message.id === messageId && message.card ? { ...message, card: { ...message.card, answer } } : message,
+      ),
+    }
+    state.conversations = [next, ...state.conversations.filter((item) => item.id !== conversationId)]
+    return next
+  })
 
   // Shell integrations: accepted and recorded via `calls`.
   for (const channel of [Ipc.windowOpen, Ipc.openPath, Ipc.openExternal, Ipc.copyText, Ipc.galleryReveal]) h.set(channel, () => null)

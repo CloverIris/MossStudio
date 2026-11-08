@@ -3,6 +3,7 @@ import { Ipc } from '@shared/channels'
 import type { EnginePlanView, MossInferDownloadState, OnboardingStatus } from '@shared/types'
 import { call } from '../../lib/api'
 import { engineDownloadActive } from '../../lib/engineInstall'
+import { preparationProgress, type Preparation } from '../../lib/preparation'
 import { importFolderMessage, type ImportFolderResult } from '../../lib/modelFolder'
 import { useGpuInventory } from '../../lib/useGpuInventory'
 import { useApp } from '../../store'
@@ -19,6 +20,10 @@ function message(error: unknown): string {
  */
 export function useSetup(): {
   view: SetupView
+  /** The engine and the model downloads as one progress; null before anything started. */
+  progress: Preparation | null
+  /** The recommended model's name. */
+  modelName: string
   starting: boolean
   start: () => Promise<void>
   gpu: ReturnType<typeof useGpuInventory>
@@ -97,6 +102,11 @@ export function useSetup(): {
     [gpu.inventory, settings?.gpuSelection, engine, plan, engineDownload, engineError, onboarding, downloads, modelError],
   )
 
+  const progress = useMemo(
+    () => preparationProgress(engineDownload, modelDownloads(onboarding, downloads)),
+    [engineDownload, onboarding, downloads],
+  )
+
   const installEngine = useCallback(async () => {
     // Main installs what the plan says each GPU needs. Resolves when the install ends; progress arrives through store events.
     void call<MossInferDownloadState>(Ipc.mossInferDownload, { channel: 'stable' })
@@ -170,5 +180,6 @@ export function useSetup(): {
     }
   }, [gpu, loadPlan])
 
-  return { view, starting, start, gpu, redetect, redetecting, chooseModelFolder, usingFolder }
+  const modelName = onboarding?.bundleName ?? '推荐模型'
+  return { view, progress, modelName, starting, start, gpu, redetect, redetecting, chooseModelFolder, usingFolder }
 }

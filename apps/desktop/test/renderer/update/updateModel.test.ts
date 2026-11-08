@@ -7,6 +7,7 @@ import {
   checkedLabel,
   checkedTitle,
   chipView,
+  READY_NUDGE_MS,
   isDownloading,
   notesLink,
   popoverView,
@@ -45,35 +46,60 @@ describe('chipView', () => {
     })
   })
 
-  it('carries the download progress, clamped, and is indeterminate while preparing', () => {
-    expect(chipView(updateDownloadingFixture('1.1.0', 42))).toMatchObject({
+  it('with 自动更新 on, says nothing while it finds, downloads, prepares or fails', () => {
+    expect(chipView(updateAvailableFixture('1.1.0', { autoDownload: true }))).toBeNull()
+    expect(chipView(updateDownloadingFixture('1.1.0', 42))).toBeNull()
+    expect(chipView(updateDownloadingFixture('1.1.0', 100, { phase: 'installing' }))).toBeNull()
+    expect(chipView(updateAvailableFixture('1.1.0', { autoDownload: true, phase: 'error', error: '网络中断' }))).toBeNull()
+  })
+
+  it('by hand, carries the download progress, clamped, and is indeterminate while preparing', () => {
+    const byHand = { autoDownload: false }
+    expect(chipView(updateDownloadingFixture('1.1.0', 42, byHand))).toMatchObject({
       label: '正在下载更新',
       tone: 'quiet',
       progress: 42,
       description: '正在下载 MossStudio 1.1.0 更新，42%',
     })
-    expect(chipView(updateDownloadingFixture('1.1.0', 140))!.progress).toBe(100)
-    expect(chipView(updateDownloadingFixture('1.1.0', 0, { progress: null }))).toMatchObject({
+    expect(chipView(updateDownloadingFixture('1.1.0', 140, byHand))!.progress).toBe(100)
+    expect(chipView(updateDownloadingFixture('1.1.0', 0, { ...byHand, progress: null }))).toMatchObject({
       progress: null,
       description: '正在准备 MossStudio 1.1.0 更新',
     })
-    expect(chipView(updateDownloadingFixture('1.1.0', 100, { phase: 'verifying' }))).toMatchObject({
+    expect(chipView(updateDownloadingFixture('1.1.0', 100, { ...byHand, phase: 'verifying' }))).toMatchObject({
       label: '正在准备更新',
       progress: null,
     })
-    expect(chipView(updateDownloadingFixture('1.1.0', 100, { phase: 'installing' }))).toMatchObject({
+    expect(chipView(updateDownloadingFixture('1.1.0', 100, { ...byHand, phase: 'installing' }))).toMatchObject({
       label: '正在准备更新',
       progress: null,
     })
   })
 
-  it('asks for a restart once the update is ready', () => {
-    expect(chipView(updateReadyFixture('1.1.0'))).toEqual({
+  it('by hand, asks for a restart once the update is ready', () => {
+    expect(chipView(updateReadyFixture('1.1.0', { autoDownload: false }))).toEqual({
       label: '重启以更新',
       tone: 'ready',
       description: 'MossStudio 1.1.0 已准备好，重启即可更新',
     })
-    expect(chipView(updateReadyFixture('1.1.0', { available: null }))!.description).toBe('MossStudio 1.1.0 已准备好，重启即可更新')
+    expect(chipView(updateReadyFixture('1.1.0', { autoDownload: false, available: null }))!.description).toBe(
+      'MossStudio 1.1.0 已准备好，重启即可更新',
+    )
+  })
+
+  it('with 自动更新 on, a ready update waits for the next start; after 3 days a quiet 重启以更新', () => {
+    const readyAt = '2026-11-01T00:00:00.000Z'
+    const ready = updateReadyFixture('1.1.0', { autoDownload: true, readyAt })
+    expect(chipView(ready, Date.parse(readyAt) + READY_NUDGE_MS - 1)).toBeNull()
+    expect(chipView(ready, Date.parse(readyAt) + READY_NUDGE_MS)).toEqual({
+      label: '重启以更新',
+      tone: 'quiet',
+      description: 'MossStudio 1.1.0 已准备好，下次打开时更新，也可以现在重启',
+    })
+    // Not known when it became ready (e.g. found at start): no nudge.
+    expect(
+      chipView(updateReadyFixture('1.1.0', { autoDownload: true, readyAt: null }), Date.parse(readyAt) + 10 * READY_NUDGE_MS),
+    ).toBeNull()
   })
 
   it('says 必须更新 as a warning whenever the update is required, keeping the progress bar', () => {
@@ -117,7 +143,9 @@ describe('a version rolled back after a failed start', () => {
     })
     expect(chipView(updateFailedFixture('1.1.0', { failedNotice: false }))).toBeNull()
     expect(
-      chipView(updateFailedFixture('1.1.0', { phase: 'available', available: updateAvailableFixture('1.2.0').available }))?.label,
+      chipView(
+        updateFailedFixture('1.1.0', { autoDownload: false, phase: 'available', available: updateAvailableFixture('1.2.0').available }),
+      )?.label,
     ).toBe('新版本 1.2.0')
   })
 
@@ -254,7 +282,7 @@ describe('settings lines', () => {
     expect(settingsStatus(updateDownloadingFixture('1.1.0', 33.4))).toBe('正在下载 1.1.0：33%')
     expect(settingsStatus(updateDownloadingFixture('1.1.0', 0, { progress: null }))).toBe('正在下载 1.1.0')
     expect(settingsStatus(updateDownloadingFixture('1.1.0', 100, { phase: 'installing' }))).toBe('正在准备 1.1.0')
-    expect(settingsStatus(updateReadyFixture('1.1.0'))).toBe('1.1.0 已准备好，重启即可更新')
+    expect(settingsStatus(updateReadyFixture('1.1.0'))).toBe('1.1.0 已下载，下次打开时更新')
     expect(settingsStatus(updateReadyFixture('1.1.0', { phase: 'waiting-idle' }))).toBe('1.1.0 会在当前任务结束后安装')
     expect(settingsStatus(updateReadyFixture('1.1.0', { phase: 'restarting' }))).toBe('正在重启以更新')
     expect(settingsStatus(updaterStateFixture({ phase: 'error', error: '网络断开' }))).toBe('网络断开')

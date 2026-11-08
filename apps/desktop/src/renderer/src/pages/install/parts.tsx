@@ -80,57 +80,6 @@ export function FolderProblem({ text, action }: { text: string; action?: { label
   )
 }
 
-/** Two or three exclusive choices as rows with a round mark. */
-export function ChoiceList<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  disabled,
-}: {
-  label: string
-  value: T
-  options: Array<{ value: T; title: string; description?: string }>
-  onChange: (value: T) => void
-  disabled?: boolean
-}): React.JSX.Element {
-  return (
-    <div role="radiogroup" aria-label={label} className="flex flex-col gap-0.5">
-      {options.map((option) => {
-        const selected = option.value === value
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            disabled={disabled}
-            onClick={() => onChange(option.value)}
-            className={cn(
-              'flex min-h-9 items-center gap-3 rounded-lg px-3.5 py-1.5 text-left transition-colors disabled:opacity-40',
-              selected ? 'bg-well' : 'enabled:hover:bg-well',
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                'flex size-[18px] shrink-0 items-center justify-center rounded-full',
-                selected ? 'bg-accent' : 'bg-well-strong',
-              )}
-            >
-              {selected ? <span className="size-1.5 rounded-full bg-on-accent" /> : null}
-            </span>
-            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-              <span className="text-control text-ink">{option.title}</span>
-              {option.description ? <span className="text-caption text-ink-2">{option.description}</span> : null}
-            </span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 /** The progress block of the install and uninstall screens. */
 export function ProgressBlock({
   label,
