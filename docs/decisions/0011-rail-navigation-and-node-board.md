@@ -53,5 +53,5 @@ As built at f727e95:
 - PR #25 (merge de337c4, 2026-11-04): the rail, Activity panel, Setup and Settings restructure.
 - PR #43 (merge f727e95, 2026-11-08): the node board.
 - Commit 8b18255 (2026-10-26): the title-bar menu, removed again in 6ebea87.
-- `docs/design/multi-canvas-studio.md`: the board's design history and as-built notes before 2.0.
+- `docs/archive/multi-canvas-studio.md`: the board's design history and as-built notes before 2.0.
 - Supersedes [ADR-0008](0008-studio-window-and-dock.md). Amends [ADR-0007](0007-mossstudio-single-ui-and-web.md), section 2.3.

@@ -48,8 +48,11 @@ On Linux, `pnpm test:e2e`, `pnpm test:scenarios` and `pnpm test:install` run the
 ## Before you change code
 
 - Any change: [CONTRIBUTING.md](CONTRIBUTING.md).
-- Renderer: [docs/reference/ui-rules.md](docs/reference/ui-rules.md).
-- Main process, services, engine: [docs/architecture.md](docs/architecture.md).
+- Rules a reviewer applies that lint cannot: [docs/reference/coding-standards.md](docs/reference/coding-standards.md).
+- Renderer: [docs/reference/ui-rules.md](docs/reference/ui-rules.md); the Studio in [docs/reference/studio-node-board.md](docs/reference/studio-node-board.md) and [docs/reference/studio-assistant.md](docs/reference/studio-assistant.md).
+- Main process, services, engine: [docs/reference/architecture.md](docs/reference/architecture.md) and [docs/reference/engines.md](docs/reference/engines.md).
+- Models, bundles and local files: [docs/reference/models.md](docs/reference/models.md).
+- Any doc: [docs/README.md](docs/README.md) is the map; [docs/reference/documentation-guidelines.md](docs/reference/documentation-guidelines.md) the rules.
 - Launcher, install, update, release: [docs/how-to/release.md](docs/how-to/release.md) and `apps/launcher/AGENTS.md`.
 - Engine protocol and capabilities: the [MossInfer repository](https://github.com/mossimage-cpp/mossimage.cpp) docs. Do not copy engine facts into this repo.
 
@@ -93,7 +96,7 @@ On Linux, `pnpm test:e2e`, `pnpm test:scenarios` and `pnpm test:install` run the
 
 - Developer docs are English. UI text stays Chinese.
 - `docs/` follows Diátaxis: how-to, reference, explanation, tutorial, plus `decisions/` (ADRs) and dated records. Put a new doc in the right section and add it to `docs/README.md`.
-- Every doc starts with a one-paragraph summary, its status and its last-verified date.
+- Every doc outside `docs/archive/` starts with the front matter (`status`, `last-verified`, `code`) and a 2 to 3 line summary from the documentation guidelines. Set `last-verified` only after comparing the whole doc to the code.
 - Link to the source of a fact instead of restating it. Engine facts link to the MossInfer docs.
 - ADRs use MADR 4.0. Never edit an accepted ADR: write a new one that supersedes it and link both ways. Leave `status: proposed`; only the maintainer marks an ADR accepted.
 
