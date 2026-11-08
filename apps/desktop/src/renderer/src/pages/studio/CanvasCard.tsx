@@ -1,9 +1,10 @@
-import { MoreHorizontal, PenLine } from 'lucide-react'
+import { ChevronRight, Copy, Image as ImageIcon, MoreHorizontal, Palette, PenLine, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ImageResizeMode, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { Button, IconButton, Pill, cn } from '../../components/ui'
 import { MenuItem, Popover } from '../../components/common/Popover'
 import { cloverUrl } from '../../lib/clover'
+import type { LinkRole } from './links'
 import { OutputImage } from './OutputImage'
 import { CARD_FOOTER, CARD_HEADER, cardBodyHeight, cardWidth } from './boardLayout'
 import { LivePreview, ProgressStrip, StatusOverlay } from './CardStatus'
@@ -69,17 +70,24 @@ export interface CanvasCardProps {
   /** Entries of the ⋯ menu: 用作起始图, 固定到画板 and so on (danger ones next to 删除). */
   menuActions?: readonly CardMenuAction[]
   /**
-   * While a wire is aimed at this card: the inputs it could fill, one socket
-   * each on the left edge, top to bottom (empty: it cannot take the wire).
-   * `y` is board pixels from the top of the picture; `scale` keeps the
-   * sockets at screen size.
+   * While a wire is out and this card can take it: the inputs it could fill,
+   * one socket each on the left edge, top to bottom; `active` is the one the
+   * wire is at (-1: none). `y` is board pixels from the top of the picture;
+   * `scale` keeps the sockets at screen size. `ghost` previews the picture.
    */
-  dropZones?: { items: { label: string; ok: boolean; reason?: string; y: number }[]; active: number; scale: number }
+  dropZones?: {
+    items: { label: string; role: LinkRole; ok: boolean; reason?: string; y: number }[]
+    active: number
+    scale: number
+    ghost?: string | null
+  }
   /** A wire is being dragged that this card cannot take: it steps back. */
   inert?: boolean
+  /** A wire is out (from any card): handles stop taking presses. */
+  connecting?: boolean
+  /** This card's own wire is out: its handle stays lit. */
+  wireOut?: boolean
   onHoverChange?: (on: boolean) => void
-  /** Board pick mode: 'ok' = a click picks this card's picture, 'inert' = it cannot be picked. */
-  pick?: 'ok' | 'inert'
   /** The model this canvas generates with, for its chip; null on cards that do not generate. */
   model?: { label: string; ready: boolean } | null
   onPortDown: (event: React.PointerEvent<HTMLElement>) => void
@@ -181,6 +189,14 @@ function ModelWarning({ model }: { model?: { label: string; ready: boolean } | n
   )
 }
 
+/** What each kind of input looks like as a socket. */
+const SOCKET_ICONS: Record<LinkRole, typeof ImageIcon> = {
+  init: ImageIcon,
+  control: SlidersHorizontal,
+  reference: Copy,
+  style: Palette,
+}
+
 /**
  * One canvas on the board: title and state above the picture, the picture
  * (regions, live progress, results or an imported image), and the results
@@ -232,24 +248,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
       onClick={props.onSelect}
       onPointerEnter={() => props.onHoverChange?.(true)}
       onPointerLeave={() => props.onHoverChange?.(false)}
-      // In pick mode a click anywhere on the card picks it; nothing inside reacts.
-      onClickCapture={
-        props.pick
-          ? (event) => {
-              event.stopPropagation()
-              event.preventDefault()
-              if (props.pick === 'ok') props.onSelect()
-            }
-          : undefined
-      }
-      data-pick={props.pick}
-      className={cn(
-        'group/card absolute flex flex-col transition-opacity',
-        props.inert && 'opacity-40',
-        props.dragging && 'z-10',
-        props.pick === 'ok' && 'cursor-pointer',
-        props.pick === 'inert' && 'cursor-not-allowed opacity-50',
-      )}
+      className={cn('group/card absolute flex flex-col transition-opacity', props.inert && 'opacity-40', props.dragging && 'z-10')}
       style={{ left: canvas.x, top: canvas.y, width }}
     >
       <header
@@ -373,18 +372,11 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           // A press on the picture outside every region clears the region selection.
           if (editable && !onRegion) props.onSelectRegion(null)
           // The picture moves its card, as the title row does.
-          if (
-            props.tool === 'select' &&
-            !props.pick &&
-            !painting &&
-            !editing &&
-            !onRegion &&
-            !target.closest('textarea, input, [data-board-ui]')
-          )
+          if (props.tool === 'select' && !painting && !editing && !onRegion && !target.closest('textarea, input, [data-board-ui]'))
             props.onDragStart(event)
         }}
         onDoubleClick={(event) => {
-          if (!blankFace || props.tool !== 'select' || !props.onChangeDescription || props.pick) return
+          if (!blankFace || props.tool !== 'select' || !props.onChangeDescription) return
           if ((event.target as HTMLElement).closest('[data-region-id]')) return
           event.stopPropagation()
           if (!selected) props.onSelect()
@@ -470,36 +462,48 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             {strip.items.length}
           </span>
         ) : null}
-        {props.pick === 'ok' ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-[4] opacity-0 transition-opacity [article:hover_&]:bg-accent-soft [article:hover_&]:opacity-100"
-          />
-        ) : null}
         {props.dropZones ? (
-          <div data-drop-zones className="pointer-events-none absolute inset-0 z-[4]">
-            {props.dropZones.items.map((zone, index) => {
-              const on = index === props.dropZones!.active
-              return (
-                <div
-                  key={`${zone.label}-${index}`}
-                  data-drop-zone={zone.label}
-                  data-active={on || undefined}
-                  className={cn(
-                    'absolute left-0 top-0 flex h-6 origin-top-left items-center whitespace-nowrap rounded-full px-2.5 text-caption shadow-float transition-colors',
-                    on && zone.ok ? 'bg-accent font-medium text-on-accent' : 'bg-raised text-ink',
-                  )}
-                  style={{ transform: `translate(0, ${zone.y}px) scale(${props.dropZones!.scale}) translate(8px, -50%)` }}
-                >
-                  {zone.label}
-                  {/* Why not, only for the socket the wire is at. */}
-                  {on && !zone.ok && zone.reason ? <span className="ml-1.5 text-ink-2">{zone.reason}</span> : null}
-                </div>
-              )
-            })}
+          // While a wire is out, the face steps back behind the sockets; the one the wire is at previews the picture.
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[4]">
+            {props.dropZones.ghost ? <OutputImage path={props.dropZones.ghost} alt="" className="opacity-60" /> : null}
+            <div className="absolute inset-0 bg-board opacity-55" />
           </div>
         ) : null}
       </div>
+
+      {props.dropZones ? (
+        <div data-drop-zones className="pointer-events-none absolute left-0 z-[6]" style={{ top: CARD_HEADER, height: bodyHeight }}>
+          {props.dropZones.items.map((zone, index) => {
+            const on = index === props.dropZones!.active
+            const Icon = SOCKET_ICONS[zone.role]
+            return (
+              <div
+                key={`${zone.label}-${index}`}
+                data-drop-zone={zone.label}
+                data-active={on || undefined}
+                className={cn(
+                  'absolute left-0 top-0 flex origin-top-left items-center gap-2 whitespace-nowrap text-caption',
+                  zone.ok ? 'text-ink' : 'text-ink-2',
+                  on && zone.ok && 'font-semibold',
+                )}
+                style={{ transform: `translate(0, ${zone.y}px) scale(${props.dropZones!.scale}) translate(-14px, -50%)` }}
+              >
+                <span
+                  className={cn(
+                    'flex size-7 items-center justify-center rounded-full shadow-float transition-colors',
+                    on && zone.ok ? 'bg-accent text-on-accent' : 'bg-raised',
+                  )}
+                >
+                  <Icon className="size-3.5" aria-hidden="true" strokeWidth={1.8} />
+                </span>
+                {zone.label}
+                {/* Why not, only for the socket the wire is at. */}
+                {on && !zone.ok && zone.reason ? <span className="font-normal text-ink-2">· {zone.reason}</span> : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
 
       {props.hasOutput ? (
         // The whole right edge pulls out a wire, not only its dot.
@@ -507,7 +511,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           aria-hidden="true"
           data-board-ui
           data-output-edge={canvas.id}
-          className="absolute z-[5] cursor-crosshair touch-none"
+          className={cn('absolute z-[5] cursor-crosshair touch-none', props.connecting && 'pointer-events-none')}
           style={{ left: width - 8, top: CARD_HEADER, width: 16, height: bodyHeight }}
           onPointerDown={(event) => {
             event.stopPropagation()
@@ -522,19 +526,29 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           data-board-ui
           data-output-port={canvas.id}
           aria-label={`从 ${canvas.title} 拉出连线`}
-          title="拖到另一个画面上，把这张图接进去"
           onPointerDown={(event) => {
             event.stopPropagation()
             props.onPortDown(event)
           }}
           onClick={(event) => event.stopPropagation()}
           className={cn(
-            'absolute z-[5] flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none items-center justify-center rounded-full transition-opacity',
-            selected ? 'opacity-100' : 'opacity-0 focus-visible:opacity-100 group-hover/card:opacity-100',
+            'group/port absolute z-[5] flex size-7 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none items-center justify-center rounded-full',
+            props.connecting && 'pointer-events-none',
           )}
           style={{ left: width, top: CARD_HEADER + bodyHeight / 2 }}
         >
-          <span aria-hidden="true" className="size-3 rounded-full bg-accent outline-2 outline-board" />
+          {/* Every picture carries its handle; it lights up under the pointer and while its wire is out. */}
+          <span
+            aria-hidden="true"
+            className={cn(
+              'flex size-5 items-center justify-center rounded-full shadow-float transition-colors',
+              props.wireOut
+                ? 'bg-accent text-on-accent'
+                : 'bg-raised text-ink-2 group-hover/port:bg-accent group-hover/port:text-on-accent',
+            )}
+          >
+            <ChevronRight className="size-3" strokeWidth={2.2} />
+          </span>
         </button>
       ) : null}
 

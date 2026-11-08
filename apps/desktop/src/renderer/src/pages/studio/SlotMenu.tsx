@@ -1,12 +1,14 @@
 import type { ControlAdapterEntry, ProjectCanvas } from '@shared/types'
 import { MenuItem } from '../../components/common/Popover'
-import type { LinkRole } from './links'
+import { pictureSources } from './connect'
+import { linkSourceImage, type LinkRole } from './links'
+import { OutputImage } from './OutputImage'
 import type { InputSlot } from './ports'
 
 /** What an empty slot's menu can do; the Studio page wires these to the inputs it already has. */
 export interface PortActions {
-  /** Pick the picture from another card on the board. */
-  onPick: (canvasId: string, role: LinkRole, kind?: string) => void
+  /** Link another card's picture in. */
+  onLinkPicture: (canvasId: string, role: LinkRole, kind: string | undefined, sourceId: string) => void
   /** Choose picture files and link them in. */
   onAddFromFile: (canvasId: string, role: LinkRole, kind?: string) => void
   /** Choose a picture from 作品 and link it in. */
@@ -17,16 +19,18 @@ export interface PortActions {
   onAddStyle: (canvasId: string, styleId?: string) => void
 }
 
-/** What filling one input slot offers: pick from the board, 作品 or a file, choose an adapter or a 风格. */
+/** What filling one input slot offers: a picture on the board, 作品 or a file, choose an adapter or a 风格. */
 export function SlotMenu({
   canvasId,
   slot,
   adapters,
   styles,
+  canvases,
   actions,
   close,
 }: {
   canvasId: string
+  canvases: readonly ProjectCanvas[]
   slot: InputSlot
   adapters: readonly ControlAdapterEntry[]
   styles: readonly ProjectCanvas[]
@@ -94,14 +98,14 @@ export function SlotMenu({
   }
   return (
     <>
-      <MenuItem
-        onSelect={() => {
+      <PictureChoices
+        targetId={canvasId}
+        canvases={canvases}
+        onChoose={(sourceId) => {
           close()
-          actions.onPick(canvasId, slot.role, slot.kind)
+          actions.onLinkPicture(canvasId, slot.role, slot.kind, sourceId)
         }}
-      >
-        从画板选择
-      </MenuItem>
+      />
       <MenuItem
         onSelect={() => {
           close()
@@ -119,5 +123,40 @@ export function SlotMenu({
         从文件…
       </MenuItem>
     </>
+  )
+}
+
+/** The board's pictures that can go into a card, as thumbnails to click. */
+export function PictureChoices({
+  targetId,
+  canvases,
+  onChoose,
+}: {
+  targetId: string
+  canvases: readonly ProjectCanvas[]
+  onChoose: (sourceId: string) => void
+}): React.JSX.Element | null {
+  const target = canvases.find((canvas) => canvas.id === targetId)
+  const sources = target ? pictureSources(canvases, target) : []
+  if (!sources.length) return null
+  return (
+    <div role="group" aria-label="画板上的图" data-picture-choices className="grid max-h-[208px] grid-cols-3 gap-1.5 overflow-y-auto p-1">
+      {sources.map((source) => {
+        const path = linkSourceImage({ canvasId: source.id }, canvases)
+        return (
+          <button
+            key={source.id}
+            type="button"
+            role="menuitem"
+            aria-label={source.title}
+            title={source.title}
+            onClick={() => onChoose(source.id)}
+            className="aspect-square overflow-hidden rounded-md bg-well transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+          >
+            {path ? <OutputImage path={path} alt="" compact /> : null}
+          </button>
+        )
+      })}
+    </div>
   )
 }

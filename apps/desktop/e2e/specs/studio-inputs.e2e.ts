@@ -128,18 +128,18 @@ describe('studio inputs', () => {
     await expect.poll(() => savedInputs(page).then((value) => value?.init ?? null), { timeout: 10_000 }).toBeNull()
   })
 
-  it('picks a start picture from the board; Esc cancels picking', async () => {
+  it('links a start picture from the board, shown as thumbnails in the ＋ menu', async () => {
     const page = await openStudio(app)
-    const hint = page.locator('[data-pick-hint]')
-    await addInput(page, '起始图', '从画板选择')
-    await expect.poll(() => hint.textContent()).toContain('点一张有图片的卡片')
-    await page.keyboard.press('Escape')
-    await expect.poll(() => hint.count()).toBe(0)
-
-    await addInput(page, '起始图', '从画板选择')
-    await page.locator('article[data-canvas-card="img-1"] [data-card-body]').click()
+    await addInput(page, '起始图')
+    const choices = page.locator('[data-picture-choices] [role="menuitem"]')
+    await choices.first().waitFor()
+    const names = await choices.evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')))
+    // Pictures on the board, never the canvas itself.
+    expect(names).toContain('小猫照片')
+    expect(names).not.toContain('画面 1')
+    await page.locator('[data-picture-choices]').getByRole('menuitem', { name: '小猫照片' }).click()
     await expect.poll(() => savedInputs(page).then((value) => value?.init?.link.canvasId), { timeout: 10_000 }).toBe('img-1')
-    // Picking did not move the selection.
+    // Linking did not move the selection.
     expect(await page.locator('article[data-canvas-card="canvas-1"]').getAttribute('aria-current')).toBe('true')
     await expect.poll(() => inputs(page).locator('[data-input-row="起始图"]').getByText('小猫照片').isVisible()).toBe(true)
   })

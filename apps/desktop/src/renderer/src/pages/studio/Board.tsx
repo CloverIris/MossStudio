@@ -24,11 +24,11 @@ import {
   type View,
 } from './boardLayout'
 import { CanvasCard, type CardMenuAction, type CardStrip } from './CanvasCard'
-import { canConnect, newCanvasMenu } from './connect'
+import { newCanvasMenu } from './connect'
 import { isImageFile } from './imageNodes'
 import { cardJobView, type CardJobView } from './jobStatus'
 import { LinkMenu } from './LinkMenu'
-import { controlKindLabel, linkSourceImage, roleLabel, type LinkRole, type PickTarget } from './links'
+import { linkSourceImage, type LinkRole } from './links'
 import { BRUSH_DEFAULT, maskAvailability, startPictureSize } from './mask'
 import type { MaskBrush, MaskCommand } from './MaskLayer'
 import { rerunEligibility, type Blocker, type ReadinessInput } from './readiness'
@@ -106,9 +106,6 @@ export interface BoardProps {
   onImportImages: (files: File[], at: { x: number; y: number }) => void
   /** A painted mask to store for a canvas (null: nothing painted any more). */
   onSaveMask: (canvasId: string, png: Uint8Array | null) => void
-  /** Pick mode (from the inspector): the next card with a picture clicked fills this input. */
-  pickTarget?: PickTarget | null
-  onPick?: (sourceCanvasId: string) => void
   /** What an empty input slot's menu does (add from the board or a file, choose a control adapter). */
   portActions: PortActions
   /** The model chip of a card: its short name, and whether it is ready to use. */
@@ -213,9 +210,9 @@ export function Board(props: BoardProps): React.JSX.Element {
   // An empty slot's menu acts on its card: select it first, as the inputs panel does.
   const portActions: PortActions = {
     ...props.portActions,
-    onPick: (canvasId, role, kind) => {
+    onLinkPicture: (canvasId, role, kind, sourceId) => {
       if (canvasId !== latest.current.selectedCanvasId) latest.current.onSelectCanvas(canvasId)
-      latest.current.portActions.onPick(canvasId, role, kind)
+      latest.current.portActions.onLinkPicture(canvasId, role, kind, sourceId)
     },
     onAddFromFile: (canvasId, role, kind) => {
       if (canvasId !== latest.current.selectedCanvasId) latest.current.onSelectCanvas(canvasId)
@@ -371,17 +368,6 @@ export function Board(props: BoardProps): React.JSX.Element {
     if (importFiles(event.clipboardData?.files, at)) event.preventDefault()
   }
 
-  const pickFor = props.pickTarget ? props.canvases.find((canvas) => canvas.id === props.pickTarget!.canvasId) : undefined
-  const pickState = (canvas: ProjectCanvas): 'ok' | 'inert' | undefined => {
-    if (!props.pickTarget) return undefined
-    return pickFor && givesPicture(canvas, props.canvases) && canConnect(props.canvases, canvas.id, pickFor).ok ? 'ok' : 'inert'
-  }
-  const pickRole = props.pickTarget
-    ? props.pickTarget.role === 'control'
-      ? `控制图 · ${controlKindLabel(props.pickTarget.kind ?? '')}`
-      : roleLabel(props.pickTarget.role)
-    : ''
-
   const menuSource = connect.menu ? props.canvases.find((canvas) => canvas.id === connect.menu!.sourceId) : undefined
 
   // 放大 is offered when the engine takes a start picture and the picture can still grow.
@@ -416,8 +402,7 @@ export function Board(props: BoardProps): React.JSX.Element {
   // Wire labels show for the cards being looked at: the selected one and the one under the pointer.
   const focusIds = new Set([props.selectedCanvasId, hoveredCard].filter((id): id is string => Boolean(id)))
   // The ＋ that adds an input: on the hovered or selected 画面, below its linked inputs.
-  const adderCanvas =
-    connect.draft || props.pickTarget ? undefined : cards.find((canvas) => canvas.id === (hoveredCard ?? props.selectedCanvasId))
+  const adderCanvas = connect.draft ? undefined : cards.find((canvas) => canvas.id === (hoveredCard ?? props.selectedCanvasId))
   const adderSlots = adderCanvas?.kind === 'layout' ? slotsFor(adderCanvas).filter((slot) => !slot.linked) : []
   const adderPorts = adderCanvas
     ? wires.filter((wire) => wire.kind === 'input' && wire.targetId === adderCanvas.id).map((wire) => wire.to.y)
@@ -442,9 +427,9 @@ export function Board(props: BoardProps): React.JSX.Element {
       ? only
       : null
   const dragged = runDrag.drag
-  // The card a wire is aimed at shows its sockets; its linked inputs' thumbnails and labels step aside.
-  const aimedId = connect.draft?.zones ? connect.draft.targetId : undefined
-  const labelled = aimedId ? wires.filter((wire) => wire.kind !== 'input' || wire.targetId !== aimedId) : wires
+  // While a wire is out, cards that can take it show their sockets; their linked inputs' thumbnails and labels step aside.
+  const offers = connect.draft?.offers
+  const labelled = offers ? wires.filter((wire) => wire.kind !== 'input' || !offers.has(wire.targetId)) : wires
 
   return (
     <div
@@ -531,10 +516,10 @@ export function Board(props: BoardProps): React.JSX.Element {
           const initPath = init ? linkSourceImage(init.link, props.canvases) : null
           const showMask = Boolean(init && isSelected && (props.tool === 'mask' || canvas.inputs?.mask))
           const draft = connect.draft
-          const pick = pickState(canvas)
-          const zones = draft?.targetId === canvas.id ? draft.zones : undefined
-          // While a wire is dragged, cards that cannot take it step back.
-          const inert = Boolean(draft && canvas.id !== draft.sourceId && !canConnect(props.canvases, draft.sourceId, canvas).ok)
+          const offer = draft?.offers.get(canvas.id)
+          const aimed = offer && draft?.targetId === canvas.id ? draft.zones : undefined
+          // While a wire is out, cards that cannot take it step back.
+          const inert = Boolean(draft && canvas.id !== draft.sourceId && !offer)
           return (
             <CanvasCard
               key={canvas.id}
@@ -574,28 +559,24 @@ export function Board(props: BoardProps): React.JSX.Element {
               model={canvas.kind === 'layout' ? (props.describeModel?.(canvas) ?? null) : null}
               onChangeDescription={(text) => props.onChangeDescription(canvas.id, text)}
               dropZones={
-                zones
+                offer
                   ? {
-                      items: zones.slots.map((slot, index) => {
-                        const drop = zones.drops[index]!
-                        const y = socketY(canvas, index, zones.slots.length, view.zoom) - canvas.y - CARD_HEADER
-                        return { label: slot.label, ok: drop.ok, reason: drop.ok ? undefined : drop.reason, y }
+                      items: offer.slots.map((slot, index) => {
+                        const drop = offer.drops[index]!
+                        const y = socketY(canvas, index, offer.slots.length, view.zoom) - canvas.y - CARD_HEADER
+                        return { label: slot.label, role: slot.role, ok: drop.ok, reason: drop.ok ? undefined : drop.reason, y }
                       }),
-                      active: zones.active,
+                      active: aimed ? aimed.active : -1,
                       scale: 1 / Math.max(0.01, view.zoom),
+                      ghost: aimed && draft?.ok ? linkSourceImage({ canvasId: draft.sourceId }, props.canvases) : null,
                     }
-                  : draft?.targetId === canvas.id
-                    ? { items: [], active: -1, scale: 1 }
-                    : undefined
+                  : undefined
               }
+              connecting={Boolean(draft && canvas.id !== draft.sourceId)}
+              wireOut={draft?.sourceId === canvas.id}
               onPortDown={(event) => connect.start(canvas, event)}
-              pick={pick}
               onSelect={() => {
                 if (cardDrag.isDragTail()) return
-                if (pick) {
-                  if (pick === 'ok') props.onPick?.(canvas.id)
-                  return
-                }
                 if (canvas.id !== props.selectedCanvasId) props.onSelectCanvas(canvas.id)
               }}
               onSelectRegion={props.onSelectRegion}
@@ -662,6 +643,7 @@ export function Board(props: BoardProps): React.JSX.Element {
             zoom={view.zoom}
             adapters={props.controlAdapters}
             styles={styleNodes}
+            canvases={props.canvases}
             actions={portActions}
             onHoverChange={(on: boolean) =>
               setHoveredCard((current) => (on ? adderFor.canvas.id : current === adderFor.canvas.id ? null : current))
@@ -711,16 +693,6 @@ export function Board(props: BoardProps): React.JSX.Element {
         ) : null}
       </div>
 
-      {props.pickTarget ? (
-        <div
-          role="status"
-          data-board-ui
-          data-pick-hint
-          className="absolute left-1/2 top-[64px] z-20 -translate-x-1/2 rounded-full bg-raised px-3 py-1.5 text-caption text-ink shadow-float"
-        >
-          点一张有图片的卡片作为{pickRole} · Esc 取消
-        </div>
-      ) : null}
       {connect.menu ? (
         <LinkMenu
           title={`用「${menuSource?.title ?? '图片'}」新建画面`}

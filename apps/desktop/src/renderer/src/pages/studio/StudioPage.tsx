@@ -139,8 +139,6 @@ export function StudioPage(): React.JSX.Element {
   const [viewer, setViewer] = useState<{ canvasId: string; index: number } | null>(null)
   const [deleting, setDeleting] = useState<ProjectCanvas | null>(null)
   const [adapterPickerOpen, setAdapterPickerOpen] = useState(false)
-  /** 输入 › 从画板选择: the next card clicked on the board fills this slot. */
-  const [pickTarget, setPickTarget] = useState<PickTarget | null>(null)
   // 从作品选择: the input a picture from 作品 goes into.
   const [galleryTarget, setGalleryTarget] = useState<PickTarget | null>(null)
 
@@ -213,9 +211,8 @@ export function StudioPage(): React.JSX.Element {
 
   // A different canvas has its own regions.
   useEffect(() => setSelectedRegionId(null), [project.selectedCanvasId])
-  // Picking fills a slot of the selected canvas; selecting another one ends it, and so does leaving the mask tool's canvas.
+  // Leaving the mask tool's canvas ends painting.
   useEffect(() => {
-    setPickTarget((current) => (current && current.canvasId !== project.selectedCanvasId ? null : current))
     setTool((current) => (current === 'mask' ? 'select' : current))
   }, [project.selectedCanvasId])
 
@@ -337,13 +334,6 @@ export function StudioPage(): React.JSX.Element {
     })
   }
 
-  const pickSource = (sourceId: string): void => {
-    const target = pickTarget
-    if (!target) return
-    setPickTarget(null)
-    linkInto(target.canvasId, target.role, { canvasId: sourceId }, target.kind)
-  }
-
   /** 用作起始图 (or a wire dropped on the empty board): a new 画面 fed by a card's picture. */
   const newCanvasFromPicture = (sourceId: string, role: 'init' | 'reference' = 'init', at?: { x: number; y: number }): void => {
     const list = project.canvasesRef.current
@@ -438,8 +428,9 @@ export function StudioPage(): React.JSX.Element {
     canvases: project.canvases,
     features: boardFeatures,
     controlAdapters,
-    pickTarget,
-    onPickTarget: setPickTarget,
+    onLinkPicture: (role, kind, sourceId) => {
+      if (selected) linkInto(selected.id, role, { canvasId: sourceId }, kind)
+    },
     onAddFromFile: (role, kind) => {
       if (selected) void inputImport.addFromFile(selected.id, role, kind)
     },
@@ -601,10 +592,6 @@ export function StudioPage(): React.JSX.Element {
         return
       }
       if (event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target) || document.querySelector('dialog[open]')) return
-      if (event.key === 'Escape' && pickTarget) {
-        setPickTarget(null)
-        return
-      }
       const key = event.key.toLowerCase()
       if (key === 'v') setTool('select')
       else if (key === 'b') setTool('draw')
@@ -759,10 +746,8 @@ export function StudioPage(): React.JSX.Element {
           onSaveMask={(canvasId, png) => {
             void boardAssets.saveMask(canvasId, png)
           }}
-          pickTarget={pickTarget}
-          onPick={pickSource}
           portActions={{
-            onPick: (canvasId, role, kind) => setPickTarget({ canvasId, role, ...(kind ? { kind } : {}) }),
+            onLinkPicture: (canvasId, role, kind, sourceId) => linkInto(canvasId, role, { canvasId: sourceId }, kind),
             onAddFromFile: (canvasId, role, kind) => void inputImport.addFromFile(canvasId, role, kind),
             onAddFromGallery: (canvasId, role, kind) => setGalleryTarget({ canvasId, role, ...(kind ? { kind } : {}) }),
             onSetControlAdapter: (canvasId, adapterId) => project.updateCanvas(canvasId, (canvas) => setControlAdapter(canvas, adapterId)),

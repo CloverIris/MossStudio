@@ -29,10 +29,12 @@ export function InputAdder({
   zoom,
   adapters,
   styles,
+  canvases,
   actions,
   onHoverChange,
 }: {
   canvasId: string
+  canvases: readonly ProjectCanvas[]
   title: string
   /** The card's empty slots. */
   slots: readonly InputSlot[]
@@ -86,7 +88,15 @@ export function InputAdder({
       >
         {(close) =>
           slot ? (
-            <SlotMenu canvasId={canvasId} slot={slot} adapters={adapters} styles={styles} actions={actions} close={close} />
+            <SlotMenu
+              canvasId={canvasId}
+              canvases={canvases}
+              slot={slot}
+              adapters={adapters}
+              styles={styles}
+              actions={actions}
+              close={close}
+            />
           ) : (
             slots.map((item) => (
               <MenuItem

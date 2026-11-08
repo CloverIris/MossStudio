@@ -19,10 +19,10 @@ import {
   removeLink,
   setControlAdapter,
   type LinkRole,
-  type PickTarget,
 } from './links'
 import { inputsUnavailableReason, type Blocker } from './readiness'
 import { enumLabel, enumValues } from './sampling'
+import { PictureChoices } from './SlotMenu'
 
 /** What the 输入 section needs from the Studio page besides the canvas itself. */
 export interface InputsWiring {
@@ -30,8 +30,8 @@ export interface InputsWiring {
   /** Engine features of the canvas's target; undefined while reading, null when no engine is usable. */
   features: EngineFeatures | null | undefined
   controlAdapters: readonly ControlAdapterEntry[]
-  pickTarget: PickTarget | null
-  onPickTarget: (target: PickTarget | null) => void
+  /** Link a picture on the board into a role. */
+  onLinkPicture: (role: LinkRole, kind: string | undefined, sourceId: string) => void
   /** Choose picture files and link them into a role (references may take several). */
   onAddFromFile: (role: LinkRole, kind?: string) => void
   onAddFromGallery: (role: LinkRole, kind?: string) => void
@@ -83,7 +83,7 @@ function SourceRow({
   )
 }
 
-/** 添加 → 从画板选择 / 从文件; while picking, a cancel instead. */
+/** 添加 → a picture on the board, 从作品选择 or 从文件. */
 function AddButton({
   canvas,
   role,
@@ -99,14 +99,6 @@ function AddButton({
   wiring: InputsWiring
   disabled?: boolean
 }): React.JSX.Element {
-  const picking = wiring.pickTarget?.canvasId === canvas.id && wiring.pickTarget.role === role && wiring.pickTarget.kind === kind
-  if (picking) {
-    return (
-      <Button tone="secondary" size="xs" onClick={() => wiring.onPickTarget(null)}>
-        取消选择
-      </Button>
-    )
-  }
   return (
     <Popover
       align="end"
@@ -130,14 +122,14 @@ function AddButton({
     >
       {(close) => (
         <>
-          <MenuItem
-            onSelect={() => {
+          <PictureChoices
+            targetId={canvas.id}
+            canvases={wiring.canvases}
+            onChoose={(sourceId) => {
               close()
-              wiring.onPickTarget({ canvasId: canvas.id, role, ...(kind ? { kind } : {}) })
+              wiring.onLinkPicture(role, kind, sourceId)
             }}
-          >
-            从画板选择
-          </MenuItem>
+          />
           <MenuItem
             onSelect={() => {
               close()

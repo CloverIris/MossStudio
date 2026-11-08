@@ -224,18 +224,28 @@ describe('title bar', () => {
     }
     await app.screenshot('small-window-settings')
     const page = await app.open({ scenario: 'ready', route: '/studio', platform: 'linux', size: { width: 1024, height: 640 } })
-    // Both Studio panels give way before the canvas does, and the canvas keeps room for its whole toolbar.
-    const widths = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>('[data-page="/studio"] aside[data-side]')].map((el) =>
-        Math.round(el.getBoundingClientRect().width),
-      ),
-    )
-    for (const width of widths) expect(width).toBeGreaterThanOrEqual(240)
-    expect(await page.locator('main[aria-label="画布"]').evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThanOrEqual(480)
-    const board = (await page.locator('main[aria-label="画布"]').boundingBox())!
-    const toolbar = (await page.getByRole('toolbar', { name: '画布工具' }).boundingBox())!
-    expect(toolbar.x).toBeGreaterThanOrEqual(board.x)
-    expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(board.x + board.width)
+    // The Studio panels on screen give way before the canvas does, and the canvas keeps room for its whole toolbar.
+    // 助手 is closed at first; open, it is held to the same rule.
+    const panelWidths = (): Promise<number[]> =>
+      page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('[data-page="/studio"] aside[data-side]')]
+          .filter((el) => el.checkVisibility())
+          .map((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+    const fits = async (panels: number): Promise<void> => {
+      const widths = await panelWidths()
+      expect(widths).toHaveLength(panels)
+      for (const width of widths) expect(width).toBeGreaterThanOrEqual(240)
+      expect(await page.locator('main[aria-label="画布"]').evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThanOrEqual(480)
+      const board = (await page.locator('main[aria-label="画布"]').boundingBox())!
+      const toolbar = (await page.getByRole('toolbar', { name: '画布工具' }).boundingBox())!
+      expect(toolbar.x).toBeGreaterThanOrEqual(board.x)
+      expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(board.x + board.width)
+    }
+    await fits(1)
+    await page.getByRole('button', { name: '助手' }).click()
+    await expect.poll(async () => (await panelWidths()).length).toBe(2)
+    await fits(2)
     await app.screenshot('small-window-studio')
   })
 

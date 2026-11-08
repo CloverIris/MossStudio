@@ -1,6 +1,7 @@
 import type { ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
 import { controlKindLabel, linksOf, MAX_REFERENCES, wouldCycle, type LinkRole } from './links'
 import { engineUnavailableReason, type Blocker } from './readiness'
+import { boardCanvases, givesPicture } from './runs'
 
 /**
  * Connecting cards by dragging a wire: which cards offer a picture, which
@@ -19,6 +20,11 @@ export function canConnect(canvases: readonly ProjectCanvas[], sourceId: string,
   if (source.kind === 'style' && target.upscale) return { ok: false, reason: '放大会照着原图重画，不用接风格' }
   if (wouldCycle(target, sourceId, canvases)) return { ok: false, reason: '这样会连成一个圈' }
   return { ok: true }
+}
+
+/** The cards on the board whose picture can go into `target`, in board order. */
+export function pictureSources(canvases: readonly ProjectCanvas[], target: ProjectCanvas): ProjectCanvas[] {
+  return boardCanvases(canvases).filter((canvas) => givesPicture(canvas, canvases) && canConnect(canvases, canvas.id, target).ok)
 }
 
 export type LinkMenuEntry =

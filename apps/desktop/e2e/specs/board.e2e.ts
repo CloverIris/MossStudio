@@ -235,6 +235,51 @@ describe('studio board', () => {
     expect(await page.locator('[data-input-thumb]').count()).toBe(1)
   })
 
+  it('every picture shows its handle at rest; once a wire is out, every 画面 that can take it shows its sockets', async () => {
+    const page = await openBoard(app)
+    const handle = page.locator('[data-output-port="img-1"]')
+    expect(await handle.evaluate((el) => getComputedStyle(el).opacity)).toBe('1')
+    // A 画面 with nothing generated has no handle: nothing to send yet.
+    expect(await page.locator('[data-output-port="canvas-1"]').count()).toBe(0)
+    const start = await center(page, '[data-output-port="img-1"]')
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(start.x + 12, start.y + 6, { steps: 2 })
+    // Still beside its own card, and the destination already shows where the picture can go.
+    const zones = page.locator('article[data-canvas-card="canvas-1"] [data-drop-zone]')
+    await expect.poll(() => zones.count()).toBe(3)
+    expect(await page.locator('article[data-canvas-card="canvas-1"] [data-drop-zone][data-active]').count()).toBe(0)
+    // A picture card cannot take a wire: it steps back and offers nothing.
+    expect(await page.locator('article[data-canvas-card="img-2"] [data-drop-zone]').count()).toBe(0)
+    await app.screenshot('board-wire-out-light')
+    await page.mouse.up()
+    await expect.poll(() => page.locator('[data-drop-zones]').count()).toBe(0)
+  })
+
+  it('click the handle, then click a socket; Esc lets go of a wire', async () => {
+    const page = await openBoard(app)
+    await page.locator('[data-output-port="img-1"]').click()
+    // The wire follows the pointer without holding the button.
+    await expect.poll(() => page.locator('[data-wire-draft]').count()).toBe(1)
+    const socket = await center(page, 'article[data-canvas-card="canvas-1"] [data-drop-zone="起始图"]')
+    await page.mouse.move(socket.x, socket.y, { steps: 6 })
+    await expect.poll(() => page.locator('[data-drop-zone="起始图"]').getAttribute('data-active')).toBe('true')
+    // The 画面 previews the picture in that role.
+    expect(await page.locator('article[data-canvas-card="canvas-1"] [data-card-body] img.opacity-60').count()).toBe(1)
+    await app.screenshot('board-wire-snapped-light')
+    await page.mouse.click(socket.x, socket.y)
+    await expect.poll(() => savedInputs(page), { timeout: 10_000 }).toMatchObject({ init: { link: { canvasId: 'img-1' } } })
+    await expect.poll(() => page.locator('[data-wire-draft]').count()).toBe(0)
+    // The click went to the wire, not to the card under it.
+    expect(await page.locator('article[data-canvas-card="canvas-1"]').getAttribute('aria-current')).toBe('true')
+
+    await page.locator('[data-output-port="img-2"]').click()
+    await expect.poll(() => page.locator('[data-wire-draft]').count()).toBe(1)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => page.locator('[data-wire-draft]').count()).toBe(0)
+    expect((await savedInputs(page))?.references).toBeUndefined()
+  })
+
   it('leaves out roles the engine does not support', async () => {
     const page = await openBoard(app, { adapters: true, features: { control: false, references: false } })
     expect(await dragToZone(page, 'img-1', 'canvas-1')).toEqual(['起始图'])
@@ -591,7 +636,7 @@ describe('readable nodes', () => {
     }
   })
 
-  it('adds an input from the ＋: from a file or from the board', async () => {
+  it('adds an input from the ＋: from a file or a picture on the board', async () => {
     const page = await openBoard(app)
     await page.evaluate(() => window.__mock.handle(window.__mock.Ipc.pickImages, () => ['/home/me/pictures/sofa.png']))
     await addInput(page, 'canvas-1', '起始图', '从文件…')
@@ -600,9 +645,8 @@ describe('readable nodes', () => {
     expect(await page.locator(`article[data-canvas-card="${picture}"]`).count()).toBe(1)
     await expect.poll(() => page.locator('[data-wire-chip="input:canvas-1:init:"]').textContent()).toBe('起始图 60%')
     // A linked start picture is no longer offered.
-    await addInput(page, 'canvas-1', '参考图', '从画板选择')
-    await expect.poll(() => page.locator('[data-pick-hint]').textContent()).toContain('参考图')
-    await page.locator('article[data-canvas-card="img-2"] [data-card-body]').click()
+    // The board's pictures are right in the menu, as thumbnails.
+    await addInput(page, 'canvas-1', '参考图', '线稿')
     await expect
       .poll(async () => (await savedInputs(page))?.references?.links.map((link) => link.canvasId), { timeout: 10_000 })
       .toEqual(['img-2'])
