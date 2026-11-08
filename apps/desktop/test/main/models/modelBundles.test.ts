@@ -67,7 +67,12 @@ beforeEach(async () => {
   contentDir.mockReset().mockImplementation(() => releaseDir())
   writeCatalog(releaseDir(), {
     schema_version: 2,
-    models: [...Object.values(components).map((c) => c.model), comfyDit, otherFamily],
+    models: [
+      ...Object.values(components).map((c) => c.model),
+      comfyDit,
+      otherFamily,
+      rawModel({ id: 'moss-runtime-config', repo: 'org/runtime', role: 'support' }),
+    ],
     bundles: [bundle],
   })
   bundles = await import('@main/services/modelBundles')
@@ -108,24 +113,76 @@ describe('prepareModelSource', () => {
     return ids
   }
 
-  it('passes three local files to the engine without copying anything', async () => {
+  const runtimeFiles = {
+    'model_index.json': '{}',
+    'pipeline_moss_image.py': '#',
+    'scheduler/scheduler_config.json': '{}',
+    'transformer/config.json': '{"d":1}',
+    'text_encoder/config.json': '{}',
+    'vae/config.json': '{}',
+    'tokenizer/tokenizer.json': '{}',
+    'tokenizer/tokenizer_config.json': '{}',
+  }
+  const installRuntime = (): void => {
+    installOnDisk(modelsRoot(), { id: 'moss-runtime-config', repo: 'org/runtime', role: 'support' }, SHA, runtimeFiles)
+  }
+  const filesIn = (folder: string): string[] =>
+    (readdirSync(folder, { recursive: true }) as string[]).filter((f) => statSync(join(folder, f)).isFile()).sort()
+
+  it('passes three local files beside the config folder, which holds no weights', async () => {
+    installRuntime()
     const ids = await registerLocal(['dit', 'text_encoder', 'vae'])
+    // The scanned-files model older versions made by themselves is kept as a saved combination.
     const source = await bundles.prepareModelSource(
       { bundleId: 'local-files', dit: ids['dit']!, textEncoder: ids['text_encoder']!, vae: ids['vae']! },
       settings,
     )
     expect(source).toEqual({
-      model: null,
+      model: expect.stringContaining(join(modelsRoot(), 'bundles')),
       ditFile: join(dataRoot(), 'comfy', 'dit', 'dit.safetensors'),
       textEncoderFile: join(dataRoot(), 'comfy', 'text_encoder', 'text_encoder.safetensors'),
       vaeFile: join(dataRoot(), 'comfy', 'vae', 'vae.safetensors'),
     })
-    expect(existsSync(join(modelsRoot(), 'bundles'))).toBe(false)
+    expect(filesIn(source.model)).toEqual(
+      ['clover_model.json', ...Object.keys(runtimeFiles).map((path) => join(...path.split('/')))].sort(),
+    )
   })
 
-  it('refuses a mix of local files and downloaded components', async () => {
+  it('mixes downloaded folders with a single file, which replaces only its own part', async () => {
+    installAll()
+    installRuntime()
     const ids = await registerLocal(['dit'])
-    await expect(bundles.prepareModelSource({ ...binding, dit: ids['dit']! }, settings)).rejects.toThrow(/三个文件/)
+    const source = await bundles.prepareModelSource({ ...binding, dit: ids['dit']! }, settings)
+    expect(source.ditFile).toBe(join(dataRoot(), 'comfy', 'dit', 'dit.safetensors'))
+    expect(source.textEncoderFile).toBeUndefined()
+    expect(source.vaeFile).toBeUndefined()
+    const files = filesIn(source.model)
+    expect(files).toContain(join('text_encoder', 'model.safetensors'))
+    expect(files).toContain(join('vae', 'model.safetensors'))
+    expect(files).toContain(join('transformer', 'config.json'))
+    expect(files).not.toContain(join('transformer', 'model.safetensors'))
+  })
+
+  it('passes a downloaded single file from its download folder', async () => {
+    installAll()
+    installRuntime()
+    installOnDisk(modelsRoot(), { id: 'dit-comfy', repo: 'org/comfy', role: 'dit' }, SHA, {
+      'diffusion_models/dit_int8.safetensors': 'int8',
+    })
+    const source = await bundles.prepareModelSource({ ...binding, dit: 'dit-comfy' }, settings)
+    expect(source.ditFile).toBe(
+      join(cacheDirFor(modelsRoot(), 'dit', 'org/comfy'), 'snapshots', SHA, 'diffusion_models', 'dit_int8.safetensors'),
+    )
+  })
+
+  it('asks for the config folder before a single file can run', async () => {
+    installAll()
+    const ids = await registerLocal(['dit'])
+    await expect(bundles.prepareModelSource({ ...binding, dit: ids['dit']! }, settings)).rejects.toThrow(/moss-runtime-config/)
+  })
+
+  it('refuses a part in the wrong slot', async () => {
+    await expect(bundles.prepareModelSource({ ...binding, dit: 'vae-a' }, settings)).rejects.toThrow('部件不对')
   })
 
   it('rejects an unknown bundle', async () => {

@@ -26,6 +26,7 @@ import {
   startDownload,
   installBundle,
 } from './services/models'
+import { deleteCombination, listCombinations, saveCombination } from './services/modelCombinations'
 import { galleryDetail, listGallery, recordJobOutputs, revealInFolder, trashGalleryItem } from './services/gallery'
 import { activeJobInputPaths, cancelJob, getJob, getJobLogs, inputJob, listJobs, onJobCompleted } from './services/supervisor'
 import { clearDiagnostics, dismissDiagnostic, listDiagnostics } from './services/diagnostics'
@@ -617,6 +618,67 @@ export function registerIpc(): void {
     return result
   })
 
+  // 用电脑上的模型文件…: one folder pick. A complete model folder is added as a
+  // model where it is; otherwise the 主模型, 文本编码器 and VAE files found are
+  // registered (read only, nothing copied) and handed to 自己组合 to fill its slots.
+  handle(Ipc.modelsUseFolder, null, async () => {
+    const picked = await dialog.showOpenDialog({ title: '选择模型文件夹', properties: ['openDirectory'] })
+    if (picked.canceled || !picked.filePaths[0]) return { canceled: true, added: 0, duplicates: 0, slots: null }
+    const root = picked.filePaths[0]
+    const settings = getSettings()
+    const scan = await scanModels(root)
+    if (scan.candidates.some((candidate) => candidate.layout === 'diffusers-folder')) {
+      const imported = await importModelFolder(root, settings)
+      emit(Events.modelsChanged, { reason: 'import', ...imported })
+      return { canceled: false, ...imported, slots: null }
+    }
+    const found = (role: 'dit' | 'text_encoder' | 'vae') =>
+      scan.candidates.filter((candidate) => candidate.role === role && candidate.confidence !== 'low')
+    const groups = [found('dit'), found('text_encoder'), found('vae')]
+    const items = groups.flat().map((candidate) => ({
+      path: candidate.path,
+      role: candidate.role as 'dit' | 'text_encoder' | 'vae',
+      name: candidate.name,
+      relativePath: candidate.relativePath,
+      ...(candidate.layout === 'unknown' ? {} : { layout: candidate.layout }),
+    }))
+    if (!items.length) return { canceled: false, added: 0, duplicates: 0, slots: null }
+    const registered = await registerScannedModels(settings, items)
+    emit(Events.modelsChanged, { reason: 'register', ...registered })
+    const idOf = (path: string | undefined): string | null =>
+      path ? (registered.ids[items.findIndex((item) => item.path === path)] ?? null) : null
+    return {
+      canceled: false,
+      added: registered.added,
+      duplicates: registered.updated,
+      slots: { dit: idOf(groups[0]![0]?.path), textEncoder: idOf(groups[1]![0]?.path), vae: idOf(groups[2]![0]?.path) },
+    }
+  })
+
+  handle(Ipc.modelsSaveCombination, schemas.modelsSaveCombination, async (input) => {
+    const catalog = await getCatalog(getSettings(), true)
+    for (const [key, role] of [
+      ['dit', 'dit'],
+      ['textEncoder', 'text_encoder'],
+      ['vae', 'vae'],
+    ] as const) {
+      const model = catalog.models.find((entry) => entry.id === input.components[key])
+      if (!model || model.role !== role) throw new Error('组合里的部件不对，请重新选择')
+    }
+    const combination = saveCombination(input)
+    invalidateCatalog()
+    emit(Events.modelsChanged, { reason: 'combination', id: combination.id })
+    return combination
+  })
+
+  handle(Ipc.modelsDeleteCombination, schemas.modelsDeleteCombination, async ({ id }) => {
+    if (!listCombinations().some((entry) => entry.id === id)) throw new Error('这个组合已经不在了')
+    deleteCombination(id)
+    invalidateCatalog()
+    emit(Events.modelsChanged, { reason: 'combination', id })
+    return { ok: true }
+  })
+
   handle(Ipc.modelsCleanupEmpty, null, async () => {
     const removed = await cleanupEmptyModelDirs(getSettings())
     emit(Events.modelsChanged, { reason: 'cleanup', removed: removed.length })
@@ -721,7 +783,12 @@ export function registerIpc(): void {
     const result = await dialog.showOpenDialog({
       title,
       properties: kind === 'folder' ? ['openDirectory', 'createDirectory'] : ['openFile'],
-      filters: kind === 'image' ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] : undefined,
+      filters:
+        kind === 'image'
+          ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+          : kind === 'model'
+            ? [{ name: '模型文件', extensions: ['safetensors', 'gguf'] }]
+            : undefined,
     })
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })

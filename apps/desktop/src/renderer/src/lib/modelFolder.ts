@@ -17,3 +17,9 @@ export function importFolderMessage(result: ImportFolderResult): string {
   if (result.added) return `已添加 ${result.added} 个模型文件${result.duplicates ? `，${result.duplicates} 个重复的已跳过` : ''}`
   return '这个文件夹里的文件都已经添加过'
 }
+
+/** What `models:use-folder` (用电脑上的模型文件…) answers: a complete model folder is added as with import-folder. */
+export interface UseFolderResult extends ImportFolderResult {
+  /** Otherwise the registered files for 自己组合's slots, or null when none was found. */
+  slots: { dit: string | null; textEncoder: string | null; vae: string | null } | null
+}

@@ -824,12 +824,14 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     }
     if (input.modelBinding) {
       const source = await prepareModelSource(input.modelBinding, settings)
-      modelPath = source.model ?? undefined
-      if (modelPath) {
-        modelSnapshot = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8'))
-      } else {
-        modelSnapshot = { bundleId: input.modelBinding.bundleId, files: source }
-      }
+      modelPath = source.model
+      const manifest = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8')) as Record<string, unknown>
+      const files = Object.fromEntries(
+        Object.entries({ ditFile: source.ditFile, textEncoderFile: source.textEncoderFile, vaeFile: source.vaeFile }).filter(
+          ([, path]) => path,
+        ),
+      )
+      modelSnapshot = Object.keys(files).length ? { ...manifest, files } : manifest
       modelFiles = {
         ditFile: source.ditFile,
         textEncoderFile: source.textEncoderFile,

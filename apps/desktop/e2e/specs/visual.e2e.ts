@@ -169,7 +169,7 @@ const STOPS: Stop[] = [
     open: { scenario: 'ready', route: '/models' },
     prepare: async (page) => {
       await page.getByRole('button', { name: /高级/ }).click()
-      await page.getByText('单独的部件', { exact: true }).scrollIntoViewIfNeeded()
+      await page.getByText('主模型文件夹', { exact: true }).scrollIntoViewIfNeeded()
     },
   },
   { page: 'models', state: 'remote', open: { scenario: 'remoteHost', route: '/models', settings: { remoteHostsEnabled: true } } },

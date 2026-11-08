@@ -5,7 +5,8 @@ import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { AdapterEntry, Catalog, DownloadTask, ModelEntry, ModelBundle, Settings } from '@shared/types'
-import { localFilesBundle } from '@shared/localBundle'
+import { combinationBundle } from '@shared/modelCombos'
+import { catalogCombinations } from './modelCombinations'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
@@ -42,6 +43,7 @@ import {
 interface RawModel {
   id: string
   name: string
+  choice?: string
   provider: 'hf'
   repo: string
   revision?: string
@@ -376,6 +378,8 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       const entry: ModelEntry = {
         id: model.id,
         name: model.name,
+        // An older remote catalog has no labels: the packaged one names the same ids.
+        choice: model.choice ?? BUILTIN.models.find((item) => item.id === model.id)?.choice,
         provider: model.provider,
         repo: model.repo,
         revision: model.revision ?? 'main',
@@ -518,11 +522,11 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
     })
   }
   catalogRoot = key
-  // A scanned ComfyUI set (DiT + text encoder + VAE registered in place) becomes a
-  // selectable bundle without copying anything; the engine gets the three files.
-  const bundles: ModelBundle[] = [...(raw.bundles ?? BUILTIN.bundles ?? [])]
-  const localBundle = localFilesBundle(models)
-  if (localBundle) bundles.unshift(localBundle)
+  // Combinations saved in 自己组合 are models too, after the catalog's own.
+  const bundles: ModelBundle[] = [
+    ...(raw.bundles ?? BUILTIN.bundles ?? []),
+    ...catalogCombinations(models).map((combination) => combinationBundle(combination, models)),
+  ]
   catalogCache = {
     updatedAt: raw.updated_at ?? new Date().toISOString(),
     models,

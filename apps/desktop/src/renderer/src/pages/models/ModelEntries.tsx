@@ -1,7 +1,9 @@
 import { ArrowDownToLine, Pause, Play, RotateCw, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Ipc } from '@shared/channels'
 import type { ModelBundle, ModelEntry } from '@shared/types'
+import { call } from '../../lib/api'
 import { Button, Card, ConfirmDialog, Group, Pill, ProgressBar, Row, Spinner, useToast } from '../../components/ui'
 import { bundleDeletePlan, bundleTone, sizeText, type BundleView } from './logic'
 import type { ModelLocation } from './useModelLocation'
@@ -177,7 +179,12 @@ export function ModelList({
           <Row
             key={view.bundle.id}
             selected={view.bundle.id === highlightId}
-            title={view.bundle.name}
+            title={
+              <>
+                {view.bundle.name}
+                {view.bundle.custom ? <span className="ml-2 text-caption text-ink-3">我的组合</span> : null}
+              </>
+            }
             description={
               <span className="flex flex-col gap-1.5">
                 <span className="tabular">{describe(view)}</span>
@@ -222,16 +229,33 @@ export function DeleteModelDialog({
   onClose: () => void
 }): React.JSX.Element {
   const toast = useToast()
-  const plan = bundle
+  const full = bundle
     ? bundleDeletePlan(bundle, bundles, models, location.isModelInstalled, location.tasks)
     : { ids: [], bytes: 0, kept: [] }
-  const local = bundle ? plan.ids.every((id) => models.find((model) => model.id === id)?.provider === 'local') : false
+  const providerOf = (id: string) => models.find((model) => model.id === id)?.provider
+  // A combination goes with the downloads only it needs; the person's own files stay in the library.
+  const custom = Boolean(bundle?.custom)
+  const plan = custom
+    ? {
+        ...full,
+        ids: full.ids.filter((id) => providerOf(id) !== 'local'),
+        bytes: full.ids
+          .filter((id) => providerOf(id) !== 'local')
+          .reduce((sum, id) => {
+            const model = models.find((entry) => entry.id === id)
+            return sum + (model?.installedBytes || model?.sizeBytes || 0)
+          }, 0),
+      }
+    : full
+  const local = bundle && !custom ? plan.ids.every((id) => providerOf(id) === 'local') : false
   const keptNames = plan.kept.map((id) => models.find((model) => model.id === id)?.name ?? id)
   const where = location.kind === 'remote' ? `${location.host?.name ?? '远程主机'} 上的` : ''
   const description = !bundle
     ? ''
     : plan.ids.length === 0
-      ? '这个模型的文件都被其他模型共用，删除它不会释放空间。'
+      ? custom
+        ? '只删除这个组合，它用到的文件都会保留。'
+        : '这个模型的文件都被其他模型共用，删除它不会释放空间。'
       : local
         ? '只从模型库里移除，电脑上的原文件不会被删除。'
         : `会删除${where}${plan.ids.length} 个文件，释放约 ${sizeText(plan.bytes)}。` +
@@ -242,7 +266,8 @@ export function DeleteModelDialog({
     if (!bundle) return
     onClose()
     try {
-      await location.removeMany('model', plan.ids)
+      if (plan.ids.length) await location.removeMany('model', plan.ids)
+      if (custom) await call(Ipc.modelsDeleteCombination, { id: bundle.id })
       toast.push(`${local ? '已移除' : '已删除'} ${bundle.name}`, 'success')
     } catch (cause) {
       toast.push(`${local ? '没能移除' : '没能删除'}：${errorText(cause)}`, 'error')
@@ -251,7 +276,7 @@ export function DeleteModelDialog({
 
   return (
     <ConfirmDialog
-      open={Boolean(bundle) && plan.ids.length > 0}
+      open={Boolean(bundle) && (custom || plan.ids.length > 0)}
       title={bundle ? `${local ? '移除' : '删除'}「${bundle.name}」？` : ''}
       description={description}
       confirmLabel={local ? '移除' : '删除'}
