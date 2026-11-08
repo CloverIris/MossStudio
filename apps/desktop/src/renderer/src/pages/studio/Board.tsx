@@ -24,6 +24,7 @@ import {
   type View,
 } from './boardLayout'
 import { CanvasCard, type CardMenuAction, type CardStrip } from './CanvasCard'
+import { useShell } from '../../lib/shell'
 import { newCanvasMenu } from './connect'
 import { isImageFile } from './imageNodes'
 import { cardJobView, type CardJobView } from './jobStatus'
@@ -44,6 +45,7 @@ import { inputSlots, socketY } from './ports'
 import { WireChips, WireLayer } from './WireLayer'
 import { recipes, type Recipe } from './recipes'
 import { upscaleProblem } from './nodes'
+import { plannedRegions } from './canvases'
 import {
   boardCanvases,
   canDropRun,
@@ -157,6 +159,12 @@ export function Board(props: BoardProps): React.JSX.Element {
   const pointer = useRef<{ x: number; y: number } | null>(null)
 
   const selected = props.canvases.find((canvas) => canvas.id === props.selectedCanvasId) ?? null
+  // The assistant's plan waiting for 审批, previewed on the selected 画面.
+  const planSteps = useShell((state) => state.planPreview)
+  const plan = useMemo(
+    () => (planSteps && selected?.kind === 'layout' && !selected.upscale ? plannedRegions(selected, planSteps) : []),
+    [planSteps, selected],
+  )
   // Results folded into a 画面's filmstrip are not cards on the board.
   const folded = useMemo(() => foldedRunIds(props.canvases), [props.canvases])
   const cards = useMemo(() => boardCanvases(props.canvases, folded), [props.canvases, folded])
@@ -682,6 +690,7 @@ export function Board(props: BoardProps): React.JSX.Element {
               tool={props.tool}
               selectedRegionId={props.selectedRegionId}
               editingRegionId={editingRegion?.canvasId === canvas.id ? editingRegion.id : null}
+              planned={isSelected && plan.length ? plan : undefined}
               screenScale={1 / Math.max(0.01, view.zoom)}
               rerun={rerunEligibility(canvas, { busy, submitting: props.submitting, update: props.update })}
               initPicture={initPath ? { path: initPath, resize: init?.resize, size: startPictureSize(canvas, props.canvases) } : null}
@@ -706,7 +715,7 @@ export function Board(props: BoardProps): React.JSX.Element {
               }
               model={canvas.kind === 'layout' ? (props.describeModel?.(canvas) ?? null) : null}
               onChangeDescription={(text) => props.onChangeDescription(canvas.id, text)}
-              ideas={firstCanvas(canvas) ? FIRST_IDEAS : undefined}
+              ideas={firstCanvas(canvas) && !(isSelected && plan.length) ? FIRST_IDEAS : undefined}
               dropZones={
                 offer
                   ? {

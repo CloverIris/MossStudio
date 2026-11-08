@@ -121,6 +121,7 @@ export function RegionLayer({
   interactive,
   selectedRegionId,
   drawing,
+  planned,
   onSelectRegion,
   onChangeLayers,
   onEditRegion,
@@ -130,6 +131,8 @@ export function RegionLayer({
   selectedRegionId: string | null
   /** The box being drawn. */
   drawing: Box4 | null
+  /** Boxes the assistant's waiting plan would add: dashed, until 应用 makes them real. */
+  planned?: readonly ProjectLayer[]
   onSelectRegion: (id: string | null) => void
   onChangeLayers: (update: (layers: ProjectLayer[]) => ProjectLayer[]) => void
   onEditRegion: (id: string) => void
@@ -241,6 +244,29 @@ export function RegionLayer({
           </div>
         )
       })}
+      {planned?.map((layer) => {
+        const words = regionWords(layer)
+        const Icon = KIND_ICON[layer.kind]
+        return (
+          <div
+            key={layer.id}
+            data-planned-region
+            title={`方案 · ${KIND_LABEL[layer.kind]}${words ? ` · ${words}` : ''}`}
+            className="pointer-events-none absolute rounded-[4px] bg-accent-soft outline-[1.5px] outline-dashed outline-accent"
+            style={percentBox(layer.bbox, canvas)}
+          >
+            <span className="absolute left-1 top-1 flex max-w-[calc(100%-8px)] items-center gap-1 rounded-[4px] bg-raised/85 px-1 py-px text-micro text-ink">
+              <Icon className="size-3 shrink-0 text-accent" aria-label={KIND_LABEL[layer.kind]} strokeWidth={1.8} />
+              {words ? <span className="truncate">{words}</span> : null}
+            </span>
+          </div>
+        )
+      })}
+      {planned?.length ? (
+        <span className="pointer-events-none absolute bottom-1.5 right-1.5 rounded-md bg-raised px-1.5 py-px text-micro font-semibold text-accent shadow-float">
+          方案
+        </span>
+      ) : null}
       {drawing ? (
         <div
           aria-hidden="true"

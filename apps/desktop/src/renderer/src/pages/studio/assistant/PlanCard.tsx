@@ -1,92 +1,64 @@
-import { useState } from 'react'
+import { Minus, MoveDiagonal2, Pencil, Plus } from 'lucide-react'
 import type { AgentCard, AgentCardAnswer } from '@shared/agent/cards'
-import { Button, Input } from '../../../components/ui'
+import { Button } from '../../../components/ui'
+
+/** What a step does, at a glance: add, change, size, remove. */
+function StepIcon({ tool }: { tool: string }): React.JSX.Element {
+  const props = { className: 'mt-0.5 size-3.5 shrink-0 text-accent', strokeWidth: 2, 'aria-hidden': true } as const
+  if (tool.includes('remove')) return <Minus {...props} />
+  if (tool.includes('add') || tool.includes('create')) return <Plus {...props} />
+  if (tool.includes('sampler')) return <MoveDiagonal2 {...props} />
+  return <Pencil {...props} />
+}
 
 /**
- * The changes the Agent wants to make, shown before anything happens. Applying
- * runs the steps in the order they were planned; nothing goes back to the model
- * first, so a confirmed plan is applied exactly as it was shown.
+ * The changes the Agent wants to make, waiting for 审批. Its new boxes show on
+ * the selected 画面 meanwhile. Applying runs the steps in the planned order,
+ * without going back to the model, so a plan is applied exactly as shown;
+ * words typed in the input send it back with a change.
  */
 export function PlanCard({
   card,
   busy,
   onAnswer,
+  onReply,
 }: {
   card: AgentCard
   busy: boolean
   onAnswer: (answer: AgentCardAnswer) => void
+  onReply?: () => void
 }): React.JSX.Element {
-  const [adjusting, setAdjusting] = useState(false)
-  const [note, setNote] = useState('')
-  const answered = card.answer !== undefined
   const steps = card.steps ?? []
-
-  const result = card.answer?.applied
-    ? `已应用 ${steps.length} 处改动`
-    : card.answer?.skipped
-      ? '已放弃'
-      : card.answer?.freeText
-        ? '调整意见已发出'
-        : ''
-
   return (
-    <div className="flex flex-col gap-2.5 rounded-lg bg-well px-3 py-3">
+    <div className="flex flex-col gap-2.5" data-card="plan">
       <div className="flex flex-col gap-0.5">
-        <p className="text-ui text-ink">{card.title}</p>
+        <p className="text-control font-medium text-ink">{card.title}</p>
         {card.why ? <p className="text-caption text-ink-2">{card.why}</p> : null}
       </div>
 
-      {steps.length > 1 ? (
-        <ul className="flex max-h-32 flex-col gap-1 overflow-y-auto">
+      {steps.length ? (
+        <ul className="flex max-h-36 flex-col gap-1 overflow-y-auto" aria-label="方案里的改动">
           {steps.map((step, index) => (
             <li key={`${step.tool}-${index}`} className="flex items-start gap-2 text-caption">
-              <span aria-hidden="true" className="mt-[7px] size-1 shrink-0 rounded-full bg-ink-3" />
+              <StepIcon tool={step.tool} />
               <span className="min-w-0 text-ink [overflow-wrap:anywhere]">{step.label}</span>
             </li>
           ))}
         </ul>
       ) : null}
 
-      {answered ? (
-        <p className="text-caption text-ink-2">{result}</p>
-      ) : adjusting ? (
-        <div className="flex flex-col gap-2">
-          <Input
-            aria-label="想改哪里"
-            value={note}
-            disabled={busy}
-            placeholder="想改哪里？说一句就行"
-            onChange={(event) => setNote(event.target.value)}
-          />
-          <div className="flex items-center gap-1">
-            <Button size="xs" tone="ghost" disabled={busy} onClick={() => setAdjusting(false)}>
-              取消
-            </Button>
-            <span className="flex-1" />
-            <Button
-              size="xs"
-              tone="secondary"
-              disabled={busy || !note.trim()}
-              onClick={() => onAnswer({ selected: [], freeText: note.trim() })}
-            >
-              发给助手
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1">
-          <Button size="xs" tone="ghost" disabled={busy} onClick={() => onAnswer({ selected: [], skipped: true })}>
-            放弃
-          </Button>
-          <Button size="xs" tone="ghost" disabled={busy} onClick={() => setAdjusting(true)}>
-            调整
-          </Button>
-          <span className="flex-1" />
-          <Button size="xs" tone="primary" disabled={busy} onClick={() => onAnswer({ selected: [], applied: true })}>
-            应用
-          </Button>
-        </div>
-      )}
+      <div className="flex items-center gap-1">
+        <Button size="xs" tone="ghost" disabled={busy} onClick={() => onAnswer({ selected: [], skipped: true })}>
+          放弃
+        </Button>
+        <Button size="xs" tone="ghost" disabled={busy} onClick={onReply}>
+          调整…
+        </Button>
+        <span className="flex-1" />
+        <Button size="xs" tone="primary" disabled={busy} onClick={() => onAnswer({ selected: [], applied: true })}>
+          应用
+        </Button>
+      </div>
     </div>
   )
 }

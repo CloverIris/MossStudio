@@ -402,6 +402,35 @@ export function addRegion(canvas: ProjectCanvas, input: RegionInput): { canvas: 
 }
 
 /**
+ * The boxes a plan waiting for approval would add to `canvas`, placed exactly
+ * as applying it would place them, so the board can preview them. Ids are
+ * stable (plan-0, plan-1…) so the preview does not flicker as it re-renders.
+ */
+export function plannedRegions(canvas: ProjectCanvas, steps: readonly { tool: string; args: Record<string, unknown> }[]): ProjectLayer[] {
+  let next = canvas
+  const added: ProjectLayer[] = []
+  for (const step of steps) {
+    if (step.tool !== 'studio_add_layer' && step.tool !== 'studio_add_text_layer') continue
+    const args = step.args as { label?: unknown; caption?: unknown; text?: unknown; bbox?: unknown }
+    const box = args.bbox as { x?: unknown; y?: unknown; w?: unknown; h?: unknown } | undefined
+    const bbox =
+      box && [box.x, box.y, box.w, box.h].every((value) => typeof value === 'number' && Number.isFinite(value))
+        ? { x: box.x as number, y: box.y as number, w: box.w as number, h: box.h as number }
+        : undefined
+    const kind: ProjectLayerKind = step.tool === 'studio_add_text_layer' ? 'text' : args.label === 'character' ? 'character' : 'object'
+    const result = addRegion(next, {
+      kind,
+      caption: typeof args.caption === 'string' ? args.caption : '',
+      text: typeof args.text === 'string' ? args.text : undefined,
+      bbox,
+    })
+    next = result.canvas
+    added.push({ ...result.region, id: `plan-${added.length}` })
+  }
+  return added
+}
+
+/**
  * One canvas of a set, ready to add: its own size, description, regions and
  * words, placed where the board has room for it.
  */

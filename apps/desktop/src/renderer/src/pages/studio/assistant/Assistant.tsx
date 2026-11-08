@@ -1,25 +1,26 @@
-import { ArrowUp, HelpCircle, History, Plus, Settings2, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowUp, ChevronDown, Copy, History, PenLine, Plus, RotateCw, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { AgentMode, AiConversationInfo, AiMessage, AiProviderInfo, AiStreamEvent, AiToolCall } from '@shared/ai'
 import { Notice } from '../../../components/common/Notice'
-import { Popover } from '../../../components/common/Popover'
+import { MenuGap, MenuItem, Popover } from '../../../components/common/Popover'
 import {
   Button,
   cn,
   ConfirmDialog,
+  EmptyState,
   FieldLabel,
   IconButton,
   Input,
   MarkdownBody,
   Modal,
   Segmented,
-  Select,
   Spinner,
   useCopyText,
   useToast,
 } from '../../../components/ui'
 import { useUiAnimationEnabled } from '../../../components/motion'
+import { useShell } from '../../../lib/shell'
 import { call, onEvent } from '../../../lib/api'
 import { applyPlan, applyStudioDescription, formatStudioContext, readStudioSnapshot } from '../../../lib/agentTools'
 import { relative } from '../../../lib/format'
@@ -36,10 +37,11 @@ const CONVERSATION_KEY = 'mossstudio.agentConversationId'
 /** Last mode the user picked; a new conversation starts with it. */
 const MODE_KEY = 'mossstudio.agentMode'
 
-const MODE_INTRO: Record<AgentMode, string> = {
-  auto: '直接改画面，只在必须你定的时候问一句。',
-  advanced: '每一步都先给你看，确认后才改；构图和文字可以细调。',
-}
+/** 自主 acts on its own; 审批 turns every write into a plan to approve first. */
+const MODES: Array<{ value: AgentMode; label: string; hint: string }> = [
+  { value: 'auto', label: '自主', hint: '自主：直接执行改动，只在必须由你决定时问一句' },
+  { value: 'advanced', label: '审批', hint: '审批：先给出方案，你批准后才执行' },
+]
 
 function readMode(): AgentMode {
   try {
@@ -76,7 +78,7 @@ interface StreamTrace {
 const SUGGESTIONS = [
   { label: '润色描述', text: '请润色当前画面的描述，让画面更具体、更有氛围，直接写回描述。' },
   { label: '拆成区域', text: '根据当前描述，把画面拆成 2–3 个区域（主体、文字、背景等），用工具加到画面上。' },
-  { label: '写一句描述', text: '帮我为当前画面写一句完整的描述，直接写回描述。' },
+  { label: '做一套分镜', text: '帮我做一套 6 镜的分镜：先问我主题，再一次建好这些画面。' },
 ]
 
 function followUpFor(card: AgentCard, answer: AgentCardAnswer, problems: string[]): string {
@@ -85,14 +87,15 @@ function followUpFor(card: AgentCard, answer: AgentCardAnswer, problems: string[
     const done = `已按方案改了 ${count} 处`
     return problems.length ? `${done}。还差：${problems[0]}` : `${done}，你看一下。`
   }
+  if (card.kind === 'plan' && answer.freeText?.trim()) return `方案先不应用，改一下：${answer.freeText.trim()}`
   if (card.kind === 'confirm') {
     if (answer.freeText?.trim()) return `先改一下：${answer.freeText.trim()}`
     return answer.selected.includes('approve') ? '批准，开始吧。' : '先别做。'
   }
   if (answer.skipped) return `「${card.title}」先跳过，你按默认继续。`
   const labels = (card.options ?? []).filter((option) => answer.selected.includes(option.id)).map((option) => option.label)
-  const lines = [labels.length ? `我选了：${labels.join('、')}` : '就按这个来。']
-  if (answer.freeText?.trim()) lines.push(`补充：${answer.freeText.trim()}`)
+  const lines = [labels.length ? labels.join('、') : answer.freeText?.trim() ? '' : '就按这个来。'].filter(Boolean)
+  if (answer.freeText?.trim()) lines.push(labels.length ? `补充：${answer.freeText.trim()}` : answer.freeText.trim())
   return lines.join('\n')
 }
 
@@ -126,8 +129,7 @@ export function Assistant(): React.JSX.Element {
   const [renameDraft, setRenameDraft] = useState('')
   const [proposal, setProposal] = useState<{ current: string; next: string } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const scrollFrame = useRef(0)
-  const [activeTurn, setActiveTurn] = useState(0)
+  const composer = useRef<HTMLTextAreaElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
   async function refresh(): Promise<void> {
@@ -358,232 +360,210 @@ export function Assistant(): React.JSX.Element {
   /** The card the user still has to answer; it sits in the dock, never in the scroll flow. */
   const pendingCard = useMemo(() => [...messages].reverse().find((message) => message.card && !message.card.answer) ?? null, [messages])
 
-  /** One anchor per user turn, for the rail on the right. */
-  const turns = useMemo(
-    () =>
-      messages.filter((message) => message.role === 'user').map((message, index) => ({ id: message.id, index, label: message.content })),
-    [messages],
-  )
+  // A plan waiting for 审批 shows its boxes on the selected 画面 until it is answered.
+  const setPlanPreview = useShell((state) => state.setPlanPreview)
+  const planSteps = pendingCard?.card?.kind === 'plan' ? pendingCard.card.steps : undefined
+  useEffect(() => {
+    setPlanPreview(planSteps?.length ? planSteps : null)
+  }, [planSteps, setPlanPreview])
+  useEffect(() => () => setPlanPreview(null), [setPlanPreview])
 
-  function jumpToTurn(id: string): void {
-    const container = scrollRef.current
-    if (!container) return
-    const target = container.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
-    target?.scrollIntoView({ block: 'start', behavior: animate ? 'smooth' : 'auto' })
+  /** Typing while a card waits answers it: a question's own words, a plan's or a go/no-go's change of mind. */
+  function submit(): void {
+    const text = input.trim()
+    if (!text) return
+    if (pendingCard && !busy && !answering) {
+      setInput('')
+      void answerCard(pendingCard, { selected: [], freeText: text })
+      return
+    }
+    void sendText(input, true)
   }
 
-  const onScroll = useCallback((): void => {
-    if (scrollFrame.current) return
-    scrollFrame.current = requestAnimationFrame(() => {
-      scrollFrame.current = 0
-      const container = scrollRef.current
-      if (!container) return
-      const edge = container.getBoundingClientRect().top + 32
-      let active = 0
-      turns.forEach((turn, index) => {
-        const element = container.querySelector<HTMLElement>(`[data-message-id="${turn.id}"]`)
-        if (element && element.getBoundingClientRect().top <= edge) active = index
-      })
-      setActiveTurn(active)
-    })
-  }, [turns])
-
-  // Keep the rail in step when the conversation grows or shrinks under it.
-  useEffect(() => {
-    const frame = requestAnimationFrame(onScroll)
-    return () => cancelAnimationFrame(frame)
-  }, [onScroll, messages.length])
+  const composerHint =
+    pendingCard?.card?.kind === 'choice'
+      ? '或者直接写你的答案…'
+      : pendingCard?.card?.kind === 'plan'
+        ? '想改哪里？写给助手…'
+        : pendingCard?.card?.kind === 'confirm'
+          ? '想先改什么？写给助手…'
+          : '说说你想要的画面…'
 
   function renderCard(message: AiMessage): React.JSX.Element | null {
     const card = message.card
     if (!card) return null
     const onAnswer = (answer: AgentCardAnswer): void => void answerCard(message, answer)
-    const shared = { card, busy: busy || answering, onAnswer }
+    const shared = { card, busy: busy || answering, onAnswer, onReply: () => composer.current?.focus() }
     if (card.kind === 'plan') return <PlanCard {...shared} />
     if (card.kind === 'confirm') return <ConfirmCard {...shared} />
     return <ChoiceCard {...shared} />
   }
 
+  const provider = providers.find((item) => item.id === providerId)
+  const answeredLine = (card: AgentCard): string => {
+    if (card.kind === 'plan') {
+      const steps = card.steps?.length ?? 0
+      const result = card.answer?.applied ? `已应用 ${steps} 处改动` : card.answer?.skipped ? '已放弃' : '提了调整'
+      return `${card.title} · ${result}`
+    }
+    return card.answer?.skipped ? `${card.title} · 已跳过` : card.title
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-1">
-        <Select
-          aria-label="语言模型"
-          disabled={busy || providers.length === 0}
-          value={providerId}
-          onChange={(event) => setProviderId(event.target.value)}
-          className="h-8 min-w-0 flex-1 text-ui"
-        >
-          {providers.length === 0 ? <option value="">还没有连接语言模型</option> : null}
-          {providers.map((provider) => (
-            <option key={provider.id} value={provider.id}>
-              {provider.name} · {provider.model}
-            </option>
-          ))}
-        </Select>
-        <IconButton label="新对话" disabled={busy} onClick={newChat}>
-          <Plus className="size-4" strokeWidth={1.6} />
-        </IconButton>
+        {providers.length ? (
+          <Popover
+            align="start"
+            label="语言模型"
+            className="min-w-[220px]"
+            trigger={(menu) => (
+              <button
+                type="button"
+                onClick={menu.toggle}
+                aria-expanded={menu['aria-expanded']}
+                aria-haspopup="menu"
+                aria-label="语言模型"
+                title={provider ? `${provider.name} · ${provider.model}` : undefined}
+                disabled={busy}
+                className="flex h-8 min-w-0 items-center gap-1 rounded-md px-2 text-ui font-semibold text-ink enabled:hover:bg-well disabled:opacity-60"
+              >
+                <span className="truncate">{provider?.name ?? '选择模型'}</span>
+                <ChevronDown className="size-3.5 shrink-0 text-ink-2" strokeWidth={1.6} aria-hidden="true" />
+              </button>
+            )}
+          >
+            {(close) => (
+              <>
+                {providers.map((item) => (
+                  <MenuItem
+                    key={item.id}
+                    selected={item.id === providerId}
+                    onSelect={() => {
+                      setProviderId(item.id)
+                      close()
+                    }}
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate">{item.name}</span>
+                      <span className="truncate text-caption text-ink-2">{item.model}</span>
+                    </span>
+                  </MenuItem>
+                ))}
+                <MenuGap />
+                <MenuItem
+                  onSelect={() => {
+                    close()
+                    setSettingsOpen(true)
+                  }}
+                >
+                  连接设置…
+                </MenuItem>
+              </>
+            )}
+          </Popover>
+        ) : null}
+        <span className="min-w-0 flex-1" />
+        <Segmented<AgentMode> label="助手模式" value={mode} onChange={changeMode} options={MODES} />
         <IconButton label="历史对话" onClick={() => setHistoryOpen(true)}>
           <History className="size-4" strokeWidth={1.6} />
         </IconButton>
-        <IconButton label="连接设置" onClick={() => setSettingsOpen(true)}>
-          <Settings2 className="size-4" strokeWidth={1.6} />
+        <IconButton label="新对话" disabled={busy} onClick={newChat}>
+          <Plus className="size-4" strokeWidth={1.6} />
         </IconButton>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1 pt-1.5">
-        <Segmented<AgentMode>
-          label="助手模式"
-          value={mode}
-          onChange={changeMode}
-          options={[
-            { value: 'auto', label: '自动' },
-            { value: 'advanced', label: '高级' },
-          ]}
-        />
-        <Popover
-          role="dialog"
-          label="两种模式的区别"
-          align="start"
-          className="w-[280px] p-3"
-          trigger={({ toggle, open: _open, ...aria }) => (
-            <IconButton {...aria} label="两种模式的区别" className="size-7 text-ink-2" onClick={toggle}>
-              <HelpCircle className="size-4" strokeWidth={1.6} />
-            </IconButton>
-          )}
-        >
-          {() => (
-            <div className="flex flex-col gap-2 text-caption text-ink-2">
-              <p>
-                <span className="text-ink">自动</span>：助手直接改画面，只在关键处问你一句。
-              </p>
-              <p>
-                <span className="text-ink">高级</span>：改动先做成方案卡，你点“应用”才生效；可以要求它问构图、特征和文字。
-              </p>
-              <p>模式记在对话里，切换后下一轮生效。</p>
-            </div>
-          )}
-        </Popover>
-        <span className="min-w-0 flex-1 truncate text-caption text-ink-2">{MODE_INTRO[mode]}</span>
-      </div>
-
       {providers.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
-          <p className="text-ui text-ink-2">连接一个语言模型服务后，助手可以帮你写描述、把画面拆成区域、调整参数并开始生成。</p>
-          <Button tone="primary" size="md" onClick={() => setSettingsOpen(true)}>
-            连接语言模型
-          </Button>
-          <p className="text-caption text-ink-2">支持 OpenAI、DeepSeek、Anthropic、Gemini 和本地 Ollama。</p>
-        </div>
+        <EmptyState
+          size="section"
+          className="min-h-0 flex-1"
+          title="还没有连接语言模型"
+          description="支持 OpenAI、DeepSeek、Anthropic、Gemini 和本地 Ollama。"
+          action={
+            <Button tone="primary" size="md" onClick={() => setSettingsOpen(true)}>
+              连接语言模型
+            </Button>
+          }
+        />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="relative min-h-0 flex-1">
-            <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto py-4 pr-5">
-              {messages.length === 0 && !streaming ? (
-                <div className="flex flex-col gap-2 text-ui text-ink-2">
-                  <p>助手看得到当前选中的画面。可以直接说：</p>
-                  <p className="text-ink">“做一张三段式的春季海报，标题写 SPRING”</p>
-                  <p className="text-ink">“把描述改得更像电影剧照”</p>
-                  <p className="text-ink">“做一套 6 镜的新年贺卡分镜”</p>
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-4">
+            <div className="flex flex-col gap-4">
+              {messages
+                .filter((message) => message.role !== 'tool')
+                .map((message) =>
+                  message.role === 'user' ? (
+                    <div
+                      key={message.id}
+                      data-message-id={message.id}
+                      className="ml-6 self-end rounded-lg bg-well px-3 py-2 text-ui text-ink"
+                    >
+                      <div className="selectable whitespace-pre-wrap break-words">{message.content}</div>
+                    </div>
+                  ) : (
+                    <div key={message.id} data-message-id={message.id} className="group/msg relative flex flex-col gap-2">
+                      {message.toolCalls?.length ? <ToolTrace entries={traceOf(message.toolCalls)} /> : null}
+                      {message.content ? <MarkdownBody>{message.content}</MarkdownBody> : null}
+                      {/* Answered: the question in one quiet line; the answer is the user's next bubble. */}
+                      {message.card?.answer ? (
+                        <p data-answered-card className="text-caption text-ink-2">
+                          {answeredLine(message.card)}
+                        </p>
+                      ) : null}
+                      {message.content ? (
+                        // A reply's actions float over its corner on hover; they take no room in the conversation.
+                        <div
+                          data-reply-actions
+                          className="pointer-events-none absolute -top-3 right-0 flex items-center gap-0.5 rounded-lg bg-raised p-0.5 opacity-0 shadow-float transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100"
+                        >
+                          <IconButton label="用作描述" className="size-7" onClick={() => proposeDescription(message.content)}>
+                            <PenLine className="size-3.5" strokeWidth={1.6} />
+                          </IconButton>
+                          <IconButton label="复制" className="size-7" onClick={() => void copyText(message.content)}>
+                            <Copy className="size-3.5" strokeWidth={1.6} />
+                          </IconButton>
+                          {message.id === lastAssistantId ? (
+                            <IconButton label="重新回答" className="size-7" disabled={busy} onClick={() => void regenerate()}>
+                              <RotateCw className="size-3.5" strokeWidth={1.6} />
+                            </IconButton>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ),
+                )}
+
+              {streaming ? (
+                <div className="flex flex-col gap-2">
+                  {streamTools.length ? <ToolTrace entries={streamTools} /> : null}
+                  {streamText ? <MarkdownBody>{streamText}</MarkdownBody> : null}
+                  {!streamText && !streamTools.length ? (
+                    <span className="inline-flex items-center gap-2 text-caption text-ink-2">
+                      <Spinner className="size-3.5" />
+                      思考中…
+                    </span>
+                  ) : null}
                 </div>
+              ) : busy ? (
+                <span className="inline-flex items-center gap-2 text-caption text-ink-2">
+                  <Spinner className="size-3.5" />
+                  思考中…
+                </span>
               ) : null}
-
-              <div className="flex flex-col gap-4">
-                {messages
-                  .filter((message) => message.role !== 'tool')
-                  .map((message) =>
-                    message.role === 'user' ? (
-                      <div
-                        key={message.id}
-                        data-message-id={message.id}
-                        className="ml-6 self-end rounded-lg bg-well px-3 py-2 text-ui text-ink"
-                      >
-                        <div className="selectable whitespace-pre-wrap break-words">{message.content}</div>
-                      </div>
-                    ) : (
-                      <div key={message.id} data-message-id={message.id} className="flex flex-col gap-2">
-                        {message.content ? <MarkdownBody>{message.content}</MarkdownBody> : null}
-                        {message.toolCalls?.length ? <ToolTrace entries={traceOf(message.toolCalls)} /> : null}
-                        {message.card?.answer ? renderCard(message) : null}
-                        {message.role === 'assistant' && message.content ? (
-                          <div className="-ml-2 flex items-center gap-0.5">
-                            <Button tone="ghost" size="xs" onClick={() => proposeDescription(message.content)}>
-                              用作描述
-                            </Button>
-                            <Button tone="ghost" size="xs" onClick={() => void copyText(message.content)}>
-                              复制
-                            </Button>
-                            {message.id === lastAssistantId ? (
-                              <Button tone="ghost" size="xs" disabled={busy} onClick={() => void regenerate()}>
-                                重新回答
-                              </Button>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
-                    ),
-                  )}
-
-                {streaming ? (
-                  <div className="flex flex-col gap-2">
-                    {streamText ? <MarkdownBody>{streamText}</MarkdownBody> : null}
-                    {streamTools.length ? <ToolTrace entries={streamTools} /> : null}
-                    {!streamText && !streamTools.length ? (
-                      <span className="inline-flex items-center gap-2 text-caption text-ink-2">
-                        <Spinner className="size-3.5" />
-                        思考中…
-                      </span>
-                    ) : null}
-                  </div>
-                ) : busy ? (
-                  <span className="inline-flex items-center gap-2 text-caption text-ink-2">
-                    <Spinner className="size-3.5" />
-                    思考中…
-                  </span>
-                ) : null}
-              </div>
-              <div ref={endRef} />
             </div>
-
-            {turns.length > 1 ? (
-              <nav aria-label="对话轮次" className="absolute inset-y-4 right-0 flex flex-col items-center justify-center gap-1.5">
-                {turns.map((turn) => (
-                  <button
-                    key={turn.id}
-                    type="button"
-                    title={turn.label.slice(0, 60)}
-                    aria-label={`第 ${turn.index + 1} 轮`}
-                    aria-current={activeTurn === turn.index ? 'true' : undefined}
-                    onClick={() => jumpToTurn(turn.id)}
-                    className={cn(
-                      'w-1.5 rounded-full transition-all',
-                      activeTurn === turn.index ? 'h-3 bg-accent' : 'h-1.5 bg-ink-3/40 enabled:hover:bg-ink-3/70',
-                    )}
-                  />
-                ))}
-              </nav>
-            ) : null}
+            <div ref={endRef} />
           </div>
 
           {pendingCard ? (
-            <div className="shrink-0 pt-2">
-              <div className="relative rounded-xl bg-raised p-1.5">
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'pointer-events-none absolute inset-0 rounded-xl ring-1 ring-accent/40',
-                    animate && 'motion-safe:animate-pulse',
-                  )}
-                />
-                {renderCard(pendingCard)}
-              </div>
+            // The one card waiting for an answer: raised above the input, never lost in the scroll.
+            <div data-pending-card className="mb-2 shrink-0 rounded-xl bg-raised p-3 shadow-float">
+              {renderCard(pendingCard)}
             </div>
           ) : null}
         </div>
       )}
 
-      <div className="flex shrink-0 flex-col gap-2 pt-2">
+      <div className="flex shrink-0 flex-col gap-2">
         {failedText ? (
           <Notice
             tone="danger"
@@ -603,10 +583,11 @@ export function Assistant(): React.JSX.Element {
             上一条没有发出去
           </Notice>
         ) : null}
-        {providers.length ? (
-          <div className="flex flex-wrap gap-1">
+        {providers.length && messages.length === 0 && !busy ? (
+          // Ways to start, only while the conversation is empty.
+          <div className="flex flex-wrap gap-1.5">
             {SUGGESTIONS.map((item) => (
-              <Button key={item.label} size="xs" disabled={busy} onClick={() => void sendText(item.text)}>
+              <Button key={item.label} size="xs" onClick={() => void sendText(item.text)}>
                 {item.label}
               </Button>
             ))}
@@ -614,33 +595,31 @@ export function Assistant(): React.JSX.Element {
         ) : null}
         <div className="relative">
           <textarea
+            ref={composer}
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || event.keyCode === 229) return
               if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
                 event.preventDefault()
-                void sendText(input, true)
+                submit()
               }
             }}
-            rows={3}
+            rows={2}
             aria-label="给助手的消息"
-            placeholder="说说你想要的画面…"
-            className="ui-field ui-textarea min-h-[84px] resize-none pb-10 pr-3"
+            placeholder={composerHint}
+            className="ui-field ui-textarea min-h-[64px] resize-none pb-9 pr-3"
           />
           <IconButton
             label={busy ? '等待助手回复' : '发送'}
             aria-busy={busy}
-            disabled={busy || !input.trim()}
-            onClick={() => void sendText(input, true)}
-            className={cn(
-              'absolute bottom-2 right-2 size-7 bg-ink text-on-ink enabled:hover:bg-ink enabled:hover:text-on-ink enabled:hover:opacity-90',
-            )}
+            disabled={busy || answering || !input.trim()}
+            onClick={submit}
+            className="absolute bottom-2 right-2 size-7 bg-ink text-on-ink enabled:hover:bg-ink enabled:hover:text-on-ink enabled:hover:opacity-90"
           >
             {busy ? <Spinner className="size-3.5" /> : <ArrowUp className="size-4" strokeWidth={1.6} />}
           </IconButton>
         </div>
-        <p className="text-micro text-ink-2">Enter 发送，Shift+Enter 换行</p>
       </div>
 
       <Modal

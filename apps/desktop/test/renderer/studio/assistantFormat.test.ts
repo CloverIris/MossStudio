@@ -14,7 +14,9 @@ describe('studio/assistant format', () => {
     expect(toolDetail(JSON.stringify({ summary: '文字「新年快乐」', problems: [] }))).toBe('文字「新年快乐」')
     expect(toolDetail(JSON.stringify({ summary: '人物「A」', problems: ['先写一句描述'] }))).toBe('人物「A」 · 还差：先写一句描述')
     expect(toolDetail(JSON.stringify({ problems: ['还差这个'] }))).toBe('还差：还差这个')
-    expect(toolDetail(JSON.stringify({ a: 1, b: { c: 2 }, d: 'x', e: 'hidden' }))).toBe('a=1 · b={"c":2} · d=x')
+    // A receipt meant for the model (ids, counts) is not shown as key=value.
+    expect(toolDetail(JSON.stringify({ a: 1, b: { c: 2 }, d: 'x', e: 'hidden' }))).toBe('')
+    expect(toolDetail(JSON.stringify({ written: 12 }))).toBe('')
     expect(toolDetail('not json')).toBe('not json')
     expect(toolDetail('')).toBe('')
   })
@@ -34,14 +36,18 @@ describe('studio/assistant format', () => {
   })
 
   it('clips what is still too long to read', () => {
-    const detail = toolDetail(JSON.stringify({ note: 'x'.repeat(400) }))
+    const detail = toolDetail(JSON.stringify({ summary: 'x'.repeat(400) }))
     expect(detail.length).toBeLessThanOrEqual(121)
     expect(detail.endsWith('…')).toBe(true)
   })
 
-  it('headlines a trace by tool name, or by count', () => {
+  it('headlines a trace with what was done, a repeated step counted, a long run clipped', () => {
     expect(traceHeadline(['studio_read_context'])).toBe('查看画面')
-    expect(traceHeadline(['studio_read_context', 'studio_ask_user'])).toBe('执行了 2 步 · 查看画面 等')
+    expect(traceHeadline(['studio_read_context', 'studio_ask_user'])).toBe('查看画面、问你一句')
+    expect(traceHeadline(['studio_add_layer', 'studio_add_layer', 'studio_add_text_layer'])).toBe('添加区域 ×2、添加文字')
+    expect(traceHeadline(['studio_read_context', 'studio_set_prompt', 'studio_add_layer', 'studio_add_text_layer'])).toBe(
+      '查看画面、改写描述、添加区域等 4 步',
+    )
     expect(traceHeadline([])).toBe('执行中')
   })
 })

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AdapterEntry, JobRecord } from '@shared/types'
 import {
   addRegion,
+  plannedRegions,
   applyJobs,
   canvasFromReuse,
   copyAsLayout,
@@ -465,5 +466,25 @@ describe('studio/canvases review fixes', () => {
     const loaded = migrateCanvases(list.slice(1))
     expect(loaded.find((item) => item.id === 'r')!.inputs).toEqual(frozen)
     expect(loaded.find((item) => item.id === 'a')!.inputs).toBeUndefined()
+  })
+
+  it('previews a waiting plan as the boxes applying it would add, with stable ids', () => {
+    const base = canvas({ width: 200, height: 100, layers: [layer({ id: 'old' })] })
+    const planned = plannedRegions(base, [
+      { tool: 'studio_add_text_layer', args: { caption: '粗体', text: 'SPRING', bbox: { x: 0.1, y: 0.1, w: 0.5, h: 0.2 } } },
+      { tool: 'studio_set_sampler', args: { width: 768 } },
+      { tool: 'studio_add_layer', args: { label: 'character', caption: '女孩' } },
+      { tool: 'studio_add_layer', args: { label: 'object', caption: '花', bbox: { x: 'bad' } } },
+    ])
+    expect(planned.map((item) => [item.id, item.kind, item.caption, item.text])).toEqual([
+      ['plan-0', 'text', '粗体', 'SPRING'],
+      ['plan-1', 'character', '女孩', undefined],
+      ['plan-2', 'object', '花', undefined],
+    ])
+    expect(planned[0]!.bbox).toEqual([20, 10, 120, 30])
+    // No box given (or a broken one): where applying would put it.
+    expect(planned[1]!.bbox).toEqual(addRegion(base, { kind: 'character', caption: '女孩' }).region.bbox)
+    // The canvas itself is untouched.
+    expect(base.layers.map((item) => item.id)).toEqual(['old'])
   })
 })

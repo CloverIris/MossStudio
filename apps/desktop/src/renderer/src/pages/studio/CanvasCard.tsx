@@ -49,6 +49,8 @@ export interface CanvasCardProps {
   dragging: boolean
   tool: BoardTool
   selectedRegionId: string | null
+  /** Boxes the assistant's waiting plan would add, previewed on the face. */
+  planned?: readonly ProjectLayer[]
   /** The region whose words are being typed on its box. */
   editingRegionId?: string | null
   /** Keeps on-card controls (the field on a box) at screen size: 1 / zoom. */
@@ -225,7 +227,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
   const faceIndex = stripItem ? stripItem.output : shown
   const current = outputs[Math.min(faceIndex, Math.max(0, outputs.length - 1))]
   const editable = drawsRegions && selected && !view.active
-  const showRegions = drawsRegions && (selected || outputs.length === 0)
+  const showRegions = drawsRegions && (selected || outputs.length === 0 || Boolean(props.planned?.length))
   const maxThumbs = Math.max(1, Math.floor((width - 116) / 42))
   const preview = view.active ? view.preview : undefined
   // While painting the mask, the start picture shows even over earlier results.
@@ -433,6 +435,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
             interactive={editable && props.tool === 'select'}
             selectedRegionId={props.selectedRegionId}
             drawing={draw.box}
+            planned={props.planned}
             onSelectRegion={props.onSelectRegion}
             onChangeLayers={props.onChangeLayers}
             onEditRegion={props.onEditRegion}

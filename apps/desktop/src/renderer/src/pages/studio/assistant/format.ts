@@ -35,23 +35,23 @@ export function toolDetail(content: string): string {
     if (proposed && typeof proposed === 'object') {
       return clip(typeof proposed.label === 'string' ? `已加入方案：${proposed.label}` : '已加入方案，等你确认', 120)
     }
-    const overview = summarize(parsed)
-    if (overview) return overview
-    return clip(
-      Object.entries(parsed)
-        .slice(0, 3)
-        .map(([key, value]) => `${key}=${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
-        .join(' · '),
-      120,
-    )
+    // Anything else is a receipt for the model (ids, counts); the tool's own name says enough.
+    return summarize(parsed)
   } catch {
     return clip(content, 120)
   }
 }
 
-/** The headline of a trace: one tool by name, several by count. */
+/** The headline of a trace: what was done, in order, a repeated step counted ("添加区域 ×3"). */
 export function traceHeadline(names: readonly string[]): string {
   if (names.length === 0) return '执行中'
-  if (names.length === 1) return toolLabel(names[0]!)
-  return `执行了 ${names.length} 步 · ${toolLabel(names[0]!)} 等`
+  const counted: Array<{ label: string; count: number }> = []
+  for (const name of names) {
+    const label = toolLabel(name)
+    const last = counted[counted.length - 1]
+    if (last?.label === label) last.count += 1
+    else counted.push({ label, count: 1 })
+  }
+  const parts = counted.map((item) => (item.count > 1 ? `${item.label} ×${item.count}` : item.label))
+  return parts.length > 3 ? `${parts.slice(0, 3).join('、')}等 ${names.length} 步` : parts.join('、')
 }

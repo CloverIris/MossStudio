@@ -43,12 +43,12 @@ export function ToolTrace({ entries }: { entries: readonly TraceEntry[] }): Reac
   const detail = entries.length === 1 ? last.detail : undefined
 
   return (
-    <div className="rounded-lg bg-well">
+    <div data-tool-trace>
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-2 text-left text-caption transition-colors enabled:hover:bg-well-strong"
+        className="-mx-1 flex max-w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-caption text-ink-2 transition-colors hover:text-ink"
       >
         {running ? (
           <Spinner className="size-3.5 shrink-0" />
@@ -57,14 +57,14 @@ export function ToolTrace({ entries }: { entries: readonly TraceEntry[] }): Reac
         ) : (
           <Check className="size-3.5 shrink-0 text-ok" aria-hidden="true" strokeWidth={1.6} />
         )}
-        <span className="min-w-0 flex-1 truncate">
-          <span className="text-ink">{traceHeadline(entries.map((entry) => entry.name))}</span>
-          {detail ? <span className="text-ink-2"> · {detail}</span> : null}
+        <span className="min-w-0 truncate">
+          {traceHeadline(entries.map((entry) => entry.name))}
+          {detail ? ` · ${detail}` : null}
         </span>
         <ChevronDown className={cn('size-3.5 shrink-0 text-ink-3 transition-transform', open && 'rotate-180')} strokeWidth={1.6} />
       </button>
       <Collapse open={open}>
-        <div className="flex flex-col gap-1 px-2.5 pb-2">
+        <div className="flex flex-col gap-1 pb-1 pl-5 pt-1">
           {entries.map((entry) => (
             <ToolLine key={entry.id} {...entry} />
           ))}
