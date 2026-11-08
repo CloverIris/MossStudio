@@ -1,6 +1,7 @@
 import type { AdapterEntry, CanvasInputs, JobRecord, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { normalizeCanvasAdapters } from '@shared/adapters'
 import { clampBox } from '../../lib/layout'
+import type { SceneDraft } from '../../lib/agent/types'
 import type { StudioReuseRequest } from '../../lib/studioReuse'
 import { BOARD_GAP, cardRect, cardWidth, imageNodeSize, resultSpot, nextFreeSpot } from './boardLayout'
 import { DEFAULT_NEGATIVE, DEFAULT_QUALITY, DEFAULT_SIZE, clampDimension, isSeedLocked, nextCanvasTitle, qualityPreset } from './defaults'
@@ -311,6 +312,40 @@ export function addRegion(canvas: ProjectCanvas, input: RegionInput): { canvas: 
     : clampBox([width * 0.2, height * 0.2, width * 0.8, height * 0.8], width, height)
   const region = { ...newRegion(input.kind, box, crypto.randomUUID(), input.text), caption: input.caption }
   return { canvas: { ...canvas, layers: [...canvas.layers, region] }, region }
+}
+
+/**
+ * One canvas of a set, ready to add: its own size, description, regions and
+ * words, placed where the board has room for it.
+ */
+export function sceneCanvas(
+  scene: SceneDraft,
+  existing: readonly ProjectCanvas[],
+  settings: CanvasSettings,
+  id: string = crypto.randomUUID(),
+): ProjectCanvas {
+  const placed = createLayoutCanvas(
+    existing,
+    {
+      ...settings,
+      width: clampDimension(scene.width ?? settings.width, settings.width),
+      height: clampDimension(scene.height ?? settings.height, settings.height),
+    },
+    id,
+  )
+  let canvas: ProjectCanvas = {
+    ...placed,
+    title: scene.title.trim(),
+    prompt: scene.prompt.trim(),
+    summary: { ...placed.summary, caption: scene.prompt.trim() },
+  }
+  for (const region of scene.regions ?? []) {
+    canvas = addRegion(canvas, { kind: region.label, caption: region.caption, bbox: region.bbox }).canvas
+  }
+  for (const text of scene.texts ?? []) {
+    canvas = addRegion(canvas, { kind: 'text', caption: text.caption, text: text.text, bbox: text.bbox }).canvas
+  }
+  return canvas
 }
 
 /** Fields a region edit may carry; the box is already in canvas pixels. */

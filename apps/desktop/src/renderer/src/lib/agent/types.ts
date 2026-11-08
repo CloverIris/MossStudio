@@ -32,6 +32,16 @@ export interface AddedLayer {
   index: number
 }
 
+/** One picture of a set the Agent builds in one call. */
+export interface SceneDraft {
+  title: string
+  prompt: string
+  width?: number
+  height?: number
+  regions?: Array<{ label: 'object' | 'character'; caption: string; bbox?: LayerBox }>
+  texts?: Array<{ caption: string; text: string; bbox?: LayerBox }>
+}
+
 /**
  * The renderer owns the Studio state, so tool calls are executed here and the
  * result is handed back to the main process, which relays it to the model.
@@ -52,6 +62,10 @@ export interface StudioToolApi {
   addTextLayer(input: { caption: string; text: string; bbox?: LayerBox }): AddedLayer
   updateLayer(input: { index: number; patch: LayerPatch }): { updated: string; index: number }
   removeLayer(index: number): { removed: string; index: number }
+  /** Build a set of layout canvases in one go; returns their ids so the Agent can refine them. */
+  createScenes(scenes: SceneDraft[]): { created: Array<{ id: string; title: string }> }
+  /** Make another canvas the selected one (the tools edit whatever is selected). */
+  selectCanvas(id: string): { selected: string; title: string }
   generate(prompt?: string): Promise<unknown> | unknown
   /** What still blocks generation on the selected canvas; empty when it can run. */
   problems(): string[]

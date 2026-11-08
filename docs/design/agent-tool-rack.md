@@ -238,7 +238,7 @@ resolveToolset({ mode?, page?, toolsSupported? }) → AgentTool[]
 ```ts
 interface AgentCard {
   id: string
-  kind: 'choice' | 'plan' | 'scenes'
+  kind: 'choice' | 'plan'
   title: string
   /** 为什么问这一句，或者这个方案要干什么。 */
   why?: string

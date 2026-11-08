@@ -1,8 +1,9 @@
-import { AlertCircle, ArrowUp, Check, History, Plus, Settings2, Trash2 } from 'lucide-react'
+import { AlertCircle, ArrowUp, Check, HelpCircle, History, Plus, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
-import type { AiConversationInfo, AiMessage, AiProviderInfo, AiStreamEvent, AiToolCall } from '@shared/ai'
+import type { AgentMode, AiConversationInfo, AiMessage, AiProviderInfo, AiStreamEvent, AiToolCall } from '@shared/ai'
 import { Notice } from '../../../components/common/Notice'
+import { Popover } from '../../../components/common/Popover'
 import {
   Button,
   cn,
@@ -12,6 +13,7 @@ import {
   Input,
   MarkdownBody,
   Modal,
+  Segmented,
   Select,
   Spinner,
   useCopyText,
@@ -19,13 +21,31 @@ import {
 } from '../../../components/ui'
 import { useUiAnimationEnabled } from '../../../components/motion'
 import { call, onEvent } from '../../../lib/api'
-import { applyStudioDescription, formatStudioContext, readStudioSnapshot } from '../../../lib/agentTools'
+import { applyPlan, applyStudioDescription, formatStudioContext, readStudioSnapshot } from '../../../lib/agentTools'
 import { relative } from '../../../lib/format'
+import type { AgentCard, AgentCardAnswer } from '@shared/agent/cards'
+import { ChoiceCard } from './ChoiceCard'
+import { PlanCard } from './PlanCard'
 import { ProviderDialog } from './ProviderDialog'
 import { toolDetail, toolLabel } from './format'
 
 /** Survives unmounts so the chat never loses its place. */
 const CONVERSATION_KEY = 'mossstudio.agentConversationId'
+/** Last mode the user picked; a new conversation starts with it. */
+const MODE_KEY = 'mossstudio.agentMode'
+
+const MODE_INTRO: Record<AgentMode, string> = {
+  auto: '直接改画面，只在必须你定的时候问一句。',
+  advanced: '每一步都先给你看，确认后才改；构图和文字可以细调。',
+}
+
+function readMode(): AgentMode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'advanced' ? 'advanced' : 'auto'
+  } catch {
+    return 'auto'
+  }
+}
 
 function readStored(): string | null {
   try {
@@ -75,6 +95,19 @@ function ToolLine({ status, name, detail }: { status: ToolTrace['status']; name:
   )
 }
 
+function followUpFor(card: AgentCard, answer: AgentCardAnswer, problems: string[]): string {
+  if (answer.applied) {
+    const count = card.steps?.length ?? 0
+    const done = `已按方案改了 ${count} 处`
+    return problems.length ? `${done}。还差：${problems[0]}` : `${done}，你看一下。`
+  }
+  if (answer.skipped) return `「${card.title}」先跳过，你按默认继续。`
+  const labels = (card.options ?? []).filter((option) => answer.selected.includes(option.id)).map((option) => option.label)
+  const lines = [labels.length ? `我选了：${labels.join('、')}` : '就按这个来。']
+  if (answer.freeText?.trim()) lines.push(`补充：${answer.freeText.trim()}`)
+  return lines.join('\n')
+}
+
 /**
  * The Studio assistant. Every message carries the selected canvas as it is at
  * the moment of sending (description and regions), and the assistant changes
@@ -88,9 +121,11 @@ export function Assistant(): React.JSX.Element {
   const [providerId, setProviderId] = useState('')
   const [conversations, setConversations] = useState<AiConversationInfo[]>([])
   const [conversation, setConversation] = useState<AiConversationInfo | null>(null)
+  const [mode, setMode] = useState<AgentMode>(readMode)
   const [messages, setMessages] = useState<AiMessage[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [answering, setAnswering] = useState(false)
   const sending = useRef(false)
   const [failedText, setFailedText] = useState<string | null>(null)
   const [streaming, setStreaming] = useState(false)
@@ -137,6 +172,11 @@ export function Assistant(): React.JSX.Element {
     if (conversation?.id) writeStored(conversation.id)
   }, [conversation?.id])
 
+  // A conversation remembers the mode it was used in; a new one starts with the last pick.
+  useEffect(() => {
+    if (conversation?.mode) setMode(conversation.mode)
+  }, [conversation?.id, conversation?.mode])
+
   useEffect(
     () =>
       onEvent<AiStreamEvent>(Events.aiStream, (event) => {
@@ -180,6 +220,7 @@ export function Assistant(): React.JSX.Element {
       const result = await call<{ reply: string; conversation: AiConversationInfo }>(Ipc.aiChat, {
         providerId,
         conversationId: conversation?.id,
+        mode,
         ...payload,
         // Read at send time: the canvas as it is now, not when the panel rendered.
         context: formatStudioContext(readStudioSnapshot()),
@@ -238,6 +279,16 @@ export function Assistant(): React.JSX.Element {
     setStreamTools([])
   }
 
+  function changeMode(next: AgentMode): void {
+    if (next === mode) return
+    setMode(next)
+    try {
+      localStorage.setItem(MODE_KEY, next)
+    } catch {
+      // Remembering the mode is a convenience only.
+    }
+  }
+
   async function renameConversation(id: string, title: string): Promise<void> {
     setRenamingId(null)
     if (!title.trim()) return
@@ -268,6 +319,29 @@ export function Assistant(): React.JSX.Element {
       return
     }
     setProposal({ current: snapshot.description, next: text.trim() })
+  }
+
+  /**
+   * A confirmed plan is applied here, by the same handlers a direct tool call
+   * would use, before the answer is stored; then the answer becomes the next
+   * user message, which is what continues the conversation.
+   */
+  async function answerCard(message: AiMessage, answer: AgentCardAnswer): Promise<void> {
+    const card = message.card
+    if (!card || !conversation?.id || sending.current || answering) return
+    setAnswering(true)
+    let problems: string[] = []
+    try {
+      if (answer.applied) problems = (await applyPlan(card)).problems
+      const next = await call<AiConversationInfo>(Ipc.aiCardAnswer, { conversationId: conversation.id, messageId: message.id, answer })
+      setConversation(next)
+      setMessages(next.messages)
+      await sendText(followUpFor(card, answer, problems))
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+    } finally {
+      setAnswering(false)
+    }
   }
 
   const lastAssistantId = [...messages].reverse().find((message) => message.role === 'assistant')?.id
@@ -323,6 +397,42 @@ export function Assistant(): React.JSX.Element {
         </IconButton>
       </div>
 
+      <div className="flex shrink-0 items-center gap-1 pt-1.5">
+        <Segmented<AgentMode>
+          label="助手模式"
+          value={mode}
+          onChange={changeMode}
+          options={[
+            { value: 'auto', label: '自动' },
+            { value: 'advanced', label: '高级' },
+          ]}
+        />
+        <Popover
+          role="dialog"
+          label="两种模式的区别"
+          align="start"
+          className="w-[280px] p-3"
+          trigger={({ toggle, open: _open, ...aria }) => (
+            <IconButton {...aria} label="两种模式的区别" className="size-7 text-ink-2" onClick={toggle}>
+              <HelpCircle className="size-4" strokeWidth={1.6} />
+            </IconButton>
+          )}
+        >
+          {() => (
+            <div className="flex flex-col gap-2 text-caption text-ink-2">
+              <p>
+                <span className="text-ink">自动</span>：助手直接改画面，只在关键处问你一句。
+              </p>
+              <p>
+                <span className="text-ink">高级</span>：改动先做成方案卡，你点“应用”才生效；可以要求它问构图、特征和文字。
+              </p>
+              <p>模式记在对话里，切换后下一轮生效。</p>
+            </div>
+          )}
+        </Popover>
+        <span className="min-w-0 flex-1 truncate text-caption text-ink-2">{MODE_INTRO[mode]}</span>
+      </div>
+
       {providers.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
           <p className="text-ui text-ink-2">连接一个语言模型服务后，助手可以帮你写描述、把画面拆成区域、调整参数并开始生成。</p>
@@ -338,7 +448,7 @@ export function Assistant(): React.JSX.Element {
               <p>助手看得到当前选中的画面。可以直接说：</p>
               <p className="text-ink">“做一张三段式的春季海报，标题写 SPRING”</p>
               <p className="text-ink">“把描述改得更像电影剧照”</p>
-              <p className="text-ink">“换成 16:9，精细质量再跑一次”</p>
+              <p className="text-ink">“做一套 6 镜的新年贺卡分镜”</p>
             </div>
           ) : null}
 
@@ -353,6 +463,13 @@ export function Assistant(): React.JSX.Element {
                 ) : (
                   <div key={message.id} className="flex flex-col gap-2">
                     {message.content ? <MarkdownBody>{message.content}</MarkdownBody> : null}
+                    {message.card ? (
+                      message.card.kind === 'plan' ? (
+                        <PlanCard card={message.card} busy={busy || answering} onAnswer={(answer) => void answerCard(message, answer)} />
+                      ) : (
+                        <ChoiceCard card={message.card} busy={busy || answering} onAnswer={(answer) => void answerCard(message, answer)} />
+                      )
+                    ) : null}
                     {message.toolCalls?.length ? renderToolCalls(message.toolCalls) : null}
                     {message.role === 'assistant' && message.content ? (
                       <div className="-ml-2 flex items-center gap-0.5">

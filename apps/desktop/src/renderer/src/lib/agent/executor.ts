@@ -1,5 +1,6 @@
 import type { ZodError } from 'zod'
-import type { AiToolCall, AiToolResult } from '@shared/ai'
+import type { AgentMode, AiToolCall, AiToolResult } from '@shared/ai'
+import { makeCard, type AgentCard, type PlanStep } from '@shared/agent/cards'
 import { toolByName, type AgentTool } from '@shared/agent/registry'
 import { TOOL_SCHEMAS, type ToolArgs, type ToolName } from '@shared/agent/schemas'
 import type { StudioToolApi } from './types'
@@ -38,6 +39,15 @@ type Handler<N extends ToolName> = (args: ToolArgs<N>, api: StudioToolApi) => un
 const HANDLERS: { [N in ToolName]: Handler<N> } = {
   studio_read_context: (_args, api) => api.readContext(),
 
+  studio_select_canvas: ({ id }, api) => api.selectCanvas(id),
+
+  // Asking is a card in the chat, not a blocked tool call: the main process
+  // attaches it to this turn, and the answer arrives as the next user message.
+  studio_ask_user: ({ question, why, multiple, allowFreeText, options }) => ({
+    shown: true,
+    card: makeCard({ kind: 'choice', title: question, why, multiple, allowFreeText, options }),
+  }),
+
   studio_set_prompt: ({ prompt }, api) => api.setPrompt(prompt),
 
   studio_set_sampler: (args, api) => {
@@ -54,6 +64,8 @@ const HANDLERS: { [N in ToolName]: Handler<N> } = {
   studio_remove_layer: ({ index }, api) => api.removeLayer(index),
 
   studio_generate: async ({ prompt }, api) => (await api.generate(prompt)) ?? { queued: true },
+
+  studio_create_scenes: ({ scenes }, api) => api.createScenes(scenes),
 }
 
 function parseArguments(raw: string): Record<string, unknown> {
@@ -118,21 +130,78 @@ function problemsOf(api: StudioToolApi): string[] {
   }
 }
 
-async function dispatch<N extends ToolName>(name: N, raw: Record<string, unknown>, api: StudioToolApi): Promise<AiToolResult> {
+function isToolName(name: string): name is ToolName {
+  return Object.prototype.hasOwnProperty.call(TOOL_SCHEMAS, name)
+}
+
+function errorOf(result: AiToolResult): string {
+  try {
+    return String((JSON.parse(result.content) as { error?: string }).error ?? '没有执行')
+  } catch {
+    return '没有执行'
+  }
+}
+
+/**
+ * The handler table is typed per name; looking one up by a name that is only
+ * known at runtime (a plan step) needs one widening cast, kept here.
+ */
+async function runHandler(name: ToolName, args: unknown, api: StudioToolApi): Promise<unknown> {
+  const handler = HANDLERS[name] as (value: unknown, live: StudioToolApi) => unknown
+  return handler(args, api)
+}
+
+/**
+ * Run the steps of a plan card. Nothing here goes back to the model: the user
+ * confirmed a concrete change, so it is applied by the same handlers a direct
+ * call would use, in the order it was planned.
+ */
+export async function applyPlan(card: AgentCard): Promise<{ applied: number; problems: string[] }> {
+  const api = live
+  if (!api) throw new Error('Studio 尚未就绪，请先在创作页打开一个项目')
+  const steps = card.steps ?? []
+  for (const step of steps) {
+    if (!isToolName(step.tool)) throw new Error(`方案里有未知工具 ${step.tool}`)
+    const tool = toolByName(step.tool)
+    if (!tool) throw new Error(`方案里有未知工具 ${step.tool}`)
+    const blocked = precheck(tool, api)
+    if (blocked) throw new Error(errorOf(blocked))
+    const parsed = TOOL_SCHEMAS[step.tool].safeParse(step.args)
+    if (!parsed.success) throw new Error(explainIssues(parsed.error))
+    await runHandler(step.tool, parsed.data, api)
+  }
+  return { applied: steps.length, problems: problemsOf(api) }
+}
+
+async function dispatch<N extends ToolName>(
+  name: N,
+  raw: Record<string, unknown>,
+  api: StudioToolApi,
+  mode: AgentMode | undefined,
+): Promise<AiToolResult> {
   const parsed = TOOL_SCHEMAS[name].safeParse(raw)
   if (!parsed.success) return fail(explainIssues(parsed.error))
   const tool = toolByName(name)
   // The schema and the handler are looked up by the same name, so the parsed
   // value is this tool's own argument type; TypeScript only sees the union.
   const args = parsed.data as ToolArgs<N>
+  if (mode === 'advanced' && tool && (tool.risk === 'write' || tool.risk === 'run')) {
+    // Hold the write: it becomes one step of the plan card this turn shows.
+    return ok({ proposed: { tool: name, args, label: tool.summarize(args) } satisfies PlanStep })
+  }
   const data = await HANDLERS[name](args, api)
   if (!tool || tool.risk === 'read') return ok(data)
+  if (tool.risk === 'ask') return ok(data, { summary: tool.summarize(args) })
   // Writes and runs report what the canvas still lacks, so the model does not
   // have to call studio_generate just to discover a region is incomplete.
   return ok(data, { summary: tool.summarize(args), problems: problemsOf(api) })
 }
 
-export async function executeStudioTool(call: AiToolCall): Promise<AiToolResult> {
+export interface ExecuteOptions {
+  mode?: AgentMode
+}
+
+export async function executeStudioTool(call: AiToolCall, options: ExecuteOptions = {}): Promise<AiToolResult> {
   const tool = toolByName(call.name)
   if (!tool) return fail(`未知工具 ${call.name}`)
   const api = live
@@ -143,7 +212,7 @@ export async function executeStudioTool(call: AiToolCall): Promise<AiToolResult>
   try {
     const blocked = precheck(tool, api)
     if (blocked) return blocked
-    return await dispatch(tool.name, raw, api)
+    return await dispatch(tool.name, raw, api, options.mode)
   } catch (error) {
     if (error instanceof ToolFailure) return fail(error.message, error.fix)
     return fail(error instanceof Error ? error.message : String(error))

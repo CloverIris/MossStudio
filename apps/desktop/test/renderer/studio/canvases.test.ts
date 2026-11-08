@@ -15,6 +15,7 @@ import {
   reorderLayers,
   resizeBox,
   resizeCanvas,
+  sceneCanvas,
   settingsFrom,
   taskCanvasFor,
 } from '@renderer/pages/studio/canvases'
@@ -155,6 +156,27 @@ describe('studio/canvases regions', () => {
     expect(editLayer(layer({ bbox: [0, 0, 10, 10] }), { bbox: [-20, -20, 500, 500] }, size).bbox).toEqual([0, 0, 100, 100])
     // Only a text region gains words.
     expect(editLayer(layer(), { text: 'ignored' }, size).text).toBeUndefined()
+  })
+
+  it('builds a scene canvas with its own size, description, regions and words', () => {
+    const built = sceneCanvas(
+      {
+        title: ' 封面 ',
+        prompt: ' a spring cover ',
+        width: 512,
+        height: 768,
+        regions: [{ label: 'character', caption: 'hero' }],
+        texts: [{ caption: 'title', text: '春' }],
+      },
+      [],
+      { ...defaultSettings(), width: 1024, height: 1024 },
+    )
+    expect(built).toMatchObject({ kind: 'layout', title: '封面', prompt: 'a spring cover', width: 512, height: 768 })
+    expect(built.summary.caption).toBe('a spring cover')
+    expect(built.layers.map((item) => [item.kind, item.caption, item.text])).toEqual([
+      ['character', 'hero', undefined],
+      ['text', 'title', '春'],
+    ])
   })
 })
 

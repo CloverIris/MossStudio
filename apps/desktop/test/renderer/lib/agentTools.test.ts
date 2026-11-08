@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Events, Ipc } from '@shared/channels'
 import {
+  applyPlan,
   applyStudioDescription,
   executeStudioTool,
   formatStudioContext,
@@ -31,6 +32,10 @@ function api(patch: Partial<StudioToolApi> = {}): StudioToolApi {
     addTextLayer: vi.fn(() => ({ added: 'layer-2', bbox: [0, 0, 1, 1] as [number, number, number, number], index: 2 })),
     updateLayer: vi.fn(() => ({ updated: 'layer-1', index: 1 })),
     removeLayer: vi.fn(() => ({ removed: 'layer-1', index: 1 })),
+    createScenes: vi.fn((scenes: Array<{ title: string }>) => ({
+      created: scenes.map((scene, index) => ({ id: `canvas-${index}`, title: scene.title })),
+    })),
+    selectCanvas: vi.fn((id: string) => ({ selected: id, title: 'Canvas' })),
     generate: vi.fn(async () => ({ queued: true, jobId: 'j' })),
     problems: vi.fn(() => []),
     ...patch,
@@ -108,6 +113,65 @@ describe('lib/agentTools executeStudioTool', () => {
     expect(result.ok).toBe(true)
     expect(tools.addTextLayer).toHaveBeenCalledWith({ caption: 'large gold serif title', text: '新年快乐', bbox: undefined })
     expect(parse(result.content)).toMatchObject({ summary: '文字「新年快乐」' })
+  })
+
+  it('turns a question into a card the chat shows, without touching the canvas', async () => {
+    const tools = api()
+    registerStudioTools(tools)
+    const result = await run('studio_ask_user', {
+      question: '构图用哪种？',
+      why: '这个决定影响整张图',
+      options: [
+        { id: 'a', label: '三分法' },
+        { id: 'b', label: '居中', detail: '更稳' },
+      ],
+    })
+    expect(result.ok).toBe(true)
+    const card = parse(result.content).card as Record<string, unknown>
+    expect(card).toMatchObject({
+      kind: 'choice',
+      title: '构图用哪种？',
+      why: '这个决定影响整张图',
+      options: [
+        { id: 'a', label: '三分法' },
+        { id: 'b', label: '居中', detail: '更稳' },
+      ],
+    })
+    expect(card.id).toMatch(/^card-/)
+    expect(parse(result.content).problems).toBeUndefined()
+    expect(tools.addLayer).not.toHaveBeenCalled()
+    expect(tools.setPrompt).not.toHaveBeenCalled()
+  })
+
+  it('asks without a selected canvas, but never with one option', async () => {
+    registerStudioTools(api({ state: () => ({ hasSelection: false, editable: false }) }))
+    const two = await run('studio_ask_user', {
+      question: '用哪种？',
+      options: [
+        { id: 'a', label: 'A' },
+        { id: 'b', label: 'B' },
+      ],
+    })
+    expect(two.ok).toBe(true)
+    expect((await run('studio_ask_user', { question: 'q', options: [{ id: 'a', label: 'A' }] })).ok).toBe(false)
+  })
+
+  it('builds a set of scenes and switches the selected canvas', async () => {
+    const tools = api()
+    registerStudioTools(tools)
+    const scenes = [
+      { title: '封面', prompt: 'a cover' },
+      { title: '内页', prompt: 'an inside page' },
+    ]
+    const result = await run('studio_create_scenes', { scenes })
+    expect(result.ok).toBe(true)
+    expect(tools.createScenes).toHaveBeenCalledWith(scenes)
+    expect(parse(result.content).created).toEqual([
+      { id: 'canvas-0', title: '封面' },
+      { id: 'canvas-1', title: '内页' },
+    ])
+    await run('studio_select_canvas', { id: 'canvas-1' })
+    expect(tools.selectCanvas).toHaveBeenCalledWith('canvas-1')
   })
 
   it('updates and removes regions by their 1-based index', async () => {
@@ -189,6 +253,86 @@ describe('text regions built by the tools', () => {
     const result = compileCanvasPrompt(built)
     expect(result.ok).toBe(false)
     expect(result.errors).toEqual(['文字区域 1 还没有填写要显示的文字'])
+  })
+})
+
+describe('advanced mode', () => {
+  const planCard = {
+    id: 'card-1',
+    kind: 'plan' as const,
+    title: '改两处',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    steps: [
+      { tool: 'studio_set_prompt', args: { prompt: 'a poster' }, label: '描述' },
+      { tool: 'studio_add_text_layer', args: { caption: 'title', text: '新年' }, label: '文字「新年」' },
+    ],
+  }
+
+  it('holds a write as a plan step instead of changing the canvas', async () => {
+    const tools = api()
+    registerStudioTools(tools)
+    const result = await executeStudioTool(
+      { id: 'c1', name: 'studio_add_text_layer', arguments: JSON.stringify({ caption: 'title', text: '新年' }) },
+      { mode: 'advanced' },
+    )
+    expect(result.ok).toBe(true)
+    expect(parse(result.content)).toEqual({
+      proposed: { tool: 'studio_add_text_layer', args: { caption: 'title', text: '新年' }, label: '文字「新年」' },
+    })
+    expect(tools.addTextLayer).not.toHaveBeenCalled()
+  })
+
+  it('holds a set of scenes as one plan step too', async () => {
+    const tools = api()
+    registerStudioTools(tools)
+    const result = await executeStudioTool(
+      { id: 'c1', name: 'studio_create_scenes', arguments: JSON.stringify({ scenes: [{ title: '封面', prompt: 'a cover' }] }) },
+      { mode: 'advanced' },
+    )
+    const proposed = parse(result.content).proposed as Record<string, unknown>
+    expect(proposed).toMatchObject({ tool: 'studio_create_scenes', label: '新建 1 个画面：封面' })
+    expect(tools.createScenes).not.toHaveBeenCalled()
+  })
+
+  it('still reads and asks in advanced mode', async () => {
+    registerStudioTools(api())
+    const read = await executeStudioTool({ id: 'c1', name: 'studio_read_context', arguments: '' }, { mode: 'advanced' })
+    expect(parse(read.content)).toEqual({ prompt: 'p' })
+    const ask = await executeStudioTool(
+      {
+        id: 'c2',
+        name: 'studio_ask_user',
+        arguments: JSON.stringify({
+          question: 'q',
+          options: [
+            { id: 'a', label: 'A' },
+            { id: 'b', label: 'B' },
+          ],
+        }),
+      },
+      { mode: 'advanced' },
+    )
+    expect(parse(ask.content).card).toMatchObject({ kind: 'choice' })
+  })
+
+  it('applies a plan through the same handlers, in order', async () => {
+    const tools = api()
+    registerStudioTools(tools)
+    expect(await applyPlan(planCard)).toEqual({ applied: 2, problems: [] })
+    expect(tools.setPrompt).toHaveBeenCalledWith('a poster')
+    expect(tools.addTextLayer).toHaveBeenCalledWith({ caption: 'title', text: '新年', bbox: undefined })
+  })
+
+  it('refuses a plan with an unknown tool or with arguments that do not parse', async () => {
+    registerStudioTools(api())
+    await expect(applyPlan({ ...planCard, steps: [{ tool: 'rm_rf', args: {}, label: 'x' }] })).rejects.toThrow('方案里有未知工具')
+    await expect(
+      applyPlan({ ...planCard, steps: [{ tool: 'studio_add_text_layer', args: { caption: 'c' }, label: 'x' }] }),
+    ).rejects.toThrow(/参数不对：text/)
+  })
+
+  it('refuses to apply a plan before the Studio is ready', async () => {
+    await expect(applyPlan(planCard)).rejects.toThrow('Studio 尚未就绪')
   })
 })
 

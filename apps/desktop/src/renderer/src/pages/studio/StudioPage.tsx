@@ -15,7 +15,7 @@ import { useShell } from '../../lib/shell'
 import { useApp } from '../../store'
 import { Assistant } from './assistant/Assistant'
 import { Board, type BoardHandle } from './Board'
-import { addRegion, canvasFromReuse, editLayer, resizeCanvas, settingsFrom, type RegionInput } from './canvases'
+import { addRegion, canvasFromReuse, editLayer, resizeCanvas, sceneCanvas, settingsFrom, type RegionInput } from './canvases'
 import { clampDimension, isSeedLocked, nearestQuality, qualityPreset, SEED_MAX } from './defaults'
 import { InspectorPanel } from './InspectorPanel'
 import type { InputsWiring } from './InputsSection'
@@ -458,6 +458,25 @@ export function StudioPage(): React.JSX.Element {
           layers: item.layers.filter((entry) => entry.id !== layer.id),
         }))
         return { removed: layer.id, index }
+      },
+      createScenes: (scenes) => {
+        const { project: p } = live.current
+        const base = settingsFrom(current())
+        const made: ProjectCanvas[] = []
+        for (const scene of scenes) {
+          made.push(sceneCanvas(scene, [...p.canvasesRef.current, ...made], base))
+        }
+        p.setCanvases([...p.canvasesRef.current, ...made])
+        const last = made[made.length - 1]
+        if (last) p.select(last.id)
+        return { created: made.map((item) => ({ id: item.id, title: item.title })) }
+      },
+      selectCanvas: (id) => {
+        const { project: p } = live.current
+        const canvas = p.canvasesRef.current.find((item) => item.id === id)
+        if (!canvas) throw new Error(`没有这个画面：${id}`)
+        p.select(id)
+        return { selected: id, title: canvas.title }
       },
       generate: async (value) => {
         const canvas = editable()

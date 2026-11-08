@@ -1,6 +1,8 @@
 import { z } from 'zod'
-import type { AiToolDefinition } from '../ai'
+import type { AgentMode, AiToolDefinition } from '../ai'
 import { TOOL_SCHEMAS, type ToolName } from './schemas'
+
+export type { AgentMode }
 
 /**
  * The tool rack: one entry per tool, and the only place that says what a tool
@@ -11,8 +13,6 @@ import { TOOL_SCHEMAS, type ToolName } from './schemas'
  */
 
 export type AgentPack = 'canvas.read' | 'canvas.write' | 'ask' | 'storyboard' | 'library'
-
-export type AgentMode = 'auto' | 'advanced'
 
 /** read: only looks. write: changes the canvas. run: starts a job. ask: asks the user. */
 export type ToolRisk = 'read' | 'write' | 'run' | 'ask'
@@ -55,6 +55,26 @@ export const AGENT_TOOLS: AgentTool[] = [
     description:
       'Read the workbench: the selected Canvas (size, sampler values, description) and every region with its 1-based index, kind, caption, text and box. Call it before changing anything you have not just seen.',
     summarize: () => '当前画面',
+  },
+  {
+    name: 'studio_select_canvas',
+    title: '切换画面',
+    pack: 'canvas.read',
+    risk: 'read',
+    requires: [],
+    description:
+      'Make another Canvas of the project the selected one. Every tool that edits "the selected Canvas" works on it afterwards. Only the selection changes, never the picture.',
+    summarize: (args) => `切到 ${short(text(args.id), 16)}`,
+  },
+  {
+    name: 'studio_ask_user',
+    title: '问你一句',
+    pack: 'ask',
+    risk: 'ask',
+    requires: [],
+    description:
+      'Ask the user one question and show it as a card with 2-5 choices (single or multiple). Use it when the answer decides the picture and you cannot read it from the canvas: composition, character details, sizes, wording. After calling it, stop your turn: the user answers on the card and the next turn continues.',
+    summarize: (args) => `问：${short(text(args.question), 24)}`,
   },
   {
     name: 'studio_set_prompt',
@@ -135,6 +155,20 @@ export const AGENT_TOOLS: AgentTool[] = [
       'Start generating from the selected Canvas exactly as it is now. Returns immediately with a job id; call it once per request and do not wait for the picture. Generation fails while the Canvas still has problems.',
     summarize: () => '按当前画面生成',
   },
+  {
+    name: 'studio_create_scenes',
+    title: '建一套画面',
+    pack: 'storyboard',
+    risk: 'write',
+    requires: [],
+    description:
+      'Build a set of layout Canvases in one go, one per scene, each with its description, regions and words. Use it when the user wants a series, a storyboard or several pictures at once: plan every scene first, then call this once. The result lists the new ids; select one with studio_select_canvas to refine it.',
+    summarize: (args) => {
+      const scenes = Array.isArray(args.scenes) ? (args.scenes as Array<{ title?: unknown }>) : []
+      const titles = scenes.map((scene) => text(scene?.title)).filter(Boolean)
+      return titles.length ? `新建 ${scenes.length} 个画面：${short(titles.slice(0, 3).join('、'), 48)}` : `新建 ${scenes.length} 个画面`
+    },
+  },
 ]
 
 export const AGENT_TOOL_NAMES: readonly ToolName[] = AGENT_TOOLS.map((tool) => tool.name)
@@ -163,16 +197,17 @@ export interface ToolsetInput {
 }
 
 /**
- * Which packs are mounted right now. Auto and advanced mount the same canvas
- * tools; the mode changes how they are applied (see the design doc), not what
- * the model can see. Ask, storyboard and library packs join in later phases.
+ * Which packs are mounted right now. Both modes mount the same canvas and ask
+ * tools; the mode changes how a write is applied (at once, or through a plan
+ * card the user confirms), not what the model can see. The storyboard pack
+ * lands in P4 and mounts on the Studio only.
  */
 export function resolveToolset(input: ToolsetInput = {}): AgentTool[] {
   if (input.toolsSupported === false) return []
   const page = input.page ?? 'studio'
   return AGENT_TOOLS.filter((tool) => {
-    if (tool.pack === 'canvas.read') return true
-    if (tool.pack === 'canvas.write') return page === 'studio'
+    if (tool.pack === 'canvas.read' || tool.pack === 'ask') return true
+    if (tool.pack === 'canvas.write' || tool.pack === 'storyboard') return page === 'studio'
     return false
   })
 }
@@ -183,6 +218,18 @@ export const TOOL_RULES = `How to work:
 - Words in the picture go through studio_add_text_layer: caption describes the lettering (style, weight, colour, placement), text holds exactly the characters to render. Never put the words in caption, and never leave text empty.
 - Objects and characters go through studio_add_layer.
 - Fix a region with studio_update_layer, addressed by its 1-based index from studio_read_context, instead of adding another one; delete it with studio_remove_layer.
+- Ask with studio_ask_user when the picture depends on a choice only the user can make: composition, how a character looks, the exact wording, a size. One question, two to five concrete options. After asking, stop and say in one line what you are waiting for; the answer arrives as the next message.
+- A set of pictures (a series, a storyboard, "一套图") goes through studio_create_scenes: plan every scene, then build them in one call. Use studio_select_canvas to move between the new canvases and refine the ones that need it.
 - Every write result ends with problems: what still blocks generation. Clear them before calling studio_generate.
 - studio_generate returns immediately with a job id; call it once per request and do not wait for the picture.
 - Report the sampler values that were actually used, never values you made up.`
+
+/** How the two modes differ, appended to the base prompt on every turn. */
+export const MODE_RULES: Record<AgentMode, string> = {
+  auto: `The user picked 自动模式. Make the changes yourself and describe them in one or two sentences. Only ask when the answer really decides the picture and you cannot pick a sensible default.`,
+  advanced: `The user picked 高级模式. Every studio_* tool that changes the canvas is shown to them as a plan card and only applied when they confirm it, so:
+- Put related edits in one turn, so the user confirms one plan instead of five.
+- Make the plan concrete: exact captions, exact words, exact sizes. Say what will change in one sentence.
+- If they asked for several pictures or a set, plan all of them before applying anything.
+- Ask with studio_ask_user when a choice would change the result; do not guess on their behalf.`,
+}

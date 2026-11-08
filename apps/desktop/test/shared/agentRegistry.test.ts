@@ -9,7 +9,10 @@ interface JsonSchema {
   minimum?: number
   maximum?: number
   minLength?: number
+  minItems?: number
+  maxItems?: number
   properties?: Record<string, JsonSchema>
+  items?: JsonSchema
   required?: string[]
   additionalProperties?: boolean
   description?: string
@@ -88,10 +91,30 @@ describe('agent tools', () => {
     for (const key of ['x', 'y', 'w', 'h']) expect(bbox.properties![key]!.maximum).toBe(1)
   })
 
+  it('asks through one card with two to five concrete options', () => {
+    const ask = tool('studio_ask_user')
+    expect(ask.required).toEqual(['question', 'options'])
+    expect(ask.properties!.options!.minItems).toBe(2)
+    expect(ask.properties!.options!.maxItems).toBe(5)
+    const option = ask.properties!.options!
+    expect(option.type).toBe('array')
+  })
+
+  it('builds one to twelve scenes, each with its own words', () => {
+    const scenes = tool('studio_create_scenes').properties!.scenes!
+    expect(scenes.minItems).toBe(1)
+    expect(scenes.maxItems).toBe(12)
+    const scene = scenes.items!
+    expect(scene.required).toEqual(['title', 'prompt'])
+    expect(scene.properties!.texts!.items!.required).toEqual(['caption', 'text'])
+    expect(scene.properties!.regions!.items!.properties!.label!.enum).toEqual(['object', 'character'])
+  })
+
   it('summarises a call in the words the chat shows', () => {
     expect(toolByName('studio_add_text_layer')!.summarize({ caption: 'gold', text: '新年快乐' })).toBe('文字「新年快乐」')
     expect(toolByName('studio_add_layer')!.summarize({ label: 'character', caption: 'Luo Tianyi' })).toBe('人物「Luo Tianyi」')
     expect(toolByName('studio_set_sampler')!.summarize({ width: 1024, height: 1024, steps: 8 })).toBe('参数 1024×1024 · 8 步')
+    expect(toolByName('studio_ask_user')!.summarize({ question: '构图用哪种？' })).toBe('问：构图用哪种？')
     expect(toolByName('nothing_here')).toBeUndefined()
   })
 })
@@ -101,10 +124,12 @@ describe('resolveToolset', () => {
     expect(resolveToolset({ toolsSupported: false })).toEqual([])
   })
 
-  it('mounts the canvas tools on the Studio and only reads elsewhere', () => {
+  it('mounts the canvas and ask tools on the Studio, and never the writes elsewhere', () => {
     expect(resolveToolset().map((item) => item.name)).toEqual([...AGENT_TOOL_NAMES])
     expect(resolveToolset({ page: 'studio' })).toHaveLength(AGENT_TOOLS.length)
-    expect(resolveToolset({ page: 'models' }).every((item) => item.pack === 'canvas.read')).toBe(true)
+    const elsewhere = resolveToolset({ page: 'models' })
+    expect(elsewhere.some((item) => item.pack === 'canvas.write')).toBe(false)
+    expect(elsewhere.map((item) => item.name)).toEqual(['studio_read_context', 'studio_select_canvas', 'studio_ask_user'])
   })
 
   it('mounts the same tools in both modes: the mode changes how they apply', () => {

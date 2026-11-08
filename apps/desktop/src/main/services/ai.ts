@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
+  AgentMode,
   AiChatInput,
   AiChatResult,
   AiConversationInfo,
@@ -14,7 +15,8 @@ import type {
   AiToolDefinition,
   AiToolResult,
 } from '@shared/ai'
-import { TOOL_RULES } from '@shared/agent/registry'
+import { agentCardSchema, makeCard, planStepSchema, type AgentCard, type AgentCardAnswer, type PlanStep } from '@shared/agent/cards'
+import { MODE_RULES, TOOL_RULES } from '@shared/agent/registry'
 import { paths } from '../lib/paths'
 
 interface StoredProvider extends AiProviderInfo {
@@ -113,6 +115,54 @@ export function renameConversation(id: string, title: string): AiConversationInf
   conversation.updatedAt = new Date().toISOString()
   save(store)
   return conversation
+}
+
+/** Remember what the user chose on a card the Agent asked. */
+export function answerAgentCard(conversationId: string, messageId: string, answer: AgentCardAnswer): AiConversationInfo {
+  const store = load()
+  const conversation = store.conversations.find((item) => item.id === conversationId)
+  if (!conversation) throw new Error('这段对话已经不在了')
+  const message = conversation.messages.find((item) => item.id === messageId)
+  if (!message?.card) throw new Error('这张卡已经不在了')
+  message.card.answer = answer
+  conversation.updatedAt = new Date().toISOString()
+  save(store)
+  return conversation
+}
+
+/** The card a tool result asks the chat to show, when it carries a well formed one. */
+function cardInResult(result: AiToolResult): AgentCard | null {
+  if (!result.ok) return null
+  try {
+    const body = JSON.parse(result.content) as { card?: unknown }
+    const parsed = agentCardSchema.safeParse(body.card)
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
+}
+
+/** A write the advanced mode held back; it becomes one step of the plan card. */
+function stepInResult(result: AiToolResult): PlanStep | null {
+  if (!result.ok) return null
+  try {
+    const body = JSON.parse(result.content) as { proposed?: unknown }
+    const parsed = planStepSchema.safeParse(body.proposed)
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
+}
+
+/** One card for every write the turn held back, with the model's own words as the reason. */
+function planCardFor(text: string, steps: PlanStep[]): AgentCard {
+  const why = text.trim().slice(0, 300)
+  return makeCard({
+    kind: 'plan',
+    title: steps.length === 1 ? steps[0]!.label : `将改动 ${steps.length} 处`,
+    why: why || undefined,
+    steps,
+  })
 }
 
 const SYSTEM_PROMPT = `You are the agent inside MossStudio, a desktop workbench for the MOSS-Image model.
@@ -493,7 +543,7 @@ export async function chat(
   input: AiChatInput,
   options: {
     emit: (event: AiStreamEvent) => void
-    runTool: (call: AiToolCall) => Promise<AiToolResult>
+    runTool: (call: AiToolCall, mode: AgentMode) => Promise<AiToolResult>
     tools: AiToolDefinition[]
   },
 ): Promise<AiChatResult> {
@@ -510,6 +560,8 @@ export async function chat(
     createdAt: now,
     updatedAt: now,
   }
+  const mode: AgentMode = input.mode ?? conversation.mode ?? 'auto'
+  conversation.mode = mode
 
   if (input.regenerate) {
     // Drop the failed/unsatisfying assistant turn and everything after the last user turn.
@@ -525,7 +577,7 @@ export async function chat(
     ]
   }
 
-  const system = input.context ? `${SYSTEM_PROMPT}\n\n${input.context}` : SYSTEM_PROMPT
+  const system = [SYSTEM_PROMPT, MODE_RULES[mode], input.context].filter(Boolean).join('\n\n')
   const assistantId = `msg-${randomUUID().slice(0, 8)}`
   options.emit({ type: 'start', conversationId: conversation.id, messageId: assistantId })
   let streamed = ''
@@ -550,10 +602,19 @@ export async function chat(
         createdAt: stamp,
         toolCalls,
       })
+      const asking = conversation.messages[conversation.messages.length - 1]
+      let card: AgentCard | null = null
+      const steps: PlanStep[] = []
       for (const call of toolCalls) {
         options.emit({ type: 'tool', conversationId: conversation.id, call })
-        const result = await options.runTool(call)
+        const result = await options.runTool(call, mode)
         options.emit({ type: 'tool-result', conversationId: conversation.id, callId: call.id, result })
+        // A tool may hand back a card to show in the chat; it belongs to the
+        // assistant turn that asked, and survives a restart with it. Writes the
+        // advanced mode held back are collected into one plan instead.
+        card ??= cardInResult(result)
+        const step = stepInResult(result)
+        if (step) steps.push(step)
         conversation.messages.push({
           id: `msg-${randomUUID().slice(0, 8)}`,
           role: 'tool',
@@ -564,6 +625,8 @@ export async function chat(
           error: !result.ok,
         })
       }
+      if (card) asking.card = card
+      else if (steps.length) asking.card = planCardFor(text, steps)
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

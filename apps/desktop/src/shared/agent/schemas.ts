@@ -22,6 +22,28 @@ const box = z
 export const TOOL_SCHEMAS = {
   studio_read_context: z.strictObject({}),
 
+  studio_select_canvas: z.strictObject({
+    id: z.string().trim().min(1).max(80).describe('Canvas id, as listed by studio_read_context.'),
+  }),
+
+  studio_ask_user: z.strictObject({
+    question: z.string().trim().min(1).max(200).describe("The one question, in the user's language."),
+    why: z.string().trim().max(300).optional().describe('One sentence on why this needs the user, shown under the question.'),
+    multiple: z.boolean().optional().describe('True when the user may pick more than one option.'),
+    allowFreeText: z.boolean().optional().describe('True when the user may also type their own answer.'),
+    options: z
+      .array(
+        z.strictObject({
+          id: z.string().trim().min(1).max(40).describe('Short stable id, echoed back in the answer.'),
+          label: z.string().trim().min(1).max(80).describe('What the user reads.'),
+          detail: z.string().trim().max(160).optional().describe('One line under the label: what picking this means.'),
+        }),
+      )
+      .min(2)
+      .max(5)
+      .describe('Two to five concrete choices.'),
+  }),
+
   studio_set_prompt: z.strictObject({
     prompt: z.string().trim().min(1).max(4000).describe('The full description to write.'),
   }),
@@ -78,6 +100,43 @@ export const TOOL_SCHEMAS = {
 
   studio_generate: z.strictObject({
     prompt: z.string().min(1).max(4000).optional().describe('Optional description to write before generating.'),
+  }),
+
+  studio_create_scenes: z.strictObject({
+    scenes: z
+      .array(
+        z.strictObject({
+          title: z.string().trim().min(1).max(60).describe('Short title for this picture, shown on its card.'),
+          prompt: z.string().trim().min(1).max(2000).describe('The full English description of the picture.'),
+          width: z.number().int().min(256).max(2048).optional().describe('Canvas width, a multiple of 16. Defaults to the current one.'),
+          height: z.number().int().min(256).max(2048).optional().describe('Canvas height, a multiple of 16. Defaults to the current one.'),
+          regions: z
+            .array(
+              z.strictObject({
+                label: z.enum(['object', 'character']).describe('Object or character region.'),
+                caption: z.string().trim().min(1).max(600).describe('Short English description of what belongs there.'),
+                bbox: box.optional().describe('Where it sits. Omit to stack it on the others.'),
+              }),
+            )
+            .max(8)
+            .optional()
+            .describe('Objects and characters of this picture.'),
+          texts: z
+            .array(
+              z.strictObject({
+                caption: z.string().trim().min(1).max(600).describe('English description of the lettering style and placement.'),
+                text: z.string().trim().min(1).max(400).describe('Exactly the characters to render.'),
+                bbox: box.optional().describe('Where the words sit.'),
+              }),
+            )
+            .max(6)
+            .optional()
+            .describe('Words that appear in this picture.'),
+        }),
+      )
+      .min(1)
+      .max(12)
+      .describe('One to twelve pictures, in the order they should be made.'),
   }),
 } as const
 
