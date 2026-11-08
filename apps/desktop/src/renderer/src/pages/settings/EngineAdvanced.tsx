@@ -80,6 +80,23 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
           options={TIER_OPTIONS}
         />
       </Row>
+      <Row
+        title="连跑时重新加载引擎"
+        description="一次生成很多张时，权重会逐渐从系统缓存里掉出去，越跑越慢；重新加载会释放显存并把权重读回缓存。每次大约多花几秒。"
+      >
+        <Select
+          aria-label="重新加载引擎的频率"
+          className="w-32"
+          value={String(settings.mossInferRefreshEvery)}
+          onValueChange={(value) => void save({ mossInferRefreshEvery: Number(value) })}
+          options={[
+            { value: '0', label: '不重载' },
+            { value: '5', label: '每 5 张' },
+            { value: '10', label: '每 10 张' },
+            { value: '20', label: '每 20 张' },
+          ]}
+        />
+      </Row>
       {(inventory?.devices ?? []).length > 1 ? (
         <>
           <SubHeading>每块显卡单独设置</SubHeading>

@@ -337,6 +337,7 @@ export const schemas = {
       mossInferServerPath: z.string().max(4096).nullable(),
       mossInferMemoryMode: z.enum(['min_memory', 'balanced', 'max_speed']),
       mossInferTier: z.enum(['reference', 'high', 'turbo']),
+      mossInferRefreshEvery: z.number().int().min(0).max(50),
       mossInferChannel: z.enum(['stable', 'dev']),
       engineDeviceOverrides: z
         .record(z.string().min(1).max(200), z.string().regex(/^(?:(?:cu12|cu13)(?:-sm75|-sm70)?(?:-system-cuda)?|vulkan|hip)$/))

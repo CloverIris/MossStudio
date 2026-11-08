@@ -49,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mossInferServerPath: null,
   mossInferMemoryMode: 'balanced',
   mossInferTier: 'high',
+  mossInferRefreshEvery: 5,
   mossInferChannel: 'stable',
   engineDeviceOverrides: {},
   gpuSelection: 'auto',
@@ -114,6 +115,13 @@ export function getSettings(): Settings {
     // MossInfer 2.0 (server protocol 2) removed the auto tier: load requires
     // reference | high | turbo. Map legacy configs to the recommended default.
     if ((cache.mossInferTier as string) === 'auto') cache.mossInferTier = 'high'
+    if (
+      typeof cache.mossInferRefreshEvery !== 'number' ||
+      !Number.isFinite(cache.mossInferRefreshEvery) ||
+      cache.mossInferRefreshEvery < 0
+    ) {
+      cache.mossInferRefreshEvery = DEFAULT_SETTINGS.mossInferRefreshEvery
+    }
   } catch {
     cache = { ...DEFAULT_SETTINGS }
   }

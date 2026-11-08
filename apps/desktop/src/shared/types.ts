@@ -181,6 +181,8 @@ export interface Settings {
   mossInferServerPath: string | null
   mossInferMemoryMode: 'min_memory' | 'balanced' | 'max_speed'
   mossInferTier: 'reference' | 'high' | 'turbo'
+  /** Restart the engine after this many generations (0 = never) to release GPU memory and re-read the weights. */
+  mossInferRefreshEvery: number
   mossInferChannel: 'stable' | 'dev'
   /** deviceUuid → engine package id (`cu13`, `vulkan`, …) chosen in 设置 › 设备 › 高级; absent = automatic. */
   engineDeviceOverrides: Record<string, string>
