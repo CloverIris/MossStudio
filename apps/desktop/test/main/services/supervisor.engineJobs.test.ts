@@ -42,27 +42,43 @@ vi.mock('@main/services/diagnostics', () => ({ pushDiagnostic: vi.fn() }))
 vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async () => undefined }))
 
 /**
- * While `hold` is set, a job list save waits for it at its first step (making the jobs folder);
- * otherwise everything passes through. `writes` counts the job list writes.
+ * Job list saves seen from the file system. While `hold` is set, a save waits for it at its first step
+ * (making the jobs folder). `fail` makes the next saves fail at that step: 'throw' synchronously, 'reject'
+ * as a rejected promise. `writing` / `maxWriting` count saves between their temp file write and rename.
  */
-const jobListGate = vi.hoisted(() => ({ hold: null as Promise<void> | null, writes: 0 }))
+const jobListGate = vi.hoisted(() => ({
+  hold: null as Promise<void> | null,
+  fail: [] as Array<'throw' | 'reject'>,
+  writing: 0,
+  maxWriting: 0,
+}))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
-  const mkdir = (async (path: Parameters<typeof actual.mkdir>[0], options?: Parameters<typeof actual.mkdir>[1]) => {
-    if (jobListGate.hold && /[\\/]jobs$/.test(String(path))) await jobListGate.hold
+  const locked = (): Error => Object.assign(new Error('EPERM: operation not permitted (locked)'), { code: 'EPERM' })
+  const mkdir = ((path: Parameters<typeof actual.mkdir>[0], options?: Parameters<typeof actual.mkdir>[1]) => {
+    if (/[\\/]jobs$/.test(String(path))) {
+      const failure = jobListGate.fail.shift()
+      if (failure === 'throw') throw locked()
+      if (failure === 'reject') return Promise.reject(locked())
+      if (jobListGate.hold) return jobListGate.hold.then(() => actual.mkdir(path, options))
+    }
     return actual.mkdir(path, options)
   }) as typeof actual.mkdir
-  return { ...actual, mkdir, default: { ...actual, mkdir } }
-})
-vi.mock('@main/services/settings', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@main/services/settings')>()
-  return {
-    ...actual,
-    atomicWriteJson: (file: string, value: unknown) => {
-      if (file.endsWith('jobs.json')) jobListGate.writes += 1
-      actual.atomicWriteJson(file, value)
-    },
-  }
+  const writeFile = (async (file: Parameters<typeof actual.writeFile>[0], ...rest: [never, never?]) => {
+    if (String(file).endsWith('jobs.json.tmp')) {
+      jobListGate.writing += 1
+      jobListGate.maxWriting = Math.max(jobListGate.maxWriting, jobListGate.writing)
+    }
+    return actual.writeFile(file, ...rest)
+  }) as typeof actual.writeFile
+  const rename = (async (from: Parameters<typeof actual.rename>[0], to: Parameters<typeof actual.rename>[1]) => {
+    try {
+      return await actual.rename(from, to)
+    } finally {
+      if (String(from).endsWith('jobs.json.tmp')) jobListGate.writing -= 1
+    }
+  }) as typeof actual.rename
+  return { ...actual, mkdir, writeFile, rename, default: { ...actual, mkdir, writeFile, rename } }
 })
 
 const dataRoot = useTempDataRoot()
@@ -195,7 +211,7 @@ describe('engine jobs: writes the caller does not wait for', () => {
   })
 
   it('settleJobWrites waits for a job list write that is still running', async () => {
-    // Hold every job list save until the test lets it through.
+    // Hold every job list save at its first step until the test lets it through.
     let release!: () => void
     jobListGate.hold = new Promise<void>((resolve) => {
       release = resolve
@@ -216,28 +232,62 @@ describe('engine jobs: writes the caller does not wait for', () => {
 })
 
 describe('engine jobs: the job list on disk', () => {
-  it('is written one save at a time: saves asked for meanwhile become one more write with the newest jobs', async () => {
+  const jobList = (): JobRecord[] | null => {
+    const file = join(dataRoot(), 'jobs', 'jobs.json')
+    return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as JobRecord[]) : null
+  }
+  const ids = (list: Array<{ id: string }> | null): string[] => (list ?? []).map((job) => job.id).sort()
+
+  it('is written one save at a time: saves asked for meanwhile become later writes with the newest jobs', async () => {
     let release!: () => void
     jobListGate.hold = new Promise<void>((resolve) => {
       release = resolve
     })
+    jobListGate.maxWriting = 0
     try {
-      // The first save is held; four more jobs queue up and each asks for a save meanwhile.
+      // Queuing q1 starts a save, held at its first step; q2 to q5 each ask for a save while it is held.
       const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
-      const writesBefore = jobListGate.writes
       for (const prompt of ['q2', 'q3', 'q4', 'q5']) jobs.push(await supervisor.startEngineJob(request(prompt)))
       release()
       await supervisor.settleJobWrites()
-      // The held save, then one more for everything asked during it.
-      expect(jobListGate.writes - writesBefore).toBe(2)
-      const saved = JSON.parse(readFileSync(join(dataRoot(), 'jobs', 'jobs.json'), 'utf8')) as JobRecord[]
-      expect(saved.map((job) => job.id).sort()).toEqual(jobs.map((job) => job.id).sort())
+      expect(jobListGate.maxWriting).toBe(1)
+      expect(ids(jobList())).toEqual(ids(jobs))
       // Written through a temp file and a rename: nothing is left beside it.
       expect(existsSync(join(dataRoot(), 'jobs', 'jobs.json.tmp'))).toBe(false)
     } finally {
       release()
       jobListGate.hold = null
     }
+  })
+
+  it('a save that fails at once does not stop the next change from being written', async () => {
+    jobListGate.fail = ['throw']
+    const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+    // The save for q1 has failed (synchronously, at its first step).
+    await vi.waitFor(() => expect(jobListGate.fail).toEqual([]))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    jobs.push(await supervisor.startEngineJob(request('q2')))
+    // Written by q2's own save, well before the delayed retry.
+    await vi.waitFor(() => expect(ids(jobList())).toEqual(ids(jobs)), { timeout: 1000, interval: 10 })
+  })
+
+  it('a failed save is tried once more a moment later, so the newest jobs are not left behind', async () => {
+    jobListGate.fail = ['reject']
+    const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+    // Nothing else changes: only the retry can write q1.
+    await supervisor.settleJobWrites()
+    expect(ids(jobList())).toEqual(ids(jobs))
+  })
+
+  it('retries once, not forever; the next change writes again', async () => {
+    jobListGate.fail = ['reject', 'reject']
+    const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+    await supervisor.settleJobWrites()
+    expect(jobListGate.fail).toEqual([])
+    expect(jobList()).toBeNull()
+    jobs.push(await supervisor.startEngineJob(request('q2')))
+    await supervisor.settleJobWrites()
+    expect(ids(jobList())).toEqual(ids(jobs))
   })
 })
 
