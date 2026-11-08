@@ -83,6 +83,14 @@ async function savedInputs(page: Page, canvasId = 'canvas-1'): Promise<CanvasInp
 const inputs = (page: Page) => page.locator('[data-inputs-section]')
 const generate = (page: Page) => page.locator('[data-studio-generate]')
 
+/** Open the ＋ beside canvas-1 (pictures are added on the board) and choose an input and how to fill it. */
+async function addInput(page: Page, input: string, how?: string): Promise<void> {
+  await page.locator('article[data-canvas-card="canvas-1"]').hover()
+  await page.locator('[data-input-adder="canvas-1"] button').first().click()
+  await page.getByRole('menuitem', { name: input, exact: true }).click()
+  if (how) await page.getByRole('menuitem', { name: how }).click()
+}
+
 /** Answer the next picture-file dialog with these paths. */
 async function pickFiles(page: Page, paths: string[]): Promise<void> {
   await page.evaluate((files) => window.__mock.handle(window.__mock.Ipc.pickImages, () => files), paths)
@@ -94,8 +102,7 @@ describe('studio inputs', () => {
   it('sets a start picture from a file, changes 重绘幅度, and the job carries the resolved path and strength', async () => {
     const page = await openStudio(app)
     await pickFiles(page, ['/home/me/Pictures/sketch.png'])
-    await inputs(page).getByRole('button', { name: '添加起始图' }).click()
-    await page.getByRole('menuitem', { name: '从文件…' }).click()
+    await addInput(page, '起始图', '从文件…')
 
     // The picture becomes a card on the board, linked as the start picture.
     await expect.poll(() => savedInputs(page).then((value) => value?.init?.strength), { timeout: 10_000 }).toBe(0.6)
@@ -121,20 +128,18 @@ describe('studio inputs', () => {
     await expect.poll(() => savedInputs(page).then((value) => value?.init ?? null), { timeout: 10_000 }).toBeNull()
   })
 
-  it('picks a start picture from the board; Esc cancels picking', async () => {
+  it('links a start picture from the board, shown as thumbnails in the ＋ menu', async () => {
     const page = await openStudio(app)
-    const add = inputs(page).getByRole('button', { name: '添加起始图' })
-    await add.click()
-    await page.getByRole('menuitem', { name: '从画板选择' }).click()
-    await expect.poll(() => inputs(page).getByRole('status').textContent()).toContain('在画板上点一张有图片的卡片')
-    await page.keyboard.press('Escape')
-    await expect.poll(() => inputs(page).getByRole('status').count()).toBe(0)
-
-    await add.click()
-    await page.getByRole('menuitem', { name: '从画板选择' }).click()
-    await page.locator('article[data-canvas-card="img-1"] [data-card-body]').click()
+    await addInput(page, '起始图')
+    const choices = page.locator('[data-picture-choices] [role="menuitem"]')
+    await choices.first().waitFor()
+    const names = await choices.evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')))
+    // Pictures on the board, never the canvas itself.
+    expect(names).toContain('小猫照片')
+    expect(names).not.toContain('画面 1')
+    await page.locator('[data-picture-choices]').getByRole('menuitem', { name: '小猫照片' }).click()
     await expect.poll(() => savedInputs(page).then((value) => value?.init?.link.canvasId), { timeout: 10_000 }).toBe('img-1')
-    // Picking did not move the selection.
+    // Linking did not move the selection.
     expect(await page.locator('article[data-canvas-card="canvas-1"]').getAttribute('aria-current')).toBe('true')
     await expect.poll(() => inputs(page).locator('[data-input-row="起始图"]').getByText('小猫照片').isVisible()).toBe(true)
   })
@@ -166,9 +171,7 @@ describe('studio inputs', () => {
 
   it('points to 模型 when no control adapter is registered', async () => {
     const page = await openStudio(app)
-    const control = page.locator('[data-control-row]')
-    await expect.poll(() => control.getByText('需要控制适配器').isVisible()).toBe(true)
-    await control.getByRole('button', { name: '去添加' }).click()
+    await addInput(page, '控制', '去添加控制适配器')
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/models')
   })
 
@@ -179,17 +182,23 @@ describe('studio inputs', () => {
     await page.getByRole('button', { name: /高级/ }).first().click()
     await page.locator('[data-sampling-section]').waitFor()
     expect(await inputs(page).count()).toBe(0)
+    // Nothing to add on the board either: the card offers no ＋.
+    await page.locator('article[data-canvas-card="canvas-1"]').hover()
+    expect(await page.locator('[data-input-adder="canvas-1"]').count()).toBe(0)
     expect(await page.getByRole('combobox', { name: '采样器' }).count()).toBe(0)
     expect(await page.getByRole('switch', { name: '高清修复' }).count()).toBe(0)
   })
 
-  it('shows inputs disabled with the reason when no engine is usable', async () => {
+  it('offers inputs disabled, with the reason, when no engine is usable', async () => {
     const page = await openStudio(app, { features: null })
-    await expect.poll(() => inputs(page).getByText('没有可用的引擎，暂时不能添加图片').isVisible()).toBe(true)
-    expect(await inputs(page).getByRole('button', { name: '添加起始图' }).isDisabled()).toBe(true)
-    expect(await inputs(page).getByRole('button', { name: '添加参考图' }).isDisabled()).toBe(true)
-    // Every add action is off, including the way to a control adapter.
-    expect(await inputs(page).getByRole('button', { name: '去添加' }).isDisabled()).toBe(true)
+    await page.locator('article[data-canvas-card="canvas-1"]').hover()
+    await page.locator('[data-input-adder="canvas-1"] button').click()
+    // Every input is off, the way to a control adapter included; hovering one says why.
+    for (const name of ['起始图', '控制', '参考图']) {
+      const item = page.getByRole('menuitem', { name: new RegExp(`^${name}`) })
+      expect(await item.isDisabled()).toBe(true)
+      expect(await item.getAttribute('title')).toBe('没有可用的引擎，暂时不能把图片接进来')
+    }
   })
 
   it('sends the 高级 sampling choices; 高清修复 makes the result card the output size', async () => {

@@ -16,7 +16,6 @@ export function ImageCardPanel({
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pt-5">
         <div className="flex flex-col gap-1">
           <h2 className="truncate text-control font-semibold text-ink">{canvas.title}</h2>
-          <p className="text-caption text-ink-2">导入的图片。把它连到画面上，作为起始图、控制图或参考图。</p>
         </div>
         {canvas.imagePath ? (
           <img

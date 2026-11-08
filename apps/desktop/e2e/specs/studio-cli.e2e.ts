@@ -10,7 +10,6 @@ import type { JobParams } from '@shared/types'
 import { settle, useApp, type E2eApp } from '../support/app'
 
 const ENGINE_JOBS = 'http:POST /api/engine-jobs'
-const NOTE = '这台设备用兼容模式引擎，只能文生图：LoRA、起始图、遮罩、控制、参考图、高清修复和更换采样器都不可用。'
 
 async function openStudio(app: E2eApp, options: { lora?: boolean; theme?: 'light' | 'dark' } = {}): Promise<Page> {
   const page = await app.open({ scenario: 'vulkanOnly', route: '/studio', defer: true, theme: options.theme })
@@ -52,9 +51,12 @@ const generate = (page: Page) => page.locator('[data-studio-generate]')
 describe('studio on a 兼容模式 (Vulkan) engine', () => {
   const app = useApp()
 
-  it('shows 文生图 only: no picture inputs, no LoRA picker, no sampler or 高清修复, with one quiet explanation', async () => {
+  it('shows 文生图 only: no picture inputs, no LoRA picker, no sampler or 高清修复, and nothing to explain', async () => {
     const page = await openStudio(app)
-    await expect.poll(() => note(page).textContent()).toBe(NOTE)
+    // Nothing that cannot be used is offered, so there is nothing to explain.
+    await page.locator('article[data-canvas-card]').first().hover()
+    expect(await page.locator('[data-input-adder]').count()).toBe(0)
+    expect(await note(page).count()).toBe(0)
     expect(await page.locator('[data-inputs-section]').count()).toBe(0)
     expect(await page.getByRole('button', { name: '添加起始图' }).count()).toBe(0)
     expect(await page.getByRole('button', { name: '添加参考图' }).count()).toBe(0)
@@ -90,6 +92,10 @@ describe('studio on a 兼容模式 (Vulkan) engine', () => {
     const blocker = page.getByText('兼容模式引擎不支持 LoRA，请移除 LoRA 后再生成')
     await expect.poll(() => blocker.isVisible()).toBe(true)
     expect(await generate(page).isDisabled()).toBe(true)
+    // The LoRA sits in the settings line under the description, which says so.
+    const summary = page.locator('[data-settings-summary]')
+    expect(await summary.textContent()).toContain('LoRA 1')
+    await summary.click()
     expect(await page.locator('[data-adapter-picker]').count()).toBe(0)
     await page.locator('[data-adapter-row]').getByRole('button', { name: /^移除/ }).click()
     await expect.poll(() => blocker.count()).toBe(0)
@@ -99,7 +105,7 @@ describe('studio on a 兼容模式 (Vulkan) engine', () => {
   it('looks right, light and dark', async () => {
     for (const theme of ['light', 'dark'] as const) {
       const page = await openStudio(app, { theme })
-      await expect.poll(() => note(page).isVisible()).toBe(true)
+      await page.locator('article[data-canvas-card]').first().waitFor()
       await app.screenshot(`studio-cli-${theme}`)
     }
   })

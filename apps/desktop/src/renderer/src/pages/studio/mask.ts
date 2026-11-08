@@ -13,13 +13,15 @@ import { engineUnavailableReason, type Blocker } from './readiness'
  * `blockers` (the readiness of the 生成 footer) words the reason when no engine is usable.
  */
 export function maskAvailability(
-  canvas: Pick<ProjectCanvas, 'kind' | 'inputs'> | null,
+  canvas: Pick<ProjectCanvas, 'kind' | 'inputs' | 'upscale'> | null,
   features: EngineFeatures | null | undefined,
   blockers: readonly Blocker[] = [],
 ): { hidden: boolean; enabled: boolean; reason?: string } {
   if (!features) return { hidden: false, enabled: false, reason: engineUnavailableReason(features, blockers, '画遮罩') ?? undefined }
   if (!features.imageInput) return { hidden: true, enabled: false }
   if (!canvas || canvas.kind !== 'layout') return { hidden: false, enabled: false, reason: '先选中一个可编辑的画面' }
+  // A 放大 redraws the whole 原图: no mask.
+  if (canvas.upscale) return { hidden: true, enabled: false }
   if (!canvas.inputs?.init) return { hidden: false, enabled: false, reason: '先给画面连一张起始图，再画遮罩' }
   return { hidden: false, enabled: true }
 }

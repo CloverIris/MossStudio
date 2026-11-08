@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ControlAdapterEntry, EngineFeatures } from '@shared/types'
-import { canConnect, hasPicture, linkMenu } from '@renderer/pages/studio/connect'
+import { canConnect, linkMenu } from '@renderer/pages/studio/connect'
+import { givesPicture } from '@renderer/pages/studio/runs'
 import { canvas } from './fixtures'
 
 const features = (patch: Partial<EngineFeatures> = {}): EngineFeatures => ({
@@ -24,13 +25,15 @@ const adapter: ControlAdapterEntry = {
 }
 const output = { path: '/o/1.png', width: 1024, height: 1024, seed: 1 }
 
-describe('studio/connect hasPicture', () => {
+describe('studio/runs givesPicture', () => {
   it('offers an output port only once a card has a picture', () => {
-    expect(hasPicture(canvas({ kind: 'image', imagePath: '/p.png' }))).toBe(true)
-    expect(hasPicture(canvas({ kind: 'result', outputs: [output] }))).toBe(true)
-    expect(hasPicture(canvas({ kind: 'layout', outputs: [output] }))).toBe(true)
-    expect(hasPicture(canvas({ kind: 'layout' }))).toBe(false)
-    expect(hasPicture(canvas({ kind: 'result', outputs: [] }))).toBe(false)
+    const has = (item: ReturnType<typeof canvas>) => givesPicture(item, [item])
+    expect(has(canvas({ kind: 'image', imagePath: '/p.png' }))).toBe(true)
+    expect(has(canvas({ kind: 'result', outputs: [output] }))).toBe(true)
+    // An older 画面 whose first run rendered on itself.
+    expect(has(canvas({ kind: 'layout', outputs: [output] }))).toBe(true)
+    expect(has(canvas({ kind: 'layout' }))).toBe(false)
+    expect(has(canvas({ kind: 'result', outputs: [] }))).toBe(false)
   })
 })
 

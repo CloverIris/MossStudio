@@ -121,7 +121,8 @@ const STOPS: Stop[] = [
     open: { scenario: 'ready', route: '/studio' },
     seed: seedStudio,
     prepare: async (page) => {
-      await page.locator('article[data-canvas-card="c2"] footer').getByRole('button', { name: '第 2 张' }).click()
+      // The run is in 画面 1's filmstrip (the newest pictures in view): double-click one to open it.
+      await page.locator('article[data-canvas-card="c1"] footer').getByRole('button', { name: '第 3 张' }).dblclick()
     },
   },
   {

@@ -17,13 +17,12 @@ import {
   patchInit,
   patchReferences,
   removeLink,
-  roleLabel,
   setControlAdapter,
   type LinkRole,
-  type PickTarget,
 } from './links'
 import { inputsUnavailableReason, type Blocker } from './readiness'
 import { enumLabel, enumValues } from './sampling'
+import { PictureChoices } from './SlotMenu'
 
 /** What the 输入 section needs from the Studio page besides the canvas itself. */
 export interface InputsWiring {
@@ -31,10 +30,11 @@ export interface InputsWiring {
   /** Engine features of the canvas's target; undefined while reading, null when no engine is usable. */
   features: EngineFeatures | null | undefined
   controlAdapters: readonly ControlAdapterEntry[]
-  pickTarget: PickTarget | null
-  onPickTarget: (target: PickTarget | null) => void
+  /** Link a picture on the board into a role. */
+  onLinkPicture: (role: LinkRole, kind: string | undefined, sourceId: string) => void
   /** Choose picture files and link them into a role (references may take several). */
   onAddFromFile: (role: LinkRole, kind?: string) => void
+  onAddFromGallery: (role: LinkRole, kind?: string) => void
   maskTool: boolean
   onToggleMask: () => void
   onNavigate: (to: string) => void
@@ -83,7 +83,7 @@ function SourceRow({
   )
 }
 
-/** 添加 → 从画板选择 / 从文件; while picking, a cancel instead. */
+/** 添加 → a picture on the board, 从作品选择 or 从文件. */
 function AddButton({
   canvas,
   role,
@@ -99,14 +99,6 @@ function AddButton({
   wiring: InputsWiring
   disabled?: boolean
 }): React.JSX.Element {
-  const picking = wiring.pickTarget?.canvasId === canvas.id && wiring.pickTarget.role === role && wiring.pickTarget.kind === kind
-  if (picking) {
-    return (
-      <Button tone="secondary" size="xs" onClick={() => wiring.onPickTarget(null)}>
-        取消选择
-      </Button>
-    )
-  }
   return (
     <Popover
       align="end"
@@ -130,13 +122,21 @@ function AddButton({
     >
       {(close) => (
         <>
+          <PictureChoices
+            targetId={canvas.id}
+            canvases={wiring.canvases}
+            onChoose={(sourceId) => {
+              close()
+              wiring.onLinkPicture(role, kind, sourceId)
+            }}
+          />
           <MenuItem
             onSelect={() => {
               close()
-              wiring.onPickTarget({ canvasId: canvas.id, role, ...(kind ? { kind } : {}) })
+              wiring.onAddFromGallery(role, kind)
             }}
           >
-            从画板选择
+            从作品选择
           </MenuItem>
           <MenuItem
             onSelect={() => {
@@ -173,15 +173,17 @@ export function InputsSection({
   const inputs = canvas.inputs
   const known = Boolean(features)
   const unavailable = inputsUnavailableReason(features, blockers)
-  // A row stays visible while it holds something, so it can always be removed.
-  const showInit = !known || features!.imageInput || Boolean(inputs?.init)
-  const showControl = !known || features!.control || Boolean(inputs?.control)
-  const showReferences = !known || features!.references || Boolean(inputs?.references?.links.length)
-  // A CLI engine (兼容模式 / AMD 原生) only does text to image: say so quietly where the inputs would be.
-  const cliNote = features?.cli ? <Notice data-cli-engine-note>{cliEngineNote(features.cli)}</Notice> : null
-  if (!showInit && !showControl && !showReferences) return cliNote
+  // Only what is linked shows here (pictures are added on the board, with the card's ＋).
+  const showInit = Boolean(inputs?.init)
+  const showControl = Boolean(inputs?.control)
+  const showReferences = Boolean(inputs?.references?.links.length)
+  // A CLI engine (兼容模式 / AMD 原生) only does text to image: said where linked inputs would be.
+  const cliNote =
+    features?.cli && (showInit || showControl || showReferences) ? (
+      <Notice data-cli-engine-note>{cliEngineNote(features.cli)}</Notice>
+    ) : null
+  if (!showInit && !showControl && !showReferences) return null
 
-  const picking = wiring.pickTarget?.canvasId === canvas.id ? wiring.pickTarget : null
   const adapter = inputs?.control ? wiring.controlAdapters.find((item) => item.id === inputs.control!.adapterId) : undefined
   const controlKinds = adapter
     ? [
@@ -199,12 +201,6 @@ export function InputsSection({
       {features === undefined ? <LoadingRow label={unavailable ?? undefined} className="py-0 text-caption" /> : null}
       {features === null && unavailable ? <Notice>{unavailable}</Notice> : null}
       {cliNote}
-      {picking ? (
-        <Notice>
-          在画板上点一张有图片的卡片作为
-          {picking.role === 'control' ? `控制图 · ${controlKindLabel(picking.kind ?? '')}` : roleLabel(picking.role)}，按 Esc 取消
-        </Notice>
-      ) : null}
 
       {showInit ? (
         <div className="flex flex-col gap-1.5">
@@ -226,16 +222,13 @@ export function InputsSection({
               />
             </SourceRow>
           ) : (
-            <SlotHeader title="起始图" hint="从一张图开始改">
+            <SlotHeader title="起始图">
               <AddButton canvas={canvas} role="init" label="起始图" wiring={wiring} disabled={disabled} />
             </SlotHeader>
           )}
           {inputs?.init && (!known || features!.imageInput) ? (
             <div className="flex items-center justify-between gap-2 px-2" data-mask-row>
-              <span
-                className="flex min-w-0 flex-1 items-baseline gap-2"
-                title={inputs.mask ? '只重画涂过的地方' : '没有遮罩时整张图都会重画'}
-              >
+              <span className="flex min-w-0 flex-1 items-baseline gap-2">
                 <span className="shrink-0 text-ui text-ink">遮罩</span>
                 <span className="truncate text-caption text-ink-2">{inputs.mask ? '已画' : '未画'}</span>
               </span>
@@ -251,7 +244,7 @@ export function InputsSection({
 
       {showControl ? (
         <div className="flex flex-col gap-1.5" data-control-row>
-          <SlotHeader title="控制" hint={noAdapters ? '需要控制适配器' : '按深度、边缘或姿态引导构图'}>
+          <SlotHeader title="控制">
             {noAdapters ? (
               <Button tone="ghost" size="xs" className="-mr-2" disabled={disabled} onClick={() => wiring.onNavigate('/models')}>
                 <Plus className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
@@ -317,7 +310,7 @@ export function InputsSection({
 
       {showReferences ? (
         <div className="flex flex-col gap-1.5" data-references-row>
-          <SlotHeader title="参考图" hint={referenceLinks.length ? `${referenceLinks.length} / ${MAX_REFERENCES}` : '让结果参考这些图'}>
+          <SlotHeader title="参考图" hint={`${referenceLinks.length} / ${MAX_REFERENCES}`}>
             {referenceLinks.length < MAX_REFERENCES ? (
               <AddButton canvas={canvas} role="reference" label="参考图" wiring={wiring} disabled={disabled} />
             ) : null}

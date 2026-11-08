@@ -67,22 +67,33 @@ describe('studio/canvases creation', () => {
 })
 
 describe('studio/canvases taskCanvasFor', () => {
-  it('runs a fresh layout canvas in place', () => {
+  it('gives even the first run of a layout canvas its own result, which joins the filmstrip', () => {
     const source = canvas({ prompt: 'x' })
-    const result = taskCanvasFor(source, [source], 'unused')
-    expect(result.taskId).toBe('c1')
-    expect(result.canvases).toHaveLength(1)
-    expect(result.canvases[0]).toMatchObject({ jobState: 'starting', outputs: [] })
-  })
-
-  it('keeps earlier pictures: a re-run gets its own result card under the source', () => {
-    const source = canvas({ prompt: 'x', outputs: [{ path: '/o.png', width: 1, height: 1, seed: 1 }] })
     const result = taskCanvasFor(source, [source], 'task')
     expect(result.taskId).toBe('task')
     expect(result.canvases).toHaveLength(2)
     expect(result.canvases[0]).toBe(source)
-    expect(result.canvases[1]).toMatchObject({ id: 'task', kind: 'result', sourceCanvasId: 'c1', title: '画面 1 · 结果', outputs: [] })
-    expect(result.canvases[1]!.y).toBeGreaterThan(source.y)
+    expect(result.canvases[1]).toMatchObject({ id: 'task', kind: 'result', sourceCanvasId: 'c1', jobState: 'starting', outputs: [] })
+  })
+
+  it('keeps earlier pictures, and the face follows the new run', () => {
+    const source = canvas({
+      prompt: 'x',
+      outputs: [{ path: '/o.png', width: 1, height: 1, seed: 1 }],
+      jobId: 'old-job',
+      shownOutput: { canvasId: 'earlier' },
+    })
+    const result = taskCanvasFor(source, [source], 'task')
+    expect(result.taskId).toBe('task')
+    expect(result.canvases).toHaveLength(2)
+    expect(result.canvases[0]).toEqual({ ...source, shownOutput: undefined } as never)
+    expect(result.canvases[0]!.shownOutput).toBeUndefined()
+    const task = result.canvases[1]!
+    expect(task).toMatchObject({ id: 'task', kind: 'result', sourceCanvasId: 'c1', title: '画面 1 · 结果', outputs: [] })
+    // The run does not inherit the source's job or pictures.
+    expect(task.jobId).toBeUndefined()
+    expect(task.shownOutput).toBeUndefined()
+    expect(task.y).toBeGreaterThan(source.y)
   })
 })
 

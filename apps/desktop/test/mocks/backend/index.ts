@@ -702,6 +702,7 @@ function defaultHandlers(): Map<string, Handler> {
   // Shell integrations: accepted and recorded via `calls`.
   for (const channel of [Ipc.windowOpen, Ipc.openPath, Ipc.openExternal, Ipc.copyText, Ipc.galleryReveal]) h.set(channel, () => null)
   h.set(Ipc.pickDialog, () => null)
+  h.set(Ipc.windowControl, () => ({ maximized: false }))
   addInstallHandlers(
     (channel, handler) => h.set(channel, handler),
     (code, message) => new MockIpcError(code, message),
