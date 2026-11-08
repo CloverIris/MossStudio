@@ -6,16 +6,32 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, statfs, default: { ...actual, statfs } }
 })
 
-import { assertFreeSpace, freeSpace } from '@main/lib/disk'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { assertFreeSpace, freeSpace, nearestExisting } from '@main/lib/disk'
+import { useTempDir } from '@test/helpers/tempDir'
 
 const GB = 1024 ** 3
 afterEach(() => statfs.mockReset())
 
 describe('freeSpace', () => {
-  it('multiplies available blocks by block size of the parent directory', async () => {
+  const dir = useTempDir()
+
+  it('reads the folder itself when it exists: a folder that is a mount point is its own drive', async () => {
+    const models = join(dir(), 'models')
+    mkdirSync(models)
     statfs.mockResolvedValue({ bavail: 10, bsize: 4096 })
-    expect(await freeSpace('/data/models/file.bin')).toBe(40960)
-    expect(statfs).toHaveBeenCalledWith('/data/models')
+    expect(await freeSpace(models)).toBe(40960)
+    expect(statfs).toHaveBeenCalledWith(models)
+  })
+
+  it('reads the nearest folder that exists for a file or folder not created yet', async () => {
+    const models = join(dir(), 'models')
+    mkdirSync(models)
+    statfs.mockResolvedValue({ bavail: 10, bsize: 4096 })
+    await freeSpace(join(models, 'blobs', 'abc.part'))
+    expect(statfs).toHaveBeenLastCalledWith(models)
+    expect(await nearestExisting(join(dir(), 'a', 'b', 'c'))).toBe(dir())
   })
 
   it('treats an unknown volume as unlimited, not zero', async () => {

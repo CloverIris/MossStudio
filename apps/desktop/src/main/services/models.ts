@@ -11,7 +11,7 @@ import { catalogCombinations } from './modelCombinations'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
-import { assertFreeSpace, freeSpace } from '../lib/disk'
+import { assertFreeSpace, freeSpace, nearestExisting } from '../lib/disk'
 import { getLastNetwork } from './network'
 import { contentDir } from '../lib/content'
 import { listJobs } from './supervisor'
@@ -632,30 +632,35 @@ export async function modelMissingBytes(settings: Settings, entry: ModelEntry): 
   } catch {
     // No earlier attempt, or an unreadable record: nothing on disk to count.
   }
+  // Never started: the full catalog size, even when its first attempt will reuse files from another
+  // installation (only resolving the repository says which). The check on start counts those.
   return entry.sizeBytes
 }
 
-/** A disk that does not answer in this time (a sleeping network drive) counts as unknown; the check on start still runs. */
+/**
+ * The whole free-space reading (the .pending records, the blobs, the disks) gives up after this long and
+ * answers "unknown": a sleeping network drive must not hold Setup. The check on start still runs.
+ */
 const SPACE_TIMEOUT_MS = 2000
 
-async function freeSpaceWithin(target: string, timeoutMs: number): Promise<number | null> {
+/**
+ * Where the missing parts of these models land, one entry per disk, with that
+ * disk's free space read the way each part's download checks it (models:space).
+ * Empty when nothing is missing, or when the disks do not answer in time.
+ */
+export async function modelSpace(settings: Settings, ids: string[], timeoutMs = SPACE_TIMEOUT_MS): Promise<ModelSpaceDisk[]> {
   let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), timeoutMs)
+  const timeout = new Promise<ModelSpaceDisk[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), timeoutMs)
   })
   try {
-    const free = await Promise.race([freeSpace(target), timeout])
-    return free !== null && Number.isFinite(free) ? free : null
+    return await Promise.race([measureModelSpace(settings, ids), timeout])
   } finally {
     clearTimeout(timer)
   }
 }
 
-/**
- * Where the missing parts of these models land, one entry per disk, with that
- * disk's free space read the way each part's download checks it (models:space).
- */
-export async function modelSpace(settings: Settings, ids: string[], timeoutMs = SPACE_TIMEOUT_MS): Promise<ModelSpaceDisk[]> {
+async function measureModelSpace(settings: Settings, ids: string[]): Promise<ModelSpaceDisk[]> {
   const catalog = await getCatalog(settings)
   const disks = new Map<string, ModelSpaceDisk>()
   for (const id of ids) {
@@ -665,10 +670,12 @@ export async function modelSpace(settings: Settings, ids: string[], timeoutMs = 
     if (missing <= 0) continue
     const root = paths.roleRoot(entry.role, settings.modelsRoot, settings.modelDirectories)
     const followsModels = root === paths.roleRoot(entry.role, settings.modelsRoot)
-    // Parts on the same disk share its free space: group by device, as freeSpace() reads the folder above the part's.
-    const device = await stat(dirname(root)).then(
-      (info) => `dev:${info.dev}`,
-      () => `path:${root}`,
+    // Parts on the same disk share its free space: group by the device of the folder freeSpace() reads.
+    const device = await nearestExisting(root).then((folder) =>
+      stat(folder).then(
+        (info) => `dev:${info.dev}`,
+        () => `path:${folder}`,
+      ),
     )
     const disk = disks.get(device)
     if (disk) {
@@ -676,10 +683,11 @@ export async function modelSpace(settings: Settings, ids: string[], timeoutMs = 
       if (followsModels && !disk.modelsFolder) Object.assign(disk, { modelsFolder: true, path: paths.models(settings.modelsRoot) })
       continue
     }
+    const free = await freeSpace(root)
     disks.set(device, {
       path: followsModels ? paths.models(settings.modelsRoot) : root,
       modelsFolder: followsModels,
-      freeBytes: await freeSpaceWithin(root, timeoutMs),
+      freeBytes: Number.isFinite(free) ? free : null,
       missingBytes: [missing],
     })
   }

@@ -12,7 +12,7 @@ import {
   type EngineOs,
   type EnginePackage,
 } from './enginePackages'
-import { dedicatedGpuMemory, gpuMemoryTooSmall } from './machineFit'
+import { dedicatedGpuMemory, gpuMemoryTooSmall, memoryGb } from './machineFit'
 
 /**
  * Which MossInfer package each GPU of a machine should run, from what was
@@ -90,6 +90,8 @@ export interface GpuEngineChoice {
   overrideIgnored?: boolean
   /** An integrated GPU left without an engine because a discrete GPU runs one (an override can still pick it). */
   integratedSkipped?: boolean
+  /** A GPU left without an engine because its memory is too small for the model and another GPU runs one (an override can still pick it). */
+  memorySkipped?: boolean
 }
 
 export interface EnginePlan {
@@ -305,15 +307,28 @@ export function chooseEnginePackages(machine: EngineMachine, release: EngineAsse
     }
     plan.choices.push(choice)
   }
+  // A card with too little memory for the model only fails its jobs: when another GPU runs an engine, it gets none
+  // (unless chosen in 高级), so nothing is downloaded for it and jobs go to the GPU that works.
+  const memoryOf = (gpuId: string): number | null => {
+    const gpu = machine.gpus.find((item) => item.id === gpuId)
+    return gpu ? dedicatedGpuMemory(gpu) : null
+  }
+  const tooSmall = (choice: GpuEngineChoice): boolean => gpuMemoryTooSmall(memoryOf(choice.gpuId)) && !overridden.has(choice.gpuId)
+  if (plan.choices.some((choice) => choice.package && !tooSmall(choice))) {
+    for (const choice of plan.choices) {
+      if (!choice.package || !tooSmall(choice)) continue
+      choice.package = null
+      choice.packageId = null
+      delete choice.asset
+      delete choice.tip
+      choice.reason = `${choice.gpuName} 只有 ${memoryGb(memoryOf(choice.gpuId)!)} GB 显存，默认用另一块显卡（可在 高级 › 每块 GPU 的引擎 里选用它）`
+      choice.memorySkipped = true
+    }
+  }
   // An integrated GPU is only worth the slow compatibility mode when nothing better is there:
   // with a discrete GPU that runs an engine, it gets none (unless chosen in 高级).
   const integrated = (gpuId: string): boolean => machine.gpus.find((gpu) => gpu.id === gpuId)?.vulkan?.discrete === false
-  // A discrete card with too little memory to run the model does not count: the integrated GPU is then the one that works.
-  const tooSmall = (gpuId: string): boolean => {
-    const gpu = machine.gpus.find((item) => item.id === gpuId)
-    return gpu ? gpuMemoryTooSmall(dedicatedGpuMemory(gpu)) : false
-  }
-  const discreteServed = plan.choices.some((choice) => choice.package && !integrated(choice.gpuId) && !tooSmall(choice.gpuId))
+  const discreteServed = plan.choices.some((choice) => choice.package && !integrated(choice.gpuId))
   if (discreteServed) {
     for (const choice of plan.choices) {
       if (!choice.package || choice.package.kind !== 'vulkan' || !integrated(choice.gpuId) || overridden.has(choice.gpuId)) continue

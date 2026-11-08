@@ -517,13 +517,46 @@ describe('chooseEnginePackages — a discrete card too small to run the model', 
   const mx250 = (memoryBytes: number | undefined): EngineMachineGpu =>
     nvidia([6, 1], '581.42', { id: 'GPU-mx250', name: 'NVIDIA GeForce MX250', ...(memoryBytes ? { memoryBytes } : {}) })
 
-  it('does not count as served: the integrated GPU keeps its 兼容模式 package', () => {
+  it('gets no engine when another GPU runs one: the integrated GPU keeps its 兼容模式 package, and nothing is downloaded for the card', () => {
     const plan = chooseEnginePackages(machine('windows', [mx250(2 * GiB), uhd]), release())
     expect(plan.blocked).toBeUndefined()
-    expect(plan.choices.map((choice) => [choice.gpuId, choice.packageId, choice.integratedSkipped ?? false])).toEqual([
-      ['GPU-mx250', 'vulkan', false],
-      ['vk-8086-5917-0', 'vulkan', false],
+    expect(
+      plan.choices.map((choice) => [choice.gpuId, choice.packageId, choice.memorySkipped ?? false, choice.integratedSkipped ?? false]),
+    ).toEqual([
+      ['GPU-mx250', null, true, false],
+      ['vk-8086-5917-0', 'vulkan', false, false],
     ])
+    expect(plan.choices[0]!.reason).toBe('NVIDIA GeForce MX250 只有 2 GB 显存，默认用另一块显卡（可在 高级 › 每块 GPU 的引擎 里选用它）')
+    expect(plan.packages.map((item) => [item.packageId, item.gpuIds])).toEqual([['vulkan', ['vk-8086-5917-0']]])
+  })
+
+  it('a 2 GB card that runs CUDA gives way too, and no CUDA package is downloaded for it', () => {
+    const mx450 = nvidia([7, 5], '581.42', { id: 'GPU-mx450', name: 'NVIDIA GeForce MX450', memoryBytes: 2 * GiB })
+    const plan = chooseEnginePackages(machine('windows', [mx450, uhd]), release())
+    expect(plan.choices.map((choice) => choice.packageId)).toEqual([null, 'vulkan'])
+    expect(plan.packages.map((item) => item.packageId)).toEqual(['vulkan'])
+  })
+
+  it('next to a big discrete card it gives way as well', () => {
+    const big = nvidia([8, 9], '581.42', { id: 'GPU-big', name: 'RTX 4090', memoryBytes: 24 * GiB })
+    const plan = chooseEnginePackages(machine('windows', [mx250(2 * GiB), big, uhd]), release())
+    expect(plan.choices.map((choice) => [choice.packageId, choice.memorySkipped ?? false, choice.integratedSkipped ?? false])).toEqual([
+      [null, true, false],
+      ['cu13', false, false],
+      [null, false, true],
+    ])
+  })
+
+  it('keeps its engine when it is the only GPU that runs one (Setup then says it is too small)', () => {
+    const unusable = intel({ id: 'vk-8086-5917-0', name: 'Intel UHD Graphics 620', vulkan: vk(1, false, false) })
+    expect(chooseEnginePackages(machine('windows', [mx250(2 * GiB), unusable]), release()).choices[0]!.packageId).toBe('vulkan')
+    expect(chooseEnginePackages(machine('windows', [mx250(2 * GiB)]), release()).choices[0]!.packageId).toBe('vulkan')
+  })
+
+  it('an engine chosen for it in 高级 stands', () => {
+    const plan = chooseEnginePackages(machine('windows', [mx250(2 * GiB), uhd]), release(), { overrides: { 'GPU-mx250': 'vulkan' } })
+    expect(plan.choices[0]).toMatchObject({ packageId: 'vulkan' })
+    expect(plan.choices[0]!.memorySkipped).toBeUndefined()
   })
 
   it('a discrete card of 4 GB, or of unknown memory, still serves and the integrated GPU steps aside', () => {

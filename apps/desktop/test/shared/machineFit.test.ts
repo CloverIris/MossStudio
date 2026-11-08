@@ -11,7 +11,7 @@ import {
   gpuMemoryTooSmall,
   memoryGb,
   missingDownloadBytes,
-  modelPartSpaceNeeded,
+  diskSpaceNeeded,
   shortDisks,
   slowReason,
   tooLittleGpuMemory,
@@ -161,10 +161,13 @@ describe('room for a download', () => {
     expect(freeSpaceNeeded(10 * GiB)).toBeCloseTo(11 * GiB)
   })
 
-  it('a model part adds its headroom first, and asks for nothing when nothing is missing', () => {
+  it('a disk asks for its parts together plus one margin, and for nothing when nothing is missing', () => {
     expect(MODEL_DOWNLOAD_HEADROOM_BYTES).toBe(GiB)
-    expect(modelPartSpaceNeeded(9 * GiB)).toBeCloseTo(11 * GiB)
-    expect(modelPartSpaceNeeded(0)).toBe(0)
+    // The README's 约 30 GB: a 26 GB download, (26 + 1) × 1.1.
+    expect(diskSpaceNeeded([10 * GiB, 15 * GiB, 1 * GiB])).toBeCloseTo(29.7 * GiB)
+    expect(diskSpaceNeeded([9 * GiB])).toBeCloseTo(11 * GiB)
+    expect(diskSpaceNeeded([])).toBe(0)
+    expect(diskSpaceNeeded([0, 0])).toBe(0)
   })
 
   it('counts what is missing: complete files are free, a .part keeps its bytes, a wrong-size blob is not complete', () => {
@@ -187,6 +190,9 @@ describe('room for a download', () => {
       { path: 'c', freeBytes: null, missingBytes: [80 * GiB] },
       { path: 'd', freeBytes: 0, missingBytes: [] },
     ]
-    expect(shortDisks(disks)).toEqual([{ ...disks[0], neededBytes: modelPartSpaceNeeded(8 * GiB) + modelPartSpaceNeeded(9 * GiB) }])
+    // a: (8 + 9 + 1) × 1.1 = 19.8 GiB fits in 20; with one more GiB missing it does not.
+    expect(shortDisks(disks)).toEqual([])
+    const fuller = [{ ...disks[0]!, missingBytes: [8 * GiB, 10 * GiB] }, ...disks.slice(1)]
+    expect(shortDisks(fuller)).toEqual([{ ...fuller[0], neededBytes: diskSpaceNeeded([8 * GiB, 10 * GiB]) }])
   })
 })

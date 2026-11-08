@@ -106,9 +106,14 @@ export function freeSpaceNeeded(bytes: number): number {
 /** Room a model part keeps on top of its own bytes while it downloads (temporary files, the snapshot links). */
 export const MODEL_DOWNLOAD_HEADROOM_BYTES = GiB
 
-/** Free space one model part asks for before it downloads: what is missing, the headroom, a tenth more. */
-export function modelPartSpaceNeeded(missingBytes: number): number {
-  return missingBytes > 0 ? freeSpaceNeeded(missingBytes + MODEL_DOWNLOAD_HEADROOM_BYTES) : 0
+/**
+ * Free space a disk needs for the model parts that land on it: everything they
+ * still miss, plus one headroom and one tenth. The margin is the check on start's,
+ * taken once per disk: it is room to work in, not a cost of each part.
+ */
+export function diskSpaceNeeded(missingBytes: number[]): number {
+  const total = missingBytes.reduce((sum, bytes) => sum + Math.max(0, bytes), 0)
+  return total > 0 ? freeSpaceNeeded(total + MODEL_DOWNLOAD_HEADROOM_BYTES) : 0
 }
 
 /**
@@ -126,12 +131,12 @@ export function missingDownloadBytes(files: Array<{ size: number; blobBytes: num
 
 /**
  * The disks the missing model parts land on that cannot hold them: each disk's
- * free space against the room its parts ask for together. Disks whose free
+ * free space against diskSpaceNeeded for its parts. Disks whose free
  * space is unknown are left to the check on start.
  */
 export function shortDisks<T extends { freeBytes: number | null; missingBytes: number[] }>(disks: T[]): Array<T & { neededBytes: number }> {
   return disks.flatMap((disk) => {
-    const neededBytes = disk.missingBytes.reduce((total, bytes) => total + modelPartSpaceNeeded(bytes), 0)
+    const neededBytes = diskSpaceNeeded(disk.missingBytes)
     return disk.freeBytes !== null && neededBytes > 0 && disk.freeBytes < neededBytes ? [{ ...disk, neededBytes }] : []
   })
 }

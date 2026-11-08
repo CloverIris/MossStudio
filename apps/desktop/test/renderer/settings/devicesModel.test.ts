@@ -168,6 +168,19 @@ describe('engine per GPU', () => {
     expect(planLines(p)[1]).toMatchObject({ detail: '不使用（已有独立显卡）', skipped: true })
   })
 
+  it('a 2 GB card next to a GPU that runs is quietly unused, and says why', () => {
+    const laptop = machineFixture('laptopSmallGpu')
+    const p = enginePlanFor(laptop, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, [])
+    const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(laptop)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), p))
+    expect(rows[0]).toMatchObject({
+      status: 'unknown',
+      statusLabel: '未使用',
+      reason: 'NVIDIA GeForce MX250 只有 2 GB 显存，默认用另一块显卡（可在 高级 › 每块 GPU 的引擎 里选用它）',
+    })
+    expect(planLines(p)[0]).toMatchObject({ detail: '不使用（显存太小，用另一块显卡）', skipped: true })
+    expect(planLines(p)[1]).toMatchObject({ detail: '兼容模式 · 599 KB', supported: true })
+  })
+
   it('labels the engine in use', () => {
     expect(engineInUseLabel('cu12-sm70-system-cuda')).toBe('CUDA 12')
     expect(engineInUseLabel('hip')).toBe('AMD 原生 · 只能文生图')

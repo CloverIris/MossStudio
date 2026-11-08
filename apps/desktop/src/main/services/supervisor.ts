@@ -20,6 +20,7 @@ import { getSettings } from './settings'
 import { refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 import { selectAutomaticGpu } from '@shared/gpuScheduling'
+import { gpuMemoryTooSmall } from '@shared/machineFit'
 import { judgeEngineSupport } from '@shared/engineProtocol'
 import { CLI_ENGINE_LABEL, cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
 import { isCliEngine } from '@shared/enginePackages'
@@ -564,10 +565,14 @@ async function resolveLocalGpu(
   const settings = getSettings()
   const inventory = await refreshGpuInventory()
   if (!deviceUuid && settings.gpuSelection === 'auto') {
+    // A card with too little memory for the model would only fail the job: any other GPU comes first,
+    // the integrated one included. It is used only when nothing else is left.
+    const roomy = inventory.devices.filter((device) => !gpuMemoryTooSmall(device.memoryTotalBytes))
+    const candidates = roomy.length ? roomy : inventory.devices
     // GPUs that run a CLI engine (兼容模式 / AMD 原生) are judged by their package, not by moss-server.
-    const cliGpus = inventory.devices.filter((device) => cliEngineOf(device.uuid))
+    const cliGpus = candidates.filter((device) => cliEngineOf(device.uuid))
     const cliUuids = new Set(cliGpus.map((device) => device.uuid))
-    const cudaGpus = inventory.devices.filter((device) => !cliUuids.has(device.uuid) && (device.vendor ?? 'nvidia') === 'nvidia')
+    const cudaGpus = candidates.filter((device) => !cliUuids.has(device.uuid) && (device.vendor ?? 'nvidia') === 'nvidia')
     let cudaUuids = new Set<string>()
     if (cudaGpus.length) {
       let probe: Awaited<ReturnType<typeof probeLocalEngineGpuCompatibility>>
@@ -634,7 +639,7 @@ async function resolveLocalGpu(
       current.queuedTasks += count
       loads[uuid] = current
     }
-    const automatic = selectAutomaticGpu(inventory.devices, compatibleUuids, loads)
+    const automatic = selectAutomaticGpu(candidates, compatibleUuids, loads)
     if (automatic) {
       pendingAutoGpuAssignments.set(automatic.uuid, (pendingAutoGpuAssignments.get(automatic.uuid) ?? 0) + 1)
       return automatic

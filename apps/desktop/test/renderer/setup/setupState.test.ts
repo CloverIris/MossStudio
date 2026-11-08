@@ -350,9 +350,10 @@ describe('deriveSetup: room for the download', () => {
     expect(short(disk(0, [12 * GiB]))).toBe('这个位置只剩 0 GB，换一个有 15 GB 空闲的位置。')
   })
 
-  it('parts on one disk add up, each with its own headroom', () => {
-    // (8 + 1) × 1.1 + (4 + 1) × 1.1 = 15.4 GiB: each part alone would fit in 14.9 GiB.
-    expect(short(disk(14.9 * GiB, [8 * GiB, 4 * GiB]))).toBe('这个位置只剩 14 GB，换一个有 16 GB 空闲的位置。')
+  it('parts on one disk add up, with one margin for the disk', () => {
+    // (8 + 4 + 1) × 1.1 = 14.3 GiB: each part alone would fit in 13 GiB, both together do not.
+    expect(short(disk(13 * GiB, [8 * GiB, 4 * GiB]))).toBe('这个位置只剩 13 GB，换一个有 15 GB 空闲的位置。')
+    expect(short(disk(14.3 * GiB, [8 * GiB, 4 * GiB]))).toBeUndefined()
   })
 
   it('a part with its own folder names that folder and where to change it: 更改 would not move it', () => {

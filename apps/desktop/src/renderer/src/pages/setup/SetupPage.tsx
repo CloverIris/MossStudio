@@ -282,7 +282,7 @@ export function SetupPage(): React.JSX.Element {
                     className="inline-flex items-center gap-0.5 rounded-sm align-baseline text-ink-2 underline underline-offset-2 hover:text-ink"
                   >
                     哪些电脑能用
-                    <ExternalLink className="size-3" strokeWidth={1.6} aria-hidden="true" />
+                    <ExternalLink className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
                   </button>
                 </p>
               ) : null}

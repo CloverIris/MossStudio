@@ -247,9 +247,9 @@ function setupDownloadBytes(view: SetupView): number {
 }
 
 /**
- * A disk the model cannot fit on: what it has and what to look for. Each part
- * asks for the room its own download checks for on start, and parts on one disk
- * add up. The engine package goes to the app's data folder and has its own check.
+ * A disk the model cannot fit on: what it has and what to look for. The parts
+ * landing on one disk add up, with the check on start's margin once per disk.
+ * The engine package goes to the app's data folder and has its own check.
  */
 function setupDiskShort(disks: ModelSpaceDisk[] | undefined): string | null {
   const short = shortDisks(disks ?? []).sort((a, b) => Number(b.modelsFolder) - Number(a.modelsFolder))[0]

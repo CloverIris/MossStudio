@@ -216,8 +216,8 @@ describe('first run', () => {
   })
 })
 
-/** The four parts of the recommended model, each with its own headroom, against 12 GB free. */
-const LOW_DISK_LINE = '这个位置只剩 12 GB，换一个有 33 GB 空闲的位置。'
+/** The recommended model's four parts (25.3 GiB) plus one margin, (25.3 + 1) × 1.1 ≈ 29 GB, against 12 GB free. */
+const LOW_DISK_LINE = '这个位置只剩 12 GB，换一个有 29 GB 空闲的位置。'
 
 describe('first run on a computer that cannot run it, or runs it slowly', () => {
   const app = useApp()

@@ -94,21 +94,37 @@ export function useSetup(): {
   // the parts still missing change, or the window comes back (space freed in the file manager).
   const [disks, setDisks] = useState<ModelSpaceDisk[] | undefined>(undefined)
   const modelIds = (onboarding?.steps.find((step) => step.id === 'model')?.modelIds ?? []).join('\n')
-  const spaceRequest = useRef(0)
+  // One reading at a time: a slow disk must not pile up requests (focus fires often). A request made
+  // meanwhile is answered by one more reading when this one ends, with the newest model list.
+  const latestIds = useRef(modelIds)
+  latestIds.current = modelIds
+  const spaceLoad = useRef({ busy: false, again: false })
   const loadSpace = useCallback(async (): Promise<void> => {
-    const request = ++spaceRequest.current
-    if (!modelIds) return
-    try {
-      const next = await call<ModelSpaceDisk[]>(Ipc.modelsSpace, { modelIds: modelIds.split('\n') })
-      if (request === spaceRequest.current) setDisks(next)
-    } catch {
-      // Unknown free space: the check on start still refuses a download that does not fit.
-      if (request === spaceRequest.current) setDisks(undefined)
+    const load = spaceLoad.current
+    if (load.busy) {
+      load.again = true
+      return
     }
-  }, [modelIds])
+    load.busy = true
+    try {
+      do {
+        load.again = false
+        const ids = latestIds.current
+        if (!ids) break
+        try {
+          setDisks(await call<ModelSpaceDisk[]>(Ipc.modelsSpace, { modelIds: ids.split('\n') }))
+        } catch {
+          // Unknown free space: the check on start still refuses a download that does not fit.
+          setDisks(undefined)
+        }
+      } while (load.again)
+    } finally {
+      load.busy = false
+    }
+  }, [])
   useEffect(() => {
     void loadSpace()
-  }, [loadSpace, settings?.modelsRoot, settings?.modelDirectories, finished, onboarding])
+  }, [loadSpace, modelIds, settings?.modelsRoot, settings?.modelDirectories, finished, onboarding])
   useEffect(() => {
     const onFocus = (): void => void loadSpace()
     window.addEventListener('focus', onFocus)

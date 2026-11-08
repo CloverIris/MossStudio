@@ -79,6 +79,7 @@ export function planLines(plan: EnginePlanView): PlanLine[] {
   return plan.choices.map((choice) => {
     const base = { gpuId: choice.gpuId, gpu: choice.gpuName, ...(choice.tip ? { tip: choice.tip } : {}) }
     if (choice.integratedSkipped) return { ...base, detail: '不使用（已有独立显卡）', supported: false, skipped: true }
+    if (choice.memorySkipped) return { ...base, detail: '不使用（显存太小，用另一块显卡）', supported: false, skipped: true }
     if (!choice.package || !choice.packageId) return { ...base, detail: choice.reason, supported: false }
     // The small system-CUDA package needs the computer's CUDA libraries: say so.
     const title =

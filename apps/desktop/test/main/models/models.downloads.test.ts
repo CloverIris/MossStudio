@@ -412,25 +412,23 @@ describe('what a model part still has to download, and where', () => {
     expect(disks[0]).toMatchObject({ path: modelsRoot(), modelsFolder: true, missingBytes: [100, 3 * GiB - 1000] })
     expect(disks[0]!.freeBytes).toBeGreaterThan(0)
 
-    // VAEs in a folder of their own: named by that folder, and 更改 would not move them.
+    // VAEs in a folder of their own: named by that folder, and 更改 would not move them. The folder does not
+    // exist yet, so its disk is the one of the nearest folder that does.
+    // (vae-big's interrupted files stay in the old folder, and its catalog size is 0, so only vae-a lands there.)
     const own = join(dataRoot(), 'nowhere', 'vae')
     const custom = await models.modelSpace({ ...settings, modelDirectories: { ...settings.modelDirectories, vae: own } }, ids)
-    // Its folder's parent does not exist: free space is unknown, and the check on start decides.
-    // (vae-big's interrupted files stay in the old folder, and its catalog size is 0, so only vae-a lands there.)
-    expect(custom).toEqual([{ path: own, modelsFolder: false, freeBytes: null, missingBytes: [100] }])
+    expect(custom).toEqual([{ path: own, modelsFolder: false, freeBytes: expect.any(Number), missingBytes: [100] }])
   })
 
-  it('a disk that does not answer in time counts as unknown', async () => {
+  it('a disk that does not answer in time, at any step, gives up and answers unknown (no disks)', async () => {
     vi.resetModules()
     vi.doMock('@main/lib/disk', async (original) => ({
       ...(await original<typeof import('@main/lib/disk')>()),
-      freeSpace: () => new Promise<number>(() => undefined),
+      nearestExisting: () => new Promise<string>(() => undefined),
     }))
     try {
       const slow = await import('@main/services/models')
-      expect(await slow.modelSpace(settings, ['vae-a'], 20)).toEqual([
-        { path: modelsRoot(), modelsFolder: true, freeBytes: null, missingBytes: [100] },
-      ])
+      expect(await slow.modelSpace(settings, ['vae-a'], 20)).toEqual([])
     } finally {
       vi.doUnmock('@main/lib/disk')
     }
