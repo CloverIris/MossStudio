@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn, spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { launcherRestartArgs, spawnLauncherRestart, spawnMacSwap } from '@main/update/handoff'
@@ -102,9 +102,11 @@ describe('macOS swap helper: static script, arguments only', () => {
 })
 
 /**
- * The real helper under /bin/sh against fake bundles. The fake app is a copy of `sleep` placed at
+ * The real helper under /bin/sh against fake bundles. The fake app is Node linked in at
  * MossStudio.app/Contents/MacOS/MossStudio, so `ps` shows it under the bundle path like the real
- * app; the fake `open` starts it and plays the new version's part in install.json.
+ * app; the fake `open` starts it and plays the new version's part in install.json. Not a copy of
+ * `sleep`: where coreutils is one multi-call binary (uutils, Ubuntu 26.04) a renamed copy refuses
+ * to run.
  */
 describe.runIf(unix)('macOS swap helper under /bin/sh', () => {
   const started: string[] = []
@@ -124,12 +126,9 @@ describe.runIf(unix)('macOS swap helper under /bin/sh', () => {
     started.length = 0
   })
 
-  const sleepBinary = (): string => spawnSync('/bin/sh', ['-c', 'command -v sleep'], { encoding: 'utf8' }).stdout.trim()
-
   function bundle(path: string, label: string): void {
     mkdirSync(join(path, 'Contents', 'MacOS'), { recursive: true })
-    copyFileSync(sleepBinary(), join(path, 'Contents', 'MacOS', 'MossStudio'))
-    chmodSync(join(path, 'Contents', 'MacOS', 'MossStudio'), 0o755)
+    symlinkSync(process.execPath, join(path, 'Contents', 'MacOS', 'MossStudio'))
     writeFileSync(join(path, 'Contents', 'label'), label)
   }
 
@@ -166,13 +165,15 @@ describe.runIf(unix)('macOS swap helper under /bin/sh', () => {
         '[ -f "$FAKE_OPENED" ] && exit 0',
         ': > "$FAKE_OPENED"',
         'exe="$2/Contents/MacOS/MossStudio"',
+        // The app runs for $1 seconds.
+        'app() { "$exe" -e "setTimeout(() => {}, $1 * 1000)" & }',
         'w() { printf \'{\\n  "schema": 1,\\n  "current": "%s",\\n  "confirmed": %s\\n}\\n\' "$1" "$2" > "$FAKE_RECORD.tmp" && mv "$FAKE_RECORD.tmp" "$FAKE_RECORD"; }',
         'case "$FAKE_MODE" in',
-        '  confirm) "$exe" 30 & (sleep 0.3; w 1.1.0 false; sleep 0.3; w 1.1.0 true) & ;;',
-        '  crash) w 1.1.0 false; "$exe" 0.3 & ;;',
-        '  hang) w 1.1.0 false; "$exe" 30 & ;;',
-        '  clean) w 1.1.0 false; printf \'1.1.0\\n\' > "$FAKE_CLEAN"; "$exe" 0.3 & ;;',
-        '  moveon) "$exe" 30 & (w 1.1.0 false; sleep 0.4; w 1.2.0 false) & ;;',
+        '  confirm) app 30; (sleep 0.3; w 1.1.0 false; sleep 0.3; w 1.1.0 true) & ;;',
+        '  crash) w 1.1.0 false; app 0.3 ;;',
+        '  hang) w 1.1.0 false; app 30 ;;',
+        '  clean) w 1.1.0 false; printf \'1.1.0\\n\' > "$FAKE_CLEAN"; app 0.3 ;;',
+        '  moveon) app 30; (w 1.1.0 false; sleep 0.4; w 1.2.0 false) & ;;',
         '  none) ;;',
         'esac',
         '',
