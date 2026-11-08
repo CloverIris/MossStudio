@@ -295,27 +295,30 @@ describe('Events.updateState', () => {
     expect(store().notifications[0]!.message).toContain('2.0.0')
   })
 
-  it('says a new version downloads in the background when 自动下载更新 is on', async () => {
+  it('with 自动更新 on, a new version, its download, readiness and a failure go by without a word', async () => {
     const { backend, store } = await ready()
     backend.emit(Events.updateState, updateAvailableFixture('2.0.0', { autoDownload: true }))
-    expect(store().notifications[0]!.message).toBe('MossStudio 2.0.0 正在后台下载')
+    backend.emit(Events.updateState, updateDownloadingFixture('2.0.0', 40))
+    backend.emit(Events.updateState, updateReadyFixture('2.0.0', { autoDownload: true }))
+    backend.emit(Events.updateState, updaterStateFixture({ autoDownload: true, phase: 'error', error: '网络中断' }))
+    expect(store().notifications).toEqual([])
   })
 
-  it('stays quiet for progress and notifies once when the update is ready', async () => {
+  it('by hand: stays quiet for progress and notifies once when the update is ready', async () => {
     const { backend, store } = await ready()
-    backend.emit(Events.updateState, updateDownloadingFixture('1.1.0', 10))
-    backend.emit(Events.updateState, updateDownloadingFixture('1.1.0', 80))
+    backend.emit(Events.updateState, updateDownloadingFixture('1.1.0', 10, { autoDownload: false }))
+    backend.emit(Events.updateState, updateDownloadingFixture('1.1.0', 80, { autoDownload: false }))
     expect(store().notifications).toEqual([])
-    backend.emit(Events.updateState, updateReadyFixture('1.1.0'))
-    backend.emit(Events.updateState, updateReadyFixture('1.1.0'))
+    backend.emit(Events.updateState, updateReadyFixture('1.1.0', { autoDownload: false }))
+    backend.emit(Events.updateState, updateReadyFixture('1.1.0', { autoDownload: false }))
     expect(store().notifications).toMatchObject([{ tone: 'success', title: '更新已准备好', message: '重启 MossStudio 即可更新到 1.1.0' }])
   })
 
-  it('warns once about a required update and reports a failure once', async () => {
+  it('warns once about a required update even with 自动更新 on; by hand, reports a failure once', async () => {
     const { backend, store } = await ready()
-    backend.emit(Events.updateState, updateAvailableFixture('1.1.0', { required: true, minimumVersion: '1.1.0' }))
-    backend.emit(Events.updateState, updaterStateFixture({ phase: 'error', error: '下载的文件校验失败' }))
-    backend.emit(Events.updateState, updaterStateFixture({ phase: 'error', error: '下载的文件校验失败' }))
+    backend.emit(Events.updateState, updateAvailableFixture('1.1.0', { autoDownload: true, required: true, minimumVersion: '1.1.0' }))
+    backend.emit(Events.updateState, updaterStateFixture({ autoDownload: false, phase: 'error', error: '下载的文件校验失败' }))
+    backend.emit(Events.updateState, updaterStateFixture({ autoDownload: false, phase: 'error', error: '下载的文件校验失败' }))
     const titles = store().notifications.map((item) => item.title)
     expect(titles.filter((title) => title === '必须更新')).toHaveLength(1)
     expect(titles.filter((title) => title === '更新没有完成')).toHaveLength(1)

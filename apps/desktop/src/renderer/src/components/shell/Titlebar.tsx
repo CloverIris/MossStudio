@@ -1,7 +1,10 @@
-import { type ReactNode } from 'react'
+import { Copy, Minus, Square, X } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
+import { Events, Ipc } from '@shared/channels'
 import type { GpuTelemetryDevice, GpuTelemetrySnapshot, JobRecord, Settings } from '@shared/types'
+import { call, onEvent } from '../../lib/api'
 import { useShell } from '../../lib/shell'
 import { useApp } from '../../store'
 import { cn } from '../cn'
@@ -9,6 +12,7 @@ import { Notice } from '../common/Notice'
 import { Popover } from '../common/Popover'
 import { Button, ProgressBar } from '../ui'
 import { UpdateChip } from '../update/UpdateChip'
+import { PreparationChip } from './PreparationChip'
 
 const GIB = 1024 ** 3
 
@@ -65,7 +69,7 @@ export function PerfMonitor(): React.JSX.Element {
             onClick={toggle}
             className={cn(
               // Hover and open lift to the popover's tone: ink-2 labels on well-strong over the light frame fall below 4.5:1.
-              'tabular flex h-7 items-center gap-4 rounded-md px-3 text-caption text-ink transition-colors hover:bg-raised',
+              'tabular flex h-7 items-center gap-4 whitespace-nowrap rounded-md px-3 text-caption text-ink transition-colors hover:bg-raised max-[1180px]:gap-3',
               open ? 'bg-raised' : 'bg-well',
             )}
           >
@@ -73,12 +77,16 @@ export function PerfMonitor(): React.JSX.Element {
               <>
                 <span className="flex items-center gap-1.5">
                   <span className="text-ink-2">负载</span>
-                  <ProgressBar value={utilization ?? 0} tone="neutral" className="w-9" />
+                  <ProgressBar value={utilization ?? 0} tone="neutral" className="w-9 max-[1180px]:hidden" />
                   <span className="w-8 text-right">{utilization ?? '—'}%</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="text-ink-2">显存</span>
-                  <ProgressBar value={ratio(gpu.memoryUsedBytes, gpu.memoryTotalBytes)} tone="neutral" className="w-9" />
+                  <ProgressBar
+                    value={ratio(gpu.memoryUsedBytes, gpu.memoryTotalBytes)}
+                    tone="neutral"
+                    className="w-9 max-[1180px]:hidden"
+                  />
                   <span>
                     {gib(gpu.memoryUsedBytes)} / {gib(gpu.memoryTotalBytes)} GB
                   </span>
@@ -155,13 +163,90 @@ export function PerfMonitor(): React.JSX.Element {
   )
 }
 
+type WindowAction = 'minimize' | 'toggle-maximize' | 'close'
+
+function controlWindow(action: WindowAction | 'state'): Promise<{ maximized: boolean } | null> {
+  return call<{ maximized: boolean }>(Ipc.windowControl, { action }).catch(() => null)
+}
+
+/** Whether this window has no system frame and draws its own window buttons (Linux). */
+export function drawsWindowControls(): boolean {
+  return window.clover.platform === 'linux'
+}
+
+/**
+ * Minimize, maximize / restore and close for a frameless window. Windows and
+ * macOS keep the system's own buttons over the title bar.
+ */
+export function WindowControls(): React.JSX.Element {
+  const [maximized, setMaximized] = useState(false)
+  useEffect(() => {
+    let live = true
+    void controlWindow('state').then((state) => {
+      if (live && state) setMaximized(state.maximized)
+    })
+    const off = onEvent<{ maximized: boolean }>(Events.windowState, (state) => setMaximized(state.maximized))
+    return () => {
+      live = false
+      off()
+    }
+  }, [])
+  const button = 'inline-flex h-full w-11 items-center justify-center text-ink-2 transition-colors'
+  return (
+    <div data-window-controls className="no-drag flex h-full shrink-0 items-stretch">
+      <button
+        type="button"
+        aria-label="最小化"
+        title="最小化"
+        className={cn(button, 'hover:bg-raised hover:text-ink')}
+        onClick={() => void controlWindow('minimize')}
+      >
+        <Minus className="size-4" strokeWidth={1.6} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        aria-label={maximized ? '还原' : '最大化'}
+        title={maximized ? '还原' : '最大化'}
+        className={cn(button, 'hover:bg-raised hover:text-ink')}
+        onClick={() => void controlWindow('toggle-maximize').then((state) => state && setMaximized(state.maximized))}
+      >
+        {maximized ? (
+          <Copy className="size-3.5 -scale-x-100" strokeWidth={1.6} aria-hidden="true" />
+        ) : (
+          <Square className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+        )}
+      </button>
+      <button
+        type="button"
+        aria-label="关闭"
+        title="关闭"
+        className={cn(button, 'hover:bg-danger hover:text-on-danger')}
+        onClick={() => void controlWindow('close')}
+      >
+        <X className="size-4" strokeWidth={1.6} aria-hidden="true" />
+      </button>
+    </div>
+  )
+}
+
 export function TitlebarFrame({ children, className }: { children: ReactNode; className?: string }): React.JSX.Element {
+  const frameless = drawsWindowControls()
   return (
     <header
       data-platform={window.clover.platform}
       className={cn('app-titlebar drag relative flex shrink-0 items-center gap-2 bg-frame', className)}
+      // A frameless window has no system title bar to double-click: do what it would.
+      onDoubleClick={
+        frameless
+          ? (event) => {
+              if ((event.target as HTMLElement).closest('button, a, input, [role="button"], .no-drag')) return
+              void controlWindow('toggle-maximize')
+            }
+          : undefined
+      }
     >
       {children}
+      {frameless ? <WindowControls /> : null}
     </header>
   )
 }
@@ -170,10 +255,11 @@ export function Titlebar({ appName = 'MossStudio', monitor = true }: { appName?:
   const setTitlebarSlot = useShell((state) => state.setTitlebarSlot)
   return (
     <TitlebarFrame>
-      <span className="shrink-0 text-ui font-semibold text-ink">{appName}</span>
+      <span className="shrink-0 whitespace-nowrap text-ui font-semibold text-ink">{appName}</span>
       {/* Pages render their own context here, e.g. the Studio project switcher. */}
       <div ref={setTitlebarSlot} className="no-drag flex min-w-0 items-center gap-1" />
       <div className="min-w-0 flex-1" />
+      <PreparationChip />
       <UpdateChip />
       {monitor ? <PerfMonitor /> : null}
     </TitlebarFrame>

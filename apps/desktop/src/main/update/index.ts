@@ -81,6 +81,35 @@ function getRuntime(): UpdateRuntime {
 }
 
 /** Start the runtime: verified cache, macOS reconcile, then checks on start / every 6 h / on focus. */
+let initialized: Promise<void> | null = null
+/** The runtime's startup work (reconcile, cleanup, notices), once. */
+function initRuntime(): Promise<void> {
+  initialized ??= getRuntime()
+    .init()
+    .catch((error: unknown) => console.error('[update] init', error))
+  return initialized
+}
+
+/**
+ * macOS has no launcher to switch versions when the app starts, so an update downloaded in an
+ * earlier run is installed now, before any window opens: the same swap helper as 重启以更新,
+ * with its health check and rollback. Only from a confirmed version, so a start that still has
+ * to prove itself never hands off. True when the app is quitting for it.
+ */
+export async function installPendingAtStart(): Promise<boolean> {
+  if (process.platform !== 'darwin') return false
+  const run = getRunContext()
+  const record = run.recordPath ? readInstallRecord(run.recordPath) : null
+  if (!record?.confirmed || record.current !== app.getVersion()) return false
+  await initRuntime()
+  const updates = getRuntime()
+  const state = updates.getState()
+  if (!state.supported || !state.pending || state.pending === state.failedVersion) return false
+  const result = await updates.restart().catch((error: unknown) => ({ status: 'failed', error: String(error) }) as const)
+  console.log(`[update] install at start: ${JSON.stringify(result)}`)
+  return result.status === 'restarting'
+}
+
 export async function startUpdater(): Promise<void> {
   const test = hook()
   if (shouldCrash(test, app.getVersion())) {
@@ -89,7 +118,7 @@ export async function startUpdater(): Promise<void> {
     return
   }
   const updates = getRuntime()
-  await updates.init().catch((error: unknown) => console.error('[update] init', error))
+  await initRuntime()
   if (scheduler) return
   scheduler = new UpdateScheduler({
     check: async () => {

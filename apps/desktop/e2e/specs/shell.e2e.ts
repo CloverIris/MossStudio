@@ -176,6 +176,79 @@ describe('title bar', () => {
     await expect.poll(() => page.locator('[data-perf-monitor]').textContent()).toContain('未检测到显卡')
   })
 
+  it('draws its own window buttons on Linux, where the window has no system frame', async () => {
+    const page = await app.open({ scenario: 'ready', route: '/studio', platform: 'linux', theme: 'dark' })
+    const controls = page.locator('[data-window-controls]')
+    await expect.poll(() => controls.isVisible()).toBe(true)
+    // Flush with the window's right edge, so nothing of the title bar is cut off.
+    const box = (await controls.boundingBox())!
+    expect(Math.round(box.x + box.width)).toBe(await page.evaluate(() => window.innerWidth))
+
+    await controls.getByRole('button', { name: '最小化' }).click()
+    await controls.getByRole('button', { name: '最大化' }).click()
+    await expect
+      .poll(() => app.calls('window:control'))
+      .toEqual(expect.arrayContaining([{ action: 'state' }, { action: 'minimize' }, { action: 'toggle-maximize' }]))
+    await page.evaluate(() => window.__mock.emit(window.__mock.Events.windowState, { maximized: true }))
+    await expect.poll(() => controls.getByRole('button', { name: '还原' }).isVisible()).toBe(true)
+    // Double-clicking the empty title bar maximizes or restores, as a system title bar does.
+    const before = (await app.calls('window:control')).length
+    await page.locator('header.app-titlebar').dblclick({ position: { x: 600, y: 20 } })
+    await expect.poll(() => app.calls('window:control').then((calls) => calls.length)).toBe(before + 1)
+    await app.screenshot('titlebar-linux-dark')
+    await controls.getByRole('button', { name: '关闭' }).click()
+    await expect.poll(() => app.calls<{ action: string }>('window:control').then((calls) => calls.at(-1)?.action)).toBe('close')
+  })
+
+  it('leaves the window buttons to the system on Windows', async () => {
+    const page = await app.open({ scenario: 'ready', route: '/studio', platform: 'win32' })
+    expect(await page.locator('[data-window-controls]').count()).toBe(0)
+  })
+
+  it('fits a small window: nothing is cut off on the right', async () => {
+    for (const route of ['/studio', '/models', '/library', '/settings']) {
+      const page = await app.open({ scenario: 'ready', route, platform: 'linux', size: { width: 1024, height: 640 } })
+      const overflow = await page.evaluate(() => {
+        const width = window.innerWidth
+        const right = (selector: string): number =>
+          Math.max(0, ...[...document.querySelectorAll(selector)].map((el) => el.getBoundingClientRect().right))
+        return {
+          scroll: document.documentElement.scrollWidth - width,
+          titlebar: right('header.app-titlebar *') - width,
+          page: right(`[data-page]:not(.hidden) aside, [data-page]:not(.hidden) main`) - width,
+        }
+      })
+      expect(overflow.scroll, route).toBe(0)
+      expect(overflow.titlebar, route).toBeLessThanOrEqual(0)
+      expect(overflow.page, route).toBeLessThanOrEqual(0)
+    }
+    await app.screenshot('small-window-settings')
+    const page = await app.open({ scenario: 'ready', route: '/studio', platform: 'linux', size: { width: 1024, height: 640 } })
+    // The Studio panels on screen give way before the canvas does, and the canvas keeps room for its whole toolbar.
+    // 助手 is closed at first; open, it is held to the same rule.
+    const panelWidths = (): Promise<number[]> =>
+      page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('[data-page="/studio"] aside[data-side]')]
+          .filter((el) => el.checkVisibility())
+          .map((el) => Math.round(el.getBoundingClientRect().width)),
+      )
+    const fits = async (panels: number): Promise<void> => {
+      const widths = await panelWidths()
+      expect(widths).toHaveLength(panels)
+      for (const width of widths) expect(width).toBeGreaterThanOrEqual(240)
+      expect(await page.locator('main[aria-label="画布"]').evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThanOrEqual(480)
+      const board = (await page.locator('main[aria-label="画布"]').boundingBox())!
+      const toolbar = (await page.getByRole('toolbar', { name: '画布工具' }).boundingBox())!
+      expect(toolbar.x).toBeGreaterThanOrEqual(board.x)
+      expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(board.x + board.width)
+    }
+    await fits(1)
+    await page.getByRole('button', { name: '助手' }).click()
+    await expect.poll(async () => (await panelWidths()).length).toBe(2)
+    await fits(2)
+    await app.screenshot('small-window-studio')
+  })
+
   it('offers an update only when one is available', async () => {
     let page = await app.open({ scenario: 'ready', route: '/studio' })
     expect(await page.locator('[data-update-chip]').count()).toBe(0)

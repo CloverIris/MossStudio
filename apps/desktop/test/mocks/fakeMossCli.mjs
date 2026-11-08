@@ -21,6 +21,7 @@
  *   stepMs     sleep per denoise step (default 5)
  *   failAt     'start' | 'text' | 'denoise' | 'vae': print `failMessage`, exit `failCode` (default 1)
  *   warning    print `warning: <warning>` before the text encoder (a truncated prompt)
+ *   noise      print `<noise>` as a stray line the runner does not recognise, before the text encoder
  *   noPng      exit 0 without writing the PNG
  *   ignoreTerm keep running on SIGTERM (only SIGKILL stops it)
  *   listFail   `--list-devices` prints `<program>: <listFail>` and exits 1 (no runtime)
@@ -229,6 +230,7 @@ async function run(a) {
   }
   failAt('start')
   if (behavior.warning) err(`warning: ${behavior.warning}`)
+  if (behavior.noise) err(behavior.noise)
   const seed = a.seed >= 0 ? a.seed : Math.floor(Math.random() * 2 ** 32)
   if (!a.quiet) err('text encoder')
   failAt('text')

@@ -515,7 +515,7 @@ describe('automatic GPU assignment by what the model needs', () => {
     const first = await supervisor.startEngineJob(request({ prompt: 'first' }))
     expect(first.deviceUuid).toBe(rtx5090.uuid)
     const second = await supervisor.startEngineJob(nvfp4Request('second'))
-    expect(second).toMatchObject({ deviceUuid: rtx5090.uuid, state: 'queued', gpuProfile: { tier: 'turbo', source: 'bundle' } })
+    expect(second).toMatchObject({ deviceUuid: rtx5090.uuid, state: 'queued', gpuProfile: { tier: 'turbo', source: 'model-weights' } })
     // A model every GPU runs still goes to the idle one.
     const third = await supervisor.startEngineJob(request({ prompt: 'third' }))
     expect(third.deviceUuid).toBe(nvidia.uuid)

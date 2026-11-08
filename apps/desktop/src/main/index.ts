@@ -63,7 +63,7 @@ import { acquireAppLock } from './install/singleInstance'
 import { scanEnvironment } from './services/env'
 import { getSettings, updateSettings } from './services/settings'
 import { collectTrainerArtifact } from './services/trainerArtifacts'
-import { armUpdateHealth, startUpdater, stopUpdater, updaterSummary } from './update'
+import { armUpdateHealth, installPendingAtStart, startUpdater, stopUpdater, updaterSummary } from './update'
 import { downloadCustomModel, getCatalog, listDownloads } from './services/models'
 import { startRequestedEngineJob } from './services/engineJobStart'
 import { registerGalleryProtocol } from './services/gallery'
@@ -2146,6 +2146,8 @@ exit 0
       return
     }
 
+    // macOS: an update downloaded last time installs now, before the first window.
+    if (await installPendingAtStart()) return
     armUpdateHealth()
     createAppWindow('studio')
     void refreshGpuInventory()

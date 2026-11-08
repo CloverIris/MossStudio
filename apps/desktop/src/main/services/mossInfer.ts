@@ -81,6 +81,8 @@ interface MossInferRuntime {
   binaryPath: string | null
   hello: EngineHello | null
   loadedKey: string | null
+  /** Generations this process has finished; the engine is restarted when it reaches the configured limit. */
+  generations: number
   reqSeq: number
   pending: Map<string, PendingRequest>
   active: ActiveGeneration | null
@@ -103,6 +105,7 @@ function runtimeFor(deviceUuid: string): MossInferRuntime {
       binaryPath: null,
       hello: null,
       loadedKey: null,
+      generations: 0,
       reqSeq: 0,
       pending: new Map(),
       active: null,
@@ -332,8 +335,7 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
             },
           })
           sink.done(0)
-          runtime.busy = false
-          void pump(runtime)
+          finishGeneration(runtime)
         })()
         return
       }
@@ -350,13 +352,19 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
         })
         sink.done(1)
       }
-      runtime.busy = false
-      void pump(runtime)
+      finishGeneration(runtime)
       return
     }
     default:
       return
   }
+}
+
+/** One generation is over (any outcome): count it, then let the queue continue. */
+function finishGeneration(runtime: MossInferRuntime): void {
+  runtime.generations += 1
+  runtime.busy = false
+  void pump(runtime)
 }
 
 async function writeSidecar(queued: QueuedJob, report: Record<string, unknown> | null): Promise<void> {
@@ -404,6 +412,7 @@ function handleExit(runtime: MossInferRuntime, proc: ChildProcessWithoutNullStre
   runtime.binaryPath = null
   runtime.hello = null
   runtime.loadedKey = null
+  runtime.generations = 0
   for (const [, entry] of runtime.pending) {
     clearTimeout(entry.timer)
     entry.reject(new Error(reason))
@@ -541,6 +550,19 @@ async function pump(runtime: MossInferRuntime): Promise<void> {
   const next = runtime.queue.shift()!
   const { job, params, opts, sink } = next
   try {
+    // A long batch leaves the weights out of the OS file cache and the arena a
+    // little more fragmented every time; starting over costs one reload and
+    // gives the next pictures the fast path back.
+    const refreshEvery = Math.max(0, Math.floor(opts.settings.mossInferRefreshEvery ?? 0))
+    if (refreshEvery > 0 && runtime.child && runtime.generations >= refreshEvery) {
+      sink.event({
+        type: 'log',
+        level: 'info',
+        message: `已连续生成 ${runtime.generations} 张，释放显存并重新加载引擎`,
+      })
+      await stopRuntime(runtime)
+      runtime.generations = 0
+    }
     await ensureEngine(
       runtime,
       {
@@ -656,8 +678,11 @@ export function requestRunningEngine(
   method: string,
   params: Record<string, unknown>,
   timeoutMs = 60_000,
+  /** Only this GPU's moss-server (each GPU runs the engine of its own package). */
+  deviceUuid?: string,
 ): Promise<Record<string, unknown>> | null {
-  const runtime = [...runtimes.values()].find((item) => item.child?.stdin.writable && item.hello)
+  const candidates = deviceUuid ? [runtimes.get(deviceUuid)].filter((item) => item !== undefined) : [...runtimes.values()]
+  const runtime = candidates.find((item) => item.child?.stdin.writable && item.hello)
   if (!runtime) return null
   const id = `mi-${++runtime.reqSeq}`
   return new Promise((resolvePromise, rejectPromise) => {

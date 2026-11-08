@@ -110,6 +110,7 @@ export function WireLayer({
 export function WireChips({
   wires,
   zoom,
+  focus,
   selectedWireId,
   hovered,
   onHover,
@@ -118,6 +119,8 @@ export function WireChips({
 }: {
   wires: readonly Wire[]
   zoom: number
+  /** Cards being looked at (selected, under the pointer): their wires show labels. */
+  focus: ReadonlySet<string>
   selectedWireId: string | null
   hovered: string | null
   onHover: React.Dispatch<React.SetStateAction<string | null>>
@@ -133,7 +136,9 @@ export function WireChips({
         const chip = wire.chip
         const selected = wire.id === selectedWireId
         const showRemove = selected || hovered === wire.id
-        if (zoom < CHIP_MIN_ZOOM && !showRemove) return null
+        // A label shows only for a wire being looked at, or one into or out of a card being looked at.
+        const looked = focus.has(wire.targetId) || focus.has(wire.sourceId)
+        if (!showRemove && (!looked || zoom < CHIP_MIN_ZOOM)) return null
         return (
           <div
             key={wire.id}

@@ -592,6 +592,29 @@ describe('runningEngineHello / requestRunningEngine', () => {
   })
 })
 
+describe('restarting a long batch', () => {
+  it('stops the sidecar once the configured number of generations is reached', async () => {
+    settings = { ...settings, mossInferRefreshEvery: 2 }
+    expect(await run('job-1').done).toBe(0)
+    expect(await run('job-2').done).toBe(0)
+    expect(servers).toHaveLength(1)
+    expect(await run('job-3').done).toBe(0)
+    expect(servers).toHaveLength(2)
+    expect(servers[0]!.methods()).toContain('shutdown')
+    expect(servers[0]!.closed).toBe(true)
+    expect(servers[1]!.methods()).toContain('load')
+  })
+
+  it('keeps one sidecar when the limit is off', async () => {
+    settings = { ...settings, mossInferRefreshEvery: 0 }
+    expect(await run('job-1').done).toBe(0)
+    expect(await run('job-2').done).toBe(0)
+    expect(await run('job-3').done).toBe(0)
+    expect(servers).toHaveLength(1)
+    expect(servers[0]!.methods()).not.toContain('shutdown')
+  })
+})
+
 describe('a GPU that switches engines', () => {
   const cuda = (binaryPath: string) => ({ package: { kind: 'cuda', flavour: 'cu13', arch: 'standard', runtime: 'bundled' }, binaryPath })
 

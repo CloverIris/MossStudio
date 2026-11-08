@@ -172,6 +172,9 @@ function mapError(code: string): string {
 /** How long a canceled remote generation may take to confirm before its SSH session is closed. */
 export const REMOTE_CANCEL_TIMEOUT_MS = 5000
 
+/** How long a finished job's moss-server may take to exit after `shutdown` before its SSH session is killed. */
+export const REMOTE_SHUTDOWN_TIMEOUT_MS = 5000
+
 /** Running remote jobs by job id: how to stop each one through its own SSH session. */
 const remoteJobs = new Map<string, { cancel: () => void }>()
 
@@ -236,10 +239,33 @@ export async function runRemoteEngineJob(host: TrainingHost, opts: RemoteEngineO
   /** The id of the generate request (what the engine's cancel names), once sent. */
   let generateId: string | null = null
   let cancelTimer: NodeJS.Timeout | null = null
+  let shutdownTimer: NodeJS.Timeout | null = null
+  let exited = false
   const inputsDir = jobInputFiles(opts.params).length ? remoteInputsDir(root, opts.jobId ?? randomUUID()) : null
 
   const removeInputs = (): void => {
     if (inputsDir) void sshExec(host, `rm -rf ${posixQuote(inputsDir)}`, 30_000).catch(() => undefined)
+  }
+  /**
+   * Each job starts its own moss-server, so it must go when the job does:
+   * one left running keeps its model in the host's GPU memory, and every
+   * later job then has less to work with and slows down.
+   */
+  const closeSession = (): void => {
+    if (exited || shutdownTimer) return
+    try {
+      child.stdin.write(`${JSON.stringify({ id: `remote-${++seq}`, method: 'shutdown', params: {} })}\n`)
+      child.stdin.end()
+    } catch {
+      /* stdin already closed */
+    }
+    shutdownTimer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        /* already gone */
+      }
+    }, REMOTE_SHUTDOWN_TIMEOUT_MS)
   }
   const finish = (code: number): void => {
     if (finished) return
@@ -247,6 +273,7 @@ export async function runRemoteEngineJob(host: TrainingHost, opts: RemoteEngineO
     if (cancelTimer) clearTimeout(cancelTimer)
     forget()
     removeInputs()
+    closeSession()
     sink.done(code)
   }
   /** Ends the job as canceled, then closes the session (its close no longer reports anything). */
@@ -384,6 +411,8 @@ export async function runRemoteEngineJob(host: TrainingHost, opts: RemoteEngineO
     cancelTimer = setTimeout(closeCanceled, REMOTE_CANCEL_TIMEOUT_MS)
   }
 
+  // The host may close the session before a write lands; its close reports that.
+  child.stdin.on('error', () => undefined)
   child.stdout.setEncoding('utf8')
   child.stderr.setEncoding('utf8')
   child.stdout.on('data', (chunk: string) => {
@@ -397,6 +426,8 @@ export async function runRemoteEngineJob(host: TrainingHost, opts: RemoteEngineO
     finish(-1)
   })
   child.on('close', (code) => {
+    exited = true
+    if (shutdownTimer) clearTimeout(shutdownTimer)
     for (const [, entry] of pending) {
       clearTimeout(entry.timer)
       entry.reject(new Error(`远端 moss-server 退出 (${code ?? 'null'})`))

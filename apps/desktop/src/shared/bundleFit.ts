@@ -148,5 +148,5 @@ export function bestBundleFor(
  * profile resolved for the GPU.
  */
 export function profileForBundle(profile: ResolvedGpuProfile, bundle: Pick<ModelBundle, 'tier'> | null | undefined): ResolvedGpuProfile {
-  return bundle?.tier ? { ...profile, tier: bundle.tier, source: 'bundle' } : profile
+  return bundle?.tier ? { ...profile, tier: bundle.tier, source: 'model-weights' } : profile
 }

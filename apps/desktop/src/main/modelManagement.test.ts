@@ -81,7 +81,8 @@ export async function runModelManagementTests(): Promise<void> {
   }
   try {
     let catalog = await getCatalog(settings, true)
-    assert.equal(catalog.bundles.length, 4)
+    // 4 folder bundles and the 5 single-file ones the engine certifies.
+    assert.equal(catalog.bundles.length, 9)
     assert(catalog.models.filter((m) => m.format === 'comfyui').every((m) => m.files?.length === 1))
     assert(catalog.models.filter((m) => m.role !== 'full').every((m) => m.files?.length))
     assert.equal((await installBundle('moss-sft', settings)).length, 4)

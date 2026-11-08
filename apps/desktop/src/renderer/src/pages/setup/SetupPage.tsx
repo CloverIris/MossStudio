@@ -1,66 +1,26 @@
-import { AlertCircle, Check, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { Check, ChevronRight, Monitor, RefreshCw } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { Settings } from '@shared/types'
-import { featureVisibility } from '../../lib/features'
+import { Ipc } from '@shared/channels'
+import type { ManagedHost, Settings } from '@shared/types'
+import { call } from '../../lib/api'
+import { bytes } from '../../lib/format'
+import { timeLeftLabel, type Preparation } from '../../lib/preparation'
 import { useApp } from '../../store'
 import { Button, ProgressBar, Spinner, cn, useToast } from '../../components/ui'
 import { useAppInfo } from '../settings/useAppInfo'
+import { pickFolder } from '../settings/fields'
+import { HostDialog } from '../settings/HostDialog'
+import { emptyHostForm, hostPathsPatch, hostSavePayload, type HostForm } from '../settings/hostForm'
 import type { PlanLine } from '../../lib/engineInstall'
 import { setupSpaceLabel, stepsToStart, type SetupStep } from './setupState'
 import { useSetup } from './useSetup'
 
-function StepMark({ step, index }: { step: SetupStep; index: number }): React.JSX.Element {
-  const base = 'flex size-6 items-center justify-center rounded-full text-caption font-semibold'
-  if (step.state === 'done')
-    return (
-      <span className={cn(base, 'bg-ok text-on-ink')}>
-        <Check className="size-3.5" strokeWidth={2.4} aria-hidden="true" />
-      </span>
-    )
-  if (step.state === 'error' || (step.state === 'blocked' && step.id === 'gpu')) {
-    return (
-      <span className={cn(base, 'bg-danger text-on-danger')}>
-        <AlertCircle className="size-3.5" aria-hidden="true" strokeWidth={1.6} />
-      </span>
-    )
-  }
-  if (step.state === 'running') return <span className={cn(base, 'bg-accent text-on-accent')}>{index + 1}</span>
-  return <span className={cn(base, 'bg-well-strong text-ink-2')}>{index + 1}</span>
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
-const STATE_LABEL: Record<SetupStep['state'], string> = {
-  waiting: '等待开始',
-  running: '进行中',
-  done: '已完成',
-  error: '出错了',
-  blocked: '无法继续',
-}
-
-function StepRow({ step, index }: { step: SetupStep; index: number }): React.JSX.Element {
-  const current = step.state === 'running'
-  return (
-    <li
-      className={cn('grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3.5 rounded-lg px-4 py-3.5', current && 'bg-surface')}
-      aria-current={current ? 'step' : undefined}
-    >
-      <StepMark step={step} index={index} />
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-control text-ink">
-          {step.title}
-          <span className="sr-only">：{STATE_LABEL[step.state]}</span>
-        </span>
-        <span className={cn('tabular text-ui [overflow-wrap:anywhere]', step.state === 'error' ? 'text-danger' : 'text-ink-2')}>
-          {step.detail}
-        </span>
-        {current ? <ProgressBar className="mt-2" value={step.percent ?? null} label={`${step.title}进度`} /> : null}
-      </div>
-      <span className="tabular text-ui text-ink-2">{current && step.percent !== undefined ? `${Math.round(step.percent)}%` : null}</span>
-    </li>
-  )
-}
-
-/** What was detected and what each GPU will run, one line per GPU; tips stay quiet. */
+/** What was detected and what each GPU will run, one line per GPU. Shown on request. */
 function PlanLines({ lines }: { lines: PlanLine[] }): React.JSX.Element | null {
   if (lines.length === 0) return null
   return (
@@ -79,9 +39,107 @@ function PlanLines({ lines }: { lines: PlanLine[] }): React.JSX.Element | null {
   )
 }
 
+/** The GPU in one quiet line; what each GPU runs opens under it when there is more to say. */
+function GpuLine({ step, lines }: { step: SetupStep | undefined; lines: PlanLine[] }): React.JSX.Element | null {
+  const [open, setOpen] = useState(false)
+  if (!step || step.state !== 'done') return null
+  const more = lines.length > 1 || lines.some((line) => line.note || line.tip || !line.supported)
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 text-ui text-ink-2">
+        <span className="flex size-[18px] items-center justify-center rounded-full bg-ok text-on-ink">
+          <Check className="size-3" strokeWidth={2.6} aria-hidden="true" />
+        </span>
+        <span className="tabular min-w-0 truncate" data-setup-gpu>
+          {step.detail}
+        </span>
+        {lines.length > 0 ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+            className={cn('shrink-0 rounded-md px-1.5 text-ui hover:bg-well hover:text-ink', more ? 'text-ink' : 'text-ink-2')}
+          >
+            {open ? '收起' : '详情'}
+          </button>
+        ) : null}
+      </div>
+      {open ? <PlanLines lines={lines} /> : null}
+    </div>
+  )
+}
+
+/** Everything being downloaded as one number, the parts small underneath. */
+function Progress({ progress, modelName }: { progress: Preparation; modelName: string }): React.JSX.Element {
+  const left = timeLeftLabel(progress.secondsLeft)
+  const percent = Math.round(progress.percent)
+  return (
+    <div className="flex flex-col gap-3" data-setup-progress>
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <span className="tabular text-display font-semibold text-ink">{percent}%</span>
+        <span className="tabular text-ui text-ink-2">
+          {bytes(progress.done)} / {bytes(progress.total)}
+          {left ? ` · 还要${left}` : ''}
+        </span>
+      </div>
+      <ProgressBar value={progress.percent} label="准备进度" />
+      <ul className="flex flex-col gap-1 text-ui text-ink-2" aria-label="正在下载">
+        {progress.parts.map((part) => (
+          <li key={part.id} className="flex items-center gap-2">
+            <span className={cn('w-4 shrink-0', part.finished ? 'text-ok' : part.failed ? 'text-danger' : 'text-ink-2')} aria-hidden="true">
+              {part.finished ? '✓' : part.failed ? '!' : '↓'}
+            </span>
+            <span className="min-w-0 flex-1 truncate">{part.id === 'engine' ? '运行组件' : modelName}</span>
+            <span className="tabular">
+              {part.finished
+                ? bytes(part.total)
+                : `${bytes(part.done)} / ${bytes(part.total)}${part.speedBps > 0 ? ` · ${bytes(part.speedBps)}/s` : ''}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** A way forward when nothing can run here, as one large choice. */
+function Choice({
+  icon,
+  title,
+  detail,
+  busy,
+  onClick,
+}: {
+  icon: React.ReactNode
+  title: string
+  detail: string
+  busy?: boolean
+  onClick: () => void
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      className="flex items-center gap-3.5 rounded-xl bg-surface px-4 py-3.5 text-left transition-colors enabled:hover:bg-well disabled:opacity-60"
+    >
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-well-strong text-ink">
+        {busy ? <Spinner /> : icon}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-control font-medium text-ink">{title}</span>
+        <span className="text-ui text-ink-2">{detail}</span>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-ink-3" strokeWidth={1.6} aria-hidden="true" />
+    </button>
+  )
+}
+
 /**
- * First run: one screen that prepares the computer — GPU check, engine, and
- * the recommended model — behind a single 开始准备 button.
+ * First run, one screen at a time: what will be downloaded and where (one
+ * button), then one progress with the time left (and 先去看看 into the
+ * board), or, when this computer cannot run the model, the ways forward.
+ * Once everything is in place it goes straight to the board.
  */
 export function SetupPage(): React.JSX.Element {
   const navigate = useNavigate()
@@ -89,19 +147,10 @@ export function SetupPage(): React.JSX.Element {
   const settings = useApp((state) => state.settings)
   const saveSettings = useApp((state) => state.saveSettings)
   const info = useAppInfo()
-  const { view, starting, start, redetect, redetecting, chooseModelFolder, usingFolder } = useSetup()
+  const { view, progress, modelName, starting, start, redetect, redetecting, chooseModelFolder, usingFolder } = useSetup()
   const [leaving, setLeaving] = useState(false)
+  const [hostForm, setHostForm] = useState<HostForm | null>(null)
   const space = setupSpaceLabel(view)
-  const { remoteHosts } = featureVisibility(settings)
-
-  async function pickLocalFolder(): Promise<void> {
-    try {
-      const outcome = await chooseModelFolder()
-      if (outcome) toast.push(outcome.message, outcome.ready ? 'success' : 'info')
-    } catch (error) {
-      toast.push(error instanceof Error ? error.message : String(error), 'error')
-    }
-  }
 
   async function leave(state: Settings['onboardingState'], to: string): Promise<void> {
     setLeaving(true)
@@ -109,118 +158,188 @@ export function SetupPage(): React.JSX.Element {
       await saveSettings({ onboardingState: state })
       void navigate(to, { replace: true })
     } catch (error) {
-      toast.push(error instanceof Error ? error.message : String(error), 'error')
+      toast.push(errorText(error), 'error')
     } finally {
       setLeaving(false)
     }
   }
 
   const running = view.phase === 'running'
-  const done = view.phase === 'done'
   const pending = stepsToStart(view)
   const mac = view.os === 'macos'
+  const gpuStep = view.steps.find((step) => step.id === 'gpu')
   const modelStep = view.steps.find((step) => step.id === 'model')
+  const failedStep = view.steps.find((step) => step.state === 'error')
+
+  // Everything in place: straight to the board. Say so only if it was downloading here.
+  const sawRunning = useRef(false)
+  if (running) sawRunning.current = true
+  const finishing = useRef(false)
+  useEffect(() => {
+    if (view.phase !== 'done' || finishing.current) return
+    finishing.current = true
+    void saveSettings({ onboardingState: 'completed' })
+      .then(() => {
+        if (sawRunning.current) toast.push('模型准备好了，可以生成了', 'success')
+        void navigate('/studio', { replace: true })
+      })
+      .catch((error: unknown) => {
+        finishing.current = false
+        toast.push(errorText(error), 'error')
+      })
+  }, [view.phase, saveSettings, navigate, toast])
+
+  // Picked up after a restart (the engine still installing, the model never started): carry on.
+  const resumed = useRef(false)
+  useEffect(() => {
+    if (!running || pending.length === 0 || starting || resumed.current) return
+    resumed.current = true
+    void start()
+  }, [running, pending.length, starting, start])
+
+  async function pickLocalFolder(): Promise<void> {
+    try {
+      const outcome = await chooseModelFolder()
+      if (outcome) toast.push(outcome.message, outcome.ready ? 'success' : 'info')
+    } catch (error) {
+      toast.push(errorText(error), 'error')
+    }
+  }
+
+  async function changeFolder(): Promise<void> {
+    try {
+      const path = await pickFolder('选择模型保存位置')
+      if (path) await saveSettings({ modelsRoot: path })
+    } catch (error) {
+      toast.push(errorText(error), 'error')
+    }
+  }
+
+  // 用另一台电脑: remote hosts come on and the new one is added right here.
+  async function addAnotherComputer(): Promise<void> {
+    try {
+      if (!settings?.remoteHostsEnabled) await saveSettings({ remoteHostsEnabled: true })
+      setHostForm(emptyHostForm())
+    } catch (error) {
+      toast.push(errorText(error), 'error')
+    }
+  }
+  async function saveHost(form: HostForm): Promise<boolean> {
+    try {
+      const saved = await call<ManagedHost>(Ipc.hostsSave, hostSavePayload(form))
+      await call(Ipc.hostsUpdatePaths, hostPathsPatch(saved.id, form))
+      setHostForm(null)
+      toast.push(`已添加 ${saved.name}`, 'success')
+      // 设备 prepares it: connection, engine, then the model.
+      await leave('active', '/settings/devices')
+      return true
+    } catch (error) {
+      toast.push(`没有保存：${errorText(error)}`, 'error')
+      return false
+    }
+  }
+
+  const modelsPath = settings?.modelsRoot || info?.modelsPath
 
   return (
-    <div className="flex h-full justify-center overflow-y-auto bg-panel px-6 pb-16 pt-[clamp(32px,12vh,120px)]">
-      <div className="flex w-full max-w-[560px] flex-col gap-8">
-        <div className="flex flex-col gap-3">
-          <h1 className="text-display font-semibold text-ink">{done ? '一切就绪' : '准备好你的电脑'}</h1>
-          <p className="text-ui leading-[22px] text-ink-2">
-            {done
-              ? '显卡、推理引擎和推荐模型都已准备好，可以开始创作了。'
-              : `MossStudio 会检测显卡、安装推理引擎并下载推荐模型。${space ? `需要${space} 空间，` : ''}耗时取决于网速。你可以离开这个页面，准备会在后台继续。`}
-          </p>
-        </div>
-
-        <ol className="flex flex-col gap-1" aria-label="准备步骤">
-          {view.steps.map((step, index) => (
-            <StepRow key={step.id} step={step} index={index} />
-          ))}
-        </ol>
-
-        {done ? null : <PlanLines lines={view.lines} />}
-
+    <div className="flex h-full justify-center overflow-y-auto bg-panel px-6 pb-16 pt-[clamp(32px,14vh,140px)]">
+      <div className="flex w-full max-w-[520px] flex-col gap-7">
         {view.phase === 'blocked' ? (
-          <div className="flex flex-col gap-3 rounded-xl bg-surface px-4 py-4">
-            <p className="text-ui text-ink">
-              {mac
-                ? '这台 Mac 不能在本机运行推理引擎。'
-                : '在这台电脑上没有找到能运行引擎的显卡。如果显卡已经装好，请更新显卡驱动后重新检测。'}
-            </p>
-            <p className="text-ui text-ink-2">
-              {remoteHosts
-                ? '也可以添加一台装有 NVIDIA 显卡的远程主机，在它上面运行。'
-                : '也可以使用一台装有 NVIDIA 显卡的远程主机：在 设置 › 功能 中开启「远程主机」。'}
-            </p>
-            {/* Blocked, these are the actions that work: 重新检测 is the main one (a Mac cannot redetect its way out). */}
-            <div className="flex flex-wrap gap-2">
+          <>
+            <div className="flex flex-col gap-1.5">
+              <h1 className="text-display font-semibold text-ink">{mac ? '这台 Mac 不能在本机生成' : '这台电脑跑不了模型'}</h1>
+              <p className="text-ui text-ink-2">{mac ? '需要一台装有 NVIDIA 显卡的电脑。' : gpuStep?.detail}</p>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <Choice
+                icon={<Monitor className="size-[18px]" strokeWidth={1.6} />}
+                title="用另一台电脑"
+                detail="连上一台有 NVIDIA 显卡的电脑，在它上面生成"
+                onClick={() => void addAnotherComputer()}
+              />
               {mac ? null : (
-                <Button tone="primary" size="md" onClick={() => void redetect()} disabled={redetecting}>
-                  {redetecting ? <Spinner /> : <RefreshCw className="size-4" strokeWidth={1.6} />}重新检测
-                </Button>
+                <Choice
+                  icon={<RefreshCw className="size-[18px]" strokeWidth={1.6} />}
+                  title="重新检测"
+                  detail="刚装好显卡或更新了驱动"
+                  busy={redetecting}
+                  onClick={() => void redetect()}
+                />
               )}
-              <Button
-                tone={mac ? 'primary' : 'secondary'}
-                size="md"
-                onClick={() => void leave('active', remoteHosts ? '/settings/devices' : '/settings/features')}
-                disabled={leaving}
-              >
-                {remoteHosts ? '添加远程主机' : '去开启远程主机'}
+            </div>
+            <div className="flex justify-end">
+              <Button tone="ghost" size="lg" disabled={leaving} onClick={() => void leave('dismissed', '/studio')}>
+                先随便看看
               </Button>
             </div>
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-3">
-          {modelStep && modelStep.state !== 'done' && modelStep.state !== 'running' && view.phase !== 'blocked' ? (
-            // Quiet: most people download; someone with the files already can point at them.
-            <Button tone="ghost" size="sm" disabled={usingFolder} onClick={() => void pickLocalFolder()}>
-              {usingFolder ? <Spinner /> : null}已有模型文件？使用本地文件夹
-            </Button>
-          ) : info?.modelsPath && !done ? (
-            <span className="min-w-0 truncate text-ui text-ink-2" title={info.modelsPath}>
-              模型保存到 {info.modelsPath}
-            </span>
-          ) : null}
-          <span className="flex-1" />
-          {done ? (
-            <Button tone="primary" size="lg" disabled={leaving} onClick={() => void leave('completed', '/studio')}>
-              开始创作
-            </Button>
-          ) : running ? (
-            <>
-              <Button size="lg" tone="ghost" disabled={leaving} onClick={() => void leave('active', '/studio')}>
-                在后台继续
-              </Button>
-              {pending.length > 0 ? (
-                // E.g. after a restart mid-install: the engine is still downloading but the model never started.
-                <Button tone="primary" size="lg" disabled={starting} onClick={() => void start()}>
-                  {starting ? <Spinner /> : null}
-                  {pending.includes('model') ? '同时下载模型' : '继续准备'}
-                </Button>
+          </>
+        ) : running && progress ? (
+          <>
+            <h1 className="text-display font-semibold text-ink">正在准备</h1>
+            <Progress progress={progress} modelName={modelName} />
+            <div className="flex items-center gap-3">
+              {modelsPath ? (
+                <span className="min-w-0 flex-1 truncate text-ui text-ink-2" title={modelsPath}>
+                  保存到 {modelsPath}
+                </span>
               ) : (
-                <Button tone="primary" size="lg" disabled>
-                  开始创作
-                </Button>
+                <span className="flex-1" />
               )}
-            </>
-          ) : (
-            <>
-              <Button tone="ghost" size="lg" disabled={leaving} onClick={() => void leave('dismissed', '/studio')}>
-                跳过
+              <Button tone="primary" size="lg" disabled={leaving} onClick={() => void leave('active', '/studio')}>
+                先去看看
               </Button>
-              {/* Nothing to start while blocked: the way forward is in the box above. */}
-              {view.phase === 'blocked' ? null : (
-                <Button tone="primary" size="lg" disabled={starting || view.phase === 'checking'} onClick={() => void start()}>
-                  {starting ? <Spinner /> : null}
-                  {view.phase === 'error' ? '重试' : '开始准备'}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <h1 className="text-display font-semibold text-ink">准备开始创作</h1>
+              <p className="text-ui text-ink-2">先下载一次模型，之后都在本机运行。</p>
+            </div>
+            {view.phase === 'checking' ? (
+              <p className="flex items-center gap-2 text-ui text-ink-2">
+                <Spinner />
+                正在检查这台电脑…
+              </p>
+            ) : (
+              <GpuLine step={gpuStep} lines={view.lines} />
+            )}
+            <div className="flex flex-col gap-3 rounded-xl bg-surface px-5 py-4" data-setup-summary>
+              <span className="tabular text-title font-semibold text-ink">{space ? `下载${space}` : '正在计算大小…'}</span>
+              <div className="flex items-center gap-3 text-ui text-ink-2">
+                <span className="min-w-0 flex-1 truncate" title={modelsPath}>
+                  保存到 {modelsPath ?? '…'}
+                </span>
+                <Button size="sm" onClick={() => void changeFolder()} disabled={starting}>
+                  更改
                 </Button>
-              )}
-            </>
-          )}
-        </div>
+              </div>
+              {failedStep ? (
+                <p className="text-ui text-danger [overflow-wrap:anywhere]" role="alert">
+                  没有下载完：{failedStep.detail}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {modelStep && modelStep.state !== 'done' ? (
+                // Quiet: most people download; someone with the files already can point at them.
+                <Button tone="ghost" size="sm" disabled={usingFolder} onClick={() => void pickLocalFolder()}>
+                  {usingFolder ? <Spinner /> : null}已有模型文件…
+                </Button>
+              ) : null}
+              <span className="flex-1" />
+              <Button tone="ghost" size="lg" disabled={leaving} onClick={() => void leave('dismissed', '/studio')}>
+                稍后
+              </Button>
+              <Button tone="primary" size="lg" disabled={starting || view.phase === 'checking'} onClick={() => void start()}>
+                {starting ? <Spinner /> : null}
+                {view.phase === 'error' ? '重试' : '开始下载'}
+              </Button>
+            </div>
+          </>
+        )}
       </div>
+      <HostDialog open={hostForm !== null} initial={hostForm ?? emptyHostForm()} onClose={() => setHostForm(null)} onSave={saveHost} />
     </div>
   )
 }

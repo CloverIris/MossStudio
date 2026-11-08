@@ -1,169 +1,97 @@
 <p align="center">
-  <img src="docs/assets/mossstudio-logo.svg" alt="MossStudio" width="180">
+  <img src="docs/assets/brand/mossstudio-logo.svg" alt="MossStudio" width="180">
 </p>
 
 <h1 align="center">MossStudio</h1>
 
 <p align="center">
-  开源、原生 CUDA、不需要 Python 的 <b>MOSS-Image 桌面工作台</b><br>
-  一句话出图 · 可视化布局画布 · 自带 <a href="https://github.com/mossimage-cpp/mossimage.cpp"><b>MossInfer</b></a> 推理引擎
+  给 <a href="https://github.com/OpenMOSS/MOSS-Image"><b>MOSS-Image</b></a> 用的节点式画板<br>
+  写一句描述就出图 · 连线组合风格、起始图和放大 · 自带 <a href="https://github.com/mossimage-cpp/mossimage.cpp"><b>MossInfer</b></a> 推理引擎，不需要 Python
 </p>
 
 <p align="center">
-  <img alt="status" src="https://img.shields.io/badge/status-发布收尾-orange">
+  <a href="https://github.com/CloverIris/MossStudio/releases"><img alt="release" src="https://img.shields.io/github/v/release/CloverIris/MossStudio?label=MossStudio&color=2F855A"></a>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
-  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6">
+  <img alt="GPU" src="https://img.shields.io/badge/GPU-NVIDIA%20CUDA%20%7C%20Vulkan%20%7C%20AMD%20HIP-76B900?logo=nvidia&logoColor=white">
   <br>
   <img alt="Electron" src="https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=06181f">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white">
   <img alt="Tailwind" src="https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white">
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white">
   <img alt="pnpm" src="https://img.shields.io/badge/pnpm-9-F69220?logo=pnpm&logoColor=white">
-  <img alt="CUDA" src="https://img.shields.io/badge/CUDA-12.x-76B900?logo=nvidia&logoColor=white">
-  <img alt="C++" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
+  <img alt="CUDA" src="https://img.shields.io/badge/CUDA-12%20%7C%2013-76B900?logo=nvidia&logoColor=white">
   <a href="https://github.com/mossimage-cpp/mossimage.cpp"><img alt="MossInfer" src="https://img.shields.io/github/v/release/mossimage-cpp/mossimage.cpp?label=MossInfer&color=76B900"></a>
 </p>
 
 ---
 
-![MossStudio 创作工作台](docs/assets/screenshot-studio.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/studio-dark.png">
+  <img alt="MossStudio 的创作画板：选中的「画面」上画了物体和文字区域，下方是这张画面生成过的图片" src="docs/assets/readme/studio-light.png" width="100%">
+</picture>
 
 ## 这是什么
 
-MossStudio 是 [MOSS-Image](https://github.com/OpenMOSS/MOSS-Image) 的桌面工作台。它把**模型下载、参数调节、布局画布、AI Agent 和推理引擎**收进同一个窗口，让你不用再和 `git clone`、conda、Gradio 表单打交道。
+MossStudio 是 [MOSS-Image](https://github.com/OpenMOSS/MOSS-Image) 的桌面画板。画板上的每张「画面」是一张要生成的图：写一句描述，点「生成」，图片出现在卡片旁边。把「风格」「起始图」「参考图」这些节点连到画面上，就能让一组图保持同一种风格，或者改一张、放大一张。它面向第一次接触 AI 绘图的人：节点少、名字直白，用不了的功能会说明原因，而不是报一段堆栈。
 
-> 当前处于**发布收尾阶段**：`1.0.1` 已发布 Windows x64 便携包并支持应用内更新，`1.0.2` 已构建（LoRA + 统一引擎就绪）、待发布；macOS/Linux 产物和签名安装程序仍在收尾。
+- **下载即用**：引擎和模型都按显卡自动挑选并下载，不需要安装 Python、conda 或 PyTorch。
+- **在本机生成**：推理由自带的 [MossInfer](https://github.com/mossimage-cpp/mossimage.cpp) 引擎在你的显卡上完成，图片不离开你的电脑；按显存自动安排哪些层常驻、哪些流式加载。
+- **画板而不是表单**：画面、风格、起始图、遮罩、控制图、参考图都是卡片，连线决定谁影响谁；右键菜单里有「改一张图」「局部重绘」「放大一张图」等现成配方。
+- **每次生成都留着**：画面下方的胶片条记录每一次运行，所有图片同时进入「作品」，可以随时「用作起始图」。
+- **助手可选**：接入你自己的 OpenAI 兼容、Anthropic、Gemini 或 Ollama 账号后，助手能直接在画板上加卡片、改描述、发起生成，「自主」或「审批」两种模式。
+- **更新很安静**：新版本在后台下载，下次打开就是新版，出问题会自动回到上一个版本。
 
-- 🔒 **完全本地**：图片不出本机，API Key 只存在你自己的用户目录
-- 🧩 **开箱即用**：内置模型下载器，自动挑最快的加速源
-- 🚀 **自研推理引擎**：[MossInfer](https://github.com/mossimage-cpp/mossimage.cpp)，C++/CUDA 原生实现，不依赖 PyTorch；比 PyTorch 流水线快 1.33–1.45×
-- 🪶 **不吃显存**：6–8 GB 显存就能高性能出 1024² 大图，最低 2.34 GiB 也能跑
-- 🐍 **不需要 Python**：没有 conda、没有 PyTorch、没有虚拟环境
-- 🤖 **一句话出图**：内置 AI Agent（自备 API Key），直接改画布、加图层、发起生成
-- 🩺 **报错看得懂**：错误会被翻译成可操作的诊断卡片，而不是一段堆栈
+## 支持的显卡
 
-## 推理引擎 MossInfer
+MossStudio 为每块显卡自动选一个引擎，规则来自代码（`apps/desktop/src/shared/engineChoice.ts`）。
 
-MossInfer 是这个工作台的推理引擎，独立开源在 **[mossimage-cpp/mossimage.cpp](https://github.com/mossimage-cpp/mossimage.cpp)**。它用 C++/CUDA 原生实现 MOSS-Image 的整条推理链路（5B DiT、Qwen3.5 文本编码器、FLUX.2 VAE），运行时不需要 PyTorch，也不需要 Python 或虚拟环境；MossStudio 通过 `moss-server` 的 JSON-lines 协议驱动它，本机和远端 Linux 主机走同一套协议。
+| 显卡 | 引擎 | 能做什么 |
+| --- | --- | --- |
+| NVIDIA RTX 30 / 40 / 50 系列 | 「CUDA 13」或「CUDA 12」，按驱动版本自动选 | 全部功能：LoRA、起始图、遮罩、控制图、参考图、高清修复、实时预览 |
+| Linux 上的 AMD RX 7900 系列、RX 9000 系列（gfx1100、gfx1200、gfx1201），装有 ROCm 7 | 「AMD 原生」（HIP） | 文生图 |
+| 其他显卡（Windows 上的 AMD、Intel、驱动太旧的 NVIDIA） | 「兼容模式」（Vulkan） | 文生图，速度较慢 |
+| macOS | 本机不能运行引擎 | 界面可用；生成交给一台装有 NVIDIA 显卡的 Linux 电脑（「远程主机」） |
 
-- **按显存规划**：启动时探测 GPU，按预算决定哪些层常驻、哪些流式加载；INT8 档 7.2 GiB、INT4 档 5.0 GiB 即可跑 1024²。
-- **三档质量**：`reference`（bf16，精确）、`high`（INT8 GEMM + 8-bit 注意力，日常推荐）、`turbo`（4-bit DiT，最省显存），由调用方在加载时指定。
-- **构建矩阵**：Windows x64 / Linux x86-64，CUDA 12 与 13，完整包与 `-system-cuda` 包；Turing（RTX 2080，`sm_75`）和 Volta（V100，`sm_70`）有专门构建。
-- **模型范围**：MOSS-Image Base 与 SFT；其它模型会被明确拒绝，而不是悄悄出错。
-- **LoRA**：`generate` 可直接接收 `loras: [{ path, strength }]`；MossStudio 把它做成每张画布独立的权重与强度选择。
-- **可复现**：重复运行输出逐位一致；1024² / 50 步 27.8 秒、峰值 11.7 GiB（RTX 5090，见[性能报告](docs/mossinfer-performance.md)）。
+显卡驱动、每个引擎支持的功能等细节以引擎仓库为准：[mossimage-cpp/mossimage.cpp](https://github.com/mossimage-cpp/mossimage.cpp)。
 
-更细的内容在引擎仓库里：[集成指南](https://github.com/mossimage-cpp/mossimage.cpp/blob/main/docs/integration.md)、[server 协议](https://github.com/mossimage-cpp/mossimage.cpp/blob/main/docs/server-protocol.md)、[C API](https://github.com/mossimage-cpp/mossimage.cpp/blob/main/docs/c-api.md)、[Turing / sm_75 支持](https://github.com/mossimage-cpp/mossimage.cpp/blob/main/docs/sm75.md)。MossStudio 只安装上游发布的 Release 资产（`SHA256SUMS` 校验后安装），不修改引擎源码。
+## 安装与第一张图
 
-## 亮点
+1. 到 [Releases](https://github.com/CloverIris/MossStudio/releases) 下载最新版本：Windows 是 `MossStudio-Setup-<版本>-x64.exe`，Linux 是 `MossStudio-Setup-<版本>-linux-x64.run`，macOS 是 `.dmg`。每个系统还有一个解压即用的便携版。
+2. 运行安装包。安装程序会发现电脑上的旧版 MossStudio，默认沿用它的作品、模型和设置。
+3. 第一次打开进入「准备开始创作」：确认显卡那一行，点「开始下载」。引擎和推荐模型一起下载，点「先去看看」可以边下边逛。
+4. 下载完成后在「创作」里写一句描述，点「生成」。
 
-| | |
-|---|---|
-| **[MossInfer](https://github.com/mossimage-cpp/mossimage.cpp) 引擎** | 自研 C++/CUDA 推理管线，不依赖 PyTorch。1024² / 50 步只要 27.8 秒（官方 diffusers 流水线 40.2 秒），峰值显存 11.7 GiB |
-| **小显存友好** | 按显存预算自动规划驻留层数，装不下的部分流式加载。INT8 档 7.2 GiB、INT4 档 5.0 GiB 即可跑 1024²；2048² 大图峰值仅 16.3 GiB |
-| **模型管理** | 27 GB 权重拆成 Dit / Text Encoder / VAE 分开下载、共享 HF 缓存、自由组合，先下哪个由你决定 |
-| **自动加速源** | 自动探测并切换 GitHub 代理 / HF 镜像 / 包源，失败了自动回退直连 |
-| **布局画布** | Figma 式的自由画布，多张画布平铺；每块画布可按 1024/768/512 比例出图，区域框直接写提示词 |
-| **LoRA** | 每块画布单独绑定 LoRA 权重、0–2 强度滑杆，支持导入本地 `.safetensors`；缺权重时直接报错，不会悄悄生成一张少了 LoRA 的图 |
-| **AI Agent** | 支持 OpenAI / DeepSeek / Anthropic / Gemini / Ollama；Agent 通过标准 MCP 风格的工具调用直接操作画布并生成 |
-| **更新与公告** | 启动、定时与回到窗口时自动检查新版本；标题栏版本胶囊、通知中心未读角标，更新包先校验大小与 SHA-256 再解压替换 |
-| **诊断** | 环境检查、错误翻译、一键复制诊断信息；同一个错误不会反复弹窗 |
+每一步的截图、选项和出错时怎么办，见 [安装 MossStudio 并生成第一张图](docs/how-to/setup.md)。
 
-## 引擎性能
+## 性能
 
-数据来自 [MossInfer 1.0.0 性能报告](docs/mossinfer-performance.md)（RTX 5090 32 GB 实测）。
-
-**生成一张 1024² 图（50 步）**
-
-| 运行方式 | 耗时 | 峰值显存 |
-| --- | ---: | ---: |
-| 官方 diffusers（全量驻留） | 40.2 s | 30.8 GiB |
-| 官方 diffusers（顺序 CPU 卸载） | 188.4 s | 3.5 GiB |
-| **MossInfer（bf16）** | **27.8 s** | **11.7 GiB** |
-| MossInfer（INT8 + 8-bit 注意力） | 13.3 s | 7.2 GiB |
-| MossInfer（INT4 Turbo） | 12.7 s | **5.0 GiB** |
-
-**单步推理对比 PyTorch eager**
-
-| 分辨率 | PyTorch | MossInfer | 加速 |
-| --- | ---: | ---: | ---: |
-| 1024² | 0.620 s | 0.466 s | 1.33× |
-| 1456²（长提示词） | 2.016 s | 1.454 s | 1.39× |
-| 2048² | 3.746 s | 2.776 s | 1.35× |
-
-其它结论：2048² 大图 143 秒跑完（官方会在 VAE 解码阶段爆显存）；只剩 10.4 GiB 空闲也能跑 2048²，每步只慢 0.3%；重复运行输出**逐位一致**。
-
-## 快速开始
-
-> 需要 NVIDIA 显卡（Windows x64 / Linux x64）与较新的驱动。
-
-```bash
-git clone https://github.com/CloverIris/MossStudio.git
-cd MossStudio
-pnpm install
-pnpm dev
-```
-
-启动后三步：
-
-1. **引擎** —— 下载并激活 MossInfer（默认挑最匹配你显卡的构建）
-2. **模型** —— 选择要下载的权重组件（Dit / Text Encoder / VAE 可分开下）
-3. **创作** —— 新建 Project → 写提示词或让 Agent 帮你写 → 开始生成
-
-想用 Agent？在右侧 Agent 面板添加一个 Provider（OpenAI 兼容 / Anthropic / Gemini / Ollama 都行），填上你自己的 API Key。
-
-## 它是怎么搭起来的
-
-```
-┌──────────────────────────────────────────────────────────┐
-│ Electron 主进程                                           │
-│  Studio / Trainer 窗口 · 项目与任务 · 模型与引擎管理        │
-│  本地 HTTP/WS 服务（局域网 WebUI）                         │
-└───────────────┬──────────────────────────┬───────────────┘
-                │ 类型化 IPC                │ stdio JSON-lines
-                ▼                          ▼
-       React 工作台                  moss-server (MossInfer)
-       画布 / 面板 / Agent             C++/CUDA 推理
-```
-
-- 渲染层拿不到 Node 能力，只通过白名单 IPC 与主进程通信
-- 提示词、布局、参数、任务状态都挂在 Canvas 上，项目存成 JSON + 资源文件，不依赖数据库
-- 推理引擎独立进程，协议是 JSON-lines；本机和远程 Linux 主机走同一套协议（引擎即 [MossInfer](https://github.com/mossimage-cpp/mossimage.cpp) 的 `moss-server`）
+MossInfer 用 C++/CUDA 实现 MOSS-Image 的整条推理链路，不依赖 PyTorch。它在 RTX 5090 上的实测数据，包括和官方 diffusers 流水线的对比、各精度档的耗时与显存峰值，都在 [MossInfer 1.0.0 性能报告](docs/records/2026-10-31-mossinfer-1.0.0-performance.md) 里。
 
 ## 文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [MossInfer 引擎](https://github.com/mossimage-cpp/mossimage.cpp) | 推理引擎源码、集成指南与发布包 |
-| [MossInfer 性能报告](docs/mossinfer-performance.md) | 引擎实测数据与对比 |
-| [实现状态](docs/status.md) | 完成度、验证证据、已知限制 |
-| [产品设计](docs/product-design.md) | 工作台信息架构与交互 |
-| [架构](docs/architecture.md) | 进程、服务、引擎协议 |
-| [后端与 Project](docs/backend-and-project.md) | 项目结构、Engine Job |
-| [Layout JSON](docs/layout-schema.md) | 布局编译契约 |
-| [文档索引](docs/README.md) | 全部文档与阅读顺序 |
+| [文档索引](docs/README.md) | 全部文档的阅读地图 |
+| [安装 MossStudio 并生成第一张图](docs/how-to/setup.md) | 面向用户：安装、首次运行、之后在哪里改设置 |
+| [Studio 节点画板](docs/reference/studio-node-board.md) | 画面、风格、放大、输入、连线、区域、配方 |
+| [引擎与显卡](docs/reference/engines.md) | 引擎包的选择与安装、档位、远程主机 |
+| [模型](docs/reference/models.md) | 模型目录、部件、LoRA |
+| [架构](docs/reference/architecture.md) | 进程、窗口、路由、服务与存储 |
+| [设计决策](docs/decisions/README.md) | 每个重要选择的记录（ADR） |
+| [MossInfer 引擎](https://github.com/mossimage-cpp/mossimage.cpp) | 引擎源码、协议与发布包 |
 
 ## 开发
 
 ```bash
 pnpm install
-pnpm dev            # electron-vite 开发模式
-
-pnpm typecheck      # tsc（主进程 + 渲染层，两个 tsconfig）
-pnpm build          # 生产构建
-
-pnpm lint               # ESLint
-pnpm test:unit          # 单元测试（Vitest）；单个文件：pnpm test:unit -- <文件>
-pnpm test:e2e           # Electron E2E（先 pnpm build；Linux 无显示器时用 xvfb-run -a）
-pnpm test:install       # 真实安装 → 更新 → 回滚 → 卸载
+pnpm dev
 ```
 
-开发流程、CI 与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-```bash
-```
+需要 Node 22 与 pnpm 9，Go 1.27 只在改启动器时需要。检查命令、CI 分层、分支与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)；给编码助手的规则在 [AGENTS.md](AGENTS.md)。
 
 ## 许可
 
-代码以 [MIT](LICENSE) 发布。推理引擎 [MossInfer](https://github.com/mossimage-cpp/mossimage.cpp) 以 Apache-2.0 独立开源；MOSS-Image 权重、KohakuGBC/Togeari、KohakuMossTrainer 遵循各自上游许可，本仓库不分发这些模型。
+代码以 [MIT](LICENSE) 发布。推理引擎 [MossInfer](https://github.com/mossimage-cpp/mossimage.cpp) 以 Apache-2.0 独立开源；MOSS-Image 权重与训练器遵循各自上游许可，本仓库不分发这些模型。

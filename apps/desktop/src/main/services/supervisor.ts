@@ -12,6 +12,7 @@ import { paths } from '../lib/paths'
 import { prepareModelSource } from './modelBundles'
 import { resolveLegacyModelPath } from './modelReadiness'
 import { cancelMossInferJob, releaseStaleMossInferRuntimes, restartMossInfer, runMossInferJob } from './mossInfer'
+import { jobWeightPrecisions } from './weightPrecision'
 import { cancelCliJob, cliBundleDtypeProblem, hipDeviceIndex, runCliJob, type HipIndexResult } from './cliEngine'
 import { currentEngineMachine, localServerPath, resolveDeviceEngine, type DeviceEngine } from './engineInstalls'
 import { getCatalog } from './models'
@@ -23,7 +24,13 @@ import { judgeEngineSupport } from '@shared/engineProtocol'
 import { CLI_ENGINE_LABEL, cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
 import { isCliEngine } from '@shared/enginePackages'
 import { canvasBranchesConflict } from '@shared/canvasJobBranch'
-import { resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
+import {
+  resolveGpuProfile,
+  settingsForGpuProfile,
+  withWeightTier,
+  type ResolvedGpuProfile,
+  type WeightPrecisions,
+} from '@shared/gpuProfile'
 import { bundleGpuProblem, isFileBundle, profileForBundle } from '@shared/bundleFit'
 import { probeLocalEngineGpuCompatibility } from './engines'
 import { getTrainingHost } from './trainingHosts'
@@ -59,6 +66,11 @@ interface RunningJob {
 const jobs = new Map<string, JobRecord>()
 const logs = new Map<string, JobLogLine[]>()
 const running = new Map<string, RunningJob>()
+/**
+ * Jobs canceled after they left the queue but before they reached the engine
+ * (while their model, GPU and weights were being looked up): they never start.
+ */
+const canceledBeforeStart = new Set<string>()
 const seqs = new Map<string, number>()
 const completionListeners: Array<(job: JobRecord) => void> = []
 let loaded = false
@@ -520,7 +532,13 @@ async function pumpEngineQueue(slot: string): Promise<void> {
   refreshQueuePositions(slot)
   try {
     await startEngineJobNow(next.input, next.job)
+    // Canceled on its way to the engine: nothing runs in the slot.
+    if (!running.has(next.job.id)) {
+      activeEngineSlots.delete(slot)
+      if (queue.length) scheduleEngineQueue(slot)
+    }
   } catch (error) {
+    canceledBeforeStart.delete(next.job.id)
     update(next.job, {
       queuePosition: undefined,
       state: 'failed',
@@ -774,6 +792,8 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
         params,
         progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
         queuePosition: queue.length + 1,
+        // How many pictures this one has to wait for; the card says so after it runs.
+        queuedBehind: queue.length + (activeEngineSlots.has(slot) ? 1 : 0),
         startedAt: new Date().toISOString(),
       }
       job.logPath = logPath(job.id)
@@ -872,7 +892,18 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     const problem = bundleGpuProblem(modelBundle, localGpu)
     if (problem) throw codedError('E_MODEL', `「${modelBundle.name}」${problem}，请换一个模型`)
   }
-  const gpuProfile = localGpu ? profileForBundle(queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu), modelBundle) : undefined
+  // The tier asked for, settled by the weights this job loads (an INT8 DiT runs High, INT4 Turbo).
+  // When the engine has no name for them (NVFP4, or no inspect), the bundle's own tier decides.
+  const requestedProfile = localGpu ? (queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu)) : undefined
+  let gpuProfile: ResolvedGpuProfile | undefined
+  if (localGpu && requestedProfile) {
+    const weights: WeightPrecisions = cliEngine
+      ? { dit: 'bf16', textEncoder: 'bf16' }
+      : await jobWeightPrecisions(modelFiles, localGpu.uuid)
+    const known = weights.dit !== null && weights.textEncoder !== null
+    gpuProfile =
+      modelBundle?.tier && !known ? profileForBundle(requestedProfile, modelBundle) : withWeightTier(requestedProfile, weights, localGpu)
+  }
   const executionSettings = gpuProfile ? settingsForGpuProfile(settings, gpuProfile) : settings
 
   if (input.hostId) {
@@ -903,6 +934,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
       startedAt: new Date().toISOString(),
     }
+    if (queuedJob && canceledBeforeStart.delete(queuedJob.id)) return snapshot(queuedJob)
     Object.assign(job, {
       instanceName: input.modelName ?? host.name,
       projectId: input.projectId,
@@ -915,6 +947,8 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       params,
       progress: { stage: 'idle' as const, current: 0, total: params.steps, percent: 0 },
       queuePosition: undefined,
+      // It is this job's turn now: the wait is over, the run starts here.
+      runStartedAt: new Date().toISOString(),
       preview: undefined,
       error: undefined,
       endedAt: undefined,
@@ -991,6 +1025,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
     startedAt: new Date().toISOString(),
   }
+  if (queuedJob && canceledBeforeStart.delete(queuedJob.id)) return snapshot(queuedJob)
   Object.assign(job, {
     instanceName: input.modelName ?? 'MossInfer',
     projectId: input.projectId,
@@ -1006,6 +1041,8 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     params,
     progress: { stage: 'idle' as const, current: 0, total: params.steps, percent: 0 },
     queuePosition: undefined,
+    // It is this job's turn now: the wait is over, the run starts here.
+    runStartedAt: new Date().toISOString(),
     preview: undefined,
     error: undefined,
     endedAt: undefined,
@@ -1018,6 +1055,7 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
 
   const outputDir = paths.outputs()
   await mkdir(outputDir, { recursive: true })
+  if (canceledBeforeStart.delete(job.id)) return snapshot(job)
   const readyTimer = setTimeout(() => {
     if (job.state === 'starting') {
       pushDiagnostic({
@@ -1286,8 +1324,11 @@ export async function cancelJob(id: string): Promise<JobRecord | null> {
     return snapshot(job)
   }
   if (!runningJob) {
-    if (job.state === 'running' || job.state === 'starting') {
-      update(job, { state: 'canceled', endedAt: new Date().toISOString() })
+    if (job.state === 'queued' || job.state === 'running' || job.state === 'starting') {
+      // On its way to the engine: startEngineJobNow sees this and stops before starting it.
+      canceledBeforeStart.add(job.id)
+      update(job, { state: 'canceled', queuePosition: undefined, endedAt: new Date().toISOString() })
+      notifyCompleted(job)
     }
     return snapshot(job)
   }

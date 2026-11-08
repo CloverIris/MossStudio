@@ -152,6 +152,17 @@ export function parseSeed(text: string): number | null {
 }
 
 /** Next free "画面 N" title. Older projects named them "Canvas N"; both count. */
+/** `${prefix} N` after the highest N in use, as 画面 are numbered: 风格 1, 放大 2. */
+export function nextNodeTitle(prefix: string, titles: readonly string[]): string {
+  let highest = 0
+  const pattern = new RegExp(`^${prefix} (\\d+)$`)
+  for (const title of titles) {
+    const match = pattern.exec(title)
+    if (match) highest = Math.max(highest, Number(match[1]))
+  }
+  return `${prefix} ${highest + 1}`
+}
+
 export function nextCanvasTitle(titles: readonly string[]): string {
   let highest = 0
   for (const title of titles) {

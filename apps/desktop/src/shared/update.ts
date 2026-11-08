@@ -81,6 +81,10 @@ export interface UpdaterState {
   progress: UpdateProgress | null
   /** Downloaded and materialized; the next restart switches to it. */
   pending: string | null
+  /** When the pending update became ready in this run: the title bar nudges only after a few days. */
+  readyAt: string | null
+  /** This is the first run after updating from that version: say so once. */
+  updatedFrom: string | null
   /** Kept for rollback (回到上一个版本). */
   previous: string | null
   canRollback: boolean

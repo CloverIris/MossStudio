@@ -61,15 +61,13 @@ docs/requirements.md
 docs/initial-plan.md
 
 # ------------------------------------------------------------------
-# docs/assets：只跟踪 README 里实际引用的截图
-# 其余测试截图 / 临时渲染图一律不入库（文件仍留在本地磁盘）
-# 新增正文引用时，在下面补一条 ! 例外
+# docs/assets: only the folders of images that docs embed are tracked
+# (docs/reference/documentation-guidelines.md, images). Stray test or render
+# output stays local. A new folder gets its own ! line.
 # ------------------------------------------------------------------
 docs/assets/*
-!docs/assets/mossstudio-logo.svg
-!docs/assets/logo.jpg
-!docs/assets/home.webp
-!docs/assets/notifications.webp
-!docs/assets/studio.webp
-!docs/assets/gallery.webp
-!docs/assets/sidebar-collapsed.webp
+!docs/assets/brand/
+!docs/assets/readme/
+
+# Agent state inside docs/ (the root .omc/ pattern is anchored)
+docs/.omc/

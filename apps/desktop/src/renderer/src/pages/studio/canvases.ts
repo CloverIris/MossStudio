@@ -1,10 +1,21 @@
 import type { AdapterEntry, CanvasInputs, JobRecord, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { normalizeCanvasAdapters } from '@shared/adapters'
 import { clampBox } from '../../lib/layout'
+import type { SceneDraft } from '../../lib/agent/types'
 import type { StudioReuseRequest } from '../../lib/studioReuse'
 import { BOARD_GAP, cardRect, cardWidth, imageNodeSize, resultSpot, nextFreeSpot } from './boardLayout'
-import { DEFAULT_NEGATIVE, DEFAULT_QUALITY, DEFAULT_SIZE, clampDimension, isSeedLocked, nextCanvasTitle, qualityPreset } from './defaults'
-import { DEFAULT_INIT_STRENGTH, dropLinksTo, linksOf } from './links'
+import {
+  DEFAULT_NEGATIVE,
+  DEFAULT_QUALITY,
+  DEFAULT_SIZE,
+  clampDimension,
+  isSeedLocked,
+  nextCanvasTitle,
+  nextNodeTitle,
+  qualityPreset,
+} from './defaults'
+import { DEFAULT_INIT_STRENGTH, dropLinksTo, linksOf, setLink, type LinkRole } from './links'
+import { boardCanvases, foldedRunIds, givesPicture, pictureLink, pinRun, spotBeside } from './runs'
 import { cleanSampling, generationSize, outputSize, scaleHires } from './sampling'
 
 /** Pure canvas and region operations. Every edit returns new objects. */
@@ -63,12 +74,20 @@ function migrateInputs(inputs: CanvasInputs): CanvasInputs | undefined {
   }
   if (inputs.references?.links?.length)
     next.references = { ...inputs.references, links: inputs.references.links.filter((link) => link?.canvasId) }
-  return next.init || next.control || next.references ? next : undefined
+  if (inputs.styles?.links?.length) next.styles = { links: inputs.styles.links.filter((link) => link?.canvasId) }
+  return next.init || next.control || next.references || next.styles ? next : undefined
 }
 
-/** Bring a canvas saved by an older version up to date (see `isSeedLocked`). */
+/**
+ * Bring a canvas saved by an older version up to date (see `isSeedLocked`).
+ * A run saved while it was still being submitted (no job id: the app closed
+ * in between) never reached the engine; it opens as not submitted.
+ */
 export function migrateCanvas(canvas: ProjectCanvas): ProjectCanvas {
   let next = canvas.seedLocked !== undefined ? canvas : { ...canvas, seedLocked: isSeedLocked(canvas) }
+  if (!next.jobId && (next.jobState === 'queued' || next.jobState === 'starting' || next.jobState === 'running')) {
+    next = { ...next, jobState: 'failed', error: { code: 'E_SUBMIT', message: '这次生成没有提交成功，请重新生成' } }
+  }
   if (next.inputs) {
     const inputs = migrateInputs(next.inputs)
     next = { ...next, inputs }
@@ -93,7 +112,7 @@ export function migrateCanvases(canvases: readonly ProjectCanvas[]): ProjectCanv
 
 /** Settings a new canvas inherits, so a user's choices carry over to the next one. */
 export function settingsFrom(canvas: ProjectCanvas | null | undefined): CanvasSettings {
-  if (!canvas || canvas.kind === 'image') return defaultSettings()
+  if (!canvas || canvas.kind === 'image' || canvas.kind === 'style') return defaultSettings()
   const size = generationSize(canvas)
   // Sampler choices carry over; the costly second pass is turned on per canvas.
   const sampling = cleanSampling({ ...canvas.sampling, hires: undefined })
@@ -119,7 +138,7 @@ export function createLayoutCanvas(
   settings: CanvasSettings,
   id: string = crypto.randomUUID(),
 ): ProjectCanvas {
-  const position = nextFreeSpot(existing, settings)
+  const position = nextFreeSpot(boardCanvases(existing), settings)
   return {
     id,
     kind: 'layout',
@@ -146,6 +165,20 @@ export function copyAsLayout(source: ProjectCanvas, existing: readonly ProjectCa
     const pixels = source.imageSize ?? { width: source.width, height: source.height }
     return createImageCanvas(existing, { path: source.imagePath, ...pixels }, undefined, id, source.title)
   }
+  // A copied 风格 is another 风格 with the same description and LoRA.
+  if (source.kind === 'style') {
+    const spot = nextFreeSpot(boardCanvases(existing), source)
+    return {
+      ...structuredClone(source),
+      id,
+      title: nextNodeTitle(
+        '风格',
+        existing.map((item) => item.title),
+      ),
+      x: spot.x,
+      y: spot.y,
+    }
+  }
   const placed = createLayoutCanvas(existing, settingsFrom(source), id)
   const copy: ProjectCanvas = {
     ...placed,
@@ -156,7 +189,50 @@ export function copyAsLayout(source: ProjectCanvas, existing: readonly ProjectCa
   }
   if (source.inputs) copy.inputs = structuredClone(source.inputs)
   if (source.sampling) copy.sampling = structuredClone(source.sampling)
+  if (source.upscale) {
+    // A copied 放大 is another 放大 of the same 原图, at the 放大's size.
+    copy.upscale = { ...source.upscale }
+    copy.width = source.width
+    copy.height = source.height
+    copy.title = nextNodeTitle(
+      '放大',
+      existing.map((item) => item.title),
+    )
+  }
   return copy
+}
+
+/**
+ * A new 画面 fed by another card's picture: 用作起始图, or a wire dropped on
+ * the empty board. It goes to the right of that card (or where the wire was
+ * dropped) and takes its settings; as a start picture it also takes its
+ * description and regions. A 画面 gives the picture on its face, and a
+ * filmstrip run used this way is pinned as a card of its own.
+ * `fallback` = the settings a picture card's new 画面 starts with.
+ */
+export function canvasFromPicture(
+  canvases: readonly ProjectCanvas[],
+  sourceId: string,
+  options: { role: Exclude<LinkRole, 'control'>; fallback: CanvasSettings; at?: { x: number; y: number }; id?: string },
+): { canvases: ProjectCanvas[]; created: ProjectCanvas } | null {
+  const source = canvases.find((canvas) => canvas.id === sourceId)
+  if (!source || !givesPicture(source, canvases)) return null
+  const link = pictureLink(canvases, { canvasId: sourceId })
+  const pinned = pinRun(canvases, link.canvasId)
+  const settings = source.kind === 'image' ? options.fallback : settingsFrom(source)
+  const placed = createLayoutCanvas(pinned, settings, options.id)
+  const spot = options.at ? { x: Math.round(options.at.x), y: Math.round(options.at.y) } : spotBeside(source, settings, pinned)
+  let created: ProjectCanvas = { ...placed, x: spot.x, y: spot.y }
+  if (options.role === 'init' && source.kind !== 'image') {
+    created = {
+      ...created,
+      prompt: source.prompt,
+      summary: structuredClone(source.summary),
+      layers: source.layers.map((layer) => ({ ...layer, id: crypto.randomUUID() })),
+    }
+  }
+  created = setLink(created, options.role, link)
+  return { canvases: [...pinned, created], created }
 }
 
 function fileTitle(path: string): string {
@@ -176,9 +252,10 @@ export function createImageCanvas(
   title: string = fileTitle(picture.path),
 ): ProjectCanvas {
   const size = imageNodeSize(picture)
-  let position = nextFreeSpot(existing, size)
+  const shown = boardCanvases(existing)
+  let position = nextFreeSpot(shown, size)
   if (near) {
-    const taken = existing.map(cardRect)
+    const taken = shown.map(cardRect)
     const w = cardWidth(size)
     const rect = { x: near.x - w - BOARD_GAP * 2, y: near.y, w, h: cardRect({ x: 0, y: 0, ...size }).h }
     for (let guard = 0; guard < 200; guard += 1) {
@@ -214,32 +291,36 @@ export function createImageCanvas(
 }
 
 /**
- * The canvas a run writes into. A layout canvas with no picture yet renders its
- * first run in place; every later run gets its own result card under the
- * source, so earlier pictures are never overwritten.
+ * The canvas a run writes into: a new result canvas, so earlier pictures are
+ * never overwritten. A 画面's runs stack in its filmstrip (see runs.ts) and
+ * its face follows the new one; a run of a result card gets a card of its own
+ * under it. (Older projects may have a 画面 whose first run rendered on the
+ * 画面 itself; that picture stays the first in its filmstrip.)
  */
 export function taskCanvasFor(
   source: ProjectCanvas,
   canvases: readonly ProjectCanvas[],
   id: string = crypto.randomUUID(),
 ): { canvases: ProjectCanvas[]; taskId: string } {
-  const runInPlace = source.kind === 'layout' && (source.outputs?.length ?? 0) === 0
-  const reset = { jobId: undefined, jobState: 'starting' as const, progress: undefined, outputs: [], error: undefined }
-  if (runInPlace) {
-    return {
-      taskId: source.id,
-      canvases: canvases.map((item) => (item.id === source.id ? { ...source, ...reset } : item)),
-    }
-  }
   // A 高清修复 run's card is the size of the finished picture; the first-pass
   // size is kept so running it again repeats the same job.
   const base = generationSize(source)
   const output = outputSize(source)
   const resized = output.width !== base.width || output.height !== base.height
-  const spot = resultSpot(source, canvases)
+  const spot = resultSpot(source, boardCanvases(canvases))
+  // The run keeps what it was made with; its own picture fields start empty.
+  const {
+    shownOutput: _shown,
+    pinned: _pinned,
+    jobId: _job,
+    jobState: _state,
+    progress: _progress,
+    outputs: _outputs,
+    error: _error,
+    ...frozen
+  } = source
   const task: ProjectCanvas = {
-    ...source,
-    ...reset,
+    ...frozen,
     id,
     kind: 'result',
     title: `${source.title} · 结果`,
@@ -248,10 +329,17 @@ export function taskCanvasFor(
     width: output.width,
     height: output.height,
     sourceCanvasId: source.id,
+    jobState: 'starting',
+    outputs: [],
   }
   if (resized) task.baseSize = base
   else delete task.baseSize
-  return { taskId: id, canvases: [...canvases, task] }
+  const next = canvases.map((item) => {
+    if (item.id !== source.id || !item.shownOutput) return item
+    const { shownOutput: _picked, ...rest } = item
+    return rest
+  })
+  return { taskId: id, canvases: [...next, task] }
 }
 
 /** Copy job state, outputs and errors onto the canvases that track those jobs. */
@@ -277,8 +365,127 @@ export function applyJobs(canvases: ProjectCanvas[], jobs: readonly JobRecord[])
 
 export const MIN_REGION = 12
 
-export function newRegion(kind: ProjectLayerKind, bbox: [number, number, number, number], id: string = crypto.randomUUID()): ProjectLayer {
-  return { id, kind, caption: '', text: kind === 'text' ? '' : undefined, bbox, visible: true, locked: false, opacity: 1 }
+export function newRegion(
+  kind: ProjectLayerKind,
+  bbox: [number, number, number, number],
+  id: string = crypto.randomUUID(),
+  text?: string,
+): ProjectLayer {
+  return { id, kind, caption: '', text: kind === 'text' ? (text ?? '') : undefined, bbox, visible: true, locked: false, opacity: 1 }
+}
+
+/** A region to add: a normalised box (omitted puts it in the middle) and its two strings. */
+export interface RegionInput {
+  kind: ProjectLayerKind
+  caption: string
+  /** Only text regions carry words. */
+  text?: string
+  bbox?: { x: number; y: number; w: number; h: number }
+}
+
+/**
+ * Add one region to a canvas and return both the new canvas and the region.
+ * The box arrives normalised (as the tools take it) and leaves in pixels,
+ * pulled back inside the picture.
+ */
+export function addRegion(canvas: ProjectCanvas, input: RegionInput): { canvas: ProjectCanvas; region: ProjectLayer } {
+  const { width, height } = canvas
+  const box = input.bbox
+    ? clampBox(
+        [input.bbox.x * width, input.bbox.y * height, (input.bbox.x + input.bbox.w) * width, (input.bbox.y + input.bbox.h) * height],
+        width,
+        height,
+      )
+    : clampBox([width * 0.2, height * 0.2, width * 0.8, height * 0.8], width, height)
+  const region = { ...newRegion(input.kind, box, crypto.randomUUID(), input.text), caption: input.caption }
+  return { canvas: { ...canvas, layers: [...canvas.layers, region] }, region }
+}
+
+/**
+ * The boxes a plan waiting for approval would add to `canvas`, placed exactly
+ * as applying it would place them, so the board can preview them. Ids are
+ * stable (plan-0, plan-1…) so the preview does not flicker as it re-renders.
+ */
+export function plannedRegions(canvas: ProjectCanvas, steps: readonly { tool: string; args: Record<string, unknown> }[]): ProjectLayer[] {
+  let next = canvas
+  const added: ProjectLayer[] = []
+  for (const step of steps) {
+    if (step.tool !== 'studio_add_layer' && step.tool !== 'studio_add_text_layer') continue
+    const args = step.args as { label?: unknown; caption?: unknown; text?: unknown; bbox?: unknown }
+    const box = args.bbox as { x?: unknown; y?: unknown; w?: unknown; h?: unknown } | undefined
+    const bbox =
+      box && [box.x, box.y, box.w, box.h].every((value) => typeof value === 'number' && Number.isFinite(value))
+        ? { x: box.x as number, y: box.y as number, w: box.w as number, h: box.h as number }
+        : undefined
+    const kind: ProjectLayerKind = step.tool === 'studio_add_text_layer' ? 'text' : args.label === 'character' ? 'character' : 'object'
+    const result = addRegion(next, {
+      kind,
+      caption: typeof args.caption === 'string' ? args.caption : '',
+      text: typeof args.text === 'string' ? args.text : undefined,
+      bbox,
+    })
+    next = result.canvas
+    added.push({ ...result.region, id: `plan-${added.length}` })
+  }
+  return added
+}
+
+/**
+ * One canvas of a set, ready to add: its own size, description, regions and
+ * words, placed where the board has room for it.
+ */
+export function sceneCanvas(
+  scene: SceneDraft,
+  existing: readonly ProjectCanvas[],
+  settings: CanvasSettings,
+  id: string = crypto.randomUUID(),
+): ProjectCanvas {
+  const placed = createLayoutCanvas(
+    existing,
+    {
+      ...settings,
+      width: clampDimension(scene.width ?? settings.width, settings.width),
+      height: clampDimension(scene.height ?? settings.height, settings.height),
+    },
+    id,
+  )
+  let canvas: ProjectCanvas = {
+    ...placed,
+    title: scene.title.trim(),
+    prompt: scene.prompt.trim(),
+    summary: { ...placed.summary, caption: scene.prompt.trim() },
+  }
+  for (const region of scene.regions ?? []) {
+    canvas = addRegion(canvas, { kind: region.label, caption: region.caption, bbox: region.bbox }).canvas
+  }
+  for (const text of scene.texts ?? []) {
+    canvas = addRegion(canvas, { kind: 'text', caption: text.caption, text: text.text, bbox: text.bbox }).canvas
+  }
+  return canvas
+}
+
+/** Fields a region edit may carry; the box is already in canvas pixels. */
+export interface LayerEdit {
+  caption?: string
+  text?: string
+  bbox?: [number, number, number, number]
+  visible?: boolean
+  opacity?: number
+}
+
+/**
+ * Apply an edit to one region. Only text regions keep a `text`, and an edited
+ * box is pulled back inside the canvas, so a tool cannot move a region out of
+ * the picture.
+ */
+export function editLayer(layer: ProjectLayer, edit: LayerEdit, size: Pick<ProjectCanvas, 'width' | 'height'>): ProjectLayer {
+  const next: ProjectLayer = { ...layer }
+  if (edit.caption !== undefined) next.caption = edit.caption
+  if (edit.text !== undefined && next.kind === 'text') next.text = edit.text
+  if (edit.visible !== undefined) next.visible = edit.visible
+  if (edit.opacity !== undefined) next.opacity = Math.min(1, Math.max(0.1, edit.opacity))
+  if (edit.bbox) next.bbox = clampBox(edit.bbox, size.width, size.height)
+  return next
 }
 
 /** A drawn rectangle becomes a region only when it is big enough to be intentional. */
@@ -309,19 +516,32 @@ export function moveBox(
   return [left, top, left + width, top + height]
 }
 
+/** A corner of a region box: north/south, west/east. */
+export type BoxCorner = 'nw' | 'ne' | 'sw' | 'se'
+
+/** Drags one corner of a box; the opposite corner stays put. */
+export function resizeFrom(
+  origin: [number, number, number, number],
+  corner: BoxCorner,
+  dx: number,
+  dy: number,
+  canvas: Pick<ProjectCanvas, 'width' | 'height'>,
+): [number, number, number, number] {
+  let [x1, y1, x2, y2] = origin
+  if (corner.endsWith('w')) x1 = Math.max(0, Math.min(x2 - MIN_REGION, x1 + dx))
+  else x2 = Math.max(x1 + MIN_REGION, Math.min(canvas.width, x2 + dx))
+  if (corner.startsWith('n')) y1 = Math.max(0, Math.min(y2 - MIN_REGION, y1 + dy))
+  else y2 = Math.max(y1 + MIN_REGION, Math.min(canvas.height, y2 + dy))
+  return [Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2)]
+}
+
 export function resizeBox(
   origin: [number, number, number, number],
   dx: number,
   dy: number,
   canvas: Pick<ProjectCanvas, 'width' | 'height'>,
 ): [number, number, number, number] {
-  const [x1, y1, x2, y2] = origin
-  return [
-    x1,
-    y1,
-    Math.round(Math.max(x1 + MIN_REGION, Math.min(canvas.width, x2 + dx))),
-    Math.round(Math.max(y1 + MIN_REGION, Math.min(canvas.height, y2 + dy))),
-  ]
+  return resizeFrom(origin, 'se', dx, dy, canvas)
 }
 
 /** Move a region to another position in the list; list order is region numbering. */
@@ -351,13 +571,26 @@ export function resizeCanvas<T extends Pick<ProjectCanvas, 'width' | 'height' | 
   return next
 }
 
-/** After deleting a canvas: the remaining canvases without links to it, and how many links went. */
+/** The canvases deleting `id` removes: the canvas, and the runs folded into its filmstrip. */
+export function removedWith(canvases: readonly ProjectCanvas[], id: string): string[] {
+  const folded = foldedRunIds(canvases)
+  return [id, ...canvases.filter((canvas) => folded.has(canvas.id) && canvas.sourceCanvasId === id).map((canvas) => canvas.id)]
+}
+
+/**
+ * After deleting a canvas (and its filmstrip): the remaining canvases without
+ * links to it, and how many links went.
+ */
 export function removeCanvasFrom(canvases: readonly ProjectCanvas[], id: string): { canvases: ProjectCanvas[]; removedLinks: number } {
-  const { canvases: next, removed } = dropLinksTo(
-    canvases.filter((canvas) => canvas.id !== id),
-    id,
-  )
-  return { canvases: next, removedLinks: removed }
+  const gone = new Set(removedWith(canvases, id))
+  let next = canvases.filter((canvas) => !gone.has(canvas.id))
+  let removedLinks = 0
+  for (const goneId of gone) {
+    const result = dropLinksTo(next, goneId)
+    next = result.canvases
+    removedLinks += result.removed
+  }
+  return { canvases: next, removedLinks }
 }
 
 /* ------------------------------------------------------------------ */

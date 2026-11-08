@@ -1,10 +1,10 @@
-import { app, clipboard, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, statSync } from 'node:fs'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
 import { schemas } from '@shared/schemas'
-import { STUDIO_TOOLS } from '@shared/mcp'
-import type { AiToolCall, AiToolResult } from '@shared/ai'
+import { resolveToolset, toolDefinitions } from '@shared/agent/registry'
+import type { AgentMode, AiToolCall, AiToolResult } from '@shared/ai'
 import type { IpcResult } from '@shared/types'
 import { emit } from './lib/events'
 import { ensureDirs, paths } from './lib/paths'
@@ -34,7 +34,16 @@ import { updaterApi } from './update'
 import { clearEngineAutoUpdateHold, recordManualEngineInstall, startEngineAutoUpdate } from './services/engineAutoUpdate'
 import { cancelMossInferDownload, getMossInferDownloadState, listMossInferReleases } from './services/mossInferDownload'
 import { getWebAccessInfo, startBackend, stopBackend } from './services/backend'
-import { chat, listConversations, listProviders, removeConversation, removeProvider, renameConversation, saveProvider } from './services/ai'
+import {
+  answerAgentCard,
+  chat,
+  listConversations,
+  listProviders,
+  removeConversation,
+  removeProvider,
+  renameConversation,
+  saveProvider,
+} from './services/ai'
 import { gbcStatus, installGbcEnv, listGbcImages, runGbc } from './services/gbc'
 import { nativeImage } from 'electron'
 import { createGbcVersion, listGbcBranches, listGbcCommits, listGbcVersions, removeGbcVersion } from './services/gbcGit'
@@ -65,7 +74,7 @@ import { errorCode } from './lib/codedError'
 import { getEngineFeatures } from './services/engineFeatures'
 import { importImageBytes, importImageFile, pruneProjectMasks, saveMask } from './services/studioAssets'
 import { addControlAdapter, listControlAdapters, removeControlAdapter } from './services/controlAdapters'
-import { applyThemeSource, openWindow } from './windows'
+import { applyThemeSource, controlWindow, openWindow } from './windows'
 import { getGpuInventory, listDevices, refreshGpuInventory } from './services/devices'
 import { getOnboardingStatus } from './services/onboarding'
 import {
@@ -128,7 +137,7 @@ function handle<T>(channel: string, schema: ZodType | null, fn: (input: any, eve
 /** Tool calls are executed by the renderer (it owns the Studio state); main only relays. */
 const pendingToolCalls = new Map<string, (result: AiToolResult) => void>()
 
-function runToolInRenderer(event: Electron.IpcMainInvokeEvent, call: AiToolCall): Promise<AiToolResult> {
+function runToolInRenderer(event: Electron.IpcMainInvokeEvent, call: AiToolCall, mode: AgentMode): Promise<AiToolResult> {
   const sender = event.sender
   return new Promise<AiToolResult>((resolve) => {
     const callId = call.id
@@ -145,7 +154,7 @@ function runToolInRenderer(event: Electron.IpcMainInvokeEvent, call: AiToolCall)
       settle({ ok: false, content: JSON.stringify({ error: 'window closed' }) })
       return
     }
-    sender.send(Events.aiToolCall, { callId, name: call.name, arguments: call.arguments })
+    sender.send(Events.aiToolCall, { callId, name: call.name, arguments: call.arguments, mode })
   })
 }
 
@@ -205,13 +214,17 @@ export function registerIpc(): void {
     return true
   })
 
+  handle(Ipc.aiCardAnswer, schemas.aiCardAnswer, ({ conversationId, messageId, answer }) =>
+    answerAgentCard(conversationId, messageId, answer),
+  )
+
   handle(Ipc.aiChat, schemas.aiChat, (input, event) =>
     chat(input, {
       emit: (payload) => {
         if (!event.sender.isDestroyed()) event.sender.send(Events.aiStream, payload)
       },
-      runTool: (call) => runToolInRenderer(event, call),
-      tools: STUDIO_TOOLS,
+      runTool: (call, mode) => runToolInRenderer(event, call, mode),
+      tools: toolDefinitions(resolveToolset({ page: 'studio' })),
     }),
   )
 
@@ -267,6 +280,10 @@ export function registerIpc(): void {
     openWindow(kind, route)
     return true
   })
+
+  handle(Ipc.windowControl, schemas.windowControl, ({ action }, event) =>
+    controlWindow(BrowserWindow.fromWebContents(event.sender), action),
+  )
 
   handle(Ipc.copyText, schemas.copyText, async ({ text }) => {
     await clipboard.writeText(text)

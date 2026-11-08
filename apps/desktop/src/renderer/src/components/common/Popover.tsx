@@ -95,6 +95,7 @@ export function MenuItem({
   tone = 'default',
   disabled,
   hint,
+  title,
 }: {
   children: ReactNode
   onSelect: () => void
@@ -102,6 +103,8 @@ export function MenuItem({
   tone?: 'default' | 'danger'
   disabled?: boolean
   hint?: ReactNode
+  /** Shown on hover: for a disabled item, why it is off. */
+  title?: string
 }): React.JSX.Element {
   return (
     <button
@@ -109,6 +112,7 @@ export function MenuItem({
       role="menuitem"
       aria-current={selected ? 'true' : undefined}
       disabled={disabled}
+      title={title}
       onClick={onSelect}
       className={cn(
         'flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-ui transition-colors enabled:hover:bg-well disabled:opacity-40',

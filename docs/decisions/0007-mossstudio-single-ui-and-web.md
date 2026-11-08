@@ -1,6 +1,11 @@
+---
+status: accepted
+date: 2026-10-20
+amended-by: ADR-0011
+---
+
 # ADR-0007：MossStudio 作为唯一最终用户 UI，官方 Gradio 退役
 
-- 状态：**方向已确认（2026-10-20），P0/P2 基础链路与移动端 Layout 编辑器已落，画廊/PIN 待做**
 - 取代：[ADR-0004](0004-workspaces-remote-devices.md) 中“不做浏览器 WebUI”这一条
 - 关联：[ADR-0003](0003-launcher-first.md)、[ADR-0005](0005-release-channel-and-updates.md)
 - 影响：窗口、路由、Case、Gradio 支持、后端 API、局域网服务、移动端布局、文档
@@ -106,7 +111,7 @@
 - KohakuMossTrainer：稳定基线 `v0.1.0`；`main` 的 ComfyUI 权重、量化、
   FSDP/流水线等作为可选实验特性，不阻塞 Studio 改造；
 - 训练仍通过外部 commit/worktree 接入，不 vendor、不 import；
-- 上游变更记录见 [upstream-2026-10-20.md](../research/upstream-2026-10-20.md)。
+- 上游变更记录见 [upstream-2026-10-20.md](../records/2026-10-20-upstream-research.md)。
 
 ## 5. 实施阶段
 

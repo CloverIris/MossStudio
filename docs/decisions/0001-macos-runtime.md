@@ -1,7 +1,11 @@
+---
+status: superseded
+date: 2026-10-19
+superseded-by: ADR-0009
+---
+
 # ADR-0001：macOS 首个运行时选 MNN，而不是 MPS
 
-- 状态：**已接受，V2 执行**（V1 不实现自有引擎，见 [ADR-0003](0003-launcher-first.md)）
-- 日期：2026-10-19
 - 决策者：项目发起人 + 引擎负责人
 
 ## 1. 背景
@@ -101,4 +105,4 @@ MLX 在 Apple Silicon 上确实最快，而且已有两个可参考的 MOSS 实�
 4. 判定：block 有效算力 ≥ 1.5 TFLOP/s 且峰值内存可控 → 维持 MNN 决策；
    否则回到本 ADR，启用 MLX 快路径。
 
-> 验收数字写进 `docs/benchmarks/v2-mnn-spike.md`，不达标就改决策，不硬撑。
+> 验收数字写进 `docs/archive/v2-mnn-spike.md`，不达标就改决策，不硬撑。

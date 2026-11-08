@@ -1,78 +1,62 @@
-# MossStudio 文档
+---
+status: current
+last-verified: 2026-11-08 (c3dc0ee)
+code: docs/
+---
 
-本目录描述 **MossStudio 当前实现、设计约束和验收状态**。文档以代码与可重复运行结果为准。
+# MossStudio docs
 
-## 事实来源
+Developer documentation for MossStudio: an Electron + React + TypeScript desktop app with a Go launcher, driving the MossInfer image engine. Developer docs are English; user guides and UI text are Chinese. Every doc carries a header with its status and the date it was last checked against the code; trust the header before the text. Agents read [AGENTS.md](../AGENTS.md), which points at the same docs.
 
-1. 代码与运行结果：`apps/desktop/`、`apps/launcher/`、`tools/`、`.github/workflows/`、`release/`
-2. [status.md](status.md)：当前完成度、证据、已知限制
-3. [architecture.md](architecture.md)：进程、页面、服务、MossInfer、远端、存储
-4. [product-design.md](product-design.md)：工作台信息架构与交互边界
-5. [mossinfer-migration.md](mossinfer-migration.md)：推理迁移和剩余清理
-6. ADR / research / future：决策依据或未来方案，不代表已实现
+## I want to...
 
-## 状态标记
-
-| 标记 | 含义 |
+| Goal | Read |
 | --- | --- |
-| ✅ | 已实现，并有本机可重复验证 |
-| 🟡 | 代码路径存在，但未在目标硬件/真实数据验收 |
-| ⬜ | 未实现或只有设计 |
-| 🗄️ | 历史文档/旧链路，仅作背景 |
+| Set up the app as a user (首次运行、显卡与引擎、模型) | [how-to/setup.md](how-to/setup.md) |
+| Build, test and open a PR | [CONTRIBUTING.md](../CONTRIBUTING.md) |
+| Know the rules a reviewer applies to code | [reference/coding-standards.md](reference/coding-standards.md) |
+| Build or change a screen | [reference/ui-rules.md](reference/ui-rules.md) |
+| Write or change a doc | [reference/documentation-guidelines.md](reference/documentation-guidelines.md), [reference/glossary.md](reference/glossary.md) |
+| Cut a release or rotate the update key | [how-to/release.md](how-to/release.md), then [how-to/release-qa-checklist.md](how-to/release-qa-checklist.md) |
 
-## 当前文档
+## I want to understand...
 
-| 文档 | 作用 |
+| Topic | Read |
 | --- | --- |
-| [../README.md](../README.md) | 项目总览、安装、快速开始 |
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | 开发：目录结构、命令、CI、分支与提交规范（英文） |
-| [design/ui-rules.md](design/ui-rules.md) | UI 规则：组件、按钮语气、状态与文案格式（英文） |
-| [mossinfer-performance.md](mossinfer-performance.md) | MossInfer 1.0.0 性能报告与 PyTorch 对比 |
-| [status.md](status.md) | 完成度与验证证据 |
-| [architecture.md](architecture.md) | 当前进程/窗口/服务/引擎架构 |
-| [product-design.md](product-design.md) | 工作台信息架构、画布板、交互边界 |
-| [design/multi-canvas-studio.md](design/multi-canvas-studio.md) | Project 多 Canvas 画布板、串行生成与结果呈现（已实现，含 as-built 差异） |
-| [design/lora-support.md](design/lora-support.md) | Canvas LoRA 选择、强度、导入与生成链路（本机已实现，远端拒绝） |
-| [design/model-directories.md](design/model-directories.md) | 模型目录 v2：ComfyUI 就地识别、组件文件绑定、模型页入口（1.0.3 设计） |
-| [design/gpu-device-management.md](design/gpu-device-management.md) | GPU 枚举与兼容引擎、设备推荐、显存策略、标题栏状态及按卡调度 Canvas |
-| [mossinfer-migration.md](mossinfer-migration.md) | sidecar、远端、HF、CUDA wheel、旧链路清理 |
-| [layout-schema.md](layout-schema.md) | 画布坐标、布局编译契约 |
-| [backend-and-project.md](backend-and-project.md) | Project schema v3、Engine Job、HTTP/WS |
-| [release.md](release.md) | 发布流程、签名密钥与轮换（英文） |
-| [agent-and-prompt.md](agent-and-prompt.md) | AI Provider、分段、确认 |
-| [gbc-integration.md](gbc-integration.md) | 可选 GBC 图像解析桥 |
-| [toolchain-and-onboarding.md](toolchain-and-onboarding.md) | Trainer/引擎前置条件与首次运行 |
-| [windows-validation-guide.md](windows-validation-guide.md) | Windows 实机验收手册 |
-| [assets/](assets/) | 历史截图；不再代表当前 UI |
-| [decisions/](decisions/) | ADR 决策记录（含 ADR-0009 MossInfer、ADR-0010 安装器与签名更新） |
+| How the app is put together: processes, windows, routes, services, storage | [reference/architecture.md](reference/architecture.md) |
+| The Studio node board: 画面, 风格, 放大, inputs, wires, regions, runs, recipes | [reference/studio-node-board.md](reference/studio-node-board.md) |
+| The Studio assistant: tools, cards, 自主 and 审批 modes | [reference/studio-assistant.md](reference/studio-assistant.md) |
+| Why the Studio is a node board, and what it refuses to be | [explanation/studio-design.md](explanation/studio-design.md) |
+| Engines and GPUs: CUDA packages, 兼容模式 (Vulkan), AMD 原生 (HIP), tiers, remote hosts | [reference/engines.md](reference/engines.md) |
+| Models: catalog, bundles, component files, directories, LoRA | [reference/models.md](reference/models.md) |
 
-## 历史文档
+## I want to look up...
 
-以下文档记录旧启动器/官方 Gradio/Python runner 时代，不能作为当前实现说明：
-
-- [research/upstream-survey.md](research/upstream-survey.md)
-- [research/upstream-2026-10-20.md](research/upstream-2026-10-20.md)
-- [future-inference-engine.md](future-inference-engine.md)
-- [benchmarks/v2-mnn-spike.md](benchmarks/v2-mnn-spike.md)
-- [archive/](archive/)：旧 runner、V2 引擎与协议、旧发布流程（release-and-updates）、1.0.3 安装器设计、早期 `apps/README.md`
-- 旧截图：`home/oobe/instances/terminal/training/creator` 等
-
-## 本机验证环境
-
-| 项 | 值 |
+| Thing | Read |
 | --- | --- |
-| 机器 | Windows 11 x86_64 / RTX 2080（Turing, CC 7.5） / 16 GB |
-| MossInfer 本机推理 | ✅ 可运行（需按 tier/attention 配置匹配 Turing） |
-| 真实出图 | ✅ 1024² / 8 步 / CFG 3 / 69.2s |
-| Linux / 远端 GPU | 未验收 |
-| 应用数据 | `.dev-data/`（开发） |
+| A term the UI or code uses | [reference/glossary.md](reference/glossary.md) |
+| The project file (`ProjectDocument` v3), engine jobs and the LAN HTTP/WS API | [reference/project-and-backend.md](reference/project-and-backend.md) |
+| Region coordinates and the layout contract | [reference/layout-schema.md](reference/layout-schema.md) |
+| MOSS-Image model files, sizes and VRAM budgets | [reference/model-notes.md](reference/model-notes.md) |
+| The engine protocol and what each engine supports | The [MossInfer repository](https://github.com/mossimage-cpp/mossimage.cpp); this repo links it and does not copy it |
 
-历史环境（原作者开发机）为 Apple M3 / macOS，无法本地推理，因此早期结论多为 🟡；现以 Windows + NVIDIA 实机结果为准。
+## I want to see why we decided...
 
-## 维护规则
+Decisions are ADRs in [decisions/](decisions/README.md), one per choice, never edited after acceptance. The index lists each with its status. Start with:
 
-1. 先更新 `status.md`，再改 README/公告。
-2. 代码存在但未在目标硬件验收，只能标 🟡。
-3. 不把旧 Gradio/Instance/runner 写成当前能力。
-4. 新增窗口、页面、引擎协议时同步 README、architecture、product-design。
-5. ADR 不改历史；决策变化新增 ADR 或修订章节。
+| Decision | ADR |
+| --- | --- |
+| MossInfer is the only inference engine | [0009](decisions/0009-mossinfer-inference.md), amended by [0012](decisions/0012-vulkan-and-hip-cli-engines.md) (Vulkan and HIP) |
+| Rail navigation and the node board | [0011](decisions/0011-rail-navigation-and-node-board.md), which supersedes [0008](decisions/0008-studio-window-and-dock.md) |
+| Own installer, launcher and signed updates | [0010](decisions/0010-own-installer-and-signed-updates.md) |
+| The Trainer stays an external Python tool | [0002](decisions/0002-trainer-backend.md) |
+| How these docs are organised | [0013](decisions/0013-documentation-structure-and-language.md) |
+
+## Records and history
+
+- [records/](records/) holds dated snapshots (audits, benchmarks, surveys). They are never updated; the newest one on a topic is the one to read. The MossInfer 1.0.0 performance report is [records/2026-10-31-mossinfer-1.0.0-performance.md](records/2026-10-31-mossinfer-1.0.0-performance.md).
+- [archive/](archive/README.md) holds superseded docs. Nothing there describes the current app; its README says what replaced each file.
+
+## Adding or changing a doc
+
+Follow [reference/documentation-guidelines.md](reference/documentation-guidelines.md): pick the type, fill the header, link instead of restating, and add the doc to this page in the same PR.

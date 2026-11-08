@@ -17,6 +17,7 @@ const cancelMossInferJob = vi.hoisted(() => vi.fn(() => true))
 const restartMossInfer = vi.hoisted(() => vi.fn(async () => undefined))
 const runRemoteEngineJob = vi.hoisted(() => vi.fn())
 const cancelRemoteEngineJob = vi.hoisted(() => vi.fn(() => true))
+const jobWeightPrecisions = vi.hoisted(() => vi.fn())
 const getTrainingHost = vi.hoisted(() => vi.fn())
 const getCatalog = vi.hoisted(() => vi.fn())
 vi.mock('@main/lib/events', () => ({ emit, onEmit: () => () => undefined }))
@@ -32,6 +33,7 @@ vi.mock('@main/services/trainingHosts', () => ({ getTrainingHost }))
 vi.mock('@main/services/ssh', () => ({ remoteAbsolute: async (_host: unknown, path: string) => path, sshExec: vi.fn() }))
 vi.mock('@main/services/modelBundles', () => ({ prepareModelSource }))
 vi.mock('@main/services/models', async (importOriginal) => ({ ...(await importOriginal<object>()), getCatalog }))
+vi.mock('@main/services/weightPrecision', () => ({ jobWeightPrecisions }))
 vi.mock('@main/services/devices', () => ({ refreshGpuInventory, cachedGpuInventory: () => ({ devices: [gpu] }) }))
 vi.mock('@main/services/engines', () => ({ probeLocalEngineGpuCompatibility }))
 // Every GPU here runs moss-server from a real managed install (see beforeEach); supervisor.cliJobs.test.ts covers the CLI engines.
@@ -99,6 +101,7 @@ beforeEach(async () => {
     ],
     adapters: [],
   })
+  jobWeightPrecisions.mockReset().mockResolvedValue({ dit: 'bf16', textEncoder: 'bf16' })
   refreshGpuInventory.mockReset().mockResolvedValue({ devices: [gpu] })
   const hello = decodeEngineHello({
     protocol_version: 2,
@@ -175,26 +178,44 @@ describe('engine jobs: single-file models', () => {
   it('loads the files next to the runtime-config folder with the tier the model needs', async () => {
     const folder = join(dataRoot(), 'bundle')
     prepareModelSource.mockResolvedValue({ model: folder, ditFile: '/models/dit-int4.safetensors', bundle: fileBundle })
+    jobWeightPrecisions.mockResolvedValue({ dit: 'w4a4', textEncoder: 'int8' })
     const job = await supervisor.startEngineJob(request('int4', { modelBinding: { bundleId: 'files' } }))
     expect(starts[0]!.opts).toMatchObject({ model: folder, ditFile: '/models/dit-int4.safetensors' })
     // 设置 says high (the default); an INT4 DiT runs only under turbo.
     expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('turbo')
-    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'bundle' })
+    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'model-weights' })
     expect(job.modelSnapshot).toMatchObject({ bundleId: 'b', files: { ditFile: '/models/dit-int4.safetensors' } })
   })
 
   it('runs INT4 on Turing with its own tier, though Turing runs folder models at reference', async () => {
     refreshGpuInventory.mockResolvedValue({ devices: [{ ...gpu, computeCapability: { major: 7, minor: 5 } }] })
     prepareModelSource.mockResolvedValue({ model: join(dataRoot(), 'bundle'), ditFile: '/models/dit-int4.safetensors', bundle: fileBundle })
+    jobWeightPrecisions.mockResolvedValue({ dit: 'w4a4', textEncoder: 'int8' })
     const job = await supervisor.startEngineJob(request('int4 on turing', { modelBinding: { bundleId: 'files' } }))
-    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'bundle' })
+    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'model-weights' })
     expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('turbo')
+  })
+
+  it('uses the tier the model names when the engine has no name for its weights (NVFP4)', async () => {
+    prepareModelSource.mockResolvedValue({ model: join(dataRoot(), 'bundle'), ditFile: '/models/nvfp4.safetensors', bundle: fileBundle })
+    jobWeightPrecisions.mockResolvedValue({ dit: null, textEncoder: 'int8' })
+    const job = await supervisor.startEngineJob(request('nvfp4', { modelBinding: { bundleId: 'files' } }))
+    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'model-weights' })
+    expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('turbo')
+  })
+
+  it('lets the weights the engine reads overrule the tier a model names', async () => {
+    // A scanned file named like INT4 that is really bf16 runs as bf16.
+    prepareModelSource.mockResolvedValue({ model: join(dataRoot(), 'bundle'), ditFile: '/models/dit-int4.safetensors', bundle: fileBundle })
+    const job = await supervisor.startEngineJob(request('bf16 named int4', { modelBinding: { bundleId: 'files' } }))
+    expect(job.gpuProfile?.tier).toBe('high')
+    expect(job.gpuProfile?.source).not.toBe('model-weights')
   })
 
   it('keeps the tier from 设置 for a folder model', async () => {
     const job = await supervisor.startEngineJob(request('folder'))
     expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('high')
-    expect(job.gpuProfile?.source).not.toBe('bundle')
+    expect(job.gpuProfile?.source).not.toBe('model-weights')
   })
 
   it('refuses a model made for another GPU before starting the engine', async () => {
@@ -216,6 +237,70 @@ describe('engine jobs: single-file models', () => {
       ),
     ).rejects.toThrow('「SFT · INT4」只能在这台电脑上运行')
     expect(runRemoteEngineJob).not.toHaveBeenCalled()
+  })
+})
+
+describe('engine jobs: the tier follows the weights', () => {
+  const turing: GpuInventoryDevice = { ...gpu, computeCapability: { major: 7, minor: 5 } }
+  const turingHello = decodeEngineHello({
+    protocol_version: 2,
+    probe: { devices: [{ index: 0, name: 'RTX Test', supported: true, compute_capability: '7.5' }] },
+  })
+
+  it('runs an INT8 DiT file at High on a GPU without 8-bit attention, where a bf16 bundle runs Reference', async () => {
+    refreshGpuInventory.mockResolvedValue({ devices: [turing] })
+    probeLocalEngineGpuCompatibility.mockResolvedValue({ hello: turingHello, helloFor: () => turingHello })
+    const bundle = await supervisor.startEngineJob(request('bf16 bundle'))
+    expect(bundle.gpuProfile).toMatchObject({ tier: 'reference', source: 'hardware-compatibility' })
+    expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('reference')
+    expect(jobWeightPrecisions).toHaveBeenLastCalledWith({ ditFile: undefined, textEncoderFile: undefined, vaeFile: undefined }, 'GPU-a')
+    sinks.get(bundle.id)!.done(1)
+
+    prepareModelSource.mockResolvedValue({ model: join(dataRoot(), 'bundle'), ditFile: '/models/moss_image_heal_int8_convrot.safetensors' })
+    jobWeightPrecisions.mockResolvedValue({ dit: 'int8', textEncoder: 'bf16' })
+    const int8 = await supervisor.startEngineJob(request('int8 dit'))
+    await vi.waitFor(() => expect(starts).toHaveLength(2))
+    expect(jobWeightPrecisions).toHaveBeenLastCalledWith(
+      { ditFile: '/models/moss_image_heal_int8_convrot.safetensors', textEncoderFile: undefined, vaeFile: undefined },
+      'GPU-a',
+    )
+    expect(int8.gpuProfile).toMatchObject({ tier: 'high', source: 'global' })
+    expect((starts[1]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('high')
+  })
+
+  it('settles a queued job when it starts: queued as asked, run as its weights allow', async () => {
+    const first = await supervisor.startEngineJob(request('first'))
+    jobWeightPrecisions.mockResolvedValue({ dit: 'w4a4', textEncoder: 'bf16' })
+    const queued = await supervisor.startEngineJob(request('queued int4'))
+    expect(queued).toMatchObject({ state: 'queued', gpuProfile: { tier: 'high' } })
+
+    sinks.get(first.id)!.done(1)
+    await vi.waitFor(() => expect(starts).toHaveLength(2))
+    expect(starts[1]!.job).toMatchObject({ id: queued.id, gpuProfile: { tier: 'turbo', source: 'model-weights' } })
+    expect((starts[1]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('turbo')
+  })
+
+  it('never starts a job canceled while its weights are looked up, and runs the next one', async () => {
+    const first = await supervisor.startEngineJob(request('first'))
+    const second = await supervisor.startEngineJob(request('canceled on the way'))
+    const third = await supervisor.startEngineJob(request('third'))
+    let answer: (value: unknown) => void = () => undefined
+    jobWeightPrecisions.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+
+    sinks.get(first.id)!.done(1)
+    await vi.waitFor(() => expect(jobWeightPrecisions).toHaveBeenCalledTimes(2))
+    expect(await supervisor.cancelJob(second.id)).toMatchObject({ state: 'canceled' })
+    answer({ dit: 'bf16', textEncoder: 'bf16' })
+
+    await vi.waitFor(() => expect(starts.map((start) => start.job.id)).toEqual([first.id, third.id]))
+    expect(updates(second.id).at(-1)).toMatchObject({ state: 'canceled' })
+  })
+
+  it('runs an INT4 DiT as Turbo even when High was chosen', async () => {
+    jobWeightPrecisions.mockResolvedValue({ dit: 'w4a4', textEncoder: 'bf16' })
+    const job = await supervisor.startEngineJob(request('int4 dit'))
+    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'model-weights' })
+    expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('turbo')
   })
 })
 

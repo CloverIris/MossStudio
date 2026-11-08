@@ -47,6 +47,7 @@ export type UpdateSettings = Pick<
   | 'dismissedAnnouncements'
   | 'skippedUpdateVersion'
   | 'noticedFailedUpdates'
+  | 'lastRunVersion'
 >
 
 export interface UpdateHost {
@@ -146,6 +147,8 @@ export class UpdateRuntime {
       available: null,
       progress: null,
       pending: null,
+      readyAt: null,
+      updatedFrom: null,
       previous: null,
       canRollback: false,
       minimumVersion: null,
@@ -174,7 +177,11 @@ export class UpdateRuntime {
   }
 
   private set(patch: Partial<UpdaterState>, options: { progress?: boolean } = {}): void {
-    this.state = { ...this.state, ...patch }
+    const next = { ...this.state, ...patch }
+    // When the update became ready: the title bar stays quiet about it for a few days.
+    if (!next.pending) next.readyAt = null
+    else if (next.phase === 'ready' && !next.readyAt) next.readyAt = new Date(this.now()).toISOString()
+    this.state = next
     if (options.progress) {
       const interval = this.host.progressIntervalMs ?? 250
       if (this.now() - this.lastProgressEmit < interval) return
@@ -213,6 +220,7 @@ export class UpdateRuntime {
       await this.cleanupLeftovers().catch((error) => this.host.log?.(`[update] cleanup: ${message(error)}`))
       this.refreshRecord()
       this.noticeFailed()
+      this.noticeUpdated()
     }
     const feeds: UpdateFeed[] = []
     for (const channel of channelsToRead(this.state.channel)) {
@@ -277,6 +285,15 @@ export class UpdateRuntime {
     this.host.saveSettings({ noticedFailedUpdates: [...noticed, version].slice(-50) })
     this.host.log?.(`[update] ${version} did not start and was rolled back to ${this.host.version}`)
     this.state = { ...this.state, failedNotice: true }
+  }
+
+  /** The first run of a newer version than last time: say once that it was updated. */
+  private noticeUpdated(): void {
+    const last = this.host.settings().lastRunVersion ?? null
+    const current = this.host.version
+    if (last === current) return
+    this.host.saveSettings({ lastRunVersion: current })
+    if (last && !this.state.failedNotice && compareSemver(current, last) > 0) this.state = { ...this.state, updatedFrom: last }
   }
 
   private async cleanupLeftovers(): Promise<void> {

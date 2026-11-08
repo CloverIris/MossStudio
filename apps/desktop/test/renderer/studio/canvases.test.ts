@@ -1,17 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import type { AdapterEntry, JobRecord } from '@shared/types'
 import {
+  addRegion,
+  plannedRegions,
   applyJobs,
   canvasFromReuse,
   copyAsLayout,
   createLayoutCanvas,
   defaultSettings,
+  editLayer,
   matchAdapterPath,
   moveBox,
+  newRegion,
   regionFromDrag,
   reorderLayers,
   resizeBox,
   resizeCanvas,
+  sceneCanvas,
   settingsFrom,
   taskCanvasFor,
 } from '@renderer/pages/studio/canvases'
@@ -67,22 +72,33 @@ describe('studio/canvases creation', () => {
 })
 
 describe('studio/canvases taskCanvasFor', () => {
-  it('runs a fresh layout canvas in place', () => {
+  it('gives even the first run of a layout canvas its own result, which joins the filmstrip', () => {
     const source = canvas({ prompt: 'x' })
-    const result = taskCanvasFor(source, [source], 'unused')
-    expect(result.taskId).toBe('c1')
-    expect(result.canvases).toHaveLength(1)
-    expect(result.canvases[0]).toMatchObject({ jobState: 'starting', outputs: [] })
-  })
-
-  it('keeps earlier pictures: a re-run gets its own result card under the source', () => {
-    const source = canvas({ prompt: 'x', outputs: [{ path: '/o.png', width: 1, height: 1, seed: 1 }] })
     const result = taskCanvasFor(source, [source], 'task')
     expect(result.taskId).toBe('task')
     expect(result.canvases).toHaveLength(2)
     expect(result.canvases[0]).toBe(source)
-    expect(result.canvases[1]).toMatchObject({ id: 'task', kind: 'result', sourceCanvasId: 'c1', title: '画面 1 · 结果', outputs: [] })
-    expect(result.canvases[1]!.y).toBeGreaterThan(source.y)
+    expect(result.canvases[1]).toMatchObject({ id: 'task', kind: 'result', sourceCanvasId: 'c1', jobState: 'starting', outputs: [] })
+  })
+
+  it('keeps earlier pictures, and the face follows the new run', () => {
+    const source = canvas({
+      prompt: 'x',
+      outputs: [{ path: '/o.png', width: 1, height: 1, seed: 1 }],
+      jobId: 'old-job',
+      shownOutput: { canvasId: 'earlier' },
+    })
+    const result = taskCanvasFor(source, [source], 'task')
+    expect(result.taskId).toBe('task')
+    expect(result.canvases).toHaveLength(2)
+    expect(result.canvases[0]).toEqual({ ...source, shownOutput: undefined } as never)
+    expect(result.canvases[0]!.shownOutput).toBeUndefined()
+    const task = result.canvases[1]!
+    expect(task).toMatchObject({ id: 'task', kind: 'result', sourceCanvasId: 'c1', title: '画面 1 · 结果', outputs: [] })
+    // The run does not inherit the source's job or pictures.
+    expect(task.jobId).toBeUndefined()
+    expect(task.shownOutput).toBeUndefined()
+    expect(task.y).toBeGreaterThan(source.y)
   })
 })
 
@@ -118,6 +134,61 @@ describe('studio/canvases regions', () => {
   it('pulls regions back inside when the picture shrinks', () => {
     const resized = resizeCanvas(canvas({ layers: [layer({ bbox: [600, 600, 1000, 1000] })] }), 512, 512)
     expect(resized.layers[0]!.bbox).toEqual([511, 511, 512, 512])
+  })
+
+  it('creates a text region already carrying its words', () => {
+    expect(newRegion('text', [0, 0, 10, 10], 'r', '新年快乐')).toMatchObject({ id: 'r', kind: 'text', text: '新年快乐' })
+    expect(newRegion('text', [0, 0, 10, 10], 'r')).toMatchObject({ text: '' })
+    expect(newRegion('object', [0, 0, 10, 10], 'r', 'ignored').text).toBeUndefined()
+  })
+
+  it('adds a region from a normalised box, or in the middle when there is none', () => {
+    const { canvas: built, region } = addRegion(canvas({ width: 100, height: 100 }), {
+      kind: 'text',
+      caption: 'title',
+      text: '你好',
+      bbox: { x: 0.1, y: 0.2, w: 0.5, h: 0.1 },
+    })
+    expect(built.layers).toEqual([region])
+    expect(region).toMatchObject({ kind: 'text', caption: 'title', text: '你好', bbox: [10, 20, 60, 30] })
+    expect(addRegion(canvas({ width: 100, height: 100 }), { kind: 'object', caption: 'tree' }).region.bbox).toEqual([20, 20, 80, 80])
+    expect(addRegion(canvas(), { kind: 'object', caption: 'tree', text: 'ignored' }).region.text).toBeUndefined()
+  })
+
+  it('edits one region without touching the others', () => {
+    const region = layer({ id: 'a', kind: 'text', text: 'old', opacity: 1 })
+    expect(editLayer(region, { text: 'new', caption: 'title', visible: false, opacity: 0 }, size)).toMatchObject({
+      id: 'a',
+      text: 'new',
+      caption: 'title',
+      visible: false,
+      opacity: 0.1,
+    })
+    // A box that leaves the picture is pulled back in; nothing else changes.
+    expect(editLayer(layer({ bbox: [0, 0, 10, 10] }), { bbox: [-20, -20, 500, 500] }, size).bbox).toEqual([0, 0, 100, 100])
+    // Only a text region gains words.
+    expect(editLayer(layer(), { text: 'ignored' }, size).text).toBeUndefined()
+  })
+
+  it('builds a scene canvas with its own size, description, regions and words', () => {
+    const built = sceneCanvas(
+      {
+        title: ' 封面 ',
+        prompt: ' a spring cover ',
+        width: 512,
+        height: 768,
+        regions: [{ label: 'character', caption: 'hero' }],
+        texts: [{ caption: 'title', text: '春' }],
+      },
+      [],
+      { ...defaultSettings(), width: 1024, height: 1024 },
+    )
+    expect(built).toMatchObject({ kind: 'layout', title: '封面', prompt: 'a spring cover', width: 512, height: 768 })
+    expect(built.summary.caption).toBe('a spring cover')
+    expect(built.layers.map((item) => [item.kind, item.caption, item.text])).toEqual([
+      ['character', 'hero', undefined],
+      ['text', 'title', '春'],
+    ])
   })
 })
 
@@ -395,5 +466,25 @@ describe('studio/canvases review fixes', () => {
     const loaded = migrateCanvases(list.slice(1))
     expect(loaded.find((item) => item.id === 'r')!.inputs).toEqual(frozen)
     expect(loaded.find((item) => item.id === 'a')!.inputs).toBeUndefined()
+  })
+
+  it('previews a waiting plan as the boxes applying it would add, with stable ids', () => {
+    const base = canvas({ width: 200, height: 100, layers: [layer({ id: 'old' })] })
+    const planned = plannedRegions(base, [
+      { tool: 'studio_add_text_layer', args: { caption: '粗体', text: 'SPRING', bbox: { x: 0.1, y: 0.1, w: 0.5, h: 0.2 } } },
+      { tool: 'studio_set_sampler', args: { width: 768 } },
+      { tool: 'studio_add_layer', args: { label: 'character', caption: '女孩' } },
+      { tool: 'studio_add_layer', args: { label: 'object', caption: '花', bbox: { x: 'bad' } } },
+    ])
+    expect(planned.map((item) => [item.id, item.kind, item.caption, item.text])).toEqual([
+      ['plan-0', 'text', '粗体', 'SPRING'],
+      ['plan-1', 'character', '女孩', undefined],
+      ['plan-2', 'object', '花', undefined],
+    ])
+    expect(planned[0]!.bbox).toEqual([20, 10, 120, 30])
+    // No box given (or a broken one): where applying would put it.
+    expect(planned[1]!.bbox).toEqual(addRegion(base, { kind: 'character', caption: '女孩' }).region.bbox)
+    // The canvas itself is untouched.
+    expect(base.layers.map((item) => item.id)).toEqual(['old'])
   })
 })

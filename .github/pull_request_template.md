@@ -9,6 +9,7 @@
 - [ ] `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test:unit`
 - [ ] `pnpm test:e2e` (UI changes)
 - [ ] `pnpm test:install` (launcher, install, update or release changes)
+- [ ] Docs updated (which), or none apply (why). See the table in `docs/reference/documentation-guidelines.md` §7
 
 ## Platforms affected
 

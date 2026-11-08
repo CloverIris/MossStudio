@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { agentCardAnswerSchema } from './agent/cards'
 
 const pathLike = z.string().trim().min(1, '目录路径不能为空').max(4096)
 const urlLike = z
@@ -149,7 +150,17 @@ export const jobInputsSchema = z
 
 const projectCanvasSchema = z.object({
   id: z.string().min(1).max(120),
-  kind: z.enum(['layout', 'result', 'image']),
+  kind: z.enum(['layout', 'result', 'image', 'style']),
+  upscale: z.object({ scale: z.number().min(1).max(4) }).optional(),
+  generated: z
+    .object({
+      prompt: z.string().max(24000),
+      adapters: z
+        .array(z.object({ id: z.string().min(1).max(160), strength: z.number().min(0).max(2), path: z.string().max(4096).optional() }))
+        .max(32)
+        .optional(),
+    })
+    .optional(),
   imagePath: z.string().max(4096).optional(),
   /** Pixel size of `imagePath` (up to studio:import-image's 16384 limit); width/height are the card's. */
   imageSize: z
@@ -186,6 +197,7 @@ const projectCanvasSchema = z.object({
           maxEdge: z.number().int().min(16).max(2048).optional(),
         })
         .optional(),
+      styles: z.object({ links: z.array(canvasImageLinkSchema).max(8) }).optional(),
     })
     .optional(),
   sampling: samplingSchema.optional(),
@@ -230,6 +242,8 @@ const projectCanvasSchema = z.object({
   deviceId: z.string().max(160).optional(),
   backgroundPath: z.string().max(4096).optional(),
   sourceCanvasId: z.string().max(120).optional(),
+  pinned: z.boolean().optional(),
+  shownOutput: canvasImageLinkSchema.optional(),
   jobId: z.string().max(160).optional(),
   jobState: z.enum(['queued', 'starting', 'running', 'succeeded', 'failed', 'canceled']).optional(),
   progress: z
@@ -336,6 +350,7 @@ export const schemas = {
       mossInferServerPath: z.string().max(4096).nullable(),
       mossInferMemoryMode: z.enum(['min_memory', 'balanced', 'max_speed']),
       mossInferTier: z.enum(['reference', 'high', 'turbo']),
+      mossInferRefreshEvery: z.number().int().min(0).max(50),
       mossInferChannel: z.enum(['stable', 'dev']),
       engineDeviceOverrides: z
         .record(z.string().min(1).max(200), z.string().regex(/^(?:(?:cu12|cu13)(?:-sm75|-sm70)?(?:-system-cuda)?|vulkan|hip)$/))
@@ -490,6 +505,8 @@ export const schemas = {
   }),
 
   announcementsDismiss: z.object({ id: z.string().min(1).max(120) }),
+
+  windowControl: z.object({ action: z.enum(['minimize', 'toggle-maximize', 'close', 'state']) }),
 
   windowOpen: z.object({
     kind: z.enum(['studio', 'trainer']),
@@ -671,6 +688,7 @@ export const schemas = {
       message: z.string().max(32000).optional(),
       regenerate: z.boolean().optional(),
       context: z.string().max(16000).optional(),
+      mode: z.enum(['auto', 'advanced']).optional(),
     })
     .refine((value) => Boolean(value.regenerate || value.message?.trim()), { message: '需要消息或重新生成标记' }),
 
@@ -680,6 +698,13 @@ export const schemas = {
       ok: z.boolean(),
       content: z.string().max(200_000),
     }),
+  }),
+
+  /** The user answered a card the Agent put in the chat. */
+  aiCardAnswer: z.object({
+    conversationId: z.string().min(1).max(120),
+    messageId: z.string().min(1).max(120),
+    answer: agentCardAnswerSchema,
   }),
 
   aiConversationTitle: z.object({

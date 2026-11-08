@@ -11,13 +11,21 @@ const hash = (page: Page): Promise<string> => page.evaluate(() => window.locatio
 describe('first run', () => {
   const app = useApp()
 
-  it('prepares engine and model in one go, continues in the background, then finishes', async () => {
+  it('one decision to start, one progress with the time left, the board usable meanwhile, then done on its own', async () => {
     const page = await app.open({ scenario: 'firstRun', route: '/studio', theme: 'light' })
     // Nothing works until the computer is prepared, so the app starts here.
     await expect.poll(() => hash(page)).toBe('#/setup')
-    await expect.poll(() => page.getByRole('heading', { name: '准备好你的电脑' }).isVisible()).toBe(true)
+    await expect.poll(() => page.getByRole('heading', { name: '准备开始创作' }).isVisible()).toBe(true)
+    // What it takes, in one line, and where it goes.
+    const summary = page.locator('[data-setup-summary]')
+    await expect.poll(() => summary.innerText()).toContain('下载约 26 GB')
+    expect(await summary.innerText()).toContain('保存到 /fixture/data/models')
+    // The GPU is one quiet line; nothing about engines on the way in.
+    expect(await page.locator('[data-setup-gpu]').textContent()).toBe('NVIDIA GeForce RTX 4090 · 24 GB')
+    expect(await page.getByText(/引擎/).count()).toBe(0)
+    await app.screenshot('setup-first-run-light')
 
-    await page.getByRole('button', { name: '开始准备' }).click()
+    await page.getByRole('button', { name: '开始下载' }).click()
     await expect.poll(() => app.calls('mossinfer:download').then((calls) => calls.length)).toBe(1)
     const bundle = await page.evaluate(() => {
       const recommended = window.__mock.state.catalog.bundles.find((item) => item.recommended)!
@@ -46,29 +54,44 @@ describe('first run', () => {
         } satisfies DownloadTask)
       }
     })
-    const steps = page.getByRole('list', { name: '准备步骤' })
-    await expect.poll(() => steps.getByRole('progressbar').count()).toBeGreaterThan(0)
-    await expect.poll(() => steps.getByText('40%').count()).toBeGreaterThan(0)
+    await expect.poll(() => page.getByRole('heading', { name: '正在准备' }).isVisible()).toBe(true)
+    // One bar for everything, with the time left in words; the two parts small underneath.
+    const progress = page.locator('[data-setup-progress]')
+    expect(await progress.getByRole('progressbar').count()).toBe(1)
+    await expect.poll(() => progress.innerText()).toMatch(/\d+%[\s\S]*还要约 \d+ 分钟/)
+    expect(await progress.getByRole('list', { name: '正在下载' }).getByRole('listitem').allInnerTexts()).toEqual([
+      expect.stringContaining('运行组件'),
+      expect.stringContaining('MOSS-Image SFT'),
+    ])
     await app.screenshot('setup-progress-light')
 
-    // 在后台继续 → 创作, which says what is still being prepared.
-    await page.getByRole('button', { name: '在后台继续' }).click()
-
+    // 先去看看 → 创作: the title bar carries the download, 生成 fills up and says why it is off.
+    await page.getByRole('button', { name: '先去看看' }).click()
     await expect.poll(() => hash(page)).toBe('#/studio')
     expect((await app.calls<{ onboardingState?: string }>('settings:update')).at(-1)).toEqual({ onboardingState: 'active' })
-    const blockers = page.locator('li').filter({ hasText: /引擎|模型/ })
-    await expect.poll(() => page.getByText('引擎正在安装 · 40%', { exact: true }).isVisible()).toBe(true)
-    // 输入 gives the same reason as the footer, not "no engine".
-    await expect.poll(() => page.getByText('引擎正在安装 · 40%，就绪后才能添加图片').isVisible()).toBe(true)
-    await expect.poll(() => blockers.filter({ hasText: '还没有可用的模型' }).count()).toBe(1)
+    const chip = page.locator('[data-preparation-chip]')
+    await expect.poll(() => chip.innerText()).toMatch(/准备中 \d+%/)
+    const generate = page.locator('[data-studio-generate]')
+    await expect.poll(() => generate.innerText()).toMatch(/下载完成后就能生成 · \d+%/)
+    expect(await generate.isDisabled()).toBe(true)
+    // The download's own reasons step aside: 生成 says it.
+    const blockers = page.locator('li').filter({ hasText: /引擎正在安装|还没有可用的模型|还没有下载完/ })
+    expect(await blockers.count()).toBe(0)
+    // The card's ＋ still gives the reason on its disabled inputs.
+    await page.locator('article[data-canvas-card]').first().hover()
+    await page.locator('[data-input-adder] button').first().click()
+    await expect
+      .poll(() => page.getByRole('menuitem', { name: /^起始图/ }).getAttribute('title'))
+      .toBe('引擎正在安装 · 40%，就绪后才能把图片接进来')
+    await page.keyboard.press('Escape')
     await app.screenshot('studio-preparing-light')
-    // 查看 goes back to the page that shows the whole preparation.
-    await blockers.filter({ hasText: '引擎正在安装' }).getByRole('button', { name: '查看' }).click()
+    // The chip goes back to the page that shows the whole preparation.
+    await chip.click()
     await expect.poll(() => hash(page)).toBe('#/setup')
-    await page.getByRole('button', { name: '在后台继续' }).click()
+    await page.getByRole('button', { name: '先去看看' }).click()
     await expect.poll(() => hash(page)).toBe('#/studio')
 
-    // Everything finishes while the user is away.
+    // Everything finishes while the user is away: setup completes and a toast says so.
     await page.evaluate(() => {
       const { fixtures, Events, state } = window.__mock
       state.engineReadiness = fixtures.engineReadyFixture()
@@ -76,39 +99,44 @@ describe('first run', () => {
       window.__mock.emit(Events.mossInferDownload, fixtures.engineDownloadFixture({ phase: 'done', bytes: 900_000_000, percent: 100 }))
       for (const task of [...state.downloads]) window.__mock.playDownload(task)
     })
-    await expect.poll(() => page.getByText('引擎正在安装 · 40%').count()).toBe(0)
-    await expect.poll(() => blockers.filter({ hasText: '还没有可用的模型' }).count()).toBe(0)
-
-    // Back on 准备, 开始创作 completes onboarding.
-    await page.evaluate(() => {
-      window.location.hash = '#/setup'
-    })
-    await expect.poll(() => page.getByRole('heading', { name: '一切就绪' }).isVisible()).toBe(true)
-    await app.screenshot('setup-done-light')
-    await page.getByRole('button', { name: '开始创作' }).click()
-    await expect.poll(() => hash(page)).toBe('#/studio')
-    expect((await app.calls<{ onboardingState?: string }>('settings:update')).at(-1)).toEqual({ onboardingState: 'completed' })
+    await expect.poll(() => chip.count()).toBe(0)
+    await expect.poll(() => page.getByText('模型准备好了，可以生成了').isVisible()).toBe(true)
+    await expect
+      .poll(() => app.calls<{ onboardingState?: string }>('settings:update').then((calls) => calls.at(-1)))
+      .toEqual({ onboardingState: 'completed' })
+    await expect.poll(() => generate.innerText()).not.toContain('下载完成后')
   })
 
-  it('after a restart mid-install, starts the model download without waiting for the engine', async () => {
+  it('finishing on 准备 goes straight to the board', async () => {
+    const page = await app.open({ scenario: 'engineInstalling', route: '/setup' })
+    await expect.poll(() => page.getByRole('heading', { name: '正在准备' }).isVisible()).toBe(true)
+    await page.evaluate(() => {
+      const { fixtures, Events, state } = window.__mock
+      state.engineReadiness = fixtures.engineReadyFixture()
+      state.engineVersions = [fixtures.engineVersionFixture()]
+      window.__mock.emit(Events.mossInferDownload, fixtures.engineDownloadFixture({ phase: 'done', bytes: 900_000_000, percent: 100 }))
+      for (const task of [...state.downloads]) window.__mock.playDownload(task)
+    })
+    await expect.poll(() => hash(page)).toBe('#/studio')
+    expect((await app.calls<{ onboardingState?: string }>('settings:update')).at(-1)).toEqual({ onboardingState: 'completed' })
+    await expect.poll(() => page.getByText('模型准备好了，可以生成了').isVisible()).toBe(true)
+  })
+
+  it('after a restart mid-install, carries on with the model download by itself', async () => {
     const page = await app.open({ scenario: 'engineInstalling', route: '/setup', theme: 'dark' })
-    const steps = page.getByRole('list', { name: '准备步骤' })
-    await expect.poll(() => steps.getByText('50%').count()).toBeGreaterThan(0)
-    // The engine is still downloading, so 开始创作 is not available yet, but the model can start now.
-    await page.getByRole('button', { name: '同时下载模型' }).click()
+    await expect.poll(() => page.getByRole('heading', { name: '正在准备' }).isVisible()).toBe(true)
     await expect.poll(() => app.calls('models:download').then((calls) => calls.length)).toBeGreaterThan(0)
     // Starting the model must not start a second engine install.
     expect(await app.calls('mossinfer:download')).toHaveLength(0)
+    await app.screenshot('setup-installing-dark')
   })
 
-  it('explains a missing GPU and re-checks on request', async () => {
+  it('without a usable GPU: another computer or 重新检测, as two choices', async () => {
     const page = await app.open({ scenario: 'noGpu', route: '/setup', theme: 'dark' })
-    await expect.poll(() => page.getByText('在这台电脑上没有找到能运行引擎的显卡', { exact: false }).isVisible()).toBe(true)
-    // Nothing can start while blocked: 开始准备 is gone and 重新检测 is the main action.
-    expect(await page.getByRole('button', { name: '开始准备' }).count()).toBe(0)
-    expect(await page.getByRole('button', { name: '重新检测' }).isEnabled()).toBe(true)
-    // Remote hosts are off: point at where to turn them on, nothing more.
-    await expect.poll(() => page.getByRole('button', { name: '去开启远程主机' }).isVisible()).toBe(true)
+    await expect.poll(() => page.getByRole('heading', { name: '这台电脑跑不了模型' }).isVisible()).toBe(true)
+    // Nothing can start while blocked.
+    expect(await page.getByRole('button', { name: '开始下载' }).count()).toBe(0)
+    await app.screenshot('setup-no-gpu-dark')
 
     // The driver gets fixed; 重新检测 finds the GPU and setup can start.
     await page.evaluate(() => {
@@ -117,17 +145,34 @@ describe('first run', () => {
       state.devices = [fixtures.launchDeviceFixture()]
       state.engineMachine = fixtures.machineFixture('nvidia')
     })
-    await page.getByRole('button', { name: '重新检测' }).click()
+    await page.getByRole('button', { name: /重新检测/ }).click()
     await expect.poll(() => app.calls('gpu:inventory-refresh').then((calls) => calls.length)).toBeGreaterThan(0)
     // The machine is probed again too (AMD / Intel GPUs come from there).
     await expect
       .poll(() => app.calls<{ refresh?: boolean }>('engine:plan').then((calls) => calls.filter((call) => call?.refresh).length))
       .toBeGreaterThan(1)
-    await expect.poll(() => page.getByRole('button', { name: '开始准备' }).isEnabled()).toBe(true)
-    await expect.poll(() => page.getByText('在这台电脑上没有找到能运行引擎的显卡', { exact: false }).count()).toBe(0)
+    await expect.poll(() => page.getByRole('button', { name: '开始下载' }).isEnabled()).toBe(true)
+    expect(await page.getByRole('heading', { name: '这台电脑跑不了模型' }).count()).toBe(0)
   })
 
-  it('已有模型文件？ uses a local folder instead of the 25 GB download', async () => {
+  it('用另一台电脑 turns on remote hosts and adds one right there', async () => {
+    const page = await app.open({ scenario: 'noGpu', route: '/setup' })
+    await page.getByRole('button', { name: /用另一台电脑/ }).click()
+    await expect
+      .poll(() => app.calls<{ remoteHostsEnabled?: boolean }>('settings:update').then((calls) => calls.at(-1)))
+      .toEqual({ remoteHostsEnabled: true })
+    const dialog = page.getByRole('dialog', { name: '添加 SSH 主机' })
+    await expect.poll(() => dialog.isVisible()).toBe(true)
+    await dialog.getByLabel('地址', { exact: true }).fill('gpu.lan')
+    await dialog.getByLabel('用户名', { exact: true }).fill('moss')
+    await dialog.getByRole('button', { name: '保存并测试' }).click()
+    await expect.poll(() => app.calls('hosts:save').then((calls) => calls.length)).toBe(1)
+    // 设备 prepares it from there: connection, engine, then the model.
+    await expect.poll(() => hash(page)).toBe('#/settings/devices')
+    expect((await app.calls<{ onboardingState?: string }>('settings:update')).at(-1)).toEqual({ onboardingState: 'active' })
+  })
+
+  it('已有模型文件… uses a local folder instead of the 25 GB download', async () => {
     const page = await app.open({ scenario: 'firstRun', route: '/setup', defer: true })
     await page.evaluate(() => {
       window.__mock.state.localModelFolder = {
@@ -137,14 +182,13 @@ describe('first run', () => {
       }
     })
     await app.start()
-    const steps = page.getByRole('list', { name: '准备步骤' })
-    await page.getByRole('button', { name: '已有模型文件？使用本地文件夹' }).click()
+    await page.getByRole('button', { name: '已有模型文件…' }).click()
     await expect.poll(() => app.calls('models:import-folder').then((calls) => calls.length)).toBe(1)
     await expect.poll(() => page.getByText(/已在原位置使用 MOSS-Image SFT（sft），不用再下载模型/).isVisible()).toBe(true)
-    await expect.poll(() => steps.getByText(/已就绪/).count()).toBeGreaterThan(0)
-    // The quiet action leaves once the model is there.
-    expect(await page.getByRole('button', { name: '已有模型文件？使用本地文件夹' }).count()).toBe(0)
-    await page.getByRole('button', { name: '开始准备' }).click()
+    // The quiet action leaves once the model is there, and only the runtime is left to download.
+    await expect.poll(() => page.getByRole('button', { name: '已有模型文件…' }).count()).toBe(0)
+    await expect.poll(() => page.locator('[data-setup-summary]').innerText()).toMatch(/下载约 \d+ MB/)
+    await page.getByRole('button', { name: '开始下载' }).click()
     await expect.poll(() => app.calls('mossinfer:download').then((calls) => calls.length)).toBe(1)
     expect(await app.calls('models:download')).toEqual([])
   })
@@ -155,21 +199,14 @@ describe('first run', () => {
       window.__mock.state.localModelFolder = { path: '/data/my-finetune', name: 'my-finetune', bundleId: 'none' }
     })
     await app.start()
-    await page.getByRole('button', { name: '已有模型文件？使用本地文件夹' }).click()
+    await page.getByRole('button', { name: '已有模型文件…' }).click()
     await expect.poll(() => page.getByText(/不是可以直接使用的 MOSS-Image 模型/).isVisible()).toBe(true)
-    expect(await page.getByRole('button', { name: '已有模型文件？使用本地文件夹' }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: '已有模型文件…' }).count()).toBe(1)
   })
 
-  it('sends a GPU-less user to turn on remote hosts', async () => {
-    const page = await app.open({ scenario: 'noGpu', route: '/setup' })
-    await page.getByRole('button', { name: '去开启远程主机' }).click()
-    await expect.poll(() => hash(page)).toBe('#/settings/features')
-    expect((await app.calls<{ onboardingState?: string }>('settings:update')).at(-1)).toEqual({ onboardingState: 'active' })
-  })
-
-  it('skips setup when asked and never comes back on its own', async () => {
+  it('稍后 leaves setup and never comes back on its own', async () => {
     const page = await app.open({ scenario: 'firstRun', route: '/setup' })
-    await page.getByRole('button', { name: '跳过' }).click()
+    await page.getByRole('button', { name: '稍后' }).click()
     await expect.poll(() => hash(page)).toBe('#/studio')
     expect((await app.calls<{ onboardingState?: string }>('settings:update')).at(-1)).toEqual({ onboardingState: 'dismissed' })
     await expect.poll(() => page.getByText('引擎未就绪', { exact: true }).isVisible()).toBe(true)

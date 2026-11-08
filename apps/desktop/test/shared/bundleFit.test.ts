@@ -204,8 +204,11 @@ describe('profileForBundle', () => {
   const profile = { memoryMode: 'balanced' as const, tier: 'high' as const, source: 'global' as const }
 
   it('runs a quantized model with its own tier', () => {
-    expect(profileForBundle(profile, bundle('moss-sft-int4'))).toEqual({ memoryMode: 'balanced', tier: 'turbo', source: 'bundle' })
-    expect(profileForBundle({ ...profile, tier: 'reference' }, bundle('moss-sft-int8'))).toMatchObject({ tier: 'high', source: 'bundle' })
+    expect(profileForBundle(profile, bundle('moss-sft-int4'))).toEqual({ memoryMode: 'balanced', tier: 'turbo', source: 'model-weights' })
+    expect(profileForBundle({ ...profile, tier: 'reference' }, bundle('moss-sft-int8'))).toMatchObject({
+      tier: 'high',
+      source: 'model-weights',
+    })
   })
 
   it('keeps the GPU profile for a folder model', () => {

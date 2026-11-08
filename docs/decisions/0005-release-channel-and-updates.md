@@ -1,6 +1,11 @@
+---
+status: superseded
+date: 2026-10-19
+superseded-by: ADR-0010
+---
+
 # ADR-0005：GitHub Release 作为唯一发布源，驱动公告、模型目录与更新
 
-- 状态：**已确认（2026-10-19），实现中；未打包/签名验收**
 - 已被 [ADR-0010](0010-own-installer-and-signed-updates.md) 取代（2026-11-06）：自有安装器、启动器与签名更新源。
 - 关联：[ADR-0003](0003-launcher-first.md)、[ADR-0004](0004-workspaces-remote-devices.md)
 - 影响：`release/`、`updates.ts`、`models.ts`、通知/公告、更新弹窗、下载与安装、版本体系

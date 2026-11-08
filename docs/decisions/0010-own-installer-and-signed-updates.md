@@ -1,8 +1,13 @@
+---
+status: accepted
+date: 2026-11-06
+supersedes: ADR-0005
+---
+
 # ADR-0010: Own installer, launcher and signed update feed
 
-- Status: **accepted, implemented** (2026-11-06, #27, with fixes in #29)
 - Supersedes: [ADR-0005](0005-release-channel-and-updates.md) (`release.md` + `manifest.json` as the release source; open the installer to update)
-- Related: [docs/release.md](../release.md)
+- Related: [docs/how-to/release.md](../how-to/release.md)
 
 ## Context
 
@@ -27,5 +32,5 @@ The first update path, from ADR-0005, read a Markdown release document. It downl
 ## Consequences
 
 - Every install, update, rollback and uninstall path is exercised on all four platforms by `build.yml`'s integration test (`tools/release/integration`).
-- The release process lives in [docs/release.md](../release.md). Until a production key is generated, release builds cannot update.
+- The release process lives in [docs/how-to/release.md](../how-to/release.md). Until a production key is generated, release builds cannot update.
 - Code signing (Authenticode, notarization) is still to do. It is independent of feed signing.

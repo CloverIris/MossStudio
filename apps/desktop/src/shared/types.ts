@@ -162,13 +162,15 @@ export interface Settings {
   lanWebPort: number | null
   lanWebInstanceId: string | null
   updateChannel: 'stable' | 'beta'
-  /** 自动下载更新: download and prepare new versions in the background (applied on restart). */
+  /** 自动更新: download and prepare new versions in the background; the next start installs them. */
   autoDownloadUpdates: boolean
   /** Set by 回到上一个版本: this version (and older) is not offered again until the user asks. */
   skippedUpdateVersion: string | null
   dismissedAnnouncements: string[]
   /** Versions whose automatic rollback the user has already been told about (once each). */
   noticedFailedUpdates: string[]
+  /** The version that ran last: a newer one starting says once that it was updated. */
+  lastRunVersion: string | null
   sidebarCollapsed: boolean
   onboardingState: 'pending' | 'active' | 'dismissed' | 'completed'
   onboardingHostId: string
@@ -181,6 +183,8 @@ export interface Settings {
   mossInferServerPath: string | null
   mossInferMemoryMode: 'min_memory' | 'balanced' | 'max_speed'
   mossInferTier: 'reference' | 'high' | 'turbo'
+  /** Restart the engine after this many generations (0 = never) to release GPU memory and re-read the weights. */
+  mossInferRefreshEvery: number
   mossInferChannel: 'stable' | 'dev'
   /** deviceUuid → engine package id (`cu13`, `vulkan`, …) chosen in 设置 › 设备 › 高级; absent = automatic. */
   engineDeviceOverrides: Record<string, string>
@@ -889,6 +893,14 @@ export interface JobProgress {
   message?: string
 }
 
+/** The memory mode and tier a job runs with, and what decided them. */
+export interface JobGpuProfile {
+  memoryMode: Settings['mossInferMemoryMode']
+  tier: Settings['mossInferTier']
+  /** model-weights: the DiT / text encoder files allow one tier only. hardware-compatibility: the GPU does. */
+  source: 'recommended' | 'global' | 'gpu-override' | 'hardware-compatibility' | 'model-weights'
+}
+
 export interface JobRecord {
   modelSnapshot?: unknown
   engine?: 'runner' | 'mossinfer'
@@ -910,11 +922,7 @@ export interface JobRecord {
     name: string
     computeCapability?: { major: number; minor: number }
   }
-  gpuProfile?: {
-    memoryMode: Settings['mossInferMemoryMode']
-    tier: Settings['mossInferTier']
-    source: 'recommended' | 'global' | 'gpu-override' | 'hardware-compatibility' | 'bundle'
-  }
+  gpuProfile?: JobGpuProfile
   kind?: 'inference' | 'training'
   trainerVersionId?: string
   trainerRunName?: string
@@ -930,6 +938,10 @@ export interface JobRecord {
   progress: JobProgress
   metrics?: { step?: number; loss?: number; lr?: number; gradNorm?: number }
   startedAt: string
+  /** When the engine actually began this job; absent on older records, where it equals `startedAt`. */
+  runStartedAt?: string
+  /** How many jobs were ahead of this one when it was queued (0 = it started at once). */
+  queuedBehind?: number
   endedAt?: string
   pid?: number
   exitCode?: number
@@ -1110,12 +1122,31 @@ export interface CanvasInputs {
     images: Array<{ kind: string; link: CanvasImageLink; strength: number; start: number; end: number }>
   }
   references?: { links: CanvasImageLink[]; maxEdge?: number }
+  /** 风格 nodes (`kind: 'style'`) whose description and LoRA this Canvas generates with. */
+  styles?: { links: CanvasImageLink[] }
+}
+
+/** A 放大 node: a layout Canvas that redraws its start picture (原图) larger. */
+export interface CanvasUpscale {
+  /** Times the 原图's size (the long edge stays within the engine's limit). */
+  scale: number
 }
 
 export interface ProjectCanvas {
   id: string
-  /** layout: a description to generate; result: a generation's output; image: a picture brought in from a file. */
-  kind: 'layout' | 'result' | 'image'
+  /**
+   * layout: a description to generate; result: a generation's output; image: a picture brought in from a file;
+   * style: a 风格 (a description and LoRA that the layout Canvases wired to it generate with).
+   */
+  kind: 'layout' | 'result' | 'image' | 'style'
+  /** A 放大 node (layout only): redraws its start picture at `scale` times its size. */
+  upscale?: CanvasUpscale
+  /**
+   * A result: the description and LoRA its run was actually generated with,
+   * when they differ from its own (its 风格 added, a 放大's inherited
+   * description). Running it again uses these.
+   */
+  generated?: { prompt: string; adapters?: CanvasAdapter[] }
   /** The picture of an `image` Canvas (copied into the project's assets). */
   imagePath?: string
   /** The real pixel size of `imagePath` (`width`/`height` are its card size on the board). */
@@ -1143,6 +1174,13 @@ export interface ProjectCanvas {
   deviceId?: string
   backgroundPath?: string
   sourceCanvasId?: string
+  /**
+   * A result kept on the board as its own card. Unpinned results of a layout
+   * canvas stack in that canvas's filmstrip instead (see pages/studio/runs.ts).
+   */
+  pinned?: boolean
+  /** The filmstrip picture a layout canvas shows on its face and gives to wires; absent = the newest. */
+  shownOutput?: CanvasImageLink
   jobId?: string
   jobState?: JobState
   progress?: JobProgress

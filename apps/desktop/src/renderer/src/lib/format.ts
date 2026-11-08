@@ -3,7 +3,7 @@ import type { JobProgress, JobRecord } from '@shared/types'
 /**
  * The one place that turns values into words. Every screen formats dates,
  * sizes, versions, strengths, durations and job states through here, so the
- * same thing reads the same everywhere (docs/design/ui-rules.md).
+ * same thing reads the same everywhere (docs/reference/ui-rules.md).
  */
 
 /* ------------------------------------------------------------------ */

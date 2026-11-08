@@ -2,8 +2,8 @@
 // `pnpm test:install`: the whole install → update → rollback → uninstall test on this machine
 // (Linux; Windows works too), the same steps build.yml runs per OS:
 //   ephemeral test key → test build (`pnpm build` with the key and the local feed URL) →
-//   launcher build → prepare.mjs (X, X+1, X+2 + feeds) → run.mjs (under xvfb-run when there
-//   is no display).
+//   launcher build → prepare.mjs (X, X+1, X+2 + feeds) → run.mjs (on Linux always under
+//   xvfb-run; MOSS_IT_HEADED=1 opts out).
 // Options are passed to run.mjs (e.g. --report <dir>). MOSS_IT_SKIP_BUILD=1 reuses apps/desktop/out
 // and apps/launcher/dist from an earlier run made with the same key file (dist/it/test-key.txt).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -32,8 +32,13 @@ main(async () => {
   }
   run(process.execPath, ['--no-warnings', join(REPO_ROOT, 'tools', 'release', 'integration', 'prepare.mjs'), '--platform', platform, '--key-file', keyFile])
   const runArgs = [join(REPO_ROOT, 'tools', 'release', 'integration', 'run.mjs'), '--platform', platform, ...process.argv.slice(2)]
-  const xvfb = process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY ? ['/usr/bin/xvfb-run', '/bin/xvfb-run'].find(existsSync) : undefined
-  if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && !xvfb) throw new Error('no display and no xvfb-run: install xvfb')
+  // On Linux the installed app always runs on a private X server, also from a desktop session,
+  // so its windows never open on someone's screen. MOSS_IT_HEADED=1 runs it on this display.
+  const headed = process.env.MOSS_IT_HEADED === '1'
+  const xvfb = process.platform === 'linux' && !headed ? ['/usr/bin/xvfb-run', '/bin/xvfb-run'].find(existsSync) : undefined
+  if (process.platform === 'linux' && !headed && !xvfb) {
+    throw new Error('xvfb-run not found: install xvfb (or set MOSS_IT_HEADED=1 to run on this display)')
+  }
   if (xvfb) run(xvfb, ['-a', '-s', '-screen 0 1600x1000x24', process.execPath, ...runArgs])
   else run(process.execPath, runArgs)
 })

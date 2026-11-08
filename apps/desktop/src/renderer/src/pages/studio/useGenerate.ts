@@ -12,6 +12,8 @@ import { profileFor, randomSeed, samplingForBundle, seedForRun } from './default
 import { resolveJobInputs } from './jobInputs'
 import { compileCanvasPrompt } from './prompt'
 import { resolveBundle } from './readiness'
+import { generatedSnapshot, generationCanvas, nodeBlockers, styleLoraNote, withUpscaleSize } from './nodes'
+import { shownRun, staleRunIds } from './runs'
 import type { StudioProject } from './useStudioProject'
 
 export type SeedMode = 'auto' | 'new' | 'same'
@@ -69,6 +71,7 @@ export function useGenerate(options: {
     const requestedId = canvasId ?? project.selectedRef.current
     const requested = project.canvasesRef.current.find((canvas) => canvas.id === requestedId)
     if (!requested) return fail('先选中一个画面')
+    if (requested.kind === 'style') return fail('风格不能单独生成，把它接到画面上')
 
     // Busy from here on, so a second click shows the state instead of slipping in.
     submittingRef.current = true
@@ -89,8 +92,12 @@ export function useGenerate(options: {
       : null
     // Everything below reads the canvases as they are now: edits made while the engine answered are kept.
     const canvases = project.canvasesRef.current
-    const source = canvases.find((canvas) => canvas.id === requested.id)
-    if (!source) return stop('这个画面已经删除了')
+    const found = canvases.find((canvas) => canvas.id === requested.id)
+    if (!found) return stop('这个画面已经删除了')
+    // A 放大 is sized from its 原图; the run uses that size.
+    const source = withUpscaleSize(found, canvases)
+    // What the engine gets: the description and LoRA with the 风格 nodes' added.
+    const generating = generationCanvas(source, canvases)
     const jobs = useApp.getState().jobs
     if (activeCanvasBranchIds(canvases, jobs).has(source.id)) return stop('这个画面正在生成，等它完成后再试')
 
@@ -100,39 +107,56 @@ export function useGenerate(options: {
     if (!choice.installed) return stop(`「${choice.bundle.name}」还没有下载完`)
     const remoteModelPath = remoteHost?.modelPath?.trim()
     if (remoteHost && !remoteModelPath) return stop(`「${remoteHost.name}」还没有设置模型位置，请到 设置 › 设备与引擎 填写`)
-    const adapters = normalizeCanvasAdapters(source.adapters)
-    if (remoteHost && adapters.length) return stop('在其他电脑上运行时暂不支持 LoRA，请移除 LoRA 或改回这台电脑')
+    const adapters = normalizeCanvasAdapters(generating.adapters)
+    // A 风格's LoRA count too; the message says where they come from.
+    const fromStyles = styleLoraNote(source, canvases)
+    if (remoteHost && adapters.length) return stop(`在其他电脑上运行时暂不支持 LoRA，请移除 LoRA 或改回这台电脑${fromStyles}`)
     const missing = adapterStatuses(adapters, catalog?.adapters).filter((item) => !item.installed)
-    if (missing.length) return stop(`LoRA ${missing.map((item) => `「${item.name}」`).join('')}找不到了，请移除或到模型库重新安装`)
+    if (missing.length)
+      return stop(`LoRA ${missing.map((item) => `「${item.name}」`).join('')}找不到了，请移除或到模型库重新安装${fromStyles}`)
     // Regions are laid out on the first-pass size.
-    const compiled = compileCanvasPrompt(source.baseSize ? { ...source, ...source.baseSize } : source)
+    const compiled = compileCanvasPrompt(generating.baseSize ? { ...generating, ...generating.baseSize } : generating)
     if (!compiled.ok) return stop(compiled.errors[0] ?? '描述还不完整')
-    const resolved = resolveJobInputs(source, { canvases, features, controlAdapters, controlAdaptersLoaded })
+    const node = nodeBlockers(generating, canvases)
+    if (node.length) return stop(node[0]!.message)
+    const resolved = resolveJobInputs(generating, { canvases, features, controlAdapters, controlAdaptersLoaded })
     if (resolved.blockers.length) return stop(resolved.blockers[0]!.message)
 
     // 'same' repeats the picture on this card: the seed its run used, not the
     // source's latest seed (a later 换个种子 from this card records a new one).
-    const shownSeed = jobs.find((job) => job.id === source.jobId)?.params.seed ?? source.outputs?.[0]?.seed ?? source.seed
+    // A 画面 repeats the run picked in its filmstrip.
+    const shown = source.kind === 'layout' ? (shownRun(source, canvases)?.run ?? source) : source
+    const shownSeed = jobs.find((job) => job.id === shown.jobId)?.params.seed ?? shown.outputs?.[0]?.seed ?? source.seed
     const seed = seedMode === 'same' ? shownSeed : seedMode === 'new' ? randomSeed() : seedForRun(source)
     // A canvas that never picked a model runs with the one it resolves to; a few-step
     // model (Turbo) then brings its own steps and CFG, as picking it by hand does.
     const sampling = source.modelBundleId ? { steps: source.steps, cfg: source.cfg } : samplingForBundle(source, null, choice.bundle)
+    // The run keeps what it was really generated with, so running it again repeats it.
+    const snapshot = generatedSnapshot(source, generating)
     const runSource: ProjectCanvas = { ...source, ...sampling, seed, modelBundleId: choice.bundle.id }
+    if (snapshot) runSource.generated = snapshot
+    else delete runSource.generated
     let taskId: string | null = null
     let board: ProjectCanvas[] | null = null
     try {
       // An editable source remembers the seed this run used, so 种子 shows it
       // afterwards. A result card's parameters are frozen and stay as they were.
+      // A 画面's old failed or stopped runs (no longer shown in its filmstrip) are cleared.
+      const stale = new Set(source.kind === 'layout' ? staleRunIds(source.id, canvases, jobs) : [])
       const withSeed =
         source.kind === 'layout'
-          ? canvases.map((canvas) =>
-              canvas.id === source.id ? { ...canvas, ...sampling, seed, modelBundleId: choice.bundle!.id } : canvas,
-            )
+          ? canvases
+              .filter((canvas) => !stale.has(canvas.id))
+              .map((canvas) =>
+                canvas.id === source.id
+                  ? { ...canvas, ...sampling, width: source.width, height: source.height, seed, modelBundleId: choice.bundle!.id }
+                  : canvas,
+              )
           : canvases
       const task = taskCanvasFor(runSource, withSeed)
       taskId = task.taskId
       board = task.canvases
-      // The selection stays where the user is working; the result card appears on the board.
+      // The selection stays where the user is working; a 画面's run joins its filmstrip.
       project.setCanvases(board)
       const saved = await project.saveNow({ canvases: board, selectedCanvasId: project.selectedRef.current })
       if (!saved) throw new Error('项目没有保存成功，请稍后再试')
@@ -151,7 +175,8 @@ export function useGenerate(options: {
           projectId: saved.id,
           canvasId: taskId,
           // Activity names the job after the card it draws on, as the card itself does.
-          canvasTitle: board.find((canvas) => canvas.id === taskId)?.title ?? source.title,
+          // A 画面's runs are named after the 画面, where they show.
+          canvasTitle: source.kind === 'layout' ? source.title : (board.find((canvas) => canvas.id === taskId)?.title ?? source.title),
           // Lineage starts at the source, as the scheduler expects.
           canvasLineage: canvasLineage(source, canvases),
           modelBinding: { bundleId: choice.bundle.id, ...choice.bundle.components },

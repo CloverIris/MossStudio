@@ -6,26 +6,33 @@ import { describe, expect, it } from 'vitest'
 import type { Page } from 'playwright-core'
 import { useApp } from '../support/app'
 
-const hash = (page: Page): Promise<string> => page.evaluate(() => window.location.hash)
+/** What each GPU runs sits under the GPU line, one click away. */
+async function openDetails(page: Page): Promise<void> {
+  const details = page.getByRole('button', { name: '详情' })
+  await details.waitFor()
+  await details.click()
+}
 
 describe('engine detection', () => {
   const app = useApp()
 
   it('first run on an NVIDIA GPU: one line, the CUDA 13 package and its size', async () => {
     const page = await app.open({ scenario: 'firstRun', route: '/setup', theme: 'light' })
+    await openDetails(page)
     const gpus = page.getByRole('list', { name: '检测到的显卡' })
     await expect.poll(() => gpus.getByText('NVIDIA GeForce RTX 4090').isVisible()).toBe(true)
     await expect.poll(() => gpus.getByText('CUDA 13 引擎 · 352 MB').isVisible()).toBe(true)
     await expect
       .poll(() => app.calls<{ refresh?: boolean }>('engine:plan').then((calls) => calls.some((call) => call?.refresh === true)))
       .toBe(true)
-    await page.getByRole('button', { name: '开始准备' }).click()
+    await page.getByRole('button', { name: '开始下载' }).click()
     // Main installs whatever the plan says this computer needs.
     await expect.poll(() => app.calls<Record<string, unknown>>('mossinfer:download')).toEqual([{ channel: 'stable' }])
   })
 
   it('an old NVIDIA driver gets CUDA 12 and a quiet tip to update', async () => {
     const page = await app.open({ scenario: 'machineOldDriver', route: '/setup' })
+    await openDetails(page)
     const gpus = page.getByRole('list', { name: '检测到的显卡' })
     await expect.poll(() => gpus.getByText('CUDA 12 引擎 · 492 MB').isVisible()).toBe(true)
     await expect.poll(() => gpus.getByText(/R580/).isVisible()).toBe(true)
@@ -33,30 +40,38 @@ describe('engine detection', () => {
 
   it('Turing on Windows with R580 gets the SM75 build; Volta on Linux the SM70 one', async () => {
     let page = await app.open({ scenario: 'machineTuring', route: '/setup' })
+    await openDetails(page)
     await expect.poll(() => page.getByRole('list', { name: '检测到的显卡' }).getByText('CUDA 13 引擎 · 356 MB').isVisible()).toBe(true)
     page = await app.open({ scenario: 'machineVolta', route: '/setup' })
+    await openDetails(page)
     await expect.poll(() => page.getByRole('list', { name: '检测到的显卡' }).getByText('CUDA 12 引擎 · 530 MB').isVisible()).toBe(true)
   })
 
   it('AMD without ROCm: compatibility mode explained, ROCm suggested; with ROCm: AMD native', async () => {
     let page = await app.open({ scenario: 'machineAmd', route: '/setup', theme: 'dark' })
+    await openDetails(page)
     const gpus = page.getByRole('list', { name: '检测到的显卡' })
     await expect.poll(() => gpus.getByText('兼容模式 · 1.2 MB').isVisible()).toBe(true)
     await expect.poll(() => gpus.getByText(/只能文生图/).isVisible()).toBe(true)
     await expect.poll(() => gpus.getByText('安装 ROCm 7 可获得更快的原生支持。').isVisible()).toBe(true)
-    await expect.poll(() => page.getByRole('button', { name: '开始准备' }).isEnabled()).toBe(true)
+    await expect.poll(() => page.getByRole('button', { name: '开始下载' }).isEnabled()).toBe(true)
     await app.screenshot('setup-amd-dark')
     page = await app.open({ scenario: 'machineAmdRocm', route: '/setup' })
+    await openDetails(page)
     await expect.poll(() => page.getByRole('list', { name: '检测到的显卡' }).getByText('AMD 原生 · 1.1 MB').isVisible()).toBe(true)
   })
 
   it('Intel Arc: compatibility mode', async () => {
     const page = await app.open({ scenario: 'machineIntel', route: '/setup' })
+    await openDetails(page)
     await expect.poll(() => page.getByRole('list', { name: '检测到的显卡' }).getByText('兼容模式 · 599 KB').isVisible()).toBe(true)
   })
 
   it('several GPUs: one line each, a shared package counted once', async () => {
     const page = await app.open({ scenario: 'machineMultiGpu', route: '/setup', theme: 'light' })
+    // The GPU line says there are three; what each runs is under 详情.
+    await expect.poll(() => page.locator('[data-setup-gpu]').textContent()).toBe('NVIDIA GeForce RTX 4090 · 24 GB · 共 3 块')
+    await openDetails(page)
     const lines = page.getByRole('list', { name: '检测到的显卡' }).getByRole('listitem')
     await expect.poll(() => lines.count()).toBe(3)
     await expect
@@ -66,18 +81,19 @@ describe('engine detection', () => {
         expect.stringContaining('CUDA 12 引擎 · 530 MB'),
         expect.stringContaining('兼容模式 · 1.2 MB'),
       ])
-    await expect.poll(() => page.getByText(/3 个引擎包，共/).isVisible()).toBe(true)
+    // A shared package is counted once in what there is to download.
+    await expect.poll(() => page.locator('[data-setup-summary]').innerText()).toContain('下载约 27 GB')
     await app.screenshot('setup-multi-gpu-light')
   })
 
-  it('macOS: says the engine does not run here and points to 远程主机', async () => {
+  it('macOS: says it does not run here and offers another computer', async () => {
     const page = await app.open({ scenario: 'machineMac', route: '/setup' })
-    await expect.poll(() => page.getByText('这台 Mac 不能在本机运行推理引擎。').isVisible()).toBe(true)
-    // Nothing to start here: 开始准备 is gone and 远程主机 is the main action.
-    await expect.poll(() => page.getByRole('button', { name: '开始准备' }).count()).toBe(0)
-    expect(await page.getByRole('button', { name: '重新检测' }).count()).toBe(0)
-    await page.getByRole('button', { name: '去开启远程主机' }).click()
-    await expect.poll(() => hash(page)).toBe('#/settings/features')
+    await expect.poll(() => page.getByRole('heading', { name: '这台 Mac 不能在本机生成' }).isVisible()).toBe(true)
+    // Nothing to start here, and nothing to re-check: another computer is the way.
+    expect(await page.getByRole('button', { name: '开始下载' }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: /重新检测/ }).count()).toBe(0)
+    await page.getByRole('button', { name: /用另一台电脑/ }).click()
+    await expect.poll(() => page.getByRole('dialog', { name: '添加 SSH 主机' }).isVisible()).toBe(true)
   })
 
   it('设置 › 设备 shows the engine each GPU runs, and 高级 lets one GPU use another package', async () => {

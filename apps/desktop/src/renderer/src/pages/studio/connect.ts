@@ -1,16 +1,12 @@
 import type { ControlAdapterEntry, EngineFeatures, ProjectCanvas } from '@shared/types'
-import { canvasPicture, controlKindLabel, linksOf, MAX_REFERENCES, wouldCycle, type LinkRole } from './links'
+import { controlKindLabel, linksOf, MAX_REFERENCES, wouldCycle, type LinkRole } from './links'
 import { engineUnavailableReason, type Blocker } from './readiness'
+import { boardCanvases, givesPicture } from './runs'
 
 /**
  * Connecting cards by dragging a wire: which cards offer a picture, which
  * drops are allowed, and what the role menu offers. Pure, no React.
  */
-
-/** A card has an output port once it has a picture to give. */
-export function hasPicture(canvas: ProjectCanvas): boolean {
-  return canvasPicture(canvas) !== null
-}
 
 export type ConnectCheck = { ok: true } | { ok: false; reason: string }
 
@@ -21,8 +17,14 @@ export function canConnect(canvases: readonly ProjectCanvas[], sourceId: string,
   if (target.kind !== 'layout') return { ok: false, reason: '只能连到可编辑的画面' }
   const source = canvases.find((canvas) => canvas.id === sourceId)
   if (!source) return { ok: false, reason: '' }
+  if (source.kind === 'style' && target.upscale) return { ok: false, reason: '放大会照着原图重画，不用接风格' }
   if (wouldCycle(target, sourceId, canvases)) return { ok: false, reason: '这样会连成一个圈' }
   return { ok: true }
+}
+
+/** The cards on the board whose picture can go into `target`, in board order. */
+export function pictureSources(canvases: readonly ProjectCanvas[], target: ProjectCanvas): ProjectCanvas[] {
+  return boardCanvases(canvases).filter((canvas) => givesPicture(canvas, canvases) && canConnect(canvases, canvas.id, target).ok)
 }
 
 export type LinkMenuEntry =
@@ -44,6 +46,13 @@ export function linkMenu(
   blockers: readonly Blocker[] = [],
 ): LinkMenuEntry[] {
   if (!features) return [{ type: 'note', label: engineUnavailableReason(features, blockers, '把图片接进来') ?? '' }]
+  // A 放大 takes one picture: its 原图.
+  if (target.upscale) {
+    const current = target.inputs?.init?.link.canvasId === sourceId
+    return [
+      { type: 'item', role: 'init', label: '作为原图', current, hint: current ? '已连接' : target.inputs?.init ? '替换现有' : undefined },
+    ]
+  }
   const links = linksOf(target)
   const entries: LinkMenuEntry[] = []
   if (features.imageInput) {
@@ -94,4 +103,18 @@ export function linkMenu(
   }
   if (!entries.length) return [{ type: 'note', label: '当前引擎不支持把图片接进来' }]
   return entries
+}
+
+/**
+ * The menu of a wire dropped on the empty board: a new 画面 fed by the
+ * picture, as its start picture or as a reference, or a 放大 of it
+ * (`kind: 'upscale'`).
+ */
+export function newCanvasMenu(features: EngineFeatures | null | undefined, blockers: readonly Blocker[] = []): LinkMenuEntry[] {
+  if (!features) return [{ type: 'note', label: engineUnavailableReason(features, blockers, '把图片接进来') ?? '' }]
+  const entries: LinkMenuEntry[] = []
+  if (features.imageInput) entries.push({ type: 'item', role: 'init', label: '新画面 · 起始图' })
+  if (features.references) entries.push({ type: 'item', role: 'reference', label: '新画面 · 参考图' })
+  if (features.imageInput) entries.push({ type: 'item', role: 'init', kind: 'upscale', label: '放大' })
+  return entries.length ? entries : [{ type: 'note', label: '现在的引擎不能把图片接进新画面' }]
 }

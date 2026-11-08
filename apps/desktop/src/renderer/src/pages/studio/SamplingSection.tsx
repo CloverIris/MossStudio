@@ -37,7 +37,8 @@ export function SamplingSection({
   const known = Boolean(features)
   const disabled = !known
   const showSamplers = !known || features!.samplers || Boolean(sampling.sampler || sampling.scheduler)
-  const showHires = !known || features!.hires || Boolean(sampling.hires)
+  // A 放大 already is the redraw 高清修复 would do.
+  const showHires = !canvas.upscale && (!known || features!.hires || Boolean(sampling.hires))
   const showStepCache = enumValues(features, 'step_cache').length > 0 || Boolean(sampling.stepCache)
   const choice = hiresChoice(canvas)
   const [custom, setCustom] = useState(false)
@@ -82,16 +83,12 @@ export function SamplingSection({
           parse={(value) => (Number.isFinite(value) && value > 0 && value <= 100 ? Math.round(value * 100) / 100 : null)}
           onCommit={(shift) => onChange((current) => withSampling(current, { shift }))}
         />
-        <p className="text-caption text-ink-2">噪声时间表的偏移，留空用模型默认值。</p>
       </section>
 
       {showHires ? (
         <section className="flex flex-col gap-2.5" data-hires>
           <div className="flex items-center justify-between gap-2">
-            <span className="flex flex-col">
-              <FieldLabel>高清修复</FieldLabel>
-              <span className="text-caption text-ink-2">先出图，再放大补细节</span>
-            </span>
+            <FieldLabel>高清修复</FieldLabel>
             <Switch
               aria-label="高清修复"
               checked={Boolean(sampling.hires)}
@@ -189,7 +186,6 @@ export function SamplingSection({
             options={enumOptions(features, 'step_cache', sampling.stepCache)}
             onValueChange={(value) => onChange((current) => withSampling(current, { stepCache: value || undefined }))}
           />
-          <p className="text-caption text-ink-2">跳过变化很小的步骤，更快但可能损失细节。</p>
         </section>
       ) : null}
 
@@ -203,7 +199,6 @@ export function SamplingSection({
             parse={(value) => (Number.isFinite(value) && value >= 0 && value <= 1 ? Math.round(value * 100) / 100 : null)}
             onCommit={(cfgTruncation) => onChange((current) => withSampling(current, { cfgTruncation }))}
           />
-          <p className="text-caption text-ink-2">0 到 1：在这个进度之后不再用 CFG，更快。CFG 为 1 时没有作用。</p>
         </section>
       )}
     </div>

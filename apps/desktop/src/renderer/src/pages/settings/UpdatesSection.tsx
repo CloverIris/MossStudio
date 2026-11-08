@@ -107,8 +107,8 @@ export function UpdatesSection(): React.JSX.Element {
                 下载更新
               </Button>
             ) : supported && ready ? (
+              // It installs on the next start anyway; this is only for now.
               <Button
-                tone="primary"
                 onClick={() =>
                   void attempt(async () => {
                     const feedback = restartFeedback(await restart(), 'restart')
@@ -117,7 +117,7 @@ export function UpdatesSection(): React.JSX.Element {
                 }
               >
                 <RotateCw className="size-4" strokeWidth={1.6} />
-                重启以更新
+                现在重启
               </Button>
             ) : supported ? (
               <Button onClick={() => void check()} disabled={checking || update?.phase === 'checking'}>
@@ -128,8 +128,8 @@ export function UpdatesSection(): React.JSX.Element {
           {supported && update ? (
             <>
               <SwitchRow
-                title="自动下载更新"
-                description="有新版本时在后台下载，重启后生效。关闭后，标题栏会提示你手动下载。"
+                title="自动更新"
+                description="有新版本时在后台下载，下次打开时生效。关闭后，标题栏会提示你手动下载。"
                 checked={update.autoDownload}
                 onChange={(enabled) => void attempt(() => setAutoDownload(enabled))}
               />

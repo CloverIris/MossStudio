@@ -2,7 +2,10 @@ import type { ReactNode } from 'react'
 import { cn } from '../ui'
 import { StudioDivider } from './StudioDivider'
 
-/** A resizable Studio side panel on the panel tone. */
+/**
+ * A resizable Studio side panel on the panel tone. `width` is the chosen width;
+ * in a narrow window both panels give way down to 240px before the canvas does.
+ */
 export function StudioSidebar({
   side,
   label,
@@ -22,8 +25,8 @@ export function StudioSidebar({
     <aside
       aria-label={label}
       data-side={side}
-      className={cn('relative flex h-full min-h-0 shrink-0 flex-col bg-panel', className)}
-      style={{ width }}
+      className={cn('relative flex h-full min-h-0 min-w-60 flex-col bg-panel', className)}
+      style={{ flex: `0 1 ${width}px` }}
     >
       {children}
       <StudioDivider

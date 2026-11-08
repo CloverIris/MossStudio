@@ -1,7 +1,11 @@
+---
+status: superseded
+date: 2026-10-19
+superseded-by: ADR-0009
+---
+
 # ADR-0003：V1 不做自有推理引擎，启动器先做“运行时编排器”
 
-- 状态：**已决定**
-- 日期：2026-10-19
 - 影响：ADR-0001（macOS 选 MNN）保留为**未来引擎**的技术结论，但**不在 V1 排期**。
 
 ## 背景
@@ -55,4 +59,4 @@ V1 **不实现**：模型图、kernel、量化运行时、VAE 解码器、采样
 ADR-0001 的结论（MNN 为主、MPS 仅 oracle、MLX 条件触发）仍然有效，
 但触发时间改为 **V2**：当启动器积累了足够的真实设备数据、且用户明确抱怨性能时，
 再启动 M0 spike。MNN 相关文档保留在
-[future-inference-engine.md](../future-inference-engine.md)，不删除。
+[future-inference-engine.md](../archive/future-inference-engine.md)，不删除。
