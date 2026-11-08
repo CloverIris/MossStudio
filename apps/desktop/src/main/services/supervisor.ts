@@ -108,6 +108,33 @@ async function loadJobs(): Promise<void> {
   }
 }
 
+/**
+ * Job list and log writes in flight. Callers do not wait for them (a job's state never waits for the disk),
+ * so they are kept here for settleJobWrites.
+ */
+const pendingWrites = new Set<Promise<unknown>>()
+
+function inBackground(write: Promise<unknown>): void {
+  pendingWrites.add(write)
+  const done = (): void => {
+    pendingWrites.delete(write)
+  }
+  write.then(done, done)
+}
+
+/**
+ * Resolves once every job list, log and preview write started so far has finished, including writes those
+ * lead to (a queued job that starts). Tests call it before they remove the data folder.
+ */
+export async function settleJobWrites(): Promise<void> {
+  for (;;) {
+    // A queue pump scheduled with setTimeout(0) may still start a write.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    if (pendingWrites.size === 0) return
+    await Promise.allSettled([...pendingWrites])
+  }
+}
+
 async function saveJobs(): Promise<void> {
   try {
     await mkdir(jobsDir(), { recursive: true })
@@ -137,7 +164,7 @@ function update(job: JobRecord, patch: Partial<JobRecord>): void {
       route: job.state === 'succeeded' ? undefined : '/diagnostics',
     })
   }
-  void saveJobs()
+  inBackground(saveJobs())
 }
 
 function appendLog(job: JobRecord, stream: JobLogLine['stream'], text: string, runningJob?: RunningJob): void {
@@ -161,7 +188,8 @@ function appendLog(job: JobRecord, stream: JobLogLine['stream'], text: string, r
     if (runningJob.lastLines.length > 40) runningJob.lastLines.shift()
   }
   emit(Events.jobLog, line)
-  void appendFile(logPath(job.id), `${JSON.stringify(line)}\n`, 'utf8').catch(() => undefined)
+  // Best effort: the line is already in memory and on its way to the renderer.
+  inBackground(appendFile(logPath(job.id), `${JSON.stringify(line)}\n`, 'utf8').catch(() => undefined))
 }
 
 function recordError(job: JobRecord, raw: string, rule = matchRule(raw)): void {
@@ -298,7 +326,7 @@ function clearPreview(job: JobRecord): void {
   previewThrottle.stop(job.id)
   job.preview = undefined
   if (job.engine === 'mossinfer' && !job.hostId) {
-    void rm(jobPreviewPath(job.id), { force: true }).catch(() => undefined)
+    inBackground(rm(jobPreviewPath(job.id), { force: true }).catch(() => undefined))
   }
 }
 

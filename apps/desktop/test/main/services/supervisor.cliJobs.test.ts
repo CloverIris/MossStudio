@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Events } from '@shared/channels'
 import { decodeEngineHello } from '@shared/engineProtocol'
 import type { GpuInventoryDevice, JobRecord, ModelEntry } from '@shared/types'
@@ -50,6 +50,11 @@ vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async ()
 
 const dataRoot = useTempDataRoot()
 let supervisor: typeof import('@main/services/supervisor')
+// Runs before useTempDataRoot removes the folder (after-hooks run last-registered first): the job list and
+// log writes the supervisor does not wait for must be done, or the removal races them (ENOTEMPTY).
+afterEach(async () => {
+  await supervisor?.settleJobWrites()
+})
 
 const nvidia: GpuInventoryDevice = { uuid: 'GPU-a', index: 0, name: 'RTX 4090', computeCapability: { major: 8, minor: 9 } }
 const arc: GpuInventoryDevice = { uuid: 'vk-8086-56a0-0', index: 1, name: 'Intel Arc A770', vendor: 'intel', vulkanIndex: 2 }
