@@ -30,6 +30,13 @@ export const SLOW_GPU_MEMORY_BYTES = 8 * GiB
  */
 export const SLOW_SYSTEM_MEMORY_BYTES = 16 * GiB
 
+/**
+ * How much less than its nominal RAM a computer may report. os.totalmem()
+ * leaves out what firmware reserves, including the share an integrated GPU
+ * takes (up to about 2.5 GiB), so a 16 GB laptop can report 13.5 GiB.
+ */
+export const RESERVED_SYSTEM_MEMORY_BYTES = 2.5 * GiB
+
 /** Memory in whole GB, as people know it: a 16 GB computer reports 15.6 GiB, an 8 GB card 8192 MiB. */
 export function memoryGb(bytes: number): number {
   return Math.round(bytes / GiB)
@@ -37,6 +44,11 @@ export function memoryGb(bytes: number): number {
 
 function below(bytes: number, threshold: number): boolean {
   return memoryGb(bytes) < threshold / GiB
+}
+
+/** Known GPU memory under MIN_GPU_MEMORY_BYTES; unknown memory is never too small. */
+export function gpuMemoryTooSmall(bytes: number | null | undefined): boolean {
+  return Boolean(bytes && bytes > 0 && below(bytes, MIN_GPU_MEMORY_BYTES))
 }
 
 /**
@@ -62,7 +74,7 @@ export function tooLittleGpuMemory(plan: Pick<EnginePlan, 'choices'> & { machine
     if (bytes === null) return null
     if (!best || bytes > best.bytes) best = { name: choice.gpuName, bytes }
   }
-  return best && below(best.bytes, MIN_GPU_MEMORY_BYTES) ? best : null
+  return best && gpuMemoryTooSmall(best.bytes) ? best : null
 }
 
 export type SlowReason = { kind: 'compatibility' } | { kind: 'gpuMemory'; bytes: number } | { kind: 'systemMemory'; bytes: number }
@@ -80,11 +92,46 @@ export function slowReason(input: {
   const gpu = input.gpuMemoryBytes
   if (gpu && gpu > 0 && below(gpu, SLOW_GPU_MEMORY_BYTES)) return { kind: 'gpuMemory', bytes: gpu }
   const system = input.systemMemoryBytes
-  if (system && system > 0 && below(system, SLOW_SYSTEM_MEMORY_BYTES)) return { kind: 'systemMemory', bytes: system }
+  if (system && system > 0 && system < SLOW_SYSTEM_MEMORY_BYTES - RESERVED_SYSTEM_MEMORY_BYTES) {
+    return { kind: 'systemMemory', bytes: system }
+  }
   return null
 }
 
 /** Free space a download of `bytes` asks for: a tenth more for what unpacking and verifying need. */
 export function freeSpaceNeeded(bytes: number): number {
   return bytes * 1.1
+}
+
+/** Room a model part keeps on top of its own bytes while it downloads (temporary files, the snapshot links). */
+export const MODEL_DOWNLOAD_HEADROOM_BYTES = GiB
+
+/** Free space one model part asks for before it downloads: what is missing, the headroom, a tenth more. */
+export function modelPartSpaceNeeded(missingBytes: number): number {
+  return missingBytes > 0 ? freeSpaceNeeded(missingBytes + MODEL_DOWNLOAD_HEADROOM_BYTES) : 0
+}
+
+/**
+ * Bytes a model part still has to download: every file that is not complete
+ * yet, less what its `.part` already holds. A file that is already complete
+ * (downloaded before, or reused from another installation) costs nothing.
+ * `blobBytes` and `partBytes` are -1 when the file is not there.
+ */
+export function missingDownloadBytes(files: Array<{ size: number; blobBytes: number; partBytes: number }>): number {
+  return files.reduce(
+    (total, file) => (file.blobBytes === file.size ? total : total + Math.max(0, file.size - Math.max(0, file.partBytes))),
+    0,
+  )
+}
+
+/**
+ * The disks the missing model parts land on that cannot hold them: each disk's
+ * free space against the room its parts ask for together. Disks whose free
+ * space is unknown are left to the check on start.
+ */
+export function shortDisks<T extends { freeBytes: number | null; missingBytes: number[] }>(disks: T[]): Array<T & { neededBytes: number }> {
+  return disks.flatMap((disk) => {
+    const neededBytes = disk.missingBytes.reduce((total, bytes) => total + modelPartSpaceNeeded(bytes), 0)
+    return disk.freeBytes !== null && neededBytes > 0 && disk.freeBytes < neededBytes ? [{ ...disk, neededBytes }] : []
+  })
 }

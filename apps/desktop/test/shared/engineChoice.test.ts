@@ -457,15 +457,17 @@ describe('chooseEnginePackages — HIP needs the GPU device nodes', () => {
 
 describe('vulkanReasonText', () => {
   it.each([
-    ['needs Vulkan 1.2', '不支持 Vulkan 1.2'],
-    ['no bufferDeviceAddress', '不支持 Vulkan 的 bufferDeviceAddress 功能'],
-    ['no shaderInt64', '不支持 Vulkan 的 shaderInt64 功能'],
+    ['needs Vulkan 1.2', '不支持 Vulkan 1.2，引擎没法在它上面运行'],
+    ['no bufferDeviceAddress', '缺少引擎需要的 Vulkan 功能（bufferDeviceAddress），没法在它上面运行'],
+    ['no shaderInt64', '缺少引擎需要的 Vulkan 功能（shaderInt64），没法在它上面运行'],
   ])('says %s in plain words', (reason, text) => {
     expect(vulkanReasonText(reason)).toBe(text)
   })
 
-  it('leaves a reason it does not know to the caller', () => {
-    expect(vulkanReasonText('device lost')).toBeNull()
+  it('knows only the reasons the engine prints, exactly: anything else is left to the caller', () => {
+    for (const reason of ['device lost', 'needs Vulkan 1.3', 'no storageBuffer16BitAccess', 'needs Vulkan 1.2 or newer']) {
+      expect(vulkanReasonText(reason)).toBeNull()
+    }
   })
 })
 
@@ -494,7 +496,7 @@ describe('chooseEnginePackages — why nothing runs', () => {
       vulkan: { index: 1, usable: false, discrete: true, reason: 'no shaderInt64' },
     })
     expect(chooseEnginePackages(machine('linux', [uhd(), gt710]), release()).blocked).toBe(
-      '这台电脑的 2 块显卡都用不了。NVIDIA GeForce GT 710 不支持 Vulkan 的 shaderInt64 功能，引擎没法在它上面运行。',
+      '这台电脑的 2 块显卡都用不了。NVIDIA GeForce GT 710 缺少引擎需要的 Vulkan 功能（shaderInt64），没法在它上面运行。',
     )
   })
 
@@ -506,5 +508,28 @@ describe('chooseEnginePackages — why nothing runs', () => {
     expect(chooseEnginePackages(machine('linux', gpus), release()).blocked).toBe(
       '这台电脑的 2 块显卡都用不了。Big 不支持 Vulkan 1.2，引擎没法在它上面运行。',
     )
+  })
+})
+
+describe('chooseEnginePackages — a discrete card too small to run the model', () => {
+  const GiB = 1024 ** 3
+  const uhd = intel({ id: 'vk-8086-5917-0', name: 'Intel UHD Graphics 620', vulkan: vk(1, true, false) })
+  const mx250 = (memoryBytes: number | undefined): EngineMachineGpu =>
+    nvidia([6, 1], '581.42', { id: 'GPU-mx250', name: 'NVIDIA GeForce MX250', ...(memoryBytes ? { memoryBytes } : {}) })
+
+  it('does not count as served: the integrated GPU keeps its 兼容模式 package', () => {
+    const plan = chooseEnginePackages(machine('windows', [mx250(2 * GiB), uhd]), release())
+    expect(plan.blocked).toBeUndefined()
+    expect(plan.choices.map((choice) => [choice.gpuId, choice.packageId, choice.integratedSkipped ?? false])).toEqual([
+      ['GPU-mx250', 'vulkan', false],
+      ['vk-8086-5917-0', 'vulkan', false],
+    ])
+  })
+
+  it('a discrete card of 4 GB, or of unknown memory, still serves and the integrated GPU steps aside', () => {
+    for (const memory of [4 * GiB, undefined]) {
+      const plan = chooseEnginePackages(machine('windows', [mx250(memory), uhd]), release())
+      expect(plan.choices[1]).toMatchObject({ packageId: null, integratedSkipped: true })
+    }
   })
 })

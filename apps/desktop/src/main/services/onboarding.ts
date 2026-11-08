@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import type { OnboardingStatus, OnboardingStep, Settings } from '@shared/types'
 import { paths } from '../lib/paths'
 import { cachedGpuInventory, listDevices } from './devices'
-import { getCatalog } from './models'
+import { getCatalog, modelMissingBytes } from './models'
 import { legacyModelReady } from './modelReadiness'
 import { engineReadiness } from './engineReadiness'
 import { describeEngineReadiness } from '@shared/engineReadiness'
@@ -90,6 +90,13 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
   const bundleName = bundle?.name
   const modelCount = fullModelReady ? modelIds.length : modelIds.filter((id) => installed.has(id)).length
   const modelReady = fullModelReady || (modelIds.length > 0 && modelCount === modelIds.length)
+  // What is still to download, counted like the check before each download starts (a partial download counts its .part files).
+  // Only this computer has the files to count.
+  const missingParts = catalog.models.filter((model) => modelIds.includes(model.id) && !installed.has(model.id))
+  const sizeBytes =
+    hostId === 'local'
+      ? (await Promise.all(missingParts.map((model) => modelMissingBytes(settings, model)))).reduce((total, bytes) => total + bytes, 0)
+      : missingParts.reduce((total, model) => total + model.sizeBytes, 0)
   const partialModel =
     modelCount > 0 ||
     (hostId === 'local' && modelIds.some((id) => catalog.models.find((model) => model.id === id)?.installState === 'partial'))
@@ -105,9 +112,7 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
       detail: modelReady
         ? `${bundleName ?? '完整模型'} 已就绪`
         : `${bundleName ?? 'MOSS-Image'} · ${modelCount}/${modelIds.length || 4} 个组件已就绪，需准备主模型、文本编码器、VAE 与配置`,
-      sizeBytes: catalog.models
-        .filter((model) => modelIds.includes(model.id) && !installed.has(model.id))
-        .reduce((total, model) => total + model.sizeBytes, 0),
+      sizeBytes,
     },
   ]
   return {

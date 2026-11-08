@@ -138,7 +138,7 @@ describe('engine per GPU', () => {
     expect(row).toMatchObject({
       status: 'error',
       statusLabel: '不能使用',
-      reason: 'Intel(R) Arc(TM) A770 Graphics 不支持 Vulkan 的 shaderInt64 功能，引擎没法在它上面运行',
+      reason: 'Intel(R) Arc(TM) A770 Graphics 缺少引擎需要的 Vulkan 功能（shaderInt64），没法在它上面运行',
     })
   })
 

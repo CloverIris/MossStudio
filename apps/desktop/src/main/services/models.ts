@@ -4,13 +4,14 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import type { AdapterEntry, Catalog, DownloadTask, ModelEntry, ModelBundle, Settings } from '@shared/types'
+import type { AdapterEntry, Catalog, DownloadTask, ModelEntry, ModelBundle, ModelSpaceDisk, Settings } from '@shared/types'
+import { MODEL_DOWNLOAD_HEADROOM_BYTES, missingDownloadBytes } from '@shared/machineFit'
 import { combinationBundle } from '@shared/modelCombos'
 import { catalogCombinations } from './modelCombinations'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
-import { assertFreeSpace } from '../lib/disk'
+import { assertFreeSpace, freeSpace } from '../lib/disk'
 import { getLastNetwork } from './network'
 import { contentDir } from '../lib/content'
 import { listJobs } from './supervisor'
@@ -606,6 +607,85 @@ async function resolveRepo(repo: string, revision: string, settings: Settings): 
   return request
 }
 
+/** Each file's size and what of it is on disk, for missingDownloadBytes. */
+async function fileStates(dir: string, files: ModelFile[]): Promise<Array<{ size: number; blobBytes: number; partBytes: number }>> {
+  return Promise.all(
+    files.map(async (file) => {
+      const blob = join(dir, 'blobs', blobKey(file))
+      return { size: file.size, blobBytes: await fileSize(blob), partBytes: await fileSize(`${blob}.part`) }
+    }),
+  )
+}
+
+/**
+ * Bytes a model part still has to download, counted like the check before its
+ * download starts: the files its last attempt resolved (the `.pending` record),
+ * less what is on disk, reused blobs included. A part that never started has
+ * no file list yet, so its catalog size stands.
+ */
+export async function modelMissingBytes(settings: Settings, entry: ModelEntry): Promise<number> {
+  if (entry.installed) return 0
+  const dir = cacheDir(settings, entry.repo, entry.role)
+  try {
+    const pending = JSON.parse(await readFile(`${markerAt(dir, entry.id)}.pending`, 'utf8')) as Partial<InstallRecord>
+    if (Array.isArray(pending.entries) && pending.entries.length > 0) return missingDownloadBytes(await fileStates(dir, pending.entries))
+  } catch {
+    // No earlier attempt, or an unreadable record: nothing on disk to count.
+  }
+  return entry.sizeBytes
+}
+
+/** A disk that does not answer in this time (a sleeping network drive) counts as unknown; the check on start still runs. */
+const SPACE_TIMEOUT_MS = 2000
+
+async function freeSpaceWithin(target: string, timeoutMs: number): Promise<number | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), timeoutMs)
+  })
+  try {
+    const free = await Promise.race([freeSpace(target), timeout])
+    return free !== null && Number.isFinite(free) ? free : null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Where the missing parts of these models land, one entry per disk, with that
+ * disk's free space read the way each part's download checks it (models:space).
+ */
+export async function modelSpace(settings: Settings, ids: string[], timeoutMs = SPACE_TIMEOUT_MS): Promise<ModelSpaceDisk[]> {
+  const catalog = await getCatalog(settings)
+  const disks = new Map<string, ModelSpaceDisk>()
+  for (const id of ids) {
+    const entry = catalog.models.find((model) => model.id === id)
+    if (!entry || entry.installed || entry.localPath) continue
+    const missing = await modelMissingBytes(settings, entry)
+    if (missing <= 0) continue
+    const root = paths.roleRoot(entry.role, settings.modelsRoot, settings.modelDirectories)
+    const followsModels = root === paths.roleRoot(entry.role, settings.modelsRoot)
+    // Parts on the same disk share its free space: group by device, as freeSpace() reads the folder above the part's.
+    const device = await stat(dirname(root)).then(
+      (info) => `dev:${info.dev}`,
+      () => `path:${root}`,
+    )
+    const disk = disks.get(device)
+    if (disk) {
+      disk.missingBytes.push(missing)
+      if (followsModels && !disk.modelsFolder) Object.assign(disk, { modelsFolder: true, path: paths.models(settings.modelsRoot) })
+      continue
+    }
+    disks.set(device, {
+      path: followsModels ? paths.models(settings.modelsRoot) : root,
+      modelsFolder: followsModels,
+      freeBytes: await freeSpaceWithin(root, timeoutMs),
+      missingBytes: [missing],
+    })
+  }
+  return [...disks.values()]
+}
+
 async function runModelDownload(task: DownloadTask, entry: ModelEntry, settings: Settings, signal: AbortSignal): Promise<void> {
   const { sha, files } = await resolveRepo(entry.repo, entry.revision, settings)
   signal.throwIfAborted()
@@ -670,14 +750,10 @@ async function runModelDownload(task: DownloadTask, entry: ModelEntry, settings:
       break
     }
   }
-  let missing = 0
-  for (const file of selected) {
-    const blob = join(dir, 'blobs', blobKey(file))
-    if ((await fileSize(blob)) !== file.size) missing += Math.max(0, file.size - Math.max(0, await fileSize(`${blob}.part`)))
-  }
+  const missing = missingDownloadBytes(await fileStates(dir, selected))
   await assertFreeSpace(
     paths.roleRoot(entry.role, settings.modelsRoot, settings.modelDirectories),
-    missing + (missing > 0 ? 1024 ** 3 : 0),
+    missing + (missing > 0 ? MODEL_DOWNLOAD_HEADROOM_BYTES : 0),
     `模型组件 ${entry.name}`,
   )
   touch(task, { filesTotal: selected.length, totalBytes: total, state: 'running' })

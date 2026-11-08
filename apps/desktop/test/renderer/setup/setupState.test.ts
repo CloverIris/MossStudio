@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { deriveSetup, modelDownloads, setupSpaceLabel, stepsToStart, type SetupInput } from '@renderer/pages/setup/setupState'
-import type { LocalEngineVersion, OnboardingStatus } from '@shared/types'
+import {
+  deriveSetup,
+  modelDownloads,
+  setupNeedLine,
+  setupSpaceLabel,
+  stepsToStart,
+  type SetupInput,
+} from '@renderer/pages/setup/setupState'
+import type { LocalEngineVersion, ModelSpaceDisk, OnboardingStatus } from '@shared/types'
 import { RELEASE_220, enginePlanFor, inventoryDevicesFor, machineFixture, type MachineName } from '@test/mocks/backend/machines'
 import {
   FIXTURE_NOW,
@@ -272,7 +279,8 @@ describe('deriveSetup: can this computer run it, and how fast', () => {
   it('兼容模式: the GPU line says so, and that it will be very slow', () => {
     const view = on('intel', { systemMemoryBytes: 8 * GiB })
     expect(view.phase).toBe('idle')
-    expect(view.steps[0]!.detail).toBe('Intel(R) Arc(TM) A770 Graphics · 16 GB · 兼容模式')
+    // Vulkan reports no memory size for a non-NVIDIA card.
+    expect(view.steps[0]!.detail).toBe('Intel(R) Arc(TM) A770 Graphics · 显存未知 · 兼容模式')
     // 兼容模式 comes before memory.
     expect(view.slow).toBe('能用，但会很慢：一张图可能要几分钟甚至更久。')
   })
@@ -288,9 +296,30 @@ describe('deriveSetup: can this computer run it, and how fast', () => {
     expect(on('nvidia', { systemMemoryBytes: 15.6 * GiB }).slow).toBeUndefined()
   })
 
+  it('a 16 GB laptop whose integrated GPU reserves memory (13.5 GiB reported) is not warned; 13.4 GiB is', () => {
+    expect(on('nvidia', { systemMemoryBytes: 13.5 * GiB }).slow).toBeUndefined()
+    expect(on('nvidia', { systemMemoryBytes: 13.4 * GiB }).slow).toBe('内存 13 GB，能用，生成会慢一些。')
+  })
+
   it('without the machine probe, an NVIDIA card is still judged on its own memory', () => {
     const view = deriveSetup(input({ gpu: gpuInventoryFixture([gpuDeviceFixture({ memoryTotalBytes: 6 * GiB })]), plan: undefined }))
     expect(view.slow).toBe('显存 6 GB，能用，生成会慢一些。')
+  })
+
+  it('a laptop whose 2 GB card is too small still runs on its integrated GPU: not blocked, slow', () => {
+    const machine = machineFixture('laptopSmallGpu')
+    const inventory = gpuInventoryFixture(inventoryDevicesFor(machine))
+    // Main recommends the GPU that can run the model (recommendedGpu).
+    const view = on('laptopSmallGpu', { gpu: { ...inventory, recommendedGpuUuid: machine.gpus[1]!.id } })
+    expect(view.phase).toBe('idle')
+    expect(view.steps[0]!.detail).toBe('Intel(R) UHD Graphics 620 · 显存未知 · 兼容模式 · 共 2 块')
+    expect(view.slow).toBe('能用，但会很慢：一张图可能要几分钟甚至更久。')
+  })
+
+  it('the line under a block says what is needed, naming memory when memory is the reason', () => {
+    expect(setupNeedLine(on('unusableGpu'))).toBe('需要 NVIDIA RTX 30 及更新的显卡，或支持 Vulkan 1.2 的显卡。')
+    expect(setupNeedLine(on('tinyGpu'))).toBe('需要显存至少 4 GB 的显卡：NVIDIA RTX 30 及更新，或支持 Vulkan 1.2 的显卡。')
+    expect(setupNeedLine(on('macos'))).toBeNull()
   })
 
   it('says nothing about speed while blocked', () => {
@@ -299,31 +328,53 @@ describe('deriveSetup: can this computer run it, and how fast', () => {
 })
 
 describe('deriveSetup: room for the download', () => {
-  // 12 GiB of model plus the engine estimate: 「下载约 13 GB」.
-  it('a folder with too little room says what it has and what to look for', () => {
-    const view = deriveSetup(input({ freeBytes: 10 * GiB }))
-    expect(setupSpaceLabel(view)).toBe('约 13 GB')
-    // (12 GiB + 400 MiB + 1 GiB) × 1.1, as the check on start asks.
-    expect(view.diskShort).toBe('这个位置只剩 10 GB，换一个有 15 GB 空闲的位置。')
+  const disk = (freeBytes: number | null, missingBytes: number[], patch: Partial<ModelSpaceDisk> = {}): ModelSpaceDisk => ({
+    path: '/fixture/data/models',
+    modelsFolder: true,
+    freeBytes,
+    missingBytes,
+    ...patch,
+  })
+  const short = (...disks: ModelSpaceDisk[]): string | undefined => deriveSetup(input({ disks })).diskShort
+
+  it('a models folder with too little room says what it has and what to look for', () => {
+    // (12 GiB + 1 GiB headroom) × 1.1 = 14.3 GiB, as the check on start asks.
+    expect(short(disk(10 * GiB, [12 * GiB]))).toBe('这个位置只剩 10 GB，换一个有 15 GB 空闲的位置。')
   })
 
-  it('a full disk reads 0 GB, not 未知', () => {
-    expect(deriveSetup(input({ freeBytes: 0 })).diskShort).toBe('这个位置只剩 0 GB，换一个有 15 GB 空闲的位置。')
+  it('rounds what is left down and what is needed up, so the two never read the same', () => {
+    expect(short(disk(14.2 * GiB, [12 * GiB]))).toBe('这个位置只剩 14 GB，换一个有 15 GB 空闲的位置。')
   })
 
-  it('a folder with room enough says nothing', () => {
-    expect(deriveSetup(input({ freeBytes: 15 * GiB })).diskShort).toBeUndefined()
+  it('a full disk reads 0 GB', () => {
+    expect(short(disk(0, [12 * GiB]))).toBe('这个位置只剩 0 GB，换一个有 15 GB 空闲的位置。')
   })
 
-  it('free space that is not known says nothing', () => {
+  it('parts on one disk add up, each with its own headroom', () => {
+    // (8 + 1) × 1.1 + (4 + 1) × 1.1 = 15.4 GiB: each part alone would fit in 14.9 GiB.
+    expect(short(disk(14.9 * GiB, [8 * GiB, 4 * GiB]))).toBe('这个位置只剩 14 GB，换一个有 16 GB 空闲的位置。')
+  })
+
+  it('a part with its own folder names that folder and where to change it: 更改 would not move it', () => {
+    expect(short(disk(900 * GiB, [1 * GiB]), disk(5 * GiB, [12 * GiB], { path: 'D:\\moss\\dit', modelsFolder: false }))).toBe(
+      'D:\\moss\\dit 只剩 5 GB，需要 15 GB 空闲：到「设置 › 存储」给它换个位置。',
+    )
+  })
+
+  it('when both are short, the models folder comes first: 更改 fixes it right here', () => {
+    expect(short(disk(5 * GiB, [12 * GiB], { path: 'D:\\dit', modelsFolder: false }), disk(1 * GiB, [4 * GiB]))).toBe(
+      '这个位置只剩 1 GB，换一个有 6 GB 空闲的位置。',
+    )
+  })
+
+  it('a folder with room enough, or whose free space is not known, says nothing', () => {
+    expect(short(disk(15 * GiB, [12 * GiB]))).toBeUndefined()
+    expect(short(disk(null, [12 * GiB]))).toBeUndefined()
     expect(deriveSetup(input()).diskShort).toBeUndefined()
   })
 
-  it('counts only what is still missing', () => {
-    const view = deriveSetup(
-      input({ engine: engineReadyFixture(), onboarding: onboarding('partial', 300 * 1024 ** 2), freeBytes: 2 * GiB }),
-    )
-    expect(view.diskShort).toBeUndefined()
-    expect(deriveSetup(input({ engine: engineReadyFixture(), onboarding: onboarding('ok'), freeBytes: 0 })).diskShort).toBeUndefined()
+  it('counts only what is still missing: a partial download with 300 MB left fits in 2 GB', () => {
+    expect(short(disk(2 * GiB, [300 * 1024 ** 2]))).toBeUndefined()
+    expect(short(disk(0, []))).toBeUndefined()
   })
 })

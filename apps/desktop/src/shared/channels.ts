@@ -121,6 +121,8 @@ export const Ipc = {
   modelsScan: 'models:scan',
   modelsRegisterScan: 'models:register-scan',
   modelsCleanupEmpty: 'models:cleanup-empty',
+  /** Free space for what these models still miss, per disk: `{ modelIds }` → ModelSpaceDisk[]. First run only. */
+  modelsSpace: 'models:space',
   /** 用电脑上的模型文件…: a complete model folder is added as is; loose files are registered for 自己组合. */
   modelsUseFolder: 'models:use-folder',
   modelsSaveCombination: 'models:save-combination',

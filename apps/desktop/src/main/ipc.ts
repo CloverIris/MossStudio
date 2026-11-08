@@ -9,7 +9,6 @@ import type { AgentMode, AiToolCall, AiToolResult } from '@shared/ai'
 import type { IpcResult } from '@shared/types'
 import { emit } from './lib/events'
 import { ensureDirs, paths } from './lib/paths'
-import { freeSpace } from './lib/disk'
 import { openDirectoryInFileManager, revealInFileManager } from './lib/fileManager'
 import { scanEnvironment } from './services/env'
 import { getPythonInstallState, installManagedPython } from './services/managedPython'
@@ -27,6 +26,7 @@ import {
   scanModels,
   startDownload,
   installBundle,
+  modelSpace,
 } from './services/models'
 import { deleteCombination, listCombinations, saveCombination } from './services/modelCombinations'
 import { galleryDetail, listGallery, recordJobOutputs, revealInFolder, trashGalleryItem } from './services/gallery'
@@ -167,10 +167,8 @@ export function registerIpc(): void {
   // Learn which GPUs this computer has (AMD / Intel via the small Vulkan probe) without blocking start-up.
   void startupEnginePlan().catch((error: unknown) => console.warn('[engine-plan]', error instanceof Error ? error.message : error))
 
-  handle(Ipc.appInfo, null, async () => {
+  handle(Ipc.appInfo, null, () => {
     const settings = getSettings()
-    // The folder the model download checks before it starts (models.ts), so Setup can say so first.
-    const modelsFree = await freeSpace(paths.roleRoot('dit', settings.modelsRoot, settings.modelDirectories))
     return {
       name: 'MossStudio',
       version: app.getVersion(),
@@ -192,7 +190,6 @@ export function registerIpc(): void {
       acrylic: false,
       backend: getBackendInfo(),
       memoryTotalBytes: totalmem(),
-      ...(Number.isFinite(modelsFree) ? { modelsFreeBytes: modelsFree } : {}),
     }
   })
 
@@ -684,6 +681,8 @@ export function registerIpc(): void {
     emit(Events.modelsChanged, { reason: 'combination', id })
     return { ok: true }
   })
+
+  handle(Ipc.modelsSpace, schemas.modelsSpace, ({ modelIds }) => modelSpace(getSettings(), modelIds))
 
   handle(Ipc.modelsCleanupEmpty, null, async () => {
     const removed = await cleanupEmptyModelDirs(getSettings())

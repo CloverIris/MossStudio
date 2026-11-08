@@ -4,6 +4,8 @@ import {
   bytes,
   date,
   dateTime,
+  diskFree,
+  diskNeeded,
   dimensions,
   duration,
   eta,
@@ -70,6 +72,24 @@ describe('lib/format sizes and numbers', () => {
     [256 * 1024 ** 2, '256 MB'],
   ])('memorySize(%s) = %s', (value, expected) => {
     expect(memorySize(value)).toBe(expected)
+  })
+
+  it.each([
+    [undefined, '0 GB'],
+    [0, '0 GB'],
+    [0.9 * 1024 ** 3, '0 GB'],
+    [12 * 1024 ** 3, '12 GB'],
+    [14.99 * 1024 ** 3, '14 GB'],
+  ])('diskFree(%s) = %s, never more than there is', (value, expected) => {
+    expect(diskFree(value)).toBe(expected)
+  })
+
+  it.each([
+    [14.3 * 1024 ** 3, '15 GB'],
+    [15 * 1024 ** 3, '15 GB'],
+    [0.2 * 1024 ** 3, '1 GB'],
+  ])('diskNeeded(%s) = %s, always enough', (value, expected) => {
+    expect(diskNeeded(value)).toBe(expected)
   })
 
   it.each([

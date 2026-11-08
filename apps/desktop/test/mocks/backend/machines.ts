@@ -69,7 +69,6 @@ const RX_7900: EngineMachineGpu = {
   name: 'AMD Radeon RX 7900 XTX',
   vendor: 'amd',
   pciId: '1002:744c',
-  memoryBytes: 24 * GiB,
   gfxTarget: 'gfx1100',
   vulkan: vk(0),
 }
@@ -78,7 +77,6 @@ const ARC_A770: EngineMachineGpu = {
   name: 'Intel(R) Arc(TM) A770 Graphics',
   vendor: 'intel',
   pciId: '8086:56a0',
-  memoryBytes: 16 * GiB,
   vulkan: vk(0),
 }
 
@@ -100,6 +98,21 @@ const GT_1030: EngineMachineGpu = {
   computeCapability: { major: 6, minor: 1 },
   driverVersion: '581.42',
   vulkan: vk(0),
+}
+/** A laptop's 2 GB card next to the integrated GPU that can run the engine (Vulkan 1.3 driver). */
+const MX_250: EngineMachineGpu = {
+  id: 'GPU-25025025-aaaa-bbbb-cccc-dddddddddddd',
+  name: 'NVIDIA GeForce MX250',
+  vendor: 'nvidia',
+  pciId: '10de:1d13',
+  memoryBytes: 2 * GiB,
+  computeCapability: { major: 6, minor: 1 },
+  driverVersion: '581.42',
+  vulkan: vk(0),
+}
+const UHD_620_USABLE: EngineMachineGpu = {
+  ...UHD_620,
+  vulkan: { index: 1, usable: true, discrete: false, kernels: 'plain' },
 }
 /** A 6 GB laptop card: CUDA 13 runs, slowly. */
 const RTX_3060_LAPTOP: EngineMachineGpu = {
@@ -126,10 +139,12 @@ export type MachineName =
   | 'unusableGpu'
   | 'tinyGpu'
   | 'smallGpu'
+  | 'laptopSmallGpu'
 
 /**
  * The machines the spec asks for: NVIDIA new/old driver, Turing, Volta, AMD with/without ROCm, Intel, multi-GPU, macOS;
- * and the ones that cannot run or run slowly: a GPU the engine cannot use, a 2 GB card, a 6 GB card.
+ * and the ones that cannot run or run slowly: a GPU the engine cannot use, a 2 GB card, a 6 GB card, and a laptop
+ * whose 2 GB card is too small but whose integrated GPU runs (non-NVIDIA GPUs never report memory: Vulkan does not list it).
  */
 export function machineFixture(name: MachineName): EngineMachine {
   const base = { systemCuda: [], rocm7: false, vulkanProbed: true }
@@ -167,6 +182,8 @@ export function machineFixture(name: MachineName): EngineMachine {
       return { ...base, os: 'windows', gpus: [GT_1030] }
     case 'smallGpu':
       return { ...base, os: 'windows', gpus: [RTX_3060_LAPTOP] }
+    case 'laptopSmallGpu':
+      return { ...base, os: 'windows', gpus: [MX_250, UHD_620_USABLE] }
   }
 }
 

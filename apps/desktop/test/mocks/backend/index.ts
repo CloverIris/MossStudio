@@ -121,6 +121,17 @@ function deepClone<T>(value: T): T {
   return structuredClone(value)
 }
 
+/** The models folder app:info reports: settings' own, else the fixture's. */
+function modelsPathOf(state: MockBackendState): string {
+  return state.settings.modelsRoot || FIXTURE_MODELS_PATH
+}
+
+/** What a model part still has to download: an interrupted one keeps what it already has, as main counts its .part files. */
+function missingBytesOf(model: ModelEntry): number {
+  if (model.installed) return 0
+  return model.sizeBytes - (model.installState === 'partial' ? model.installedBytes : 0)
+}
+
 function onboardingStatus(state: MockBackendState, hostId: string): OnboardingStatus {
   const local = hostId === 'local'
   const host = state.hosts.find((item) => item.id === hostId)
@@ -167,7 +178,7 @@ function onboardingStatus(state: MockBackendState, hostId: string): OnboardingSt
         : `${bundle?.name ?? 'MOSS-Image'} · ${count}/${modelIds.length || 4} 个组件已就绪，需准备主模型、文本编码器、VAE 与配置`,
       sizeBytes: state.catalog.models
         .filter((model) => modelIds.includes(model.id) && !installed.has(model.id))
-        .reduce((sum, model) => sum + model.sizeBytes, 0),
+        .reduce((sum, model) => sum + missingBytesOf(model), 0),
     },
   ]
   return {
@@ -200,8 +211,8 @@ function defaultHandlers(): Map<string, Handler> {
   const p = <T>(payload: unknown) => (payload ?? {}) as T
 
   h.set(Ipc.appInfo, (_, { state }) => {
-    // Like main: the models folder follows settings, and its free space is read there.
-    const modelsPath = state.settings.modelsRoot || FIXTURE_MODELS_PATH
+    // Like main: the models folder follows settings.
+    const modelsPath = modelsPathOf(state)
     return {
       name: 'MossStudio',
       version: '1.0.3',
@@ -221,12 +232,21 @@ function defaultHandlers(): Map<string, Handler> {
       },
       acrylic: false,
       memoryTotalBytes: state.systemMemoryBytes,
-      modelsFreeBytes: state.diskFree[modelsPath] ?? 900 * GiB,
     }
   })
   h.set(Ipc.backendInfo, () => ({ ready: true, url: 'http://studio-fixture', token: 'fixture' }))
 
   // Settings
+  // Every part lands in the models folder here: one disk, its free space from state.diskFree (plenty when not listed).
+  h.set(Ipc.modelsSpace, (payload, { state }) => {
+    const ids = p<{ modelIds: string[] }>(payload).modelIds
+    const missingBytes = state.catalog.models
+      .filter((model) => ids.includes(model.id))
+      .map(missingBytesOf)
+      .filter((bytes) => bytes > 0)
+    const path = modelsPathOf(state)
+    return missingBytes.length ? [{ path, modelsFolder: true, freeBytes: state.diskFree[path] ?? 900 * GiB, missingBytes }] : []
+  })
   h.set(Ipc.settingsGet, (_, { state }) => state.settings)
   h.set(Ipc.settingsUpdate, (payload, { state }) => {
     const patch = p<Partial<Settings> & { hfToken?: string | null }>(payload)

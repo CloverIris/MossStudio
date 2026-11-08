@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Monitor, RefreshCw } from 'lucide-react'
+import { Check, ChevronRight, ExternalLink, Monitor, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Ipc } from '@shared/channels'
@@ -12,7 +12,7 @@ import { pickFolder } from '../settings/fields'
 import { HostDialog } from '../settings/HostDialog'
 import { emptyHostForm, hostPathsPatch, hostSavePayload, type HostForm } from '../settings/hostForm'
 import type { PlanLine } from '../../lib/engineInstall'
-import { setupSpaceLabel, stepsToStart, type SetupStep } from './setupState'
+import { setupNeedLine, setupSpaceLabel, stepsToStart, type SetupStep } from './setupState'
 import { useSetup } from './useSetup'
 
 /** The README section on which computers run MossStudio. */
@@ -187,6 +187,7 @@ export function SetupPage(): React.JSX.Element {
   const running = view.phase === 'running'
   const pending = stepsToStart(view)
   const mac = view.os === 'macos'
+  const need = setupNeedLine(view)
   const gpuStep = view.steps.find((step) => step.id === 'gpu')
   const modelStep = view.steps.find((step) => step.id === 'model')
   const failedStep = view.steps.find((step) => step.state === 'error')
@@ -271,18 +272,20 @@ export function SetupPage(): React.JSX.Element {
               <p className="text-ui text-ink-2" data-setup-reason>
                 {mac ? '需要一台装有 NVIDIA 显卡的电脑。' : gpuStep?.detail}
               </p>
-              {mac ? null : (
+              {need ? (
                 <p className="text-ui text-ink-3" data-setup-need>
-                  需要 NVIDIA RTX 30 及更新的显卡，或支持 Vulkan 1.2 的显卡。
+                  {need}
+                  {/* An inline link inside the sentence (ui-rules §3). */}
                   <button
                     type="button"
                     onClick={() => void call(Ipc.openExternal, { url: WHICH_COMPUTERS_URL })}
-                    className="rounded-sm text-ink-2 underline underline-offset-2 hover:text-ink"
+                    className="inline-flex items-center gap-0.5 rounded-sm align-baseline text-ink-2 underline underline-offset-2 hover:text-ink"
                   >
                     哪些电脑能用
+                    <ExternalLink className="size-3" strokeWidth={1.6} aria-hidden="true" />
                   </button>
                 </p>
-              )}
+              ) : null}
             </div>
             <div className="flex flex-col gap-2.5">
               <Choice
@@ -341,7 +344,8 @@ export function SetupPage(): React.JSX.Element {
             <div className="flex flex-col gap-3 rounded-xl bg-surface px-5 py-4" data-setup-summary>
               <span className="tabular text-title font-semibold text-ink">{space ? `下载${space}` : '正在计算大小…'}</span>
               {view.diskShort ? (
-                <p className="text-ui text-danger" data-setup-disk>
+                // Plain danger text in the card's own rhythm, not a Notice box (ui-rules §4).
+                <p className="text-ui text-danger" role="status" data-setup-disk>
                   {view.diskShort}
                 </p>
               ) : null}

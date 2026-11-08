@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Ipc } from '@shared/channels'
-import type { AppInfo, EnginePlanView, MossInferDownloadState, OnboardingStatus } from '@shared/types'
+import type { AppInfo, EnginePlanView, ModelSpaceDisk, MossInferDownloadState, OnboardingStatus } from '@shared/types'
 import { call } from '../../lib/api'
 import { engineDownloadActive } from '../../lib/engineInstall'
 import { preparationProgress, type Preparation } from '../../lib/preparation'
@@ -90,6 +90,31 @@ export function useSetup(): {
     void loadStatus()
   }, [loadStatus, catalog, finished, engine?.state, settings?.modelsRoot])
 
+  // Free space where the missing model parts go. Read again when the folders change, a download ends,
+  // the parts still missing change, or the window comes back (space freed in the file manager).
+  const [disks, setDisks] = useState<ModelSpaceDisk[] | undefined>(undefined)
+  const modelIds = (onboarding?.steps.find((step) => step.id === 'model')?.modelIds ?? []).join('\n')
+  const spaceRequest = useRef(0)
+  const loadSpace = useCallback(async (): Promise<void> => {
+    const request = ++spaceRequest.current
+    if (!modelIds) return
+    try {
+      const next = await call<ModelSpaceDisk[]>(Ipc.modelsSpace, { modelIds: modelIds.split('\n') })
+      if (request === spaceRequest.current) setDisks(next)
+    } catch {
+      // Unknown free space: the check on start still refuses a download that does not fit.
+      if (request === spaceRequest.current) setDisks(undefined)
+    }
+  }, [modelIds])
+  useEffect(() => {
+    void loadSpace()
+  }, [loadSpace, settings?.modelsRoot, settings?.modelDirectories, finished, onboarding])
+  useEffect(() => {
+    const onFocus = (): void => void loadSpace()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadSpace])
+
   const view = useMemo(
     () =>
       deriveSetup({
@@ -103,7 +128,7 @@ export function useSetup(): {
         downloads,
         modelError,
         systemMemoryBytes: info?.memoryTotalBytes,
-        freeBytes: info?.modelsFreeBytes,
+        disks,
       }),
     [
       gpu.inventory,
@@ -116,7 +141,7 @@ export function useSetup(): {
       downloads,
       modelError,
       info?.memoryTotalBytes,
-      info?.modelsFreeBytes,
+      disks,
     ],
   )
 

@@ -237,6 +237,16 @@ const cases = {
     rejects: { 'overlong directory': { directory: long(4097) }, 'numeric directory': { directory: 1 } },
   },
 
+  modelsSpace: {
+    valid: { modelIds: ['moss-sft-dit', 'flux2-vae-small'] },
+    accepts: { 'no models': { modelIds: [] } },
+    rejects: {
+      'no list': {},
+      'an empty id': { modelIds: [''] },
+      'too many ids': { modelIds: Array.from({ length: 65 }, (_, index) => `m${index}`) },
+    },
+  },
+
   modelsRegisterScan: {
     valid: { items: [{ path: ' /m/dit.safetensors ', role: 'dit' }] },
     output: { items: [{ path: '/m/dit.safetensors', role: 'dit' }] },

@@ -63,13 +63,13 @@ Recurring actions:
 - **Refresh / redetect / test** = an `IconButton` with `RefreshCw` in the `Section` actions, or a labelled `secondary` when it is the way out of an error.
 - **Retry** = `secondary` 重试 next to the error; `primary` only when it is the only thing left to do on the screen.
 - **Copy** = `IconButton` with `Copy` next to the value (as in `PromptBlock` and `PathValue`); toast "已复制…".
-- **External link** = `ghost` with `ExternalLink` after the label.
+- **External link** = `ghost` with `ExternalLink` after the label. Exception: a link that finishes a sentence (first run's 「哪些电脑能用」) is an underlined `ink-2` text button inside that sentence, still with `ExternalLink` after the label.
 
 ## 4. Loading, empty, error
 
 - Loading: `LoadingRow`; the label ends with "…" ("正在读取…"). A spinner without words only inside a button.
 - Empty: `EmptyState` with a title that says what is missing and, when there is one, the action that fills it. `size="section"` inside a page, `size="page"` for a whole page or panel.
-- Error: `Notice tone="danger"` with what went wrong in plain words and an xs/sm action (重试 or the place to fix it). Do not show only red text.
+- Error: `Notice tone="danger"` with what went wrong in plain words and an xs/sm action (重试 or the place to fix it). Do not show only red text. Exception: a problem with one line of a card, whose way out sits in that same card (first run's 「这个位置只剩 N GB…」 above 更改), is one `text-danger` line with `role="status"` in the card's own rhythm.
 - Unknown progress: `ProgressBar value={null}` (a moving segment). A full bar means done.
 
 ## 5. Status

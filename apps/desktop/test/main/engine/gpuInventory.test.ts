@@ -89,6 +89,23 @@ describe('compute capabilities and recommendation', () => {
     expect(recommendedGpu([])).toBeNull()
   })
 
+  it('passes over a card too small for the model when another GPU can run it', () => {
+    const GiB = 1024 ** 3
+    const mx250: GpuInventoryDevice = {
+      index: 0,
+      uuid: 'GPU-mx',
+      name: 'MX250',
+      memoryTotalBytes: 2 * GiB,
+      computeCapability: { major: 6, minor: 1 },
+    }
+    const uhd: GpuInventoryDevice = { index: 1, uuid: 'vk-8086-5917-0', name: 'UHD 620', vendor: 'intel' }
+    expect(recommendedGpu([mx250, uhd])?.uuid).toBe('vk-8086-5917-0')
+    // Nothing else there: the small card is still the one to use.
+    expect(recommendedGpu([mx250])?.uuid).toBe('GPU-mx')
+    // A bigger NVIDIA card wins as before.
+    expect(recommendedGpu([mx250, { ...mx250, uuid: 'GPU-big', index: 2, memoryTotalBytes: 8 * GiB }, uhd])?.uuid).toBe('GPU-big')
+  })
+
   it('does not mutate the inventory order', () => {
     const devices: GpuInventoryDevice[] = [
       { index: 0, uuid: 'a', name: 'a', computeCapability: { major: 7, minor: 5 } },

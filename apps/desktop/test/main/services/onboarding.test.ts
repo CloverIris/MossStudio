@@ -23,6 +23,8 @@ interface Options {
   gpus?: GpuInventoryDevice[]
   /** GPUs that run 兼容模式 (Vulkan). */
   cliGpus?: string[]
+  /** What modelMissingBytes reports per model id (default: its catalog size). */
+  missing?: Record<string, number>
 }
 const state: { options: Options } = { options: {} }
 
@@ -45,6 +47,8 @@ vi.mock('@main/services/engineInstalls', () => ({
 vi.mock('@main/services/models', () => ({
   getCatalog: async (): Promise<Catalog> =>
     catalogFixture({ installed: state.options.installed, partial: state.options.partial ? [state.options.partial] : [] }),
+  modelMissingBytes: async (_settings: unknown, model: { id: string; sizeBytes: number }) =>
+    state.options.missing?.[model.id] ?? model.sizeBytes,
 }))
 vi.mock('@main/services/modelReadiness', () => ({ legacyModelReady: async () => state.options.legacy ?? false }))
 vi.mock('@main/services/engineReadiness', () => ({
@@ -108,15 +112,18 @@ describe('getOnboardingStatus (local)', () => {
   })
 
   it('does not let partial downloads complete a bundle and only counts missing bytes', async () => {
-    const result = await status({ engine: true, installed: sft.slice(1, 3), partial: 'moss-sft-dit' })
+    // The interrupted DiT has 3 GiB left to fetch; its .part files hold the rest (modelMissingBytes counts them).
+    const result = await status({
+      engine: true,
+      installed: sft.slice(1, 3),
+      partial: 'moss-sft-dit',
+      missing: { 'moss-sft-dit': 3 * 1024 ** 3 },
+    })
     expect(result.ready).toBe(false)
     expect(step(result, 'model').status).toBe('partial')
     expect(step(result, 'model').detail).toMatch(/2\/4/)
-    const catalog = catalogFixture()
-    const expected = catalog.models
-      .filter((model) => ['moss-sft-dit', 'moss-pipeline'].includes(model.id))
-      .reduce((sum, model) => sum + model.sizeBytes, 0)
-    expect(step(result, 'model').sizeBytes).toBe(expected)
+    const pipeline = catalogFixture().models.find((model) => model.id === 'moss-pipeline')!
+    expect(step(result, 'model').sizeBytes).toBe(3 * 1024 ** 3 + pipeline.sizeBytes)
   })
 
   it('accepts an installed Base bundle instead of forcing an SFT download', async () => {

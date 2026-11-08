@@ -30,6 +30,16 @@ export function memorySize(value: number | null | undefined): string {
   return memoryGb(value) >= 1 ? `${memoryGb(value)} GB` : bytes(value)
 }
 
+/** Free disk space in whole GB, rounded down so it never reads more than there is: "12 GB", "0 GB". */
+export function diskFree(value: number | null | undefined): string {
+  return `${Math.max(0, Math.floor((value ?? 0) / 1024 ** 3))} GB`
+}
+
+/** Disk space to ask for, in whole GB rounded up so it is always enough: "30 GB". */
+export function diskNeeded(value: number): string {
+  return `${Math.max(0, Math.ceil(value / 1024 ** 3))} GB`
+}
+
 export function percent(current: number, total: number): number {
   if (!total) return 0
   return Math.max(0, Math.min(100, (current / total) * 100))

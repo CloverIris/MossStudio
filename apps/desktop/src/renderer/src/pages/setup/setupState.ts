@@ -1,4 +1,4 @@
-import { MIN_GPU_MEMORY_BYTES, dedicatedGpuMemory, freeSpaceNeeded, slowReason, tooLittleGpuMemory } from '@shared/machineFit'
+import { MIN_GPU_MEMORY_BYTES, dedicatedGpuMemory, shortDisks, slowReason, tooLittleGpuMemory } from '@shared/machineFit'
 import type {
   DownloadTask,
   EnginePlanView,
@@ -6,6 +6,7 @@ import type {
   GpuInventoryDevice,
   GpuInventorySnapshot,
   GpuSelection,
+  ModelSpaceDisk,
   MossInferDownloadState,
   OnboardingStatus,
 } from '@shared/types'
@@ -18,7 +19,7 @@ import {
   planMissingBytes,
   type PlanLine,
 } from '../../lib/engineInstall'
-import { bytes, memorySize } from '../../lib/format'
+import { bytes, diskFree, diskNeeded, memorySize } from '../../lib/format'
 import { defaultGpuUuid, gpuMemoryLabel } from '../settings/devicesModel'
 
 export type SetupStepId = 'gpu' | 'engine' | 'model'
@@ -57,8 +58,8 @@ export interface SetupInput {
   modelError?: string | null
   /** Installed system memory; undefined while not known. */
   systemMemoryBytes?: number
-  /** Free space where the models go; undefined when not known. */
-  freeBytes?: number
+  /** The disks the missing model parts land on (models:space); undefined while not known. */
+  disks?: ModelSpaceDisk[]
 }
 
 export interface SetupView {
@@ -76,6 +77,8 @@ export interface SetupView {
   slow?: string
   /** The chosen folder has too little room for the download. */
   diskShort?: string
+  /** Blocked because the GPU has too little memory, not because nothing runs on it. */
+  memoryBlocked?: boolean
 }
 
 /** Rough size of an engine package, for the "需要约 N GB" sentence. */
@@ -231,8 +234,9 @@ export function deriveSetup(input: SetupInput): SetupView {
     lines,
     ...(input.plan ? { os: input.plan.os } : {}),
     ...(slow ? { slow } : {}),
+    ...(gpu.state === 'blocked' && input.plan && !input.plan.blocked && tooLittleGpuMemory(input.plan) ? { memoryBlocked: true } : {}),
   }
-  const diskShort = setupDiskShort(view, input.freeBytes)
+  const diskShort = setupDiskShort(input.disks)
   return diskShort ? { ...view, diskShort } : view
 }
 
@@ -243,16 +247,24 @@ function setupDownloadBytes(view: SetupView): number {
 }
 
 /**
- * The folder cannot hold the download: what it has and what to look for. The
- * room asked for is the model download's own check on start (assertFreeSpace,
- * plus the 1 GiB models.ts adds), so the two agree.
+ * A disk the model cannot fit on: what it has and what to look for. Each part
+ * asks for the room its own download checks for on start, and parts on one disk
+ * add up. The engine package goes to the app's data folder and has its own check.
  */
-function setupDiskShort(view: SetupView, freeBytes: number | undefined): string | null {
-  const total = setupDownloadBytes(view)
-  if (freeBytes === undefined || total <= 0) return null
-  const required = freeSpaceNeeded(total + (view.modelBytes > 0 ? 1024 ** 3 : 0))
-  if (freeBytes >= required) return null
-  return `这个位置只剩 ${freeBytes > 0 ? bytes(freeBytes) : '0 GB'}，换一个有 ${Math.ceil(required / 1024 ** 3)} GB 空闲的位置。`
+function setupDiskShort(disks: ModelSpaceDisk[] | undefined): string | null {
+  const short = shortDisks(disks ?? []).sort((a, b) => Number(b.modelsFolder) - Number(a.modelsFolder))[0]
+  if (!short) return null
+  if (short.modelsFolder) return `这个位置只剩 ${diskFree(short.freeBytes)}，换一个有 ${diskNeeded(short.neededBytes)} 空闲的位置。`
+  // A part with its own folder (设置 › 存储) does not move with 更改.
+  return `${short.path} 只剩 ${diskFree(short.freeBytes)}，需要 ${diskNeeded(short.neededBytes)} 空闲：到「设置 › 存储」给它换个位置。`
+}
+
+/** What a computer needs, under the reason it is blocked; null on a Mac, which has its own sentence. */
+export function setupNeedLine(view: SetupView): string | null {
+  if (view.os === 'macos') return null
+  return view.memoryBlocked
+    ? `需要显存至少 ${memorySize(MIN_GPU_MEMORY_BYTES)} 的显卡：NVIDIA RTX 30 及更新，或支持 Vulkan 1.2 的显卡。`
+    : '需要 NVIDIA RTX 30 及更新的显卡，或支持 Vulkan 1.2 的显卡。'
 }
 
 /** "需要约 13 GB 空间" — counts only what is still missing. */

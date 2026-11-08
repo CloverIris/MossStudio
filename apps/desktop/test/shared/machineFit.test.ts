@@ -2,11 +2,17 @@ import { describe, expect, it } from 'vitest'
 import type { EngineMachineGpu } from '@shared/engineChoice'
 import {
   MIN_GPU_MEMORY_BYTES,
+  MODEL_DOWNLOAD_HEADROOM_BYTES,
+  RESERVED_SYSTEM_MEMORY_BYTES,
   SLOW_GPU_MEMORY_BYTES,
   SLOW_SYSTEM_MEMORY_BYTES,
   dedicatedGpuMemory,
   freeSpaceNeeded,
+  gpuMemoryTooSmall,
   memoryGb,
+  missingDownloadBytes,
+  modelPartSpaceNeeded,
+  shortDisks,
   slowReason,
   tooLittleGpuMemory,
 } from '@shared/machineFit'
@@ -121,6 +127,12 @@ describe('slowReason', () => {
     expect(slowReason({ ...plenty, gpuMemoryBytes: 8192 * MiB })).toBeNull()
   })
 
+  it('allows for memory an integrated GPU reserves: a 16 GB laptop may report 13.5 GiB', () => {
+    expect(SLOW_SYSTEM_MEMORY_BYTES - RESERVED_SYSTEM_MEMORY_BYTES).toBe(13.5 * GiB)
+    expect(slowReason({ ...plenty, systemMemoryBytes: 13.5 * GiB })).toBeNull()
+    expect(slowReason({ ...plenty, systemMemoryBytes: 13.4 * GiB })).toEqual({ kind: 'systemMemory', bytes: 13.4 * GiB })
+  })
+
   it('warns under 16 GB of system memory, not on a 16 GB computer that reports 15.6 GiB', () => {
     expect(slowReason({ ...plenty, systemMemoryBytes: 8 * GiB })).toEqual({ kind: 'systemMemory', bytes: 8 * GiB })
     expect(slowReason({ ...plenty, systemMemoryBytes: 15.6 * GiB })).toBeNull()
@@ -135,8 +147,46 @@ describe('slowReason', () => {
   })
 })
 
-describe('freeSpaceNeeded', () => {
+describe('gpuMemoryTooSmall', () => {
+  it('is under 4 GB of known memory only', () => {
+    expect(gpuMemoryTooSmall(2 * GiB)).toBe(true)
+    expect(gpuMemoryTooSmall(4095 * MiB)).toBe(false)
+    expect(gpuMemoryTooSmall(undefined)).toBe(false)
+    expect(gpuMemoryTooSmall(null)).toBe(false)
+  })
+})
+
+describe('room for a download', () => {
   it('asks a tenth more than the download, like the check on start', () => {
     expect(freeSpaceNeeded(10 * GiB)).toBeCloseTo(11 * GiB)
+  })
+
+  it('a model part adds its headroom first, and asks for nothing when nothing is missing', () => {
+    expect(MODEL_DOWNLOAD_HEADROOM_BYTES).toBe(GiB)
+    expect(modelPartSpaceNeeded(9 * GiB)).toBeCloseTo(11 * GiB)
+    expect(modelPartSpaceNeeded(0)).toBe(0)
+  })
+
+  it('counts what is missing: complete files are free, a .part keeps its bytes, a wrong-size blob is not complete', () => {
+    expect(
+      missingDownloadBytes([
+        { size: 4000, blobBytes: 4000, partBytes: -1 },
+        { size: 3000, blobBytes: -1, partBytes: 1000 },
+        { size: 500, blobBytes: -1, partBytes: -1 },
+        { size: 800, blobBytes: 10, partBytes: 300 },
+        // A .part larger than the file (a changed upstream file) never counts below zero.
+        { size: 100, blobBytes: -1, partBytes: 900 },
+      ]),
+    ).toBe(2000 + 500 + 500)
+  })
+
+  it('reports each disk that cannot hold its parts together, and leaves unknown ones alone', () => {
+    const disks = [
+      { path: 'a', freeBytes: 20 * GiB, missingBytes: [8 * GiB, 9 * GiB] },
+      { path: 'b', freeBytes: 20 * GiB, missingBytes: [8 * GiB] },
+      { path: 'c', freeBytes: null, missingBytes: [80 * GiB] },
+      { path: 'd', freeBytes: 0, missingBytes: [] },
+    ]
+    expect(shortDisks(disks)).toEqual([{ ...disks[0], neededBytes: modelPartSpaceNeeded(8 * GiB) + modelPartSpaceNeeded(9 * GiB) }])
   })
 })

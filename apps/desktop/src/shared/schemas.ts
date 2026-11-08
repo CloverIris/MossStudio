@@ -442,6 +442,8 @@ export const schemas = {
     directory: z.string().trim().max(4096).optional(),
   }),
 
+  modelsSpace: z.object({ modelIds: z.array(z.string().min(1).max(160)).max(64) }),
+
   modelsSaveCombination: z.object({
     id: z.string().min(1).max(160).optional(),
     name: z.string().trim().min(1).max(80),
