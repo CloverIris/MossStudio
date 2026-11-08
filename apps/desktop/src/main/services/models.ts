@@ -340,7 +340,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       raw = JSON.parse(await readFile(join(local, 'models.json'), 'utf8')) as RawCatalog
       source = 'local'
     } else {
-      const base = getLastNetwork()?.selected.manifest ?? 'https://raw.githubusercontent.com/CloverIris/MossStudio/main'
+      const base = getLastNetwork()?.selected.manifest ?? 'https://raw.githubusercontent.com/ShallowElec/MossStudio/main'
       raw = JSON.parse(await fetchText(`${base.replace(/\/$/, '')}/apps/desktop/resources/models.json`)) as RawCatalog
       source = 'remote'
     }

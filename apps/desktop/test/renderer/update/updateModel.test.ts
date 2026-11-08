@@ -189,7 +189,7 @@ describe('popoverView', () => {
       primary: 'download',
       secondary: 'later',
       required: false,
-      notesUrl: 'https://github.com/CloverIris/MossStudio/releases/tag/v1.1.0',
+      notesUrl: 'https://github.com/ShallowElec/MossStudio/releases/tag/v1.1.0',
     })
     expect(view.notes).toContain('生成更快')
     // The popover title already names the version: the notes do not repeat it.
@@ -304,7 +304,7 @@ describe('settings lines', () => {
   })
 
   it('links the release notes of the offered version, else the releases page', () => {
-    expect(notesLink(updateAvailableFixture('1.1.0'))).toBe('https://github.com/CloverIris/MossStudio/releases/tag/v1.1.0')
+    expect(notesLink(updateAvailableFixture('1.1.0'))).toBe('https://github.com/ShallowElec/MossStudio/releases/tag/v1.1.0')
     expect(notesLink(updaterStateFixture())).toBe(RELEASES_URL)
     expect(notesLink(null)).toBe(RELEASES_URL)
   })

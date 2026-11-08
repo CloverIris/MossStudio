@@ -513,7 +513,7 @@ export function updateAvailableFixture(version = '1.1.0', patch: Partial<Updater
       kind: 'delta',
       downloadSize: 48_000_000,
       notes: `## MossStudio ${version}\n\n- 生成更快，显存占用更少\n- 作品页可以按日期筛选\n- 修复了若干问题`,
-      notesUrl: `https://github.com/CloverIris/MossStudio/releases/tag/v${version}`,
+      notesUrl: `https://github.com/ShallowElec/MossStudio/releases/tag/v${version}`,
     },
     ...patch,
   })

@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/fsutil"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/fsutil"
 )
 
 // Extracted describes a successfully extracted payload.

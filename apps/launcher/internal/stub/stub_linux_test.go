@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/launch"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/proc"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/launch"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/proc"
 )
 
 // An app that dies before its window is up showed nothing: the stub says so and names the log.

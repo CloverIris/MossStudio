@@ -9,7 +9,7 @@ interface ProbeTarget {
 }
 
 const GITHUB = 'https://github.com'
-const RAW_BASE = 'https://raw.githubusercontent.com/CloverIris/MossStudio/main'
+const RAW_BASE = 'https://raw.githubusercontent.com/ShallowElec/MossStudio/main'
 // Probed for reachability; the catalog fallback in services/models.ts fetches this same file.
 const MANIFEST_PATH = '/apps/desktop/resources/models.json'
 
@@ -75,9 +75,9 @@ const TARGETS: ProbeTarget[] = [
   {
     id: 'jsdelivr',
     label: 'jsDelivr',
-    url: `https://cdn.jsdelivr.net/gh/CloverIris/MossStudio@main${MANIFEST_PATH}`,
+    url: `https://cdn.jsdelivr.net/gh/ShallowElec/MossStudio@main${MANIFEST_PATH}`,
     category: 'manifest',
-    value: 'https://cdn.jsdelivr.net/gh/CloverIris/MossStudio@main',
+    value: 'https://cdn.jsdelivr.net/gh/ShallowElec/MossStudio@main',
   },
 ]
 
