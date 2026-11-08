@@ -922,6 +922,10 @@ export interface JobRecord {
   progress: JobProgress
   metrics?: { step?: number; loss?: number; lr?: number; gradNorm?: number }
   startedAt: string
+  /** When the engine actually began this job; absent on older records, where it equals `startedAt`. */
+  runStartedAt?: string
+  /** How many jobs were ahead of this one when it was queued (0 = it started at once). */
+  queuedBehind?: number
   endedAt?: string
   pid?: number
   exitCode?: number

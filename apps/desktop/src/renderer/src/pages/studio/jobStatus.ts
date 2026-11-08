@@ -87,8 +87,14 @@ export function cardJobView(canvas: ProjectCanvas, job: JobRecord | undefined, j
     return { state, active, label, detail, outputs, phase, ...(preview ? { preview } : {}) }
   }
   if (state === 'succeeded') {
-    const took = duration(job?.startedAt, job?.endedAt)
-    const label = outputs.length ? [`${outputs.length} 张`, took].filter(Boolean).join(' · ') : '没有返回图片'
+    // Waiting in the queue is not the picture's own time: the card says how many
+    // pictures were ahead of it, then how long the engine actually ran.
+    const took = duration(job?.runStartedAt ?? job?.startedAt, job?.endedAt)
+    const ahead = job?.queuedBehind ?? 0
+    const parts = outputs.length ? [`${outputs.length} 张`] : []
+    if (ahead > 0) parts.push(`排队 ${ahead} 张`)
+    if (took) parts.push(`实跑 ${took}`)
+    const label = parts.length ? parts.join(' · ') : '没有返回图片'
     return { state, active, label, detail: '', outputs, error: outputs.length ? undefined : '任务完成了，但没有返回图片' }
   }
   if (state === 'failed')
