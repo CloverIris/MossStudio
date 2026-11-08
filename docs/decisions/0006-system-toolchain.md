@@ -1,6 +1,11 @@
+---
+status: accepted
+date: 2026-10-19
+amended-by: ADR-0009
+---
+
 # ADR-0006：系统工具链检测、安装引导与首次运行可用性检查
 
-- 状态：**已确认（2026-10-19），未实现**
 - 关联：[ADR-0003](0003-launcher-first.md)、[ADR-0004](0004-workspaces-remote-devices.md)、[ADR-0005](0005-release-channel-and-updates.md)
 - 影响：OOBE、环境报告、诊断、实例创建、运行时、Git/Python 调用、设置
 

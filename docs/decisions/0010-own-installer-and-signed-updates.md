@@ -1,6 +1,11 @@
+---
+status: accepted
+date: 2026-11-06
+supersedes: ADR-0005
+---
+
 # ADR-0010: Own installer, launcher and signed update feed
 
-- Status: **accepted, implemented** (2026-11-06, #27, with fixes in #29)
 - Supersedes: [ADR-0005](0005-release-channel-and-updates.md) (`release.md` + `manifest.json` as the release source; open the installer to update)
 - Related: [docs/how-to/release.md](../how-to/release.md)
 
