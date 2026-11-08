@@ -73,7 +73,15 @@ export async function runStudioCanvasUiTests(): Promise<void> {
     await waitFor("Boolean(document.querySelector('.studio-workbench'))")
     // A new project starts with one blank canvas, ready for a description.
     await waitFor('Boolean(document.querySelector(\'article[aria-label^="画面 1"]\'))')
-    await evaluate("document.querySelector('[data-new-canvas]')?.click()")
+    // A new canvas comes from the board's right-click menu.
+    await evaluate(`(() => {
+      const board = document.querySelector('[data-board]');
+      const rect = board.getBoundingClientRect();
+      board.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: rect.right - 40, clientY: rect.bottom - 40 }));
+    })()`)
+    const newCanvasItem = `[...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === '新建画面')`
+    await waitFor(`Boolean(${newCanvasItem})`)
+    await evaluate(`${newCanvasItem}.click()`)
     await waitFor('Boolean(document.querySelector(\'article[aria-label^="画面 2"]\'))')
 
     await evaluate('document.querySelector(\'article[aria-label^="画面 1"]\')?.click()')
