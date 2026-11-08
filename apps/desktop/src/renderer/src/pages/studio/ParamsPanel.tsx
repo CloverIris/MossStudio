@@ -48,7 +48,7 @@ import { bundleComponentIds, sizeText } from '../models/logic'
 import type { Preparation } from '../../lib/preparation'
 import { resizeCanvas } from './canvases'
 import { useApp } from '../../store'
-import { gpuPickerLabel } from '../settings/devicesModel'
+import { followDefaultLabel, gpuPickerLabel } from '../settings/devicesModel'
 import { ImageCardPanel } from './ImageCardPanel'
 import { SliderField, SlotHeader, SlotRow } from './InputControls'
 import { InputsSection, type InputsWiring } from './InputsSection'
@@ -187,9 +187,10 @@ function CanvasParams({
 
   useEffect(() => setCustomSize(false), [canvas.id])
 
+  const engineReadiness = useApp((state) => state.engineReadiness)
   const defaultGpu =
     settings?.gpuSelection && settings.gpuSelection !== 'auto'
-      ? gpuInventory?.devices.find((device) => device.uuid === (settings.gpuSelection as { uuid: string }).uuid)?.name
+      ? gpuInventory?.devices.find((device) => device.uuid === (settings.gpuSelection as { uuid: string }).uuid)
       : undefined
   const boundMissing = Boolean(
     canvas.deviceUuid && gpuInventory && !gpuInventory.devices.some((device) => device.uuid === canvas.deviceUuid),
@@ -461,7 +462,7 @@ function CanvasParams({
                     value={canvas.deviceUuid ?? ''}
                     onChange={(event) => onChange((current) => ({ ...current, deviceUuid: event.target.value || undefined }))}
                   >
-                    <option value="">{defaultGpu ? `跟随默认（${defaultGpu}）` : '跟随默认'}</option>
+                    <option value="">{followDefaultLabel(defaultGpu, engineReadiness)}</option>
                     {boundMissing ? (
                       <option value={canvas.deviceUuid} disabled>
                         之前选的显卡现在找不到
@@ -469,7 +470,7 @@ function CanvasParams({
                     ) : null}
                     {(gpuInventory?.devices ?? []).map((device) => (
                       <option key={device.uuid} value={device.uuid}>
-                        {gpuPickerLabel(device)}
+                        {gpuPickerLabel(device, engineReadiness)}
                       </option>
                     ))}
                   </Select>

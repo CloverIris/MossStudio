@@ -224,8 +224,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     send(res, 404, { error: 'not found' })
   } catch (error) {
     const code = error instanceof RpcError ? error.code : undefined
-    // A request main refused for what it asked (E_INPUT*, E_IMAGE*, E_NOT_SUPPORTED) is the client's to fix.
-    const status = code && /^E_(INPUT|IMAGE|NOT_SUPPORTED)/.test(code) ? 400 : 500
+    // A request main refused for what it asked (E_INPUT*, E_IMAGE*, E_NOT_SUPPORTED, E_GPU_TOO_SMALL) is the client's to fix.
+    const status = code && /^E_(INPUT|IMAGE|NOT_SUPPORTED|GPU_TOO_SMALL)/.test(code) ? 400 : 500
     send(res, status, { error: error instanceof Error ? error.message : String(error), ...(code ? { code } : {}) })
   }
 }

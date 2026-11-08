@@ -8,6 +8,7 @@ import {
   newestPerPackage,
   engineChoiceChanged,
   resolveDeviceEngineFrom,
+  skippedForMemoryFrom,
   type ResolveInput,
 } from '@main/services/engineInstalls'
 import { useTempDir } from '@test/helpers/tempDir'
@@ -226,5 +227,39 @@ describe('engineChoiceChanged (settings → release stale moss-servers)', () => 
     const two = { engineDeviceOverrides: { a: 'cu13', b: 'vulkan' }, mossInferServerPath: null }
     expect(engineChoiceChanged(two, { engineDeviceOverrides: { b: 'vulkan', a: 'cu13' }, mossInferServerPath: null })).toBe(false)
     expect(engineChoiceChanged(base, { ...base })).toBe(false)
+  })
+})
+
+describe('skippedForMemoryFrom', () => {
+  const mx250: EngineMachineGpu = {
+    id: 'GPU-mx250',
+    name: 'NVIDIA GeForce MX250',
+    vendor: 'nvidia',
+    memoryBytes: 2 * 1024 ** 3,
+    computeCapability: { major: 6, minor: 1 },
+    driverVersion: '590.48.01',
+    vulkan: { index: 0, usable: true, discrete: true },
+  }
+  const uhd: EngineMachineGpu = {
+    id: 'vk-8086-5917-0',
+    name: 'Intel(R) UHD Graphics 620',
+    vendor: 'intel',
+    vulkan: { index: 1, usable: true, discrete: false },
+  }
+  const laptop = (patch: Partial<ResolveInput> = {}): ResolveInput => input({ machine: machine([mx250, uhd]), ...patch })
+
+  it('is true for a small card the installed plan leaves without an engine while another GPU runs one', () => {
+    install('stable-v2.2.0-vulkan', 'moss-infer-vulkan')
+    expect(skippedForMemoryFrom('GPU-mx250', laptop())).toBe(true)
+    expect(resolveDeviceEngineFrom('GPU-mx250', laptop())).toBeNull()
+    expect(skippedForMemoryFrom('vk-8086-5917-0', laptop())).toBe(false)
+  })
+
+  it('is false with an engine chosen for it in 高级, alone, or before anything is installed', () => {
+    expect(skippedForMemoryFrom('GPU-mx250', laptop())).toBe(false)
+    install('stable-v2.2.0-vulkan', 'moss-infer-vulkan')
+    const overridden = laptop({ settings: { engineDeviceOverrides: { 'GPU-mx250': 'vulkan' }, mossInferServerPath: null } })
+    expect(skippedForMemoryFrom('GPU-mx250', overridden)).toBe(false)
+    expect(skippedForMemoryFrom('GPU-mx250', input({ machine: machine([mx250]) }))).toBe(false)
   })
 })

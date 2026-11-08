@@ -447,3 +447,38 @@ describe('studio', () => {
     })
   })
 })
+
+describe('studio on a laptop whose 2 GB card is too small for the model', () => {
+  const app = useApp()
+
+  it('the GPU picker marks that card, also as the default it follows', async () => {
+    const page = await app.open({
+      scenario: 'machineLaptopSmallGpu',
+      route: '/studio',
+      defer: true,
+      settings: { onboardingState: 'completed' },
+    })
+    await page.evaluate(() => {
+      const { state, fixtures } = window.__mock
+      const [mx250, uhd] = state.engineMachine.gpus
+      // Main's readiness: the plan left the MX250 without an engine for its memory; the integrated GPU runs 兼容模式.
+      state.engineReadiness = fixtures.engineReadyFixture({
+        devices: [
+          { deviceUuid: mx250!.id, name: mx250!.name, packageId: null, path: null, memorySkipped: true },
+          { deviceUuid: uhd!.id, name: uhd!.name, packageId: 'vulkan', path: '/e/vk' },
+        ],
+      })
+      state.settings = { ...state.settings, gpuSelection: { uuid: mx250!.id } }
+    })
+    await app.start()
+    await openStudio(page)
+    await page.getByRole('button', { name: /高级/ }).first().click()
+    await expect
+      .poll(() => page.locator('#studio-gpu option').allInnerTexts())
+      .toEqual([
+        '跟随默认（NVIDIA GeForce MX250，显存太小）',
+        'NVIDIA GeForce MX250 · 显卡 0（显存太小）',
+        'Intel(R) UHD Graphics 620 · 显卡 1',
+      ])
+  })
+})

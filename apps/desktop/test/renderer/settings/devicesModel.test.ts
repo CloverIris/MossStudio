@@ -13,6 +13,7 @@ import {
   fixedEngineSettingsNote,
   gpuEngineInfo,
   gpuPickerLabel,
+  followDefaultLabel,
 } from '@renderer/pages/settings/devicesModel'
 import { RELEASE_220, enginePlanFor, inventoryDevicesFor, machineFixture } from '@test/mocks/backend/machines'
 import { planLines } from '@renderer/lib/engineInstall'
@@ -169,16 +170,34 @@ describe('engine per GPU', () => {
     expect(planLines(p)[1]).toMatchObject({ detail: '不使用（已有独立显卡）', skipped: true })
   })
 
-  it('a GPU picker marks a card too small for the model, and only that one', () => {
-    const GiB = 1024 ** 3
-    expect(gpuPickerLabel({ name: 'NVIDIA GeForce MX250', index: 0, memoryTotalBytes: 2 * GiB })).toBe(
-      'NVIDIA GeForce MX250 · 显卡 0（显存太小）',
+  it('a GPU picker marks the card the plan left without an engine for its memory, and only that one', () => {
+    const readiness = engineReadyFixture({
+      devices: [
+        { deviceUuid: 'GPU-mx250', name: 'NVIDIA GeForce MX250', packageId: null, path: null, memorySkipped: true },
+        { deviceUuid: 'GPU-mx450', name: 'NVIDIA GeForce MX450', packageId: 'cu13-sm75', path: '/e/sm75' },
+        { deviceUuid: 'vk-uhd', name: 'Intel(R) UHD Graphics 620', packageId: 'vulkan', path: '/e/vk' },
+      ],
+    })
+    const mx250 = { uuid: 'GPU-mx250', name: 'NVIDIA GeForce MX250', index: 0 }
+    expect(gpuPickerLabel(mx250, readiness)).toBe('NVIDIA GeForce MX250 · 显卡 0（显存太小）')
+    // A small card with an engine chosen for it in 高级 is not skipped: jobs run there.
+    expect(gpuPickerLabel({ uuid: 'GPU-mx450', name: 'NVIDIA GeForce MX450', index: 1 }, readiness)).toBe('NVIDIA GeForce MX450 · 显卡 1')
+    expect(gpuPickerLabel({ uuid: 'vk-uhd', name: 'Intel(R) UHD Graphics 620', index: 2 }, readiness)).toBe(
+      'Intel(R) UHD Graphics 620 · 显卡 2',
     )
-    expect(gpuPickerLabel({ name: 'NVIDIA GeForce RTX 4090', index: 1, memoryTotalBytes: 24 * GiB })).toBe(
-      'NVIDIA GeForce RTX 4090 · 显卡 1',
+    // Readiness not known yet: nothing is marked.
+    expect(gpuPickerLabel(mx250, null)).toBe('NVIDIA GeForce MX250 · 显卡 0')
+  })
+
+  it('跟随默认 names the default GPU, marked the same way', () => {
+    const readiness = engineReadyFixture({
+      devices: [{ deviceUuid: 'GPU-mx250', name: 'NVIDIA GeForce MX250', packageId: null, path: null, memorySkipped: true }],
+    })
+    expect(followDefaultLabel({ uuid: 'GPU-mx250', name: 'NVIDIA GeForce MX250' }, readiness)).toBe(
+      '跟随默认（NVIDIA GeForce MX250，显存太小）',
     )
-    // Unknown memory (an AMD or Intel GPU) is never called too small.
-    expect(gpuPickerLabel({ name: 'Intel(R) UHD Graphics 620', index: 2 })).toBe('Intel(R) UHD Graphics 620 · 显卡 2')
+    expect(followDefaultLabel({ uuid: 'GPU-a', name: 'RTX 4090' }, readiness)).toBe('跟随默认（RTX 4090）')
+    expect(followDefaultLabel(undefined, readiness)).toBe('跟随默认')
   })
 
   it('a 2 GB card next to a GPU that runs is quietly unused, and says why', () => {

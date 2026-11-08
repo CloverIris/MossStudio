@@ -22,6 +22,8 @@ const hipDeviceIndex = vi.hoisted(() => vi.fn())
 const cliBundleDtypeProblem = vi.hoisted(() => vi.fn())
 const currentEngineMachine = vi.hoisted(() => vi.fn())
 const resolveDeviceEngine = vi.hoisted(() => vi.fn())
+/** Whether the installed plan left a GPU without an engine for its memory (engineInstalls.test.ts covers the real one). */
+const skippedForMemory = vi.hoisted(() => vi.fn((_uuid: string) => false))
 const prepareModelSource = vi.hoisted(() => vi.fn())
 const getCatalog = vi.hoisted(() => vi.fn())
 const refreshGpuInventory = vi.hoisted(() => vi.fn())
@@ -32,6 +34,7 @@ vi.mock('@main/services/cliEngine', () => ({ runCliJob, cancelCliJob, hipDeviceI
 // localServerPath follows the same per-device record, like the real one: a CUDA GPU's own moss-server, nothing for a CLI GPU.
 vi.mock('@main/services/engineInstalls', () => ({
   resolveDeviceEngine,
+  skippedForMemory,
   currentEngineMachine,
   localServerPath: (uuid?: string) => {
     const engine = uuid ? (resolveDeviceEngine(uuid) as DeviceEngine | null) : null
@@ -118,6 +121,7 @@ beforeEach(async () => {
     [amdB.uuid, deviceEngine('hip', amdB)],
   ])
   resolveDeviceEngine.mockReset().mockImplementation((uuid: string) => engines.get(uuid) ?? null)
+  skippedForMemory.mockReset().mockReturnValue(false)
   runCliJob.mockReset().mockImplementation(async (job: JobRecord, _params: unknown, opts: CliJobOptions, sink: MossInferSink) => {
     cliStarts.push({ job, opts })
     sinks.set(job.id, sink)
@@ -460,31 +464,35 @@ describe('automatic GPU assignment on a mixed machine', () => {
   })
 
   describe('a card too small for the model, picked by hand', () => {
-    const tooSmall = 'NVIDIA GeForce MX250 显存太小（2 GB），没有安装引擎。在「设置 › 设备与引擎」里改用另一块显卡。'
+    const name = 'NVIDIA GeForce MX250 显存太小（2 GB），没有安装引擎。'
     const laptop = (): { mx250: GpuInventoryDevice; uhd: GpuInventoryDevice } => {
       const machine = machineFixture('laptopSmallGpu')
       const [mx250, uhd] = inventoryDevicesFor(machine)
-      // The plan gives the 2 GB card no engine; the integrated GPU runs 兼容模式.
+      // The plan gives the 2 GB card no engine for its memory; the integrated GPU runs 兼容模式.
       engines.set(uhd!.uuid, deviceEngine('vulkan', uhd!))
+      skippedForMemory.mockImplementation((uuid: string) => uuid === mx250!.uuid && !engines.has(uuid))
       currentEngineMachine.mockReturnValue({ machine })
       refreshGpuInventory.mockResolvedValue({ devices: [mx250, uhd] })
       return { mx250: mx250!, uhd: uhd! }
     }
 
-    it('as the default GPU in settings: refused with the reason and where to change it', async () => {
+    it('as the default GPU in settings: refused, pointing at 设置', async () => {
       const { mx250 } = laptop()
       const { updateSettings } = await import('@main/services/settings')
       updateSettings({ gpuSelection: { uuid: mx250.uuid } })
-      await expect(supervisor.startEngineJob(request())).rejects.toMatchObject({ code: 'E_GPU_TOO_SMALL', message: tooSmall })
+      await expect(supervisor.startEngineJob(request())).rejects.toMatchObject({
+        code: 'E_GPU_TOO_SMALL',
+        message: `${name}在「设置 › 设备与引擎」里改用另一块显卡。`,
+      })
       expect(runCliJob).not.toHaveBeenCalled()
       expect(runMossInferJob).not.toHaveBeenCalled()
     })
 
-    it('as the GPU a canvas is bound to: refused the same way', async () => {
+    it("as the GPU a canvas is bound to: refused, pointing at the canvas's own 显卡 picker", async () => {
       const { mx250 } = laptop()
       await expect(supervisor.startEngineJob(request({ deviceUuid: mx250.uuid }))).rejects.toMatchObject({
         code: 'E_GPU_TOO_SMALL',
-        message: tooSmall,
+        message: `${name}在画面的「显卡」里换一块，或改回跟随默认。`,
       })
     })
 
@@ -493,6 +501,78 @@ describe('automatic GPU assignment on a mixed machine', () => {
       engines.set(mx250.uuid, deviceEngine('vulkan', mx250))
       expect((await supervisor.startEngineJob(request({ deviceUuid: mx250.uuid }))).deviceUuid).toBe(mx250.uuid)
     })
+
+    it('a small CUDA card with an engine goes on to the compatibility probe, and runs', async () => {
+      const { mx250 } = laptop()
+      const mx450 = { ...mx250, name: 'NVIDIA GeForce MX450', computeCapability: { major: 7, minor: 5 } }
+      refreshGpuInventory.mockResolvedValue({ devices: [mx450] })
+      engines.set(mx450.uuid, { ...deviceEngine('cuda', mx450), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+      const small = decodeEngineHello({
+        protocol_version: 2,
+        probe: { devices: [{ index: 0, name: mx450.name, supported: true, compute_capability: '7.5' }] },
+      })
+      probeLocalEngineGpuCompatibility.mockResolvedValue({ hello: small, helloFor: (uuid: string) => (uuid === mx450.uuid ? small : null) })
+      probeLocalEngineGpuCompatibility.mockClear()
+      expect((await supervisor.startEngineJob(request({ deviceUuid: mx450.uuid }))).deviceUuid).toBe(mx450.uuid)
+      expect(probeLocalEngineGpuCompatibility).toHaveBeenCalled()
+    })
+
+    it('a lone small card, or one nothing was installed for yet, keeps the usual "install an engine" error', async () => {
+      const { mx250 } = laptop()
+      // Not skipped by the plan (it would be the only GPU, or no package is installed yet).
+      skippedForMemory.mockReturnValue(false)
+      await expect(supervisor.startEngineJob(request({ deviceUuid: mx250.uuid }))).rejects.toThrow(
+        '没有为 NVIDIA GeForce MX250 安装可用的引擎；请在引擎页安装引擎后重试。',
+      )
+    })
+  })
+
+  it('a job the integrated GPU cannot run goes to a 2 GB card that has the full engine, not to a false refusal', async () => {
+    const machine = machineFixture('laptopSmallGpu')
+    const [card, uhd] = inventoryDevicesFor(machine)
+    // The MX450 got a CUDA engine through 高级; the integrated GPU runs 兼容模式, which has no 起始图.
+    const mx450 = { ...card!, name: 'NVIDIA GeForce MX450', computeCapability: { major: 7, minor: 5 } }
+    const small = decodeEngineHello({
+      protocol_version: 2,
+      probe: { devices: [{ index: 0, name: mx450.name, supported: true, compute_capability: '7.5' }] },
+    })
+    engines.set(mx450.uuid, { ...deviceEngine('cuda', mx450), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+    engines.set(uhd!.uuid, deviceEngine('vulkan', uhd!))
+    probeLocalEngineGpuCompatibility.mockResolvedValue({ hello: small, helloFor: (uuid: string) => (uuid === mx450.uuid ? small : null) })
+    currentEngineMachine.mockReturnValue({ machine })
+    refreshGpuInventory.mockResolvedValue({ devices: [mx450, uhd] })
+    const job = await supervisor.startEngineJob(request({ initImage: { path: '/a/init.png', strength: 0.5 } }))
+    expect(job.deviceUuid).toBe(mx450.uuid)
+    // A plain job still prefers the integrated GPU, which can hold the model.
+    expect((await supervisor.startEngineJob(request({ prompt: 'plain' }))).deviceUuid).toBe(uhd!.uuid)
+  })
+
+  it('asks the compatibility probe once per assignment, also when the small cards are tried too', async () => {
+    const big = { ...nvidia, uuid: 'GPU-big', name: 'Big unsupported', memoryTotalBytes: 24 * 1024 ** 3 }
+    const mx450: GpuInventoryDevice = {
+      uuid: 'GPU-mx450',
+      index: 1,
+      name: 'NVIDIA GeForce MX450',
+      memoryTotalBytes: 2 * 1024 ** 3,
+      computeCapability: { major: 7, minor: 5 },
+    }
+    const hello = decodeEngineHello({
+      protocol_version: 2,
+      probe: {
+        devices: [
+          { index: 0, name: big.name, supported: false, compute_capability: '8.9' },
+          { index: 1, name: mx450.name, supported: true, compute_capability: '7.5' },
+        ],
+      },
+    })
+    engines.set(big.uuid, { ...deviceEngine('cuda', big), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+    engines.set(mx450.uuid, { ...deviceEngine('cuda', mx450), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+    probeLocalEngineGpuCompatibility.mockResolvedValue({ hello, helloFor: () => hello })
+    probeLocalEngineGpuCompatibility.mockClear()
+    refreshGpuInventory.mockResolvedValue({ devices: [big, mx450] })
+    expect((await supervisor.startEngineJob(request())).deviceUuid).toBe(mx450.uuid)
+    // Once for the automatic assignment (big cards, then small ones), once when the job starts and checks the GPU it got.
+    expect(probeLocalEngineGpuCompatibility).toHaveBeenCalledTimes(2)
   })
 
   it('a CLI GPU picked by hand runs plain jobs and refuses what its engine cannot do', async () => {

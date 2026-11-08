@@ -20,7 +20,6 @@ import type {
   GpuProfileOverride,
 } from '@shared/types'
 import { memorySize } from '../../lib/format'
-import { gpuMemoryTooSmall } from '@shared/machineFit'
 
 export interface GpuRow {
   uuid: string
@@ -130,9 +129,26 @@ export function gpuMemoryLabel(device: Pick<GpuInventoryDevice, 'memoryTotalByte
   return device.memoryTotalBytes ? memorySize(device.memoryTotalBytes) : '显存未知'
 }
 
-/** A GPU in a picker: "RTX 4090 · 显卡 0"; a card too small for the model says so, since a job there is refused. */
-export function gpuPickerLabel(device: Pick<GpuInventoryDevice, 'name' | 'index' | 'memoryTotalBytes'>): string {
-  return `${device.name} · 显卡 ${device.index}${gpuMemoryTooSmall(device.memoryTotalBytes) ? '（显存太小）' : ''}`
+/** The engine plan left this GPU without an engine because it is too small for the model (main refuses jobs there). */
+export function gpuSkippedForMemory(readiness: EngineReadiness | null | undefined, deviceUuid: string): boolean {
+  return readiness?.devices?.some((device) => device.deviceUuid === deviceUuid && device.memorySkipped) ?? false
+}
+
+/** A GPU in a picker: "RTX 4090 · 显卡 0", marked 「（显存太小）」 when gpuSkippedForMemory says a job there is refused. */
+export function gpuPickerLabel(
+  device: Pick<GpuInventoryDevice, 'uuid' | 'name' | 'index'>,
+  readiness: EngineReadiness | null | undefined,
+): string {
+  return `${device.name} · 显卡 ${device.index}${gpuSkippedForMemory(readiness, device.uuid) ? '（显存太小）' : ''}`
+}
+
+/** 「跟随默认（RTX 4090）」: the default GPU named, and marked the same way when it is such a card. */
+export function followDefaultLabel(
+  device: Pick<GpuInventoryDevice, 'uuid' | 'name'> | undefined,
+  readiness: EngineReadiness | null | undefined,
+): string {
+  if (!device) return '跟随默认'
+  return `跟随默认（${device.name}${gpuSkippedForMemory(readiness, device.uuid) ? '，显存太小' : ''}）`
 }
 
 /** Rows for the GPU group: name, memory, which one is the default, and whether the engine can use it. */
