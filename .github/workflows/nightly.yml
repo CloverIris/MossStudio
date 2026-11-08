@@ -98,7 +98,18 @@ jobs:
           go-version-file: apps/launcher/go.mod
           cache-dependency-path: apps/launcher/go.mod
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
+      # No typecheck here: CI already checks every commit on main.
+      - id: electron
+        name: Electron version
+        run: echo "version=$(node -p 'require("./apps/desktop/node_modules/electron/package.json").version')" >> "$GITHUB_OUTPUT"
+      # Packaging downloads the Electron zip for the platform; @electron/get keeps it in the OS cache folder.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/Library/Caches/electron
+            ~/AppData/Local/electron/Cache
+          key: electron-${{ steps.electron.outputs.version }}-${{ matrix.platform }}
       - name: Release build (no test keys, real feed)
         run: pnpm build
         env:
