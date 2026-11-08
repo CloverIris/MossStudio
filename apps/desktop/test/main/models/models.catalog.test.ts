@@ -183,7 +183,7 @@ describe('local imports and bundles in the catalog', () => {
     return models.registerScannedModels(settings, [{ path, role, layout: 'comfyui-single-file' }])
   }
 
-  it('lists registered files as local entries and offers a local-files bundle once all three roles exist', async () => {
+  it('lists registered files as local entries and keeps the old local-files bundle as a saved combination', async () => {
     const comfy = join(dataRoot(), 'ComfyUI', 'models')
     await register(join(comfy, 'diffusion_models', 'd.safetensors'), 'dit')
     await register(join(comfy, 'text_encoders', 't.safetensors'), 'text_encoder')
@@ -200,10 +200,19 @@ describe('local imports and bundles in the catalog', () => {
       tags: ['local-import', 'comfyui', 'unhashed'],
     })
 
+    // Older versions made a model of the three by themselves; it is kept once, as a saved combination.
     await register(join(comfy, 'vae', 'v.safetensors'), 'vae')
     catalog = await models.getCatalog(settings)
-    expect(catalog.bundles[0]).toMatchObject({ id: 'local-files', components: { dit: dit.id } })
-    expect(catalog.bundles.map((b) => b.id)).toEqual(['local-files', 'b1'])
+    expect(catalog.bundles.map((b) => b.id)).toEqual(['b1', 'local-files'])
+    expect(catalog.bundles[1]).toMatchObject({
+      name: '电脑上的模型',
+      custom: true,
+      components: { dit: dit.id },
+      support: 'moss-runtime-config',
+    })
+    expect(JSON.parse(readFileSync(join(dataRoot(), 'model-combinations.json'), 'utf8'))).toEqual([
+      expect.objectContaining({ id: 'local-files', components: expect.objectContaining({ dit: dit.id }) }),
+    ])
   })
 
   it('marks an import whose file changed or vanished as error and drops it from the local bundle', async () => {

@@ -1,4 +1,4 @@
-import { FolderPlus, FolderSearch, Sparkles } from 'lucide-react'
+import { FolderSearch, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { ModelDirectories, ModelDirectoryId, ModelScanResult, ScannedModel, Settings } from '@shared/types'
@@ -25,8 +25,9 @@ const roleLabel: Record<ScannedModel['role'], string> = {
 }
 
 /**
- * Directory management for models, shown under 模型 › 高级: per-part folders,
- * "use files I already have" (scan + add) and cleanup. The model folder itself
+ * Directory management for models, shown under 模型 › 高级: per-part folders
+ * (picking one scans it for files to add) and cleanup. Using a folder of model
+ * files as a model is 用电脑上的模型文件… on the 模型 tab. The model folder itself
  * is shown once, under 存储位置 on the same page, and changed in 设置 › 存储.
  * Selecting a folder only scans it; nothing is copied or created until the
  * user adds a file.
@@ -197,15 +198,6 @@ export function ModelDirectoriesCard(): React.JSX.Element {
         </Notice>
       ) : null}
       <Group data-model-directories>
-        <Row
-          title="添加文件夹里的模型文件"
-          description="选择一个文件夹（例如 ComfyUI 的 models），挑出里面的模型文件添加到模型库。文件留在原处，不复制、不移动。"
-        >
-          <Button tone="secondary" disabled={busy !== null} onClick={() => void runScan()} data-scan-models>
-            {busy === 'scan' ? <Spinner /> : <FolderPlus className="size-4" strokeWidth={1.6} />}
-            选择文件夹
-          </Button>
-        </Row>
         {roles.map((role) => {
           const path = settings?.modelDirectories?.[role.key] ?? ''
           return (

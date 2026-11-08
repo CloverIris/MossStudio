@@ -121,6 +121,10 @@ export const Ipc = {
   modelsScan: 'models:scan',
   modelsRegisterScan: 'models:register-scan',
   modelsCleanupEmpty: 'models:cleanup-empty',
+  /** 用电脑上的模型文件…: a complete model folder is added as is; loose files are registered for 自己组合. */
+  modelsUseFolder: 'models:use-folder',
+  modelsSaveCombination: 'models:save-combination',
+  modelsDeleteCombination: 'models:delete-combination',
   modelsRemoteInventory: 'models:remote-inventory',
   modelsRemoteDownload: 'models:remote-download',
   /** Delete catalog entries from an SSH host, keeping files other installed entries share. */

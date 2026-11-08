@@ -82,6 +82,8 @@ export interface MockBackendState {
   conversations: AiConversationInfo[]
   /** The folder 「使用本地文件夹」 picks (models:import-folder); null = the dialog is canceled. */
   localModelFolder: { path: string; name: string; bundleId: string } | null
+  /** 用电脑上的模型文件…: loose files in the picked folder, when it holds no complete model folder. */
+  localModelFiles: Array<{ path: string; role: 'dit' | 'text_encoder' | 'vae' }> | null
   /** What the engine's machine probe found (engine:plan runs the real chooser over it). */
   engineMachine: EngineMachine
   /** The release engine:plan plans against. */
@@ -152,6 +154,7 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     engineMachine: machineFixture('nvidia'),
     engineAssets: RELEASE_220,
     localModelFolder: null,
+    localModelFiles: null,
   }
 
   const firstRun = (): Partial<MockBackendState> => ({

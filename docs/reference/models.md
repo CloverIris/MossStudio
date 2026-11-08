@@ -16,7 +16,8 @@ The catalog is the list of everything the app can download or has found. Its sch
 
 | Term | Code | Meaning |
 | --- | --- | --- |
-| component, 单独的部件 | `ModelEntry.role` | One downloadable or registered unit. Roles and their UI labels (`ROLE_LABEL` in `renderer/src/pages/models/logic.ts`): `dit` 主模型, `text_encoder` 文本编码器, `vae` VAE, `support` 运行配置, `full` 完整模型. |
+| component, 部件 | `ModelEntry.role` | One downloadable or registered unit: `dit` 主模型, `text_encoder` 文本编码器, `vae` VAE, `support` (config files, never chosen by hand), `full` (a whole registered folder). `ModelEntry.choice` is the label 自己组合 shows (`MOSS-Image SFT · INT8`); a folder and a single file of the same weights share one. |
+| combination, 我的组合 | `ModelCombination`, `ModelBundle.custom` | A 主模型, 文本编码器 and VAE the person saved in 自己组合 (section 7). It is a bundle in the catalog like the others. |
 | bundle, 模型包 | `ModelBundle` | A DiT, a text encoder and a VAE (`components`) plus a `support` entry with the pipeline and scheduler configs. The 模型 page calls a bundle a "model". |
 | binding | `ModelBinding` | A bundle id with its three component ids, built by `bundleBinding()` in `main/services/modelBundles.ts`. This is what a job carries. |
 | format | `ModelEntry.format` | `diffusers` (a folder with `config.json` per part) or `comfyui` (one `.safetensors` file). |
@@ -28,7 +29,7 @@ Where the catalog comes from (`getCatalog` in `main/services/models.ts`):
 2. On each full refresh the app fetches the same file from the manifest mirror the network probe picked (GitHub raw or jsDelivr, `main/services/network.ts`) and uses it if it parses (`source: 'remote'`). A remote catalog with `schema_version` below 2 is merged under the built-in one so it cannot reintroduce whole-repository downloads.
 3. In development a `models.json` in the content directory wins (`source: 'local'`).
 
-The shipped catalog has four bundles: `moss-sft` (recommended), `moss-base`, `moss-sft-fp16` and `moss-base-fp16`. All four share `qwen35-encoder`, `flux2-vae-small` and `moss-pipeline`, so switching bundles downloads only the DiT. The `Comfy-Org/MOSS-Image` single-file entries (`format: 'comfyui'`) are download only: no bundle references them (section 8).
+The shipped catalog has four bundles: `moss-sft` (recommended), `moss-base`, `moss-sft-fp16` and `moss-base-fp16`. All four share `qwen35-encoder`, `flux2-vae-small` and `moss-pipeline`, so switching bundles downloads only the DiT. The `Comfy-Org/MOSS-Image` single-file entries (`format: 'comfyui'`, INT8, W4A8, the Full VAE) are used through combinations: no catalog bundle references them.
 
 Catalog entries get their installed state from an install record (section 3), from a registered diffusers folder (section 4.3) or, for `provider: 'local'` entries, from the file still being where it was registered. The catalog is cached per models root and directory settings and invalidated by every download, import or delete (`invalidateCatalog`).
 
@@ -88,7 +89,7 @@ Two ways exist to use files the person already has without downloading or copyin
 
 A folder that holds `model_index.json` or `transformer/config.json` is reported as one candidate with `layout: 'diffusers-folder'` instead of its files.
 
-UI: 模型 › 高级 › 文件夹 › 添加文件夹里的模型文件 › 选择文件夹 (`ModelDirectoriesCard.tsx`). The 找到的模型文件 dialog lists the candidates with their role pill; 添加到模型库 registers the checked ones. Picking a per-role folder (更改) scans it the same way.
+UI: 模型 › 其他模型 › 自己组合 › 用电脑上的模型文件… (`Ipc.modelsUseFolder` in `main/ipc.ts`). A folder holding a complete diffusers folder is added as in section 4.3. Otherwise the 主模型, 文本编码器 and VAE files found (confidence high or medium) are registered and 自己组合 opens with its slots filled from them, the first of each role; a slot with nothing found keeps its default download. Picking a per-role folder (模型 › 高级 › 文件夹 › 更改, `ModelDirectoriesCard.tsx`) scans it and lists the candidates in 找到的模型文件 to register.
 
 ### 4.2 Registering files
 
@@ -96,27 +97,26 @@ UI: 模型 › 高级 › 文件夹 › 添加文件夹里的模型文件 › �
 
 In the catalog these records become `ModelEntry` rows with `provider: 'local'`, `family: 'local'`, `format: 'comfyui'` for a file or `'diffusers'` for a folder, `precision: 'local'` (a folder gets the dtype read from its first transformer shard), tags `local-import` and `unhashed` or `sha256:<hash>`. The entry is installed while the file still has the registered size and mtime; otherwise the 模型 page shows 找不到原文件. Removing an entry (移除) deletes the record only.
 
-An older path still exists for a folder of loose weight files without a diffusers layout: `importModelFolder` in `modelImports.ts` hashes every file (SHA-256), ids `local-file-<hash>`, and skips duplicates by content. It is reached through 添加整个模型文件夹 when the chosen folder contains no diffusers folder.
+An older path still exists for a folder of loose weight files without a diffusers layout: `importModelFolder` in `modelImports.ts` hashes every file (SHA-256), ids `local-file-<hash>`, and skips duplicates by content. It is reached through first-run setup's 已有模型文件… when the chosen folder contains no diffusers folder.
 
 ### 4.3 Diffusers folders used in place
 
-添加整个模型文件夹 (`AdvancedPanel.tsx`, `Ipc.modelsImportFolder`) registers a complete diffusers folder where it is. `inspectDiffusersFolder` accepts a folder with `model_index.json` and a `config.json` plus `.safetensors` weights in each of `transformer/`, `text_encoder/` and `vae/`. The flavour (`sft` or `base`) is read from the README title or the folder name; the folder is listed as `MOSS-Image SFT（<folder>）` or `MOSS-Image Base（<folder>）`.
+用电脑上的模型文件… (`Ipc.modelsUseFolder`) and first-run setup's 已有模型文件… (`Ipc.modelsImportFolder`) register a complete diffusers folder where it is. `inspectDiffusersFolder` accepts a folder with `model_index.json` and a `config.json` plus `.safetensors` weights in each of `transformer/`, `text_encoder/` and `vae/`. The flavour (`sft` or `base`) is read from the README title or the folder name; the folder is listed as `MOSS-Image SFT（<folder>）` or `MOSS-Image Base（<folder>）`.
 
 The folder is one `role: 'full'` entry, and `localFolderInstall` in `models.ts` also lets it stand in for the official components: entries of `OpenMOSS-Team/MOSS-Image-SFT` and `OpenMOSS-Team/MOSS-Image-Base` (`MOSS_REPOS`) count as installed when the folder passes `validateSnapshot` for that component. The DiT must be the same flavour; the text encoder, VAE and pipeline files are shared by both. Such a component shows the `local-folder` tag and its `localPath`. When a job prepares the bundle (section 4.4), the folder's files are hard-linked, or symlinked when a hard link is refused (`linkInPlace`), never copied.
 
 ### 4.4 How files reach the engine
 
-`prepareModelSource(binding)` in `main/services/modelBundles.ts` turns a binding into what the engine can load, right before the job starts (`startEngineJobNow` in `main/services/supervisor.ts`):
+`prepareModelSource(binding)` in `main/services/modelBundles.ts` turns a binding into what the engine can load, right before the job starts (`startEngineJobNow` in `main/services/supervisor.ts`). MossInfer's `load` always needs `model`, a folder with the configs and tokenizer; `dit_file`, `text_encoder_file` and `vae_file` each replace that part's weights in it, so any part mixes with any other.
 
-| Components in the binding | Result | Engine `load` payload (`main/services/mossInfer.ts`) |
+| Parts in the binding | Result | Engine `load` payload (`main/services/mossInfer.ts`) |
 | --- | --- | --- |
-| Three `provider: 'local'` single files | `{ model: null, ditFile, textEncoderFile, vaeFile }` | `dit_file`, `text_encoder_file`, `vae_file` |
-| Three catalog (`hf`) components | `{ model: <prepared folder> }` | `model` |
-| One or two local components | Error 本地文件组合需要同时准备 DiT、文本编码器和 VAE 三个文件 | none |
+| Three folders (`format: 'diffusers'`) | `{ model: <prepared folder> }` with the bundle's `support` (`moss-pipeline`) | `model` |
+| At least one single file (`format: 'comfyui'`, downloaded or the person's own) | `{ model: <prepared folder>, ditFile?, textEncoderFile?, vaeFile? }`: the folder holds `moss-runtime-config` plus the parts that are folders | `model` and a `*_file` per single file |
 
-A prepared folder is `<models root>/bundles/<key>/`, where `<key>` is the first 24 hex characters of the SHA-256 of `clover_model.json` (bundle id, component ids, repositories, commits, precisions). `prepareModelBundle` checks the binding (`validateBinding`: every component `format: 'diffusers'`, `family: 'moss-image'`), then builds the folder in a staging directory with hard links to the snapshot files (`materialize`: link, else copy after a free-space check) and renames it into place. An existing folder with the same manifest and file sizes is reused. The layout is a diffusers model: `transformer/`, `text_encoder/`, `tokenizer/`, `vae/`, plus the support files at the root.
+A prepared folder is `<models root>/bundles/<key>/`, where `<key>` is the first 24 hex characters of the SHA-256 of `clover_model.json` (bundle id, the folder's component ids, repositories, commits, precisions). `materializeBundle` builds it in a staging directory with hard links to the snapshot files (`materialize`: link, else copy after a free-space check) and renames it into place; a path two parts share is taken from the first. An existing folder with the same manifest and file sizes is reused. The layout is a diffusers model: `transformer/`, `text_encoder/`, `tokenizer/`, `vae/`, plus the support files at the root. For three folders, `prepareModelBundle` first checks the binding (`validateBinding`: every component `format: 'diffusers'`, `family: 'moss-image'`). A single file is passed where it is: the person's file by its `localPath`, a downloaded one from its snapshot.
 
-The local-files bundle: `localFilesBundle` in `shared/localBundle.ts` builds `ModelBundle` `local-files`, 本地文件（扫描）, as soon as an installed local DiT, text encoder and VAE exist in the catalog, and `getCatalog` puts it first in `bundles`. It is the only bundle whose components are single files.
+Combinations: `shared/modelCombos.ts` holds the rules (`slotChoices`, `supportFor`: `moss-runtime-config` once any part is a single file, else `moss-pipeline`; `combinationBundle`; `unusedDownloads`). `main/services/modelCombinations.ts` keeps them in `<data root>/model-combinations.json`, and `getCatalog` appends them to `bundles` with `custom: true`. When that file does not exist yet and the catalog has an installed local DiT, text encoder and VAE, the bundle older versions made by themselves (`localFilesBundle` in `shared/localBundle.ts`, id `local-files`) is saved once as the combination 电脑上的模型, so 画面 that use it keep working.
 
 Precision and tier: for component files `jobWeightPrecisions` (`main/services/weightPrecision.ts`) asks the engine's `inspect` what the DiT and text encoder are; `tierForWeights` in `shared/gpuProfile.ts` then settles the tier (an INT4 DiT runs Turbo, an INT8 DiT or INT8/W4A8 text encoder runs High). A prepared bundle folder counts as bf16. The CLI engines (兼容模式, AMD 原生) read only a prepared bf16 folder (section 8).
 
@@ -149,22 +149,21 @@ Route `/models`, Rail entry 模型, `renderer/src/pages/models/ModelsPage.tsx`. 
 | Area | Component | Shows |
 | --- | --- | --- |
 | Recommended card | `FeaturedModel` in `ModelEntries.tsx` | 推荐模型, name, description and total size; one main action: 下载, 暂停, 继续 or 重试; 可以使用 and 去创作 when installed. |
-| 其他模型 | `ModelList` | Every other bundle as a row; 本地文件（扫描） is hidden on a remote host. |
+| 其他模型 | `ModelList`, `CombinationDialog.tsx` | Every other bundle as a row, a combination tagged 我的组合 (hidden on a remote host). 自己组合 (local only) offers 挑选要下载的部件 and 用电脑上的模型文件…: the dialog has 名字 and one select per slot (下载: each `choice` label once, the copy already here first, else the folder version; 电脑上的文件: registered single files and 选择文件…), counts 还要下载 and saves with 下载并保存 or 保存. Deleting a combination removes the downloads only it needs, never the person's files (`DeleteModelDialog`). |
 | 控制适配器 | section 6 | Local only. |
 | 存储位置 | `StorageRow` | 模型文件夹 with 打开模型文件夹 and 在 设置 › 存储 中更改; on a host, 模型保存在 … 上. |
-| 高级 | `AdvancedPanel.tsx` | 单独的部件 (one row per component with role, 本地文件 or 单文件, precision and size; legacy FP16-fixed ComfyUI files are not listed, `isOfferedComponent`), 文件夹 (`ModelDirectoriesCard` and 添加整个模型文件夹), or on a host 主机上的文件夹 (模型保存目录, 生成时使用的模型文件夹 with 自动查找, 下载完整的默认模型). |
+| 高级 | `AdvancedPanel.tsx` | 文件夹 (`ModelDirectoriesCard`) and 没有用到的文件 (downloads no bundle or combination needs, `unusedDownloads`, with 查看 and 全部删除), or on a host 主机上的文件夹 (模型保存目录, 生成时使用的模型文件夹 with 自动查找, 下载完整的默认模型). |
 
-State texts come from `bundleView` and `itemState` in `logic.ts`: 可以使用, 下载中 N%, 正在校验文件, 已暂停, 下载没有完成, 还差 N 个文件, 未下载, 已下载, 已添加, 找不到原文件, 文件不完整 (action 修复). Files the app downloaded are 删除d; registered files are 移除d from the list. Deep links take `?bundle=<id>&component=<role>&hostId=<id>&tab=models|lora|downloads` (`parseModelsQuery`); first-run setup uses them to point at the missing part.
+State texts come from `bundleView` and `itemState` in `logic.ts`: 可以使用, 下载中 N%, 正在校验文件, 已暂停, 下载没有完成, 还差 N 个文件, 未下载, 已下载, 已添加, 找不到原文件, 文件不完整 (action 修复). Files the app downloaded are 删除d; registered files are 移除d from the list. Deep links take `?bundle=<id>&component=<role>&hostId=<id>&tab=models|lora|downloads` (`parseModelsQuery`); first-run setup uses them to point at the model with the missing part.
 
 ## 8. Limits
 
 As built at d0883df. None of these is planned work; they describe what the code does today.
 
-- One local file set. `localFilesBundle` picks the first installed `provider: 'local'` DiT, text encoder and VAE in catalog order, which is registration order. Registering a second DiT adds a row under 单独的部件 but no second bundle, and there is no picker to choose which file the bundle uses.
-- No mixing of an official bundle with local component files. The four catalog bundles name catalog components only, and `prepareModelSource` rejects a binding with one or two local components. A scanned ComfyUI DiT cannot be combined with the downloaded text encoder and VAE, and a downloaded DiT cannot use a scanned VAE.
+- A combination's own file must be a single file (`format: 'comfyui'`); a registered diffusers folder is a whole model (section 4.3), not a slot choice.
+- A combination is not edited in place: it is deleted and built again.
 - Scanned files are checked by size and mtime, not hashed, so they cannot be matched to a Hugging Face blob or reused by a download. Only the older loose-file import hashes.
 - A registered diffusers folder serves only `OpenMOSS-Team/MOSS-Image-SFT` and `OpenMOSS-Team/MOSS-Image-Base` components (`MOSS_REPOS`). An FP16-fixed folder registers as a 完整模型 entry but stands in for no bundle.
-- The `Comfy-Org/MOSS-Image` single-file entries download into the role cache, but no bundle uses them and a scan skips `hf/hub`. To run INT8 or W4A8 files, scan the folder where ComfyUI keeps them.
-- The CLI engines refuse the local-files bundle, any `format: 'comfyui'` component and any non-bf16 DiT or text encoder (`cliBundleProblem` in `shared/cliEngine.ts`; `cliBundleDtypeProblem` reads the shard dtypes of a prepared folder).
-- Remote hosts take no LoRA (`resolveCanvasAdapters` refuses when `hostId` is set), show no local-files bundle and no control adapters.
+- The CLI engines refuse any `format: 'comfyui'` component (so a combination with a single file) and any non-bf16 DiT or text encoder (`cliBundleProblem` in `shared/cliEngine.ts`; `cliBundleDtypeProblem` reads the shard dtypes of a prepared folder).
+- Remote hosts take no LoRA (`resolveCanvasAdapters` refuses when `hostId` is set), show no combinations and no control adapters; 自己组合 is local only.
 - Adding a control adapter needs an engine whose `hello` lists `inspect`; an older engine is refused with 当前引擎版本不能识别控制适配器.
