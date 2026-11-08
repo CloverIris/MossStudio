@@ -40,6 +40,7 @@
 | [backend-and-project.md](backend-and-project.md) | Project schema v3、Engine Job、HTTP/WS |
 | [release.md](release.md) | 发布流程、签名密钥与轮换（英文） |
 | [agent-and-prompt.md](agent-and-prompt.md) | AI Provider、分段、确认 |
+| [design/agent-tool-rack.md](design/agent-tool-rack.md) | Agent 工具挂架、文字区域语义、对话内的选择/方案卡、自动与高级模式、分镜助手（P0–P4 已实现） |
 | [gbc-integration.md](gbc-integration.md) | 可选 GBC 图像解析桥 |
 | [toolchain-and-onboarding.md](toolchain-and-onboarding.md) | Trainer/引擎前置条件与首次运行 |
 | [windows-validation-guide.md](windows-validation-guide.md) | Windows 实机验收手册 |

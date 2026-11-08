@@ -55,6 +55,18 @@ describe('getSettings', () => {
     expect(getSettings().theme).toBe('dark')
   })
 
+  it('restarts the engine every five generations by default, and repairs a broken value', async () => {
+    const { getSettings, DEFAULT_SETTINGS } = await load()
+    expect(DEFAULT_SETTINGS.mossInferRefreshEvery).toBe(5)
+    expect(getSettings().mossInferRefreshEvery).toBe(5)
+    writeSettings({ mossInferRefreshEvery: -3 })
+    vi.resetModules()
+    expect((await load()).getSettings().mossInferRefreshEvery).toBe(5)
+    writeSettings({ mossInferRefreshEvery: 0 })
+    vi.resetModules()
+    expect((await load()).getSettings().mossInferRefreshEvery).toBe(0)
+  })
+
   it.each([
     ['legacy cuda index uuid', { uuid: 'cuda:0' }],
     ['non-object', 'GPU-123'],

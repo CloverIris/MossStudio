@@ -44,7 +44,7 @@ async function provider(kind: AiProviderKind, apiKey = 'sk-test') {
 function run(
   api: Awaited<ReturnType<typeof load>>,
   input: Parameters<Awaited<ReturnType<typeof load>>['chat']>[0],
-  toolResult: AiToolResult = { ok: true, content: '{"ok":1}' },
+  toolResult: AiToolResult | ((call: AiToolCall) => AiToolResult) = { ok: true, content: '{"ok":1}' },
 ) {
   const events: AiStreamEvent[] = []
   const calls: AiToolCall[] = []
@@ -52,7 +52,7 @@ function run(
     emit: (event) => events.push(event),
     runTool: async (call) => {
       calls.push(call)
-      return toolResult
+      return typeof toolResult === 'function' ? toolResult(call) : toolResult
     },
     tools,
   })
@@ -133,6 +133,109 @@ describe('chat with an OpenAI-compatible provider', () => {
     ])
     expect(result.conversation.messages.map((message) => message.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
     expect(result.reply).toBe('Done.')
+  })
+
+  it('attaches the card a tool returns to the assistant turn that asked', async () => {
+    const { api, id } = await provider('openai')
+    const card = {
+      id: 'card-1',
+      kind: 'choice',
+      title: '构图用哪种？',
+      options: [
+        { id: 'a', label: '三分法' },
+        { id: 'b', label: '居中' },
+      ],
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }
+    replies.push(() =>
+      Response.json({
+        choices: [{ message: { content: '', tool_calls: [{ id: 'c1', function: { name: 'studio_ask_user', arguments: '{}' } }] } }],
+      }),
+    )
+    replies.push(() => Response.json({ choices: [{ message: { content: '选一个', tool_calls: [] } }] }))
+    const { promise } = run(api, { providerId: id, message: '画一张' }, { ok: true, content: JSON.stringify({ shown: true, card }) })
+    const result = await promise
+    const asking = result.conversation.messages.find((message) => message.card)
+    expect(asking).toMatchObject({ role: 'assistant', card })
+  })
+
+  it('ignores a tool result whose card is malformed', async () => {
+    const { api, id } = await provider('openai')
+    replies.push(() =>
+      Response.json({
+        choices: [{ message: { content: '', tool_calls: [{ id: 'c1', function: { name: 'studio_ask_user' } }] } }],
+      }),
+    )
+    replies.push(() => Response.json({ choices: [{ message: { content: 'ok', tool_calls: [] } }] }))
+    const { promise } = run(api, { providerId: id, message: 'x' }, { ok: true, content: '{"card":{"kind":"nope"}}' })
+    expect((await promise).conversation.messages.some((message) => message.card)).toBe(false)
+  })
+
+  it('keeps the answer on the card and refuses a card that is gone', async () => {
+    const { api, id } = await provider('openai')
+    const card = { id: 'card-1', kind: 'choice', title: 'q', options: [{ id: 'a', label: 'A' }], createdAt: '2026-01-01T00:00:00.000Z' }
+    replies.push(() =>
+      Response.json({
+        choices: [{ message: { content: '', tool_calls: [{ id: 'c1', function: { name: 'studio_ask_user' } }] } }],
+      }),
+    )
+    replies.push(() => Response.json({ choices: [{ message: { content: 'ok', tool_calls: [] } }] }))
+    const { promise } = run(api, { providerId: id, message: 'x' }, { ok: true, content: JSON.stringify({ card }) })
+    const conversation = (await promise).conversation
+    const asking = conversation.messages.find((message) => message.card)!
+    const answered = api.answerAgentCard(conversation.id, asking.id, { selected: ['a'] })
+    expect(answered.messages.find((message) => message.id === asking.id)!.card!.answer).toEqual({ selected: ['a'] })
+    expect(store().conversations[0].messages.find((message: { id: string }) => message.id === asking.id).card.answer).toEqual({
+      selected: ['a'],
+    })
+    expect(() => api.answerAgentCard('missing', asking.id, { selected: [] })).toThrow('这段对话已经不在了')
+    expect(() => api.answerAgentCard(conversation.id, 'missing', { selected: [] })).toThrow('这张卡已经不在了')
+  })
+
+  it('collects the writes advanced mode held back into one plan card', async () => {
+    const { api, id } = await provider('openai')
+    replies.push(() =>
+      Response.json({
+        choices: [
+          {
+            message: {
+              content: '我要改两处：描述和标题',
+              tool_calls: [
+                { id: 'c1', function: { name: 'studio_set_prompt' } },
+                { id: 'c2', function: { name: 'studio_add_text_layer' } },
+              ],
+            },
+          },
+        ],
+      }),
+    )
+    replies.push(() => Response.json({ choices: [{ message: { content: '看方案', tool_calls: [] } }] }))
+    const { promise } = run(api, { providerId: id, message: '做一个新年贺卡', mode: 'advanced' }, (call) => ({
+      ok: true,
+      content: JSON.stringify({ proposed: { tool: call.name, args: { step: call.id }, label: `步骤 ${call.id}` } }),
+    }))
+    const result = await promise
+    const card = result.conversation.messages.find((message) => message.card)!.card!
+    expect(card).toMatchObject({ kind: 'plan', title: '将改动 2 处', why: '我要改两处：描述和标题' })
+    expect(card.steps).toEqual([
+      { tool: 'studio_set_prompt', args: { step: 'c1' }, label: '步骤 c1' },
+      { tool: 'studio_add_text_layer', args: { step: 'c2' }, label: '步骤 c2' },
+    ])
+    expect(result.conversation.mode).toBe('advanced')
+    const system = (requests[0]!.body['messages'] as Array<{ content: string }>)[0]!.content
+    expect(system).toContain('高级模式')
+  })
+
+  it('defaults to auto mode and remembers the mode on the conversation', async () => {
+    const { api, id } = await provider('openai')
+    replies.push(() => Response.json({ choices: [{ message: { content: '好', tool_calls: [] } }] }))
+    const first = await run(api, { providerId: id, message: 'x' }).promise
+    expect(first.conversation.mode).toBe('auto')
+    replies.push(() => Response.json({ choices: [{ message: { content: '好', tool_calls: [] } }] }))
+    const second = await run(api, { providerId: id, conversationId: first.conversation.id, message: 'y', mode: 'advanced' }).promise
+    expect(second.conversation.mode).toBe('advanced')
+    const system = (requests[1]!.body['messages'] as Array<{ content: string }>)[0]!.content
+    expect(system).toContain('高级模式')
   })
 
   it('handles non-streaming JSON replies', async () => {

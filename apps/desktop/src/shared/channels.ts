@@ -89,6 +89,7 @@ export const Ipc = {
   aiConversationRename: 'ai:conversation-rename',
   aiChat: 'ai:chat',
   aiToolResult: 'ai:tool-result',
+  aiCardAnswer: 'ai:card-answer',
   gbcStatus: 'gbc:status',
   gbcDoctor: 'gbc:doctor',
   gbcInstallEnv: 'gbc:install-env',

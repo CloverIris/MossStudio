@@ -190,6 +190,7 @@ gpuProfileOverrides: Record<string, {
 - 一个 GPU 内 FIFO；不同 GPU 的 FIFO 可同时推进。应用资源槽按 UUID 隔离，提交任务时 Canvas 绑定即固定，不会在队列等待期间漂移。
 - 两个项目/窗口的 Canvas 共享相同 GPU 槽位管理器，不能通过不同 UI 绕过限额。
 - 远端引擎 runtime 仍以 host + remote UUID 为独立资源域；首期可维持远端串行，不计入本机并发卡数。
+- **连跑重载**（`mossInferRefreshEvery`，默认每 5 张，0 = 关闭）：一批图跑久了会变慢，原因不是泄漏——8 GiB 卡装不下 bf16 的 DiT（约 10.15 GiB），每一步都要从权重文件重读 20 多个 block；这些文件一旦被系统从页缓存里挤出去，每步拷贝从约 0.8 秒涨到 2.5 秒以上（日志里的 `cold: disk`）。每 N 张结束后先 `shutdown` 掉 sidecar（顺带释放 arena），下一张重新 `load`，既把权重读回缓存，也把显存归还；代价是每次多一次加载。设置页 `引擎 › 性能 › 连跑时重新加载引擎`。
 
 ## 9. UX/UI
 

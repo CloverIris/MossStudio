@@ -755,6 +755,8 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
         params,
         progress: { stage: 'idle', current: 0, total: params.steps, percent: 0 },
         queuePosition: queue.length + 1,
+        // How many pictures this one has to wait for; the card says so after it runs.
+        queuedBehind: queue.length + (activeEngineSlots.has(slot) ? 1 : 0),
         startedAt: new Date().toISOString(),
       }
       job.logPath = logPath(job.id)
@@ -884,6 +886,8 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       params,
       progress: { stage: 'idle' as const, current: 0, total: params.steps, percent: 0 },
       queuePosition: undefined,
+      // It is this job's turn now: the wait is over, the run starts here.
+      runStartedAt: new Date().toISOString(),
       preview: undefined,
       error: undefined,
       endedAt: undefined,
@@ -975,6 +979,8 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     params,
     progress: { stage: 'idle' as const, current: 0, total: params.steps, percent: 0 },
     queuePosition: undefined,
+    // It is this job's turn now: the wait is over, the run starts here.
+    runStartedAt: new Date().toISOString(),
     preview: undefined,
     error: undefined,
     endedAt: undefined,

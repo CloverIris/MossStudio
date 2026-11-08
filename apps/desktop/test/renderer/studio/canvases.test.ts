@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import type { AdapterEntry, JobRecord } from '@shared/types'
 import {
+  addRegion,
   applyJobs,
   canvasFromReuse,
   copyAsLayout,
   createLayoutCanvas,
   defaultSettings,
+  editLayer,
   matchAdapterPath,
   moveBox,
+  newRegion,
   regionFromDrag,
   reorderLayers,
   resizeBox,
   resizeCanvas,
+  sceneCanvas,
   settingsFrom,
   taskCanvasFor,
 } from '@renderer/pages/studio/canvases'
@@ -129,6 +133,61 @@ describe('studio/canvases regions', () => {
   it('pulls regions back inside when the picture shrinks', () => {
     const resized = resizeCanvas(canvas({ layers: [layer({ bbox: [600, 600, 1000, 1000] })] }), 512, 512)
     expect(resized.layers[0]!.bbox).toEqual([511, 511, 512, 512])
+  })
+
+  it('creates a text region already carrying its words', () => {
+    expect(newRegion('text', [0, 0, 10, 10], 'r', '新年快乐')).toMatchObject({ id: 'r', kind: 'text', text: '新年快乐' })
+    expect(newRegion('text', [0, 0, 10, 10], 'r')).toMatchObject({ text: '' })
+    expect(newRegion('object', [0, 0, 10, 10], 'r', 'ignored').text).toBeUndefined()
+  })
+
+  it('adds a region from a normalised box, or in the middle when there is none', () => {
+    const { canvas: built, region } = addRegion(canvas({ width: 100, height: 100 }), {
+      kind: 'text',
+      caption: 'title',
+      text: '你好',
+      bbox: { x: 0.1, y: 0.2, w: 0.5, h: 0.1 },
+    })
+    expect(built.layers).toEqual([region])
+    expect(region).toMatchObject({ kind: 'text', caption: 'title', text: '你好', bbox: [10, 20, 60, 30] })
+    expect(addRegion(canvas({ width: 100, height: 100 }), { kind: 'object', caption: 'tree' }).region.bbox).toEqual([20, 20, 80, 80])
+    expect(addRegion(canvas(), { kind: 'object', caption: 'tree', text: 'ignored' }).region.text).toBeUndefined()
+  })
+
+  it('edits one region without touching the others', () => {
+    const region = layer({ id: 'a', kind: 'text', text: 'old', opacity: 1 })
+    expect(editLayer(region, { text: 'new', caption: 'title', visible: false, opacity: 0 }, size)).toMatchObject({
+      id: 'a',
+      text: 'new',
+      caption: 'title',
+      visible: false,
+      opacity: 0.1,
+    })
+    // A box that leaves the picture is pulled back in; nothing else changes.
+    expect(editLayer(layer({ bbox: [0, 0, 10, 10] }), { bbox: [-20, -20, 500, 500] }, size).bbox).toEqual([0, 0, 100, 100])
+    // Only a text region gains words.
+    expect(editLayer(layer(), { text: 'ignored' }, size).text).toBeUndefined()
+  })
+
+  it('builds a scene canvas with its own size, description, regions and words', () => {
+    const built = sceneCanvas(
+      {
+        title: ' 封面 ',
+        prompt: ' a spring cover ',
+        width: 512,
+        height: 768,
+        regions: [{ label: 'character', caption: 'hero' }],
+        texts: [{ caption: 'title', text: '春' }],
+      },
+      [],
+      { ...defaultSettings(), width: 1024, height: 1024 },
+    )
+    expect(built).toMatchObject({ kind: 'layout', title: '封面', prompt: 'a spring cover', width: 512, height: 768 })
+    expect(built.summary.caption).toBe('a spring cover')
+    expect(built.layers.map((item) => [item.kind, item.caption, item.text])).toEqual([
+      ['character', 'hero', undefined],
+      ['text', 'title', '春'],
+    ])
   })
 })
 

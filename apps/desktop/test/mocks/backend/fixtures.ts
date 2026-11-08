@@ -85,6 +85,7 @@ export function settingsFixture(patch: Partial<Settings> = {}): Settings {
     mossInferServerPath: null,
     mossInferMemoryMode: 'balanced',
     mossInferTier: 'high',
+    mossInferRefreshEvery: 5,
     mossInferChannel: 'stable',
     engineDeviceOverrides: {},
     gpuSelection: 'auto',

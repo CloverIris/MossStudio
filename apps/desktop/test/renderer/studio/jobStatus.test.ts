@@ -129,8 +129,34 @@ describe('studio/jobStatus cardJobView', () => {
   it('counts every output and the time it took', () => {
     const outputs = [1, 2, 3, 4].map((index) => ({ path: `/o/${index}.png`, width: 1024, height: 1024, seed: index }))
     const view = cardJobView(canvas({ jobId: 'j1' }), job({ state: 'succeeded', outputs, endedAt: '2026-11-04T10:00:18.000Z' }))
-    expect(view).toMatchObject({ state: 'succeeded', active: false, label: '4 张 · 18 秒' })
+    expect(view).toMatchObject({ state: 'succeeded', active: false, label: '4 张 · 实跑 18 秒' })
     expect(view.outputs).toHaveLength(4)
+  })
+
+  it('separates the queue wait from the run, and falls back for older records', () => {
+    const outputs = [{ path: '/o/1.png', width: 864, height: 1152, seed: 1 }]
+    const queued = cardJobView(
+      canvas({ jobId: 'j1' }),
+      job({
+        state: 'succeeded',
+        outputs,
+        startedAt: '2026-11-04T10:00:00.000Z',
+        runStartedAt: '2026-11-04T10:02:30.000Z',
+        queuedBehind: 2,
+        endedAt: '2026-11-04T10:06:00.000Z',
+      }),
+    )
+    expect(queued.label).toBe('1 张 · 排队 2 张 · 实跑 3 分 30 秒')
+
+    const alone = cardJobView(
+      canvas({ jobId: 'j1' }),
+      job({ state: 'succeeded', outputs, runStartedAt: '2026-11-04T10:00:00.000Z', endedAt: '2026-11-04T10:00:42.000Z' }),
+    )
+    expect(alone.label).toBe('1 张 · 实跑 42 秒')
+
+    // Records written before runStartedAt existed still show a believable time.
+    const old = cardJobView(canvas({ jobId: 'j1' }), job({ state: 'succeeded', outputs, endedAt: '2026-11-04T10:00:18.000Z' }))
+    expect(old.label).toBe('1 张 · 实跑 18 秒')
   })
 
   it('falls back to what the canvas recorded when the job is gone', () => {

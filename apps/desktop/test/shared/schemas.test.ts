@@ -662,6 +662,19 @@ const cases = {
     rejects: { 'empty title': { id: 'c1', title: '' }, 'overlong title': { id: 'c1', title: long(121) } },
   },
 
+  aiCardAnswer: {
+    valid: { conversationId: 'c1', messageId: 'm1', answer: { selected: ['a'] } },
+    accepts: {
+      skipped: { conversationId: 'c1', messageId: 'm1', answer: { selected: [], skipped: true } },
+      'with free text': { conversationId: 'c1', messageId: 'm1', answer: { selected: ['a'], freeText: '用绿色', applied: true } },
+    },
+    rejects: {
+      'no answer': { conversationId: 'c1', messageId: 'm1' },
+      'empty conversation': { conversationId: '', messageId: 'm1', answer: { selected: [] } },
+      'too many picks': { conversationId: 'c1', messageId: 'm1', answer: { selected: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'] } },
+    },
+  },
+
   projectId: { valid: { id: 'p1' }, rejects: { 'empty id': { id: '' } } },
 
   projectLayer: {
