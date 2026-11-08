@@ -883,6 +883,14 @@ export interface JobProgress {
   message?: string
 }
 
+/** The memory mode and tier a job runs with, and what decided them. */
+export interface JobGpuProfile {
+  memoryMode: Settings['mossInferMemoryMode']
+  tier: Settings['mossInferTier']
+  /** model-weights: the DiT / text encoder files allow one tier only. hardware-compatibility: the GPU does. */
+  source: 'recommended' | 'global' | 'gpu-override' | 'hardware-compatibility' | 'model-weights'
+}
+
 export interface JobRecord {
   modelSnapshot?: unknown
   engine?: 'runner' | 'mossinfer'
@@ -904,11 +912,7 @@ export interface JobRecord {
     name: string
     computeCapability?: { major: number; minor: number }
   }
-  gpuProfile?: {
-    memoryMode: Settings['mossInferMemoryMode']
-    tier: Settings['mossInferTier']
-    source: 'recommended' | 'global' | 'gpu-override' | 'hardware-compatibility'
-  }
+  gpuProfile?: JobGpuProfile
   kind?: 'inference' | 'training'
   trainerVersionId?: string
   trainerRunName?: string

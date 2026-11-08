@@ -44,8 +44,11 @@ class FakeSsh extends EventEmitter {
   stdout = new PassThrough()
   stderr = new PassThrough()
   requests: Request[] = []
+  closed = false
   constructor(reply: (request: Request, child: FakeSsh) => void) {
     super()
+    // moss-server exits when its stdin closes, and the SSH session with it.
+    this.stdin.on('end', () => this.close(0))
     let buffer = ''
     this.stdin.on('data', (chunk: Buffer) => {
       const lines = (buffer + chunk.toString()).split('\n')
@@ -62,8 +65,15 @@ class FakeSsh extends EventEmitter {
   }
   kill(): boolean {
     // A real process closes after kill() returns.
-    setImmediate(() => this.emit('close', null))
+    this.close(null)
     return true
+  }
+  close(code: number | null): void {
+    setImmediate(() => {
+      if (this.closed) return
+      this.closed = true
+      this.emit('close', code)
+    })
   }
 }
 
@@ -271,6 +281,65 @@ describe('runRemoteEngineJob: ended during the upload', () => {
     await vi.waitFor(() => expect(removals()).toBe(2))
     expect(sshWriteFile).toHaveBeenCalledTimes(1)
     expect(child.requests.some((request) => request.method === 'generate')).toBe(false)
+  })
+})
+
+describe('runRemoteEngineJob: the session ends with the job', () => {
+  function run(jobId: string): Promise<number> {
+    return new Promise<number>((resolve) => {
+      void remote.runRemoteEngineJob(
+        host,
+        { model: '/m', output: '/o.png', localOutput: join(dir(), `${jobId}.png`), mode: 'balanced', tier: 'high', jobId, params },
+        { event: () => undefined, stderr: () => undefined, done: resolve },
+      )
+    })
+  }
+
+  it('shuts the moss-server down once the picture is fetched, so it does not keep the model in GPU memory', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      expect(await run('job-s1')).toBe(0)
+      const killed = vi.spyOn(child, 'kill')
+      expect(child.requests.at(-1)).toMatchObject({ method: 'shutdown' })
+      await vi.waitFor(() => expect(child.closed).toBe(true))
+      // The server exited on its own: the kill it was given time for never comes.
+      await vi.advanceTimersByTimeAsync(remote.REMOTE_SHUTDOWN_TIMEOUT_MS * 2)
+      expect(killed).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shuts it down when the generation fails too', async () => {
+    onGenerate = (request, c) => {
+      c.send({ id: request.id, result: { accepted: true } })
+      c.send({ event: 'done', id: request.id, status: 'error', error: { code: 'out_of_memory', message: 'oom' } })
+    }
+    expect(await run('job-s2')).toBe(1)
+    expect(child.requests.at(-1)).toMatchObject({ method: 'shutdown' })
+    await vi.waitFor(() => expect(child.closed).toBe(true))
+  })
+
+  it('kills the session when the moss-server does not exit in time', async () => {
+    const reply = spawn.getMockImplementation()!
+    spawn.mockImplementation((...args: unknown[]) => {
+      const stubborn = reply(...args) as FakeSsh
+      stubborn.stdin.removeAllListeners('end')
+      return stubborn
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const done = run('job-s3')
+      await vi.waitFor(() => expect(child?.requests.some((request) => request.method === 'shutdown')).toBe(true))
+      expect(await done).toBe(0)
+      const killed = vi.spyOn(child, 'kill')
+      await vi.advanceTimersByTimeAsync(remote.REMOTE_SHUTDOWN_TIMEOUT_MS - 1)
+      expect(killed).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(killed).toHaveBeenCalledWith('SIGKILL')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

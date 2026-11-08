@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { gpuRequiresBf16Tier, recommendGpuMemoryMode, resolveGpuProfile, settingsForGpuProfile } from '@shared/gpuProfile'
+import {
+  gpuLacks8BitAttention,
+  recommendGpuMemoryMode,
+  resolveGpuProfile,
+  settingsForGpuProfile,
+  tierForWeights,
+  withWeightTier,
+  type WeightPrecisions,
+} from '@shared/gpuProfile'
 import type { GpuInventoryDevice, GpuProfileOverride, Settings } from '@shared/types'
 
 const GiB = 1024 ** 3
@@ -62,18 +70,18 @@ describe('recommendGpuMemoryMode', () => {
   })
 })
 
-describe('gpuRequiresBf16Tier', () => {
+describe('gpuLacks8BitAttention', () => {
   it('flags pre-Ampere GPUs only', () => {
-    expect(gpuRequiresBf16Tier(gpu('rtx20', 8 * GiB, 7, 5))).toBe(true)
-    expect(gpuRequiresBf16Tier(gpu('v100', 16 * GiB, 7, 0))).toBe(true)
-    expect(gpuRequiresBf16Tier(gpu('pascal', 8 * GiB, 6, 1))).toBe(true)
-    expect(gpuRequiresBf16Tier(gpu('ampere', 12 * GiB, 8, 6))).toBe(false)
-    expect(gpuRequiresBf16Tier(gpu('blackwell', 12 * GiB, 12, 0))).toBe(false)
+    expect(gpuLacks8BitAttention(gpu('rtx20', 8 * GiB, 7, 5))).toBe(true)
+    expect(gpuLacks8BitAttention(gpu('v100', 16 * GiB, 7, 0))).toBe(true)
+    expect(gpuLacks8BitAttention(gpu('pascal', 8 * GiB, 6, 1))).toBe(true)
+    expect(gpuLacks8BitAttention(gpu('ampere', 12 * GiB, 8, 6))).toBe(false)
+    expect(gpuLacks8BitAttention(gpu('blackwell', 12 * GiB, 12, 0))).toBe(false)
   })
 
   it('does not restrict GPUs with an unknown capability', () => {
-    expect(gpuRequiresBf16Tier(gpu('unknown', 8 * GiB))).toBe(false)
-    expect(gpuRequiresBf16Tier(gpu('zero', 8 * GiB, 0, 0))).toBe(false)
+    expect(gpuLacks8BitAttention(gpu('unknown', 8 * GiB))).toBe(false)
+    expect(gpuLacks8BitAttention(gpu('zero', 8 * GiB, 0, 0))).toBe(false)
   })
 })
 
@@ -150,30 +158,68 @@ describe('resolveGpuProfile', () => {
     })
   })
 
-  it('forces BF16 Reference on pre-Ampere GPUs without constraining others', () => {
-    const mixed: ProfileSettings = {
-      ...settings(),
-      mossInferTier: 'turbo',
-      gpuProfileOverrides: { rtx20: { tier: 'turbo' }, ampere: { tier: 'high' } },
-    }
-    const rtx20 = gpu('rtx20', 8 * GiB, 7, 5)
-    const v100 = gpu('v100', 16 * GiB, 7, 0)
-    const ampere = gpu('ampere', 12 * GiB, 8, 6)
-
-    expect(resolveGpuProfile(mixed, rtx20)).toEqual({ memoryMode: 'balanced', tier: 'reference', source: 'hardware-compatibility' })
-    expect(resolveGpuProfile(mixed, v100)).toEqual({ memoryMode: 'balanced', tier: 'reference', source: 'hardware-compatibility' })
-    expect(resolveGpuProfile(mixed, ampere)).toEqual({ memoryMode: 'balanced', tier: 'high', source: 'gpu-override' })
-  })
-
-  it('does not blame hardware when the user already chose Reference', () => {
-    const reference: ProfileSettings = { ...settings(), mossInferTier: 'reference' }
-    expect(resolveGpuProfile(reference, gpu('rtx20', 8 * GiB, 7, 5))).toEqual({
+  it('passes the tier asked for through on every GPU: the weights settle it later', () => {
+    const turbo: ProfileSettings = { ...settings(), gpuProfileOverrides: { rtx20: { tier: 'turbo' } } }
+    expect(resolveGpuProfile(turbo, gpu('rtx20', 8 * GiB, 7, 5))).toEqual({ memoryMode: 'balanced', tier: 'turbo', source: 'gpu-override' })
+    expect(resolveGpuProfile(settings(), gpu('v100', 16 * GiB, 7, 0))).toEqual({
       memoryMode: 'balanced',
-      tier: 'reference',
+      tier: 'high',
       source: 'recommended',
     })
-    expect(resolveGpuProfile({ ...reference, gpuProfileMode: 'custom' }, gpu('rtx20', 8 * GiB, 7, 5)).source).toBe('global')
-    expect(resolveGpuProfile(settings({ rtx20: { tier: 'reference' } }), gpu('rtx20', 8 * GiB, 7, 5)).source).toBe('gpu-override')
+  })
+})
+
+const bf16: WeightPrecisions = { dit: 'bf16', textEncoder: 'bf16' }
+const rtx20 = gpu('rtx20', 8 * GiB, 7, 5)
+const ampere = gpu('ampere', 12 * GiB, 8, 6)
+
+describe('tierForWeights', () => {
+  it('runs an INT8 DiT or text encoder at High, on Turing too', () => {
+    for (const device of [rtx20, ampere]) {
+      for (const requested of ['reference', 'high', 'turbo'] as const) {
+        expect(tierForWeights(requested, { dit: 'int8', textEncoder: 'bf16' }, device).tier).toBe('high')
+        expect(tierForWeights(requested, { dit: 'bf16', textEncoder: 'int8' }, device).tier).toBe('high')
+        expect(tierForWeights(requested, { dit: 'bf16', textEncoder: 'w4a8' }, device).tier).toBe('high')
+      }
+    }
+    expect(tierForWeights('reference', { dit: 'int8', textEncoder: 'bf16' }, rtx20)).toEqual({ tier: 'high', reason: 'weights' })
+    expect(tierForWeights('high', { dit: 'int8', textEncoder: 'bf16' }, rtx20)).toEqual({ tier: 'high', reason: null })
+  })
+
+  it('runs an INT4 DiT only as Turbo, whatever the text encoder', () => {
+    expect(tierForWeights('high', { dit: 'w4a4', textEncoder: 'int8' }, ampere)).toEqual({ tier: 'turbo', reason: 'weights' })
+    expect(tierForWeights('turbo', { dit: 'w4a4', textEncoder: 'bf16' }, rtx20)).toEqual({ tier: 'turbo', reason: null })
+  })
+
+  it('keeps the choice for bf16 weights where the GPU has 8-bit attention, except Turbo', () => {
+    expect(tierForWeights('reference', bf16, ampere)).toEqual({ tier: 'reference', reason: null })
+    expect(tierForWeights('high', bf16, ampere)).toEqual({ tier: 'high', reason: null })
+    expect(tierForWeights('turbo', bf16, ampere)).toEqual({ tier: 'high', reason: 'weights' })
+  })
+
+  it('runs bf16 weights as Reference where the GPU has no 8-bit attention', () => {
+    expect(tierForWeights('high', bf16, rtx20)).toEqual({ tier: 'reference', reason: 'gpu' })
+    expect(tierForWeights('reference', bf16, rtx20)).toEqual({ tier: 'reference', reason: null })
+  })
+
+  it('keeps the choice for unknown weights (the file may be INT4), and runs Reference without 8-bit attention', () => {
+    const unknown: WeightPrecisions = { dit: null, textEncoder: 'bf16' }
+    expect(tierForWeights('high', unknown, rtx20)).toEqual({ tier: 'reference', reason: 'gpu' })
+    expect(tierForWeights('turbo', unknown, ampere)).toEqual({ tier: 'turbo', reason: null })
+    expect(tierForWeights('high', { dit: 'bf16', textEncoder: null }, gpu('unknown', 8 * GiB))).toEqual({ tier: 'high', reason: null })
+  })
+})
+
+describe('withWeightTier', () => {
+  it('names what changed the tier', () => {
+    const profile = resolveGpuProfile(settings(), rtx20)
+    expect(withWeightTier(profile, bf16, rtx20)).toEqual({ memoryMode: 'balanced', tier: 'reference', source: 'hardware-compatibility' })
+    expect(withWeightTier(profile, { dit: 'w4a4', textEncoder: 'bf16' }, rtx20)).toEqual({
+      memoryMode: 'balanced',
+      tier: 'turbo',
+      source: 'model-weights',
+    })
+    expect(withWeightTier(profile, { dit: 'int8', textEncoder: 'bf16' }, rtx20)).toEqual(profile)
   })
 })
 

@@ -2,7 +2,7 @@ import { FolderPlus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Ipc } from '@shared/channels'
 import { compareEngineTags } from '@shared/engineUpdate'
-import { gpuRequiresBf16Tier } from '@shared/gpuProfile'
+import { gpuLacks8BitAttention } from '@shared/gpuProfile'
 import type { GpuInventorySnapshot, LocalEngineVersion, Settings } from '@shared/types'
 import { call } from '../../lib/api'
 import { date } from '../../lib/format'
@@ -69,10 +69,7 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
           options={MEMORY_OPTIONS}
         />
       </Row>
-      <Row
-        title="性能档位"
-        description="Reference 最精确；High 和 Turbo 更快，需要对应的量化模型。较老的显卡（SM 8.0 以下）总是使用 Reference。"
-      >
+      <Row title="性能档位" description="Reference 最精确，High 更快。">
         <Segmented
           label="性能档位"
           value={settings.mossInferTier}
@@ -102,16 +99,13 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
           <SubHeading>每块显卡单独设置</SubHeading>
           {inventory!.devices.map((device) => {
             const override = settings.gpuProfileOverrides?.[device.uuid]
-            const bf16Only = gpuRequiresBf16Tier(device)
+            // The model files decide the tier there (bf16 runs Reference), so there is nothing to pick.
+            const tierFixed = gpuLacks8BitAttention(device)
             // Vulkan / HIP engines take neither setting: one quiet line instead of the pickers.
             const fixed = fixedEngineSettingsNote(engine.readiness, device.uuid)
             if (fixed) return <Row key={device.uuid} title={device.name} description={fixed} />
             return (
-              <Row
-                key={device.uuid}
-                title={device.name}
-                description={bf16Only ? '这块显卡只能使用 Reference 档位' : `显卡 ${device.index}`}
-              >
+              <Row key={device.uuid} title={device.name} description={`显卡 ${device.index}`}>
                 <Select
                   aria-label={`${device.name} 显存模式`}
                   className="w-32"
@@ -119,14 +113,15 @@ export function EngineAdvanced({ engine, inventory }: { engine: EngineState; inv
                   onValueChange={(value) => saveOverride(device.uuid, 'memoryMode', value)}
                   options={[{ value: 'global', label: '跟随上面' }, ...MEMORY_OPTIONS]}
                 />
-                <Select
-                  aria-label={`${device.name} 性能档位`}
-                  className="w-32"
-                  disabled={bf16Only}
-                  value={bf16Only ? 'reference' : (override?.tier ?? 'global')}
-                  onValueChange={(value) => saveOverride(device.uuid, 'tier', value)}
-                  options={[{ value: 'global', label: '跟随上面' }, ...TIER_OPTIONS]}
-                />
+                {tierFixed ? null : (
+                  <Select
+                    aria-label={`${device.name} 性能档位`}
+                    className="w-32"
+                    value={override?.tier ?? 'global'}
+                    onValueChange={(value) => saveOverride(device.uuid, 'tier', value)}
+                    options={[{ value: 'global', label: '跟随上面' }, ...TIER_OPTIONS]}
+                  />
+                )}
               </Row>
             )
           })}
