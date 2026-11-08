@@ -86,7 +86,7 @@ export function feedName(channel) {
   return `update-${channel}.json`
 }
 
-export const RELEASE_REPO = 'CloverIris/MossStudio'
+export const RELEASE_REPO = 'ShallowElec/MossStudio'
 
 export function releaseAssetUrl(version, file, repo = RELEASE_REPO) {
   return `https://github.com/${repo}/releases/download/v${version}/${encodeURIComponent(file)}`

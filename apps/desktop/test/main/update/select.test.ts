@@ -5,7 +5,7 @@ import { activeAnnouncements, channelsToRead, minimumVersionOf, selectUpdate } f
 import { feedFixture } from './helpers'
 
 const asset = (name: string, size: number): FeedAsset => ({
-  url: `https://github.com/CloverIris/MossStudio/releases/download/x/${name}`,
+  url: `https://github.com/ShallowElec/MossStudio/releases/download/x/${name}`,
   sha256: 'b'.repeat(64),
   size,
 })

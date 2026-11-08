@@ -21,7 +21,7 @@ code: apps/desktop/src/renderer/src/pages/install/, apps/desktop/src/renderer/sr
 
 ## 1. 下载安装包
 
-到 GitHub 的 Releases 页面（<https://github.com/CloverIris/MossStudio/releases>）下载最新版本：
+到 GitHub 的 Releases 页面（<https://github.com/ShallowElec/MossStudio/releases>）下载最新版本：
 
 | 系统 | 文件 |
 | --- | --- |

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/proc"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/proc"
 )
 
 func TestValidateRefusesSymlinkEscape(t *testing.T) {

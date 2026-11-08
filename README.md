@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/CloverIris/MossStudio/releases"><img alt="release" src="https://img.shields.io/github/v/release/CloverIris/MossStudio?label=MossStudio&color=2F855A"></a>
+  <a href="https://github.com/ShallowElec/MossStudio/releases"><img alt="release" src="https://img.shields.io/github/v/release/ShallowElec/MossStudio?label=MossStudio&color=2F855A"></a>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6">
   <img alt="GPU" src="https://img.shields.io/badge/GPU-NVIDIA%20CUDA%20%7C%20Vulkan%20%7C%20AMD%20HIP-76B900?logo=nvidia&logoColor=white">
@@ -59,7 +59,7 @@ MossStudio 为每块显卡自动选一个引擎，规则来自代码（`apps/des
 
 ## 安装与第一张图
 
-1. 到 [Releases](https://github.com/CloverIris/MossStudio/releases) 下载最新版本：Windows 是 `MossStudio-Setup-<版本>-x64.exe`，Linux 是 `MossStudio-Setup-<版本>-linux-x64.run`，macOS 是 `.dmg`。每个系统还有一个解压即用的便携版。
+1. 到 [Releases](https://github.com/ShallowElec/MossStudio/releases) 下载最新版本：Windows 是 `MossStudio-Setup-<版本>-x64.exe`，Linux 是 `MossStudio-Setup-<版本>-linux-x64.run`，macOS 是 `.dmg`。每个系统还有一个解压即用的便携版。
 2. 运行安装包。安装程序会发现电脑上的旧版 MossStudio，默认沿用它的作品、模型和设置。
 3. 第一次打开进入「准备开始创作」：确认显卡那一行，点「开始下载」。引擎和推荐模型一起下载，点「先去看看」可以边下边逛。
 4. 下载完成后在「创作」里写一句描述，点「生成」。

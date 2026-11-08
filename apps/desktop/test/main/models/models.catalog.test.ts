@@ -84,7 +84,7 @@ describe('getCatalog sources', () => {
   it('uses the remote catalog when reachable', async () => {
     contentDir.mockReturnValue(null)
     const fetch = vi.fn(async (url: string) => {
-      expect(url).toBe('https://raw.githubusercontent.com/CloverIris/MossStudio/main/apps/desktop/resources/models.json')
+      expect(url).toBe('https://raw.githubusercontent.com/ShallowElec/MossStudio/main/apps/desktop/resources/models.json')
       return new Response(JSON.stringify({ schema_version: 2, models: [vae] }))
     })
     vi.stubGlobal('fetch', fetch)

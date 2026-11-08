@@ -55,7 +55,7 @@ describe('verifyFeedSignature', () => {
 
 describe('parseVerifiedFeed', () => {
   it('parses only after the signature checks out, ignoring unknown keys and platforms', () => {
-    const asset = { url: 'https://github.com/CloverIris/MossStudio/releases/download/v1.1.0/a.zip', sha256: 'a'.repeat(64), size: 10 }
+    const asset = { url: 'https://github.com/ShallowElec/MossStudio/releases/download/v1.1.0/a.zip', sha256: 'a'.repeat(64), size: 10 }
     const raw = Buffer.from(
       JSON.stringify({
         ...feedFixture({ version: '1.1.0' }),

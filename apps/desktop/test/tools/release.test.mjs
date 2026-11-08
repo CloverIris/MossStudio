@@ -94,7 +94,7 @@ describe('versions and names', () => {
       platform: 'darwin-arm64',
     })
     expect(parseDeltaName('MossStudio-1.0.0-win32-x64-full.zip')).toBeNull()
-    expect(releaseAssetUrl('1.2.3', 'a b.zip')).toBe('https://github.com/CloverIris/MossStudio/releases/download/v1.2.3/a%20b.zip')
+    expect(releaseAssetUrl('1.2.3', 'a b.zip')).toBe('https://github.com/ShallowElec/MossStudio/releases/download/v1.2.3/a%20b.zip')
     expect(() => artifactNames('1.2.3', 'linux-arm64')).toThrow(/unknown platform/)
   })
 

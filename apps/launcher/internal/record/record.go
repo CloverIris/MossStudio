@@ -35,7 +35,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/fsutil"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/fsutil"
 )
 
 // FileName is the record's name inside the install root.

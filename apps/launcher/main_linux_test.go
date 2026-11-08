@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/payload"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/record"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/payload"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/record"
 )
 
 // buildLauncher compiles this package for the host into dir.
