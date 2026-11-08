@@ -644,8 +644,11 @@ export function requestRunningEngine(
   method: string,
   params: Record<string, unknown>,
   timeoutMs = 60_000,
+  /** Only this GPU's moss-server (each GPU runs the engine of its own package). */
+  deviceUuid?: string,
 ): Promise<Record<string, unknown>> | null {
-  const runtime = [...runtimes.values()].find((item) => item.child?.stdin.writable && item.hello)
+  const candidates = deviceUuid ? [runtimes.get(deviceUuid)].filter((item) => item !== undefined) : [...runtimes.values()]
+  const runtime = candidates.find((item) => item.child?.stdin.writable && item.hello)
   if (!runtime) return null
   const id = `mi-${++runtime.reqSeq}`
   return new Promise((resolvePromise, rejectPromise) => {
