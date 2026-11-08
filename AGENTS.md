@@ -48,9 +48,9 @@ On Linux, `pnpm test:e2e`, `pnpm test:scenarios` and `pnpm test:install` run the
 ## Before you change code
 
 - Any change: [CONTRIBUTING.md](CONTRIBUTING.md).
-- Renderer: [docs/design/ui-rules.md](docs/design/ui-rules.md).
+- Renderer: [docs/reference/ui-rules.md](docs/reference/ui-rules.md).
 - Main process, services, engine: [docs/architecture.md](docs/architecture.md).
-- Launcher, install, update, release: [docs/release.md](docs/release.md) and `apps/launcher/AGENTS.md`.
+- Launcher, install, update, release: [docs/how-to/release.md](docs/how-to/release.md) and `apps/launcher/AGENTS.md`.
 - Engine protocol and capabilities: the [MossInfer repository](https://github.com/mossimage-cpp/mossimage.cpp) docs. Do not copy engine facts into this repo.
 
 ## Rules
@@ -108,7 +108,7 @@ On Linux, `pnpm test:e2e`, `pnpm test:scenarios` and `pnpm test:install` run the
 ## Do not
 
 - Edit `docs/archive/` or the `release/notes/` file of a shipped version.
-- Touch the signing key or add keys outside the PR flow in `docs/release.md`. The private key lives only in the GitHub `release` environment.
+- Touch the signing key or add keys outside the PR flow in `docs/how-to/release.md`. The private key lives only in the GitHub `release` environment.
 - Push to `main`, merge, or tag.
 - Run E2E or the install test with a visible window.
 - Mark an ADR accepted, or edit one that is.

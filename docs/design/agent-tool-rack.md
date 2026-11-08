@@ -2,7 +2,7 @@
 
 - 状态：🟡 **P0–P4 已实现**（2026-11-08）；真机对话验收待做
 - 日期：2026-11-08
-- 关联：[agent-and-prompt.md](../agent-and-prompt.md)（Provider 与现状）、[multi-canvas-studio.md](./multi-canvas-studio.md)（画布板）、[layout-schema.md](../layout-schema.md)（布局编译契约）、[ui-rules.md](./ui-rules.md)（界面规则）
+- 关联：[agent-and-prompt.md](../agent-and-prompt.md)（Provider 与现状）、[multi-canvas-studio.md](./multi-canvas-studio.md)（画布板）、[layout-schema.md](../reference/layout-schema.md)（布局编译契约）、[ui-rules.md](../reference/ui-rules.md)（界面规则）
 - 触发：右侧 Agent 创建「文字区域」时，提示词和要显示的文字没有分开，工具建出来的区域无法生成
 
 ## 0. 摘要

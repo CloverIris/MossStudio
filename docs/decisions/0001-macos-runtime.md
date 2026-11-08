@@ -101,4 +101,4 @@ MLX 在 Apple Silicon 上确实最快，而且已有两个可参考的 MOSS 实�
 4. 判定：block 有效算力 ≥ 1.5 TFLOP/s 且峰值内存可控 → 维持 MNN 决策；
    否则回到本 ADR，启用 MLX 快路径。
 
-> 验收数字写进 `docs/benchmarks/v2-mnn-spike.md`，不达标就改决策，不硬撑。
+> 验收数字写进 `docs/archive/v2-mnn-spike.md`，不达标就改决策，不硬撑。

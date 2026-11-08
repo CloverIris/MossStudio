@@ -1,6 +1,6 @@
 # Contributing to MossStudio
 
-This page covers how the repository is laid out, how to build and test it, and how changes reach `main`. Product and architecture docs live in [docs/](docs/README.md); the release process is in [docs/release.md](docs/release.md). Coding agents follow [AGENTS.md](AGENTS.md), which keeps the same rules in short form; keep the two in step when a rule changes.
+This page covers how the repository is laid out, how to build and test it, and how changes reach `main`. Product and architecture docs live in [docs/](docs/README.md); the release process is in [docs/how-to/release.md](docs/how-to/release.md). Coding agents follow [AGENTS.md](AGENTS.md), which keeps the same rules in short form; keep the two in step when a rule changes.
 
 ## Layout
 
@@ -64,7 +64,7 @@ Before opening a PR, run lint, format check, typecheck and unit tests, plus E2E 
 
 - **TypeScript:** `strict`. Prettier owns formatting; ESLint catches unhandled promises, unused code, hook misuse, non-exhaustive `switch` over unions, missing `type` on type-only imports, and imports across process boundaries (renderer, shared, main). No `.only`, `.skip` or TODO stubs in tests.
 - **Go:** `gofmt`, `go vet`.
-- **UI:** follow [docs/design/ui-rules.md](docs/design/ui-rules.md), which covers:
+- **UI:** follow [docs/reference/ui-rules.md](docs/reference/ui-rules.md), which covers:
   - which primitive to use for what, and which button tone for which action;
   - delete vs remove;
   - loading, empty and error states;
@@ -75,4 +75,4 @@ Before opening a PR, run lint, format check, typecheck and unit tests, plus E2E 
 
 ## Releases
 
-See [docs/release.md](docs/release.md). In short: bump both `package.json` versions, add `release/notes/<version>.md`, merge the PR, then tag `v<version>` on `main`.
+See [docs/how-to/release.md](docs/how-to/release.md). In short: bump both `package.json` versions, add `release/notes/<version>.md`, merge the PR, then tag `v<version>` on `main`.

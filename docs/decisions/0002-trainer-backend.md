@@ -112,7 +112,7 @@ launcher ── 发现/体检 ──> 用户自备环境（uv/conda/venv）
 ## 5. 我们仍然复用什么
 
 - **知识**：模型结构、checkpoint 键位、SiTU/调制/CFG 数值约定、采样器细节
-  （已在 `docs/model-notes.md` 中引用）；
+  （已在 `docs/reference/model-notes.md` 中引用）；
 - **格式兼容**：ComfyUI 适配器键位、KohakuMoss 单文件权重可直接被引擎读取；
 - **对照**：用它的推理输出作为引擎 parity 的第二个参考（第一个是官方 diffusers）。
 

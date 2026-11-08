@@ -198,7 +198,7 @@ Canvas 底部和终端当前任务头部共同显示：
 
 ## 7. 持久化与兼容迁移
 
-> **As-built（2026-10-31）**：最终落地的 `schemaVersion` 是 **3**，不是本节建议的 2。兼容策略也已反转——**不保留 v1/v2 读取**，旧文件直接视为不可读。本节以下内容保留为当时的推导过程，字段以 [backend-and-project.md](../backend-and-project.md) 为准。
+> **As-built（2026-10-31）**：最终落地的 `schemaVersion` 是 **3**，不是本节建议的 2。兼容策略也已反转——**不保留 v1/v2 读取**，旧文件直接视为不可读。本节以下内容保留为当时的推导过程，字段以 [backend-and-project.md](../reference/project-and-backend.md) 为准。
 
 当前 `ProjectDocument` 为 `schemaVersion: 1`，在 Project 根记录一份尺寸、summary、layers、Prompt 和生成参数。多 Canvas 需要将创作状态下沉到节点层级。
 
