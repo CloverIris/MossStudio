@@ -1,6 +1,6 @@
 {
   "name": "@clover/desktop",
-  "version": "1.0.3",
+  "version": "2.0.0",
   "productName": "MossStudio",
   "private": true,
   "description": "MossStudio desktop shell",
