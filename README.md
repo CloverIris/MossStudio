@@ -137,9 +137,9 @@ pnpm dev
 | --- | --- |
 | [MossInfer 引擎](https://github.com/mossimage-cpp/mossimage.cpp) | 推理引擎源码、集成指南与发布包 |
 | [MossInfer 性能报告](docs/records/2026-10-31-mossinfer-1.0.0-performance.md) | 引擎实测数据与对比 |
-| [实现状态](docs/archive/status.md) | 完成度、验证证据、已知限制 |
-| [产品设计](docs/product-design.md) | 工作台信息架构与交互 |
-| [架构](docs/architecture.md) | 进程、服务、引擎协议 |
+| [安装与首次运行](docs/how-to/setup.md) | 从下载到第一张图 |
+| [Studio 设计](docs/explanation/studio-design.md) | 为什么是节点画板（英文） |
+| [架构](docs/reference/architecture.md) | 进程、窗口、服务与存储（英文） |
 | [后端与 Project](docs/reference/project-and-backend.md) | 项目结构、Engine Job |
 | [Layout JSON](docs/reference/layout-schema.md) | 布局编译契约 |
 | [文档索引](docs/README.md) | 全部文档与阅读顺序 |

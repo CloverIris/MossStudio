@@ -15,7 +15,7 @@ ADR-0009 made MossInfer the only inference engine and, in point 2, limited it to
 - Users with AMD, Intel or older NVIDIA cards otherwise get nothing locally; ADR-0009 pointed them at a remote host.
 - No Python and no manual runtime download: whatever runs must be a release asset of MossInfer that the app installs and verifies itself (ADR-0009 points 1 and 5).
 - A feature the engine cannot do must be hidden before the job starts, with a reason, rather than fail during a run.
-- Jobs are dispatched per GPU (`docs/design/gpu-device-management.md`), so one machine can mix a CUDA GPU and a Vulkan one.
+- Jobs are dispatched per GPU (`docs/reference/engines.md`), so one machine can mix a CUDA GPU and a Vulkan one.
 - Remote hosts stay CUDA only; they run `moss-server`.
 
 ## Considered options
