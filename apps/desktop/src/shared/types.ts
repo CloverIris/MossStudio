@@ -399,8 +399,11 @@ export interface EngineReadiness {
   state: EngineReadinessState
   path: string | null
   reason?: string
-  /** Per local GPU: the package it runs (null = nothing installed runs on it). */
-  devices?: Array<{ deviceUuid: string; name: string; packageId: string | null; path: string | null }>
+  /**
+   * Per local GPU: the package it runs (null = nothing installed runs on it). `memorySkipped`: it has none
+   * because its memory is too small for the model and another GPU runs one (no engine chosen for it in 高级).
+   */
+  devices?: Array<{ deviceUuid: string; name: string; packageId: string | null; path: string | null; memorySkipped?: boolean }>
   installing?: EngineInstallProgress
   lastAttempt?: EngineInstallAttempt
 }

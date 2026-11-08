@@ -22,11 +22,12 @@ export function invalidateEngineReadiness(): void {
  */
 function calculateReadiness(): ReadinessBase {
   const engines = deviceEngines()
-  const devices = engines.map(({ gpu, engine }) => ({
+  const devices = engines.map(({ gpu, engine, memorySkipped }) => ({
     deviceUuid: gpu.id,
     name: gpu.name,
     packageId: engine?.packageId ?? null,
     path: engine?.binaryPath ?? null,
+    ...(memorySkipped ? { memorySkipped: true } : {}),
   }))
   const selection = getSettings().gpuSelection
   const preferred =

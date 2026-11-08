@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { Events } from '@shared/channels'
 import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, ModelBundle, GpuInventoryDevice } from '@shared/types'
 import { cliUnsupported } from '../lib/cliProtocol'
-import { codedError } from '../lib/codedError'
+import { codedError, errorCode } from '../lib/codedError'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
 import { prepareModelSource } from './modelBundles'
@@ -14,7 +14,7 @@ import { resolveLegacyModelPath } from './modelReadiness'
 import { cancelMossInferJob, releaseStaleMossInferRuntimes, restartMossInfer, runMossInferJob } from './mossInfer'
 import { jobWeightPrecisions } from './weightPrecision'
 import { cancelCliJob, cliBundleDtypeProblem, hipDeviceIndex, runCliJob, type HipIndexResult } from './cliEngine'
-import { currentEngineMachine, localServerPath, resolveDeviceEngine, type DeviceEngine } from './engineInstalls'
+import { currentEngineMachine, localServerPath, resolveDeviceEngine, skippedForMemory, type DeviceEngine } from './engineInstalls'
 import { getCatalog } from './models'
 import { getSettings } from './settings'
 import { refreshGpuInventory } from './devices'
@@ -566,7 +566,8 @@ async function pumpEngineQueue(slot: string): Promise<void> {
     update(next.job, {
       queuePosition: undefined,
       state: 'failed',
-      error: { code: 'E_ENGINE', message: error instanceof Error ? error.message : String(error) },
+      // Keep a refusal's own code (E_GPU_TOO_SMALL, E_NOT_SUPPORTED) for the job's Activity entry.
+      error: { code: errorCode(error) ?? 'E_ENGINE', message: error instanceof Error ? error.message : String(error) },
       endedAt: new Date().toISOString(),
       exitCode: 1,
     })
@@ -592,16 +593,16 @@ async function resolveLocalGpu(
     const cliAll = inventory.devices.filter((device) => cliEngineOf(device.uuid))
     const cliAllUuids = new Set(cliAll.map((device) => device.uuid))
     const cudaAll = inventory.devices.filter((device) => !cliAllUuids.has(device.uuid) && (device.vendor ?? 'nvidia') === 'nvidia')
+    // One compatibility probe per assignment, asked only when a CUDA GPU is considered.
+    let probed: Promise<Awaited<ReturnType<typeof probeLocalEngineGpuCompatibility>>> | null = null
     const cudaCompatible = async (cudaGpus: GpuInventoryDevice[]): Promise<Set<string>> => {
       if (!cudaGpus.length) return new Set()
-      let probe: Awaited<ReturnType<typeof probeLocalEngineGpuCompatibility>>
-      try {
-        probe = await probeLocalEngineGpuCompatibility()
-      } catch (error) {
+      probed ??= probeLocalEngineGpuCompatibility().catch((error: unknown) => {
         throw new Error(
           `自动分配无法验证引擎与 GPU 的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备，或手动指定 GPU。`,
         )
-      }
+      })
+      const probe = await probed
       return new Set(
         cudaGpus
           .filter(
@@ -616,39 +617,59 @@ async function resolveLocalGpu(
           .map((device) => device.uuid),
       )
     }
-    // A card with too little memory for the model would only fail the job: the GPUs that can run and are big
-    // enough come first, the integrated one included. When none is, every GPU that can run stays in.
+    /** The GPUs among these that can take this job (engine, then what the job and the model need), or why none can. */
+    const fitting = async (
+      cliGpus: GpuInventoryDevice[],
+      cudaGpus: GpuInventoryDevice[],
+    ): Promise<{ uuids: Set<string>; cliUuids: Set<string> } | { refusal: Error }> => {
+      const cudaUuids = await cudaCompatible(cudaGpus)
+      const cliUuids = new Set(cliGpus.map((device) => device.uuid))
+      // Automatic assignment prefers the full engine: CLI GPUs only on a machine without a CUDA one,
+      // and only for plain text to image; integrated GPUs only when there is no discrete one.
+      const needsCuda = cliUnsupported(cliEngineOf(cliGpus[0]?.uuid)?.kind ?? 'vulkan', params)
+      let uuids = cudaUuids
+      if (!cudaGpus.length && !needsCuda && cliUuids.size) {
+        const discrete = [...cliUuids].filter((uuid) => !integratedGpu(uuid))
+        uuids = new Set(discrete.length ? discrete : cliUuids)
+      }
+      if (needsCuda && !cudaUuids.size && cliUuids.size) {
+        return { refusal: codedError('E_NOT_SUPPORTED', `${needsCuda}（这台电脑上没有能运行完整引擎的显卡）`) }
+      }
+      if (model && uuids.size) {
+        // A GPU that cannot run the model would only fail the job: it waits for one that can.
+        const problems = [...uuids].map((uuid) => {
+          const device = inventory.devices.find((item) => item.uuid === uuid)
+          return [uuid, device ? bundleGpuProblem(model.bundle, device, { cli: cliUuids.has(uuid), files: model.files }) : '']
+        })
+        const capable = problems.filter(([, problem]) => problem === null).map(([uuid]) => uuid!)
+        if (!capable.length) return { refusal: codedError('E_MODEL', `「${model.bundle.name}」${problems[0]![1]}，请换一个模型`) }
+        uuids = new Set(capable)
+      }
+      return { uuids, cliUuids }
+    }
+    // A card with too little memory for the model would only fail the job: the GPUs that are big enough come
+    // first, the integrated one included. Only when they leave nothing for this job are the small ones tried too.
     const roomy = (device: GpuInventoryDevice): boolean => !gpuMemoryTooSmall(device.memoryTotalBytes)
-    let cliGpus = cliAll.filter(roomy)
-    let cudaGpus = cudaAll.filter(roomy)
-    let cudaUuids = await cudaCompatible(cudaGpus)
-    if (!cliGpus.length && !cudaUuids.size) {
-      cliGpus = cliAll
-      cudaGpus = cudaAll
-      cudaUuids = await cudaCompatible(cudaAll)
+    const big = await fitting(cliAll.filter(roomy), cudaAll.filter(roomy))
+    let chosen = big
+    if (!('uuids' in big) || big.uuids.size === 0) {
+      const smallOnes = [...cliAll, ...cudaAll].some((device) => !roomy(device))
+      if (smallOnes) {
+        let all: typeof big
+        try {
+          all = await fitting(cliAll, cudaAll)
+        } catch (error) {
+          // The probe failed for a small card only: the big ones' answer stands.
+          if ('refusal' in big) throw big.refusal
+          throw error
+        }
+        if ('uuids' in all && all.uuids.size) chosen = all
+        else if ('refusal' in big) chosen = big
+        else chosen = all
+      }
     }
-    const cliUuids = new Set(cliGpus.map((device) => device.uuid))
-    // Automatic assignment prefers the full engine: CLI GPUs only on a machine without a CUDA one,
-    // and only for plain text to image; integrated GPUs only when there is no discrete one.
-    const needsCuda = cliUnsupported(cliEngineOf(cliGpus[0]?.uuid)?.kind ?? 'vulkan', params)
-    let compatibleUuids = cudaUuids
-    if (!cudaGpus.length && !needsCuda && cliUuids.size) {
-      const discrete = [...cliUuids].filter((uuid) => !integratedGpu(uuid))
-      compatibleUuids = new Set(discrete.length ? discrete : cliUuids)
-    }
-    if (needsCuda && !cudaUuids.size && cliUuids.size) {
-      throw codedError('E_NOT_SUPPORTED', `${needsCuda}（这台电脑上没有能运行完整引擎的显卡）`)
-    }
-    if (model && compatibleUuids.size) {
-      // A GPU that cannot run the model would only fail the job: it waits for one that can.
-      const problems = [...compatibleUuids].map((uuid) => {
-        const device = inventory.devices.find((item) => item.uuid === uuid)
-        return [uuid, device ? bundleGpuProblem(model.bundle, device, { cli: cliUuids.has(uuid), files: model.files }) : '']
-      })
-      const capable = problems.filter(([, problem]) => problem === null).map(([uuid]) => uuid!)
-      if (!capable.length) throw codedError('E_MODEL', `「${model.bundle.name}」${problems[0]![1]}，请换一个模型`)
-      compatibleUuids = new Set(capable)
-    }
+    if ('refusal' in chosen) throw chosen.refusal
+    const compatibleUuids = chosen.uuids
     const loads: Record<string, { runningTasks: number; queuedTasks: number }> = {}
     for (const job of jobs.values()) {
       if (!job.deviceUuid || job.hostId || job.engine !== 'mossinfer') continue
@@ -690,13 +711,11 @@ async function resolveLocalGpu(
     }
     throw new Error(inventory.error ?? '没有可用的 NVIDIA GPU；请在引擎页检查设备或选择远端推理引擎。')
   }
-  // Picked by hand (the default GPU in settings, or a canvas bound to it), a card too small for the model has no
-  // engine: the plan gives it none while another GPU runs one. Say so instead of "no engine installed".
-  if (gpuMemoryTooSmall(device.memoryTotalBytes) && !resolveDeviceEngine(device.uuid)) {
-    throw codedError(
-      'E_GPU_TOO_SMALL',
-      `${device.name} 显存太小（${memoryGb(device.memoryTotalBytes!)} GB），没有安装引擎。在「设置 › 设备与引擎」里改用另一块显卡。`,
-    )
+  // Picked by hand, a card the plan left without an engine because it is too small for the model (another GPU
+  // runs one): say so, and where the pick was made. A card with no engine for any other reason gets the usual error.
+  if (!resolveDeviceEngine(device.uuid) && skippedForMemory(device.uuid)) {
+    const where = deviceUuid ? '在画面的「显卡」里换一块，或改回跟随默认。' : '在「设置 › 设备与引擎」里改用另一块显卡。'
+    throw codedError('E_GPU_TOO_SMALL', `${device.name} 显存太小（${memoryGb(device.memoryTotalBytes ?? 0)} GB），没有安装引擎。${where}`)
   }
   const pickedCli = cliEngineOf(device.uuid)
   if (pickedCli) {
