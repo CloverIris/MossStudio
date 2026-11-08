@@ -5,7 +5,7 @@ import { Ipc } from '@shared/channels'
 import type { ModelBundle, ModelEntry } from '@shared/types'
 import { call } from '../../lib/api'
 import { Button, Card, ConfirmDialog, Group, Pill, ProgressBar, Row, Spinner, useToast } from '../../components/ui'
-import { bundleDeletePlan, bundleTone, sizeText, type BundleView } from './logic'
+import { bundleDeletePlan, bundleTone, localFilesOnly, sizeText, type BundleView } from './logic'
 import type { ModelLocation } from './useModelLocation'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
@@ -73,11 +73,21 @@ export function RemoveButton({
 }
 
 /** A whole model whose files all stay where they are on this computer (registered, not downloaded). */
-const isLocalOnly = (view: BundleView): boolean =>
-  view.components.length > 0 && view.components.every((model) => model.provider === 'local')
+const isLocalOnly = (view: BundleView): boolean => localFilesOnly(view.bundle, view.components)
 
 /** The description of a model with its total size at the end, the same place as for parts and LoRA. */
 const describe = (view: BundleView): string => [view.bundle.description, sizeText(view.totalBytes)].filter(Boolean).join(' · ')
+
+/** The state of a model as a Pill: 用不了 when it cannot run here and nothing of it is under way, else its state. */
+function StatePill({ view }: { view: BundleView }): React.JSX.Element | null {
+  if (view.blocked && (view.status === 'missing' || view.status === 'partial')) return <Pill tone="warn">用不了</Pill>
+  if (view.status === 'missing') return null
+  return (
+    <Pill tone={bundleTone(view.status)} className="tabular">
+      {view.stateText}
+    </Pill>
+  )
+}
 
 function useBundleActions(location: ModelLocation) {
   const toast = useToast()
@@ -98,15 +108,18 @@ function useBundleActions(location: ModelLocation) {
   return { busy, act }
 }
 
-/** The recommended model, with its state in plain words and one main action. */
+/** The featured model, with its state in plain words and one main action. */
 export function FeaturedModel({
   view,
   location,
+  pick,
   deletable,
   onDelete,
 }: {
   view: BundleView
   location: ModelLocation
+  /** Set when this is the best pick for this computer; `reason` says why, when the GPU is known. */
+  pick?: { reason: string | null }
   deletable: boolean
   onDelete: (bundle: ModelBundle) => void
 }): React.JSX.Element {
@@ -117,9 +130,11 @@ export function FeaturedModel({
     <Card data-oobe="model" className="flex flex-col gap-5 p-6">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-caption text-ink-2">{view.bundle.recommended ? '推荐模型' : '模型'}</span>
+          <span className="text-caption text-ink-2">{pick ? '最适合这台电脑' : '模型'}</span>
           <h2 className="text-section font-semibold text-ink">{view.bundle.name}</h2>
           <p className="tabular text-ui text-ink-2">{describe(view)}</p>
+          {pick?.reason ? <p className="text-caption text-ink-2">{pick.reason}</p> : null}
+          {view.blocked ? <p className="text-caption text-ink-2">{view.blocked}</p> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {view.status === 'ready' ? (
@@ -140,13 +155,11 @@ export function FeaturedModel({
         </div>
       </div>
       {/* Not downloaded yet needs no state: the 下载 button says it. */}
-      {view.status !== 'missing' || progressing ? (
+      {view.status !== 'missing' || view.blocked || progressing ? (
         <div className="flex flex-col gap-2.5">
-          {view.status !== 'missing' ? (
+          {view.status !== 'missing' || view.blocked ? (
             <div>
-              <Pill tone={bundleTone(view.status)} className="tabular">
-                {view.stateText}
-              </Pill>
+              <StatePill view={view} />
             </div>
           ) : null}
           {progressing ? <ProgressBar value={view.percent} label={`${view.bundle.name} 下载进度`} /> : null}
@@ -188,15 +201,12 @@ export function ModelList({
             description={
               <span className="flex flex-col gap-1.5">
                 <span className="tabular">{describe(view)}</span>
+                {view.blocked ? <span>{view.blocked}</span> : null}
                 {progressing ? <ProgressBar value={view.percent} label={`${view.bundle.name} 下载进度`} className="max-w-64" /> : null}
               </span>
             }
           >
-            {view.status !== 'missing' ? (
-              <Pill tone={bundleTone(view.status)} className="tabular">
-                {view.stateText}
-              </Pill>
-            ) : null}
+            <StatePill view={view} />
             {view.status === 'ready' ? (
               deletable(view.bundle) ? (
                 <RemoveButton remove={isLocalOnly(view)} name={view.bundle.name} onClick={() => onDelete(view.bundle)} />

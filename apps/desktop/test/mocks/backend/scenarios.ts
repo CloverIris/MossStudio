@@ -45,6 +45,7 @@ import {
   engineVersionFixture,
   envReportFixture,
   galleryItemFixture,
+  GPU_RTX_5090,
   gpuDeviceFixture,
   gpuInventoryFixture,
   jobFixture,
@@ -105,6 +106,7 @@ export type ScenarioName =
   | 'jobFailure'
   | 'updateAvailable'
   | 'remoteHost'
+  | 'modelMissingRtx50'
   | MachineScenario
   | 'vulkanOnly'
 
@@ -185,6 +187,12 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     engineInstalledModelMissing: () => ({
       settings: settingsFixture({ onboardingState: 'active' }),
       catalog: catalogFixture(),
+    }),
+    /** Engine ready on an RTX 5090 (the only kind that runs NVFP4), no model downloaded yet. */
+    modelMissingRtx50: () => ({
+      settings: settingsFixture({ onboardingState: 'completed' }),
+      catalog: catalogFixture(),
+      gpuInventory: gpuInventoryFixture([GPU_RTX_5090()]),
     }),
     /** Two components installed, the DiT interrupted mid-download. */
     modelPartiallyDownloaded: () => ({

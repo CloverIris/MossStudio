@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isSingleFile, RUNTIME_CONFIG_ID } from '@shared/modelCombos'
-import type { ModelBinding, ModelBundle, ModelEntry, Settings } from '@shared/types'
+import type { ModelBinding, ModelBundle, Settings } from '@shared/types'
 import { paths } from '../lib/paths'
 import { componentSnapshot, getCatalog } from './models'
 import { fileSize, linkInPlace, materialize, safePath } from './modelFiles'
@@ -11,20 +11,30 @@ export function bundleBinding(bundle: ModelBundle): ModelBinding {
   return { bundleId: bundle.id, ...bundle.components }
 }
 
+const ROLES = [
+  ['dit', 'dit'],
+  ['textEncoder', 'text_encoder'],
+  ['vae', 'vae'],
+] as const
+
+/**
+ * A binding the engine can load: three MOSS-Image parts of the right roles,
+ * either all diffusers folders or all single files (which load next to the
+ * bundle's runtime-config folder).
+ */
 export async function validateBinding(binding: ModelBinding, settings: Settings): Promise<ModelBundle> {
   const catalog = await getCatalog(settings)
   const bundle = catalog.bundles.find((b) => b.id === binding.bundleId)
   if (!bundle) throw new Error('模型组合不存在，请重新选择')
-  for (const [key, role] of [
-    ['dit', 'dit'],
-    ['textEncoder', 'text_encoder'],
-    ['vae', 'vae'],
-  ] as const) {
+  const parts = ROLES.map(([key, role]) => {
     const model = catalog.models.find((m) => m.id === binding[key])
-    if (!model || model.role !== role || model.format !== 'diffusers' || model.family !== 'moss-image') {
-      throw new Error('请选择与 MOSS 兼容的 Diffusers 组件；ComfyUI 单文件仅支持下载')
-    }
-  }
+    return model && model.role === role && model.family === 'moss-image' ? model : null
+  })
+  const formats = new Set(parts.map((model) => model?.format))
+  const support = catalog.models.find((m) => m.id === bundle.support)
+  const valid =
+    parts.every(Boolean) && formats.size === 1 && (formats.has('diffusers') || (formats.has('comfyui') && support?.role === 'support'))
+  if (!valid) throw new Error('请选择与 MOSS 兼容的组件：主模型、文本编码器和 VAE 需要都是 Diffusers 文件夹，或都是单文件')
   return bundle
 }
 
@@ -38,6 +48,16 @@ export interface PreparedModelSource {
   ditFile?: string
   textEncoderFile?: string
   vaeFile?: string
+  /** The resolved bundle: its tier and hardware needs decide how the job runs. */
+  bundle: ModelBundle
+}
+
+/** The one weight file of a downloaded single-file part. */
+async function componentFile(id: string, settings: Settings): Promise<string> {
+  const { model, record, root } = await componentSnapshot(id, settings)
+  const weights = record.entries.filter((file) => file.path.endsWith('.safetensors'))
+  if (weights.length !== 1) throw new Error(`组件文件不完整：${model.name}。请在模型库修复组件。`)
+  return safePath(root, weights[0]!.path)
 }
 
 const SLOT_ROLES = [
@@ -62,26 +82,25 @@ export async function prepareModelSource(binding: ModelBinding, settings: Settin
     return model
   })
   const singles = parts.filter(isSingleFile)
-  if (!singles.length) return { model: await prepareModelBundle(binding, settings) }
+  if (!singles.length) return { model: await prepareModelBundle(binding, settings), bundle }
   const folderIds = [...parts.filter((part) => !isSingleFile(part)).map((part) => part.id), RUNTIME_CONFIG_ID]
   const model = await materializeBundle(binding.bundleId, folderIds, settings)
-  const fileOf = async (part: ModelEntry): Promise<string | undefined> => {
-    if (!isSingleFile(part)) return undefined
-    if (part.provider === 'local') {
+  // One after another, so a missing part is named in the order 主模型, 文本编码器, VAE.
+  const files: Array<string | undefined> = []
+  for (const part of parts) {
+    if (!isSingleFile(part)) files.push(undefined)
+    else if (part.provider === 'local') {
       if (!part.localPath) throw new Error(`找不到「${part.name}」的文件，请重新添加`)
-      return part.localPath
-    }
-    const { record, root } = await componentSnapshot(part.id, settings)
-    const file = record.entries[0]
-    if (!file) throw new Error(`组件未就绪：${part.name}。请在模型库补齐组件。`)
-    return safePath(root, file.path)
+      files.push(part.localPath)
+    } else files.push(await componentFile(part.id, settings))
   }
-  const [ditFile, textEncoderFile, vaeFile] = await Promise.all(parts.map(fileOf))
+  const [ditFile, textEncoderFile, vaeFile] = files
   return {
     model,
     ...(ditFile ? { ditFile } : {}),
     ...(textEncoderFile ? { textEncoderFile } : {}),
     ...(vaeFile ? { vaeFile } : {}),
+    bundle,
   }
 }
 

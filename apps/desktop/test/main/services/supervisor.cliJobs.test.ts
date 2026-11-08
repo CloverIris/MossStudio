@@ -461,3 +461,71 @@ describe('a GPU that switches engines between jobs', () => {
     expect(cliStarts.map((start) => start.job.id)).toEqual([first.id])
   })
 })
+
+describe('automatic GPU assignment by what the model needs', () => {
+  const rtx5090: GpuInventoryDevice = { uuid: 'GPU-5090', index: 1, name: 'RTX 5090', computeCapability: { major: 12, minor: 0 } }
+  const hello = decodeEngineHello({
+    protocol_version: 2,
+    probe: {
+      devices: [
+        { index: 0, name: 'RTX 4090', supported: true, compute_capability: '8.9' },
+        { index: 1, name: 'RTX 5090', supported: true, compute_capability: '12.0' },
+      ],
+    },
+  })
+  const nvfp4 = {
+    id: 'moss-sft-nvfp4',
+    name: 'SFT · NVFP4',
+    components: { dit: 'nvfp4-dit', textEncoder: 'te-file', vae: 'vae-file' },
+    support: 'cfg',
+    tier: 'turbo',
+    requires: { computeCapability: { major: 12, minor: 0 }, label: 'RTX 50 系列显卡' },
+  }
+  beforeEach(() => {
+    const server = join(dataRoot(), 'stable-v2.2.0-cu13', 'bin', 'moss-server')
+    mkdirSync(join(server, '..'), { recursive: true })
+    writeFileSync(server, '#!')
+    engines.set(nvidia.uuid, { ...deviceEngine('cuda', nvidia), binaryPath: server })
+    engines.set(rtx5090.uuid, { ...deviceEngine('cuda', rtx5090), binaryPath: server })
+    probeLocalEngineGpuCompatibility.mockResolvedValue({ hello, helloFor: () => hello })
+    getCatalog.mockResolvedValue({
+      bundles: [
+        { id: 'moss-sft', name: 'MOSS-Image SFT', components: { dit: 'sft-dit', textEncoder: 'te', vae: 'vae' }, support: 'cfg' },
+        nvfp4,
+      ],
+      models: [
+        part('sft-dit', 'dit'),
+        part('te', 'text_encoder'),
+        part('vae', 'vae', 'fp32'),
+        { ...part('nvfp4-dit', 'dit', 'nvfp4'), format: 'comfyui' },
+        { ...part('te-file', 'text_encoder', 'int8'), format: 'comfyui' },
+        { ...part('vae-file', 'vae', 'fp32'), format: 'comfyui' },
+      ],
+      adapters: [],
+    })
+  })
+  const nvfp4Request = (prompt: string) =>
+    request({ prompt, modelBinding: { bundleId: 'moss-sft-nvfp4', dit: 'nvfp4-dit', textEncoder: 'te-file', vae: 'vae-file' } })
+
+  it('queues an NVFP4 job on the busy RTX 50 instead of the idle GPU that cannot run it', async () => {
+    refreshGpuInventory.mockResolvedValue({ devices: [nvidia, rtx5090] })
+    prepareModelSource.mockImplementation(async (binding: { bundleId: string }) =>
+      binding.bundleId === nvfp4.id ? { model: bundle, ditFile: '/m/nvfp4.safetensors', bundle: nvfp4 } : { model: bundle },
+    )
+    const first = await supervisor.startEngineJob(request({ prompt: 'first' }))
+    expect(first.deviceUuid).toBe(rtx5090.uuid)
+    const second = await supervisor.startEngineJob(nvfp4Request('second'))
+    expect(second).toMatchObject({ deviceUuid: rtx5090.uuid, state: 'queued', gpuProfile: { tier: 'turbo', source: 'model-weights' } })
+    // A model every GPU runs still goes to the idle one.
+    const third = await supervisor.startEngineJob(request({ prompt: 'third' }))
+    expect(third.deviceUuid).toBe(nvidia.uuid)
+  })
+
+  it('refuses an NVFP4 job when no GPU can run it, and says why', async () => {
+    refreshGpuInventory.mockResolvedValue({ devices: [nvidia] })
+    await expect(supervisor.startEngineJob(nvfp4Request('nvfp4'))).rejects.toThrow(
+      '「SFT · NVFP4」只能在 RTX 50 系列显卡上运行，请换一个模型',
+    )
+    expect(runMossInferJob).not.toHaveBeenCalled()
+  })
+})

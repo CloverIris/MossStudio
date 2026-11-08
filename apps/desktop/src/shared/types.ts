@@ -538,6 +538,16 @@ export interface ModelBundle {
   components: Pick<ModelBinding, 'dit' | 'textEncoder' | 'vae'>
   support: string
   recommended?: boolean
+  /** Listed in the engine's supported models (MossInfer docs/integration.md). */
+  certified?: boolean
+  /** The engine tier this bundle must run with (a quantized DiT); absent = the user's setting. */
+  tier?: Exclude<Settings['mossInferTier'], 'reference'>
+  /** Hardware the bundle needs, e.g. NVFP4 runs only on compute capability 12.0 (RTX 50). */
+  requires?: { computeCapability: { major: number; minor: number }; label: string }
+  /** The everyday pick for this kind of computer (模型 page, first-run setup). */
+  recommendedFor?: 'limited-vram'
+  /** Sampling the bundle is made for (a few-step model); applied when it is picked in Studio. */
+  defaults?: { steps?: number; cfg?: number }
   /** Saved by the person in 自己组合 (`ModelCombination`), not from the catalog. */
   custom?: boolean
 }

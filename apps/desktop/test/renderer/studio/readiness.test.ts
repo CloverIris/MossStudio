@@ -306,10 +306,53 @@ describe('studio/readiness on a CLI engine (兼容模式 / AMD 原生)', () => {
     ])
     expect(deriveReadiness(pick('comfy')).blockers[0]).toMatchObject({
       id: 'model-engine',
-      message: expect.stringContaining('扫描到的单个模型文件'),
+      message: expect.stringContaining('由单个模型文件组成'),
     })
     expect(deriveReadiness(pick('sft')).blockers).toEqual([])
     // The server engine runs all of them.
     expect(deriveReadiness({ ...pick('fp16'), features: engineFeaturesFixture() }).blockers).toEqual([])
+  })
+})
+
+describe('studio/readiness single-file and GPU-bound models', () => {
+  const files = bundle('int8', { tier: 'high' })
+  const nvfp4 = bundle('nvfp4', { tier: 'turbo', requires: { computeCapability: { major: 12, minor: 0 }, label: 'RTX 50 系列显卡' } })
+  const cat = catalog({
+    bundles: [bundle('sft'), files, nvfp4],
+    models: [
+      model('sft-dit'),
+      { ...model('int8-dit'), format: 'comfyui' },
+      { ...model('nvfp4-dit'), format: 'comfyui' },
+      model('te'),
+      model('vae'),
+      model('cfg'),
+    ],
+  })
+  const pick = (id: string, patch: Partial<ReadinessInput> = {}) => input({ catalog: cat, bundle: resolveBundle(cat, id, null), ...patch })
+  const rtx4090 = { uuid: 'GPU-4090', index: 0, name: 'RTX 4090', computeCapability: { major: 8, minor: 9 } }
+  const rtx5090 = { uuid: 'GPU-5090', index: 0, name: 'RTX 5090', computeCapability: { major: 12, minor: 0 } }
+
+  it('blocks a model this computer’s GPUs cannot run, and says why', () => {
+    expect(deriveReadiness(pick('nvfp4', { gpus: [rtx4090] })).blockers).toEqual([
+      { id: 'model-engine', message: '「NVFP4」只能在 RTX 50 系列显卡上运行，请换一个模型' },
+    ])
+    expect(deriveReadiness(pick('nvfp4', { gpus: [rtx5090] })).blockers).toEqual([])
+    // Nothing is ruled out before the GPUs are known.
+    expect(deriveReadiness(pick('nvfp4')).blockers).toEqual([])
+  })
+
+  it('blocks a single-file model when the only GPU runs 兼容模式', () => {
+    expect(deriveReadiness(pick('int8', { gpus: [rtx4090], cliGpus: new Set([rtx4090.uuid]) })).blockers).toEqual([
+      { id: 'model-engine', message: '「INT8」RTX 4090 上的引擎只能运行官方模型，请换一个模型' },
+    ])
+    expect(deriveReadiness(pick('int8', { gpus: [rtx4090, rtx5090], cliGpus: new Set([rtx4090.uuid]) })).blockers).toEqual([])
+  })
+
+  it('keeps single-file models on this computer', () => {
+    const remote = { name: 'Lab', modelPath: '/models' }
+    expect(deriveReadiness(pick('int8', { remote })).blockers).toEqual([
+      { id: 'model-engine', message: '「INT8」只能在这台电脑上运行，在其他电脑上请换成官方模型' },
+    ])
+    expect(deriveReadiness(pick('sft', { remote })).blockers).toEqual([])
   })
 })

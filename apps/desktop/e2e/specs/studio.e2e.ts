@@ -386,4 +386,60 @@ describe('studio', () => {
     await expect.poll(() => switcher.textContent()).not.toContain('海报')
     await settle(page)
   })
+
+  describe('a few-step model (SFT Turbo · INT8 8 步)', () => {
+    const TURBO = ['moss-sft-turbo-comfy-int8_convrot', 'qwen35-comfy-int8_convrot', 'flux2-vae-comfy-small', 'moss-runtime-config']
+    const install = async (page: Page, ids: string[], only: boolean): Promise<void> => {
+      await page.evaluate(
+        ([list, exclusive]) => {
+          const ids = new Set(list as string[])
+          window.__mock.state.catalog.models = window.__mock.state.catalog.models.map((model) =>
+            ids.has(model.id)
+              ? { ...model, installed: true, installState: 'ready', installedBytes: model.sizeBytes }
+              : exclusive
+                ? { ...model, installed: false, installState: 'missing', installedBytes: 0 }
+                : model,
+          )
+        },
+        [ids, only] as const,
+      )
+    }
+
+    it('generates in 8 steps at CFG 1 when picked, and back at 标准 when another model is picked', async () => {
+      const page = await app.open({ scenario: 'ready', route: '/studio', defer: true })
+      await install(page, TURBO, false)
+      await app.start()
+      await openStudio(page)
+      await describeCanvas(page, '雨夜的霓虹街道')
+      // The model is in the settings folded under the description.
+      await page.locator('[data-settings-summary]').click()
+      const model = page.getByRole('combobox', { name: '模型', exact: true })
+      await model.selectOption({ label: 'SFT Turbo · INT8 8 步' })
+      const generate = page.locator('[data-studio-generate]')
+      await expect.poll(() => generate.isEnabled()).toBe(true)
+      await generate.click()
+      const [turbo] = await submitted(page, 1)
+      expect(turbo).toMatchObject({ steps: 8, cfg: 1 })
+      await page.evaluate(() => window.__mock.finishJob(window.__mock.state.jobs[0]!.id))
+
+      await model.selectOption({ label: 'MOSS-Image SFT' })
+      await expect.poll(() => generate.isEnabled()).toBe(true)
+      await generate.click()
+      const [, sft] = await submitted(page, 2)
+      expect(sft).toMatchObject({ steps: 20, cfg: 3 })
+    })
+
+    it('uses its steps and CFG when a canvas that never picked a model runs on it', async () => {
+      const page = await app.open({ scenario: 'ready', route: '/studio', defer: true })
+      await install(page, TURBO, true)
+      await app.start()
+      await openStudio(page)
+      await describeCanvas(page, '雨夜的霓虹街道')
+      const generate = page.locator('[data-studio-generate]')
+      await expect.poll(() => generate.isEnabled()).toBe(true)
+      await generate.click()
+      const [job] = await submitted(page, 1)
+      expect(job).toMatchObject({ steps: 8, cfg: 1 })
+    })
+  })
 })

@@ -11,7 +11,9 @@ import type { ModelBundle, ModelCombination, ModelEntry } from './types'
  * set with a single file in it needs the full config folder.
  */
 
-export const RUNTIME_CONFIG_ID = 'moss-runtime-config'
+// One definition: bundleFit (certified single-file models) needs it too, and it must not import this file.
+import { RUNTIME_CONFIG_ID } from './bundleFit'
+export { RUNTIME_CONFIG_ID }
 export const PIPELINE_ID = 'moss-pipeline'
 
 export type SlotKey = 'dit' | 'textEncoder' | 'vae'

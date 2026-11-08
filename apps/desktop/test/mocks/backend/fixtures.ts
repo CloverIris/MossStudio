@@ -166,7 +166,11 @@ export function catalogFixture(options: CatalogOptions = {}): Catalog {
   const installed = new Set(options.installed ?? [])
   const partial = new Set(options.partial ?? [])
   return {
-    bundles: releaseCatalog.bundles.map((bundle) => ({ ...bundle, components: { ...bundle.components } })) as ModelBundle[],
+    // main/services/models.ts lists the single-file bundles after the folder ones.
+    bundles: [...releaseCatalog.bundles, ...releaseCatalog.single_file_bundles].map((bundle) => ({
+      ...bundle,
+      components: { ...bundle.components },
+    })) as ModelBundle[],
     updatedAt: releaseCatalog.updated_at,
     source: options.source ?? 'builtin',
     models: releaseCatalog.models.map((raw) => {
@@ -207,6 +211,16 @@ export const GPU_RTX_3060 = (): GpuInventoryDevice =>
     computeCapability: { major: 8, minor: 6 },
     memoryTotalBytes: 12 * GiB,
     memoryFreeBytes: 11 * GiB,
+  })
+
+/** An RTX 50 card: the only kind that runs NVFP4 models (compute capability 12.0). */
+export const GPU_RTX_5090 = (): GpuInventoryDevice =>
+  gpuDeviceFixture({
+    uuid: 'GPU-50505050-5090-5090-5090-509050905090',
+    name: 'NVIDIA GeForce RTX 5090',
+    computeCapability: { major: 12, minor: 0 },
+    memoryTotalBytes: 32 * GiB,
+    memoryFreeBytes: 30 * GiB,
   })
 
 export const GPU_GTX_1660 = (): GpuInventoryDevice =>

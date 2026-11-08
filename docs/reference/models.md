@@ -1,7 +1,7 @@
 ---
 status: current
 last-verified: 2026-11-08 (d0883df)
-code: apps/desktop/resources/models.json, apps/desktop/src/shared/types.ts, apps/desktop/src/shared/localBundle.ts, apps/desktop/src/shared/adapters.ts, apps/desktop/src/main/lib/paths.ts, apps/desktop/src/main/services/models.ts, apps/desktop/src/main/services/modelBundles.ts, apps/desktop/src/main/services/modelScan.ts, apps/desktop/src/main/services/modelImports.ts, apps/desktop/src/main/services/modelFiles.ts, apps/desktop/src/main/services/controlAdapters.ts, apps/desktop/src/main/services/weightPrecision.ts, apps/desktop/src/renderer/src/pages/models/, apps/desktop/src/renderer/src/components/ModelDirectoriesCard.tsx
+code: apps/desktop/resources/models.json, apps/desktop/src/shared/types.ts, apps/desktop/src/shared/bundleFit.ts, apps/desktop/src/shared/localBundle.ts, apps/desktop/src/shared/adapters.ts, apps/desktop/src/main/lib/paths.ts, apps/desktop/src/main/services/models.ts, apps/desktop/src/main/services/modelBundles.ts, apps/desktop/src/main/services/modelScan.ts, apps/desktop/src/main/services/modelImports.ts, apps/desktop/src/main/services/modelFiles.ts, apps/desktop/src/main/services/controlAdapters.ts, apps/desktop/src/main/services/weightPrecision.ts, apps/desktop/src/renderer/src/pages/models/, apps/desktop/src/renderer/src/components/ModelDirectoriesCard.tsx
 ---
 
 # Models
@@ -29,7 +29,24 @@ Where the catalog comes from (`getCatalog` in `main/services/models.ts`):
 2. On each full refresh the app fetches the same file from the manifest mirror the network probe picked (GitHub raw or jsDelivr, `main/services/network.ts`) and uses it if it parses (`source: 'remote'`). A remote catalog with `schema_version` below 2 is merged under the built-in one so it cannot reintroduce whole-repository downloads.
 3. In development a `models.json` in the content directory wins (`source: 'local'`).
 
-The shipped catalog has four bundles: `moss-sft` (recommended), `moss-base`, `moss-sft-fp16` and `moss-base-fp16`. All four share `qwen35-encoder`, `flux2-vae-small` and `moss-pipeline`, so switching bundles downloads only the DiT. The `Comfy-Org/MOSS-Image` single-file entries (`format: 'comfyui'`, INT8, W4A8, the Full VAE) are used through combinations: no catalog bundle references them.
+The shipped catalog (`schema_version: 3`) has two kinds of bundles:
+
+- **Folder bundles** (`bundles`): `moss-sft` (recommended), `moss-base`, `moss-sft-fp16` and `moss-base-fp16`. All four share `qwen35-encoder`, `flux2-vae-small` and `moss-pipeline`, so switching between them downloads only the DiT.
+- **Single-file bundles** (`single_file_bundles`): SFT · INT8, Base · INT8 (both `Comfy-Org/MOSS-Image`), SFT · INT4, SFT · NVFP4 and SFT Turbo · INT8. Each is a `format: 'comfyui'` DiT file, the INT8 text encoder file, the FLUX.2 small VAE file and `moss-runtime-config` (`RUNTIME_CONFIG_ID` in `shared/bundleFit.ts`: about 20 MB of configs and tokenizer). Files added for these bundles are pinned to the revisions the engine tested; a file downloaded earlier from `main` still counts as installed (`installMatchesRevision`).
+
+The other `Comfy-Org/MOSS-Image` single files (W4A8, the Full VAE) are used through combinations (自己组合, below). `getCatalog` appends `single_file_bundles` and then the saved combinations to `bundles`, so the app sees one list. Older app versions read only `bundles` and never offer a single-file bundle they cannot load. A schema-2 catalog fetched remotely gets the built-in single-file bundles and their components added.
+
+Bundle fields beyond the components (`ModelBundle` in `shared/types.ts`):
+
+| Field | Meaning |
+| --- | --- |
+| `certified` | Listed in the engine's supported models (MossInfer `docs/integration.md`). The 模型 page shows certified bundles under 推荐模型 and the rest under 其他模型. |
+| `tier` | The engine tier the bundle runs with: `high` for INT8, `turbo` for INT4 and NVFP4. It applies when the engine cannot name the weights' precision (section 4.4). |
+| `requires` | Hardware it needs: NVFP4 runs only on compute capability 12.0 (RTX 50). Automatic GPU assignment waits for a GPU that matches. |
+| `recommendedFor: 'limited-vram'` | Picked instead of the official SFT on a GPU with less than 16 GB of VRAM (`bestBundleFor` in `shared/bundleFit.ts`, also used by first-run setup). |
+| `defaults` | Steps and CFG a few-step model brings when Studio picks it (`samplingForBundle` in `renderer/src/pages/studio/defaults.ts`): Turbo uses 8 steps and CFG 1. |
+
+Which GPU can run which bundle is decided in one place, `bundleGpuProblem` in `shared/bundleFit.ts`, shared by job start, the 模型 page and Studio.
 
 Catalog entries get their installed state from an install record (section 3), from a registered diffusers folder (section 4.3) or, for `provider: 'local'` entries, from the file still being where it was registered. The catalog is cached per models root and directory settings and invalidated by every download, import or delete (`invalidateCatalog`).
 
@@ -118,7 +135,9 @@ A prepared folder is `<models root>/bundles/<key>/`, where `<key>` is the first 
 
 Combinations: `shared/modelCombos.ts` holds the rules (`slotChoices`, `supportFor`: `moss-runtime-config` once any part is a single file, else `moss-pipeline`; `combinationBundle`; `unusedDownloads`). `main/services/modelCombinations.ts` keeps them in `<data root>/model-combinations.json`, and `getCatalog` appends them to `bundles` with `custom: true`. When that file does not exist yet and the catalog has an installed local DiT, text encoder and VAE, the bundle older versions made by themselves (`localFilesBundle` in `shared/localBundle.ts`, id `local-files`) is saved once as the combination 电脑上的模型, so 画面 that use it keep working.
 
-Precision and tier: for component files `jobWeightPrecisions` (`main/services/weightPrecision.ts`) asks the engine's `inspect` what the DiT and text encoder are; `tierForWeights` in `shared/gpuProfile.ts` then settles the tier (an INT4 DiT runs Turbo, an INT8 DiT or INT8/W4A8 text encoder runs High). A prepared bundle folder counts as bf16. The CLI engines (兼容模式, AMD 原生) read only a prepared bf16 folder (section 8).
+The local-files bundle: `localFilesBundle` in `shared/localBundle.ts` builds `ModelBundle` `local-files`, 本地文件（扫描）, as soon as an installed local DiT, text encoder and VAE exist in the catalog, and `getCatalog` puts it first in `bundles`. `localDitNeeds` gives it a `tier` (and `requires` for NVFP4) guessed from the DiT's precision or file name.
+
+Precision and tier: for component files `jobWeightPrecisions` (`main/services/weightPrecision.ts`) asks the engine's `inspect` what the DiT and text encoder are; `tierForWeights` in `shared/gpuProfile.ts` then settles the tier (an INT4 DiT runs Turbo, an INT8 DiT or INT8/W4A8 text encoder runs High). A prepared bundle folder counts as bf16. When the engine cannot name a file's precision (NVFP4, or an engine without `inspect`), the bundle's own `tier` decides instead (`profileForBundle` in `shared/bundleFit.ts`); either way the job records `source: 'model-weights'`. The CLI engines (兼容模式, AMD 原生) read only a prepared bf16 folder (section 8).
 
 ## 5. LoRA
 
@@ -148,8 +167,8 @@ Route `/models`, Rail entry 模型, `renderer/src/pages/models/ModelsPage.tsx`. 
 
 | Area | Component | Shows |
 | --- | --- | --- |
-| Recommended card | `FeaturedModel` in `ModelEntries.tsx` | 推荐模型, name, description and total size; one main action: 下载, 暂停, 继续 or 重试; 可以使用 and 去创作 when installed. |
-| 其他模型 | `ModelList`, `CombinationDialog.tsx` | Every other bundle as a row, a combination tagged 我的组合 (hidden on a remote host). 自己组合 (local only) offers 挑选要下载的部件 and 用电脑上的模型文件…: the dialog has 名字 and one select per slot (下载: each `choice` label once, the copy already here first, else the folder version; 电脑上的文件: registered single files and 选择文件…), counts 还要下载 and saves with 下载并保存 or 保存. Deleting a combination removes the downloads only it needs, never the person's files (`DeleteModelDialog`). |
+| 推荐模型 | `FeaturedModel` in `ModelEntries.tsx`, then `ModelList` | The bundle that suits this computer first (`bestBundleFor`), with the reason, name, description and total size and one main action: 下载, 暂停, 继续 or 重试; 可以使用 and 去创作 when installed. Below it every other `certified` bundle. A bundle this GPU cannot run says why; a paused or failed download of it can still be continued or retried. |
+| 其他模型 | `ModelList`, `CombinationDialog.tsx` | Every bundle that is not `certified` (the FP16-fixed community versions) as a row, and each combination tagged 我的组合 (hidden on a remote host). 自己组合 (local only) offers 挑选要下载的部件 and 用电脑上的模型文件…: the dialog has 名字 and one select per slot (下载: each `choice` label once, the copy already here first, else the folder version; 电脑上的文件: registered single files and 选择文件…), counts 还要下载 and saves with 下载并保存 or 保存. Deleting a combination removes the downloads only it needs, never the person's files (`DeleteModelDialog`). |
 | 控制适配器 | section 6 | Local only. |
 | 存储位置 | `StorageRow` | 模型文件夹 with 打开模型文件夹 and 在 设置 › 存储 中更改; on a host, 模型保存在 … 上. |
 | 高级 | `AdvancedPanel.tsx` | 文件夹 (`ModelDirectoriesCard`) and 没有用到的文件 (downloads no bundle or combination needs, `unusedDownloads`, with 查看 and 全部删除), or on a host 主机上的文件夹 (模型保存目录, 生成时使用的模型文件夹 with 自动查找, 下载完整的默认模型). |
@@ -164,6 +183,7 @@ As built at d0883df. None of these is planned work; they describe what the code 
 - A combination is not edited in place: it is deleted and built again.
 - Scanned files are checked by size and mtime, not hashed, so they cannot be matched to a Hugging Face blob or reused by a download. Only the older loose-file import hashes.
 - A registered diffusers folder serves only `OpenMOSS-Team/MOSS-Image-SFT` and `OpenMOSS-Team/MOSS-Image-Base` components (`MOSS_REPOS`). An FP16-fixed folder registers as a 完整模型 entry but stands in for no bundle.
+- Single-file bundles and combinations with a single file run only on this computer's moss-server. A remote host uses its own model folder, and a GPU running a CLI engine refuses them with the reason the 模型 page and Studio also show.
 - The CLI engines refuse any `format: 'comfyui'` component (so a combination with a single file) and any non-bf16 DiT or text encoder (`cliBundleProblem` in `shared/cliEngine.ts`; `cliBundleDtypeProblem` reads the shard dtypes of a prepared folder).
 - Remote hosts take no LoRA (`resolveCanvasAdapters` refuses when `hostId` is set), show no combinations and no control adapters; 自己组合 is local only.
 - Adding a control adapter needs an engine whose `hello` lists `inspect`; an older engine is refused with 当前引擎版本不能识别控制适配器.

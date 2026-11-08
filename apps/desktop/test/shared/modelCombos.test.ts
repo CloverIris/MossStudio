@@ -43,6 +43,10 @@ describe('slotChoices', () => {
       'MOSS-Image SFT · FP16 社区修复',
       'MOSS-Image Base · INT8',
       'MOSS-Image SFT · INT8',
+      // The engine-certified single files (INT4, NVFP4, Turbo) are parts too.
+      'MOSS-Image SFT · INT4',
+      'MOSS-Image SFT · NVFP4',
+      'MOSS-Image SFT Turbo · INT8',
     ])
   })
 
@@ -141,11 +145,8 @@ describe('unusedDownloads', () => {
       installed: ['moss-sft-dit', 'moss-sft-comfy-int8_convrot', 'qwen35-comfy-w4a8_gptq', 'moss-runtime-config'],
     })
     const all = [...catalog.models, own('my-vae', 'vae'), { ...catalog.models[0]!, id: 'linked', tags: ['local-folder'], installed: true }]
-    expect(unusedDownloads(all, catalog.bundles).map((model) => model.id)).toEqual([
-      'moss-runtime-config',
-      'moss-sft-comfy-int8_convrot',
-      'qwen35-comfy-w4a8_gptq',
-    ])
+    // The INT8 single file and the runtime configs belong to the certified model SFT INT8; the W4A8 encoder to no model.
+    expect(unusedDownloads(all, catalog.bundles).map((model) => model.id)).toEqual(['qwen35-comfy-w4a8_gptq'])
     const combo = combinationBundle(
       {
         id: 'c',

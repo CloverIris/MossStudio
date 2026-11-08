@@ -1,4 +1,5 @@
-import type { AdapterEntry, DownloadTask, ModelBundle, ModelEntry } from '@shared/types'
+import { bestBundleFor, bundleGpusProblem, isFileBundle } from '@shared/bundleFit'
+import type { AdapterEntry, DownloadTask, GpuInventoryDevice, ModelBundle, ModelEntry } from '@shared/types'
 
 /**
  * Pure helpers for the Models page. A "model" here is a whole catalog bundle
@@ -74,18 +75,35 @@ export interface BundleView {
   stateText: string
   action: BundleAction
   actionLabel: string
+  /** Why this model cannot run where the page points (the GPU, another computer); it is then not offered for download. */
+  blocked: string | null
 }
 
 /**
  * Whole-model state. `isInstalled` decides per part (local catalog flag, or a
  * remote host's inventory); `tasks` are the downloads for the same machine.
+ * A `blocked` model keeps its state but offers no new download; one already
+ * started can still be paused, continued or retried.
  */
 export function bundleView(
   bundle: ModelBundle,
   models: readonly ModelEntry[],
   tasks: readonly DownloadTask[],
   isInstalled: (model: ModelEntry) => boolean = (model) => model.installed,
+  blocked: string | null = null,
 ): BundleView {
+  const view = bundleState(bundle, models, tasks, isInstalled)
+  if (!blocked) return { ...view, blocked: null }
+  // A download already started (pause, continue, retry) stays in the user's hands; only new ones are not offered.
+  return view.action === 'download' ? { ...view, blocked, action: null, actionLabel: '' } : { ...view, blocked }
+}
+
+function bundleState(
+  bundle: ModelBundle,
+  models: readonly ModelEntry[],
+  tasks: readonly DownloadTask[],
+  isInstalled: (model: ModelEntry) => boolean,
+): Omit<BundleView, 'blocked'> {
   const ids = bundleComponentIds(bundle)
   const components = ids.map((id) => models.find((model) => model.id === id)).filter((model): model is ModelEntry => Boolean(model))
   const totalBytes = components.reduce((sum, model) => sum + (model.sizeBytes || 0), 0)
@@ -108,7 +126,10 @@ export function bundleView(
   }
   if (missing.length === 0) return { ...base, status: 'ready', stateText: '可以使用', action: null, actionLabel: '' }
   const active = partTasks.filter((task) => ACTIVE_STATES.has(task.state))
-  if (active.length) {
+  // Parts shared with another model (text encoder, VAE, configs) downloading for
+  // that one do not make this model "downloading" while its main model waits.
+  const started = partTasks.length === missing.length || partTasks.some((task) => task.targetId === bundle.components.dit)
+  if (active.length && started) {
     if (active.every((task) => task.state === 'verifying')) {
       return { ...base, status: 'verifying', stateText: '正在校验文件', action: null, actionLabel: '' }
     }
@@ -144,7 +165,56 @@ export function bundleView(
   return { ...base, status: 'missing', stateText: '未下载', action: 'download', actionLabel: '下载' }
 }
 
-/** The model the app suggests first: the catalog's recommended bundle, else the first one. */
+/** Where the page points: this computer (its GPUs, once read, and which of them run a CLI engine) or another computer. */
+export interface ModelPlace {
+  remote: boolean
+  gpus: readonly GpuInventoryDevice[]
+  /** GPUs running 兼容模式 / AMD 原生, which read only the official bf16 folders. */
+  cliGpus?: ReadonlySet<string>
+}
+
+/** Why a whole model cannot run at this place, or null. */
+export function bundleBlocker(bundle: ModelBundle, models: readonly ModelEntry[], place: ModelPlace): string | null {
+  const files = isFileBundle(bundle, models)
+  if (place.remote) return files ? '只能在这台电脑上使用，其他电脑请用官方模型' : null
+  return bundleGpusProblem(bundle, place.gpus, { cliGpus: place.cliGpus, files })
+}
+
+export interface ModelSections {
+  /** The one model shown large: the deep-linked one, else the best pick for this place. */
+  featured: BundleView | undefined
+  /** Set when the featured model is the best pick for this place; `reason` says why, when the GPU is known. */
+  pick: { reason: string | null } | null
+  /** Engine-certified models (推荐模型), the featured one excluded. */
+  certified: BundleView[]
+  /** Everything else (其他模型): models the engine has not verified, local files. */
+  others: BundleView[]
+}
+
+/**
+ * Splits the models of the page. 推荐模型 lists every model the engine
+ * certifies; the one that suits this computer best is featured. A model the
+ * catalog cannot describe completely is left out.
+ */
+export function modelSections(
+  views: readonly BundleView[],
+  models: readonly ModelEntry[],
+  place: ModelPlace,
+  preferredId?: string | null,
+): ModelSections {
+  const candidates = views.map((view) => view.bundle).filter((bundle) => !place.remote || !isFileBundle(bundle, models))
+  const best = bestBundleFor(candidates, place.remote ? [] : place.gpus, place.cliGpus)
+  const featured = views.find((view) => view.bundle.id === preferredId) ?? views.find((view) => view.bundle.id === best?.bundle.id)
+  const listed = views.filter((view) => view !== featured && view.status !== 'unavailable')
+  return {
+    featured,
+    pick: featured && best && featured.bundle.id === best.bundle.id ? { reason: best.reason } : null,
+    certified: listed.filter((view) => view.bundle.certified),
+    others: listed.filter((view) => !view.bundle.certified),
+  }
+}
+
+/** The recommended catalog model (or the deep-linked one): 自己组合 starts from its parts. */
 export function recommendedBundle(bundles: readonly ModelBundle[], preferredId?: string | null): ModelBundle | undefined {
   return (
     (preferredId ? bundles.find((bundle) => bundle.id === preferredId) : undefined) ??
@@ -184,7 +254,11 @@ export function bundleDeletePlan(
       })
       .flatMap((other) => bundleComponentIds(other)),
   )
-  const present = bundleComponentIds(bundle).filter(installed)
+  // Files found on this computer only leave the list; the small runtime config they load with stays.
+  const localOnly = localFilesOnly(bundle, models)
+  const present = bundleComponentIds(bundle)
+    .filter(installed)
+    .filter((id) => !localOnly || models.find((model) => model.id === id)?.provider === 'local')
   const ids = present.filter((id) => !othersInUse.has(id))
   const kept = present.filter((id) => othersInUse.has(id))
   const bytes = ids.reduce((sum, id) => {
@@ -192,6 +266,13 @@ export function bundleDeletePlan(
     return sum + (model?.installedBytes || model?.sizeBytes || 0)
   }, 0)
   return { ids, bytes, kept }
+}
+
+/** A model whose weights are all files registered where they are on this computer (not downloaded). */
+export function localFilesOnly(bundle: ModelBundle, models: readonly ModelEntry[]): boolean {
+  return [bundle.components.dit, bundle.components.textEncoder, bundle.components.vae].every(
+    (id) => models.find((model) => model.id === id)?.provider === 'local',
+  )
 }
 
 /** Names of complete models (other than `exceptBundleId`) that include a part. */

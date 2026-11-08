@@ -1,6 +1,6 @@
 {
-  "schema_version": 2,
-  "updated_at": "2026-11-02T02:52:00Z",
+  "schema_version": 3,
+  "updated_at": "2026-11-07T00:00:00Z",
   "models": [
     {
       "id": "moss-sft-dit",
@@ -208,7 +208,7 @@
       "family": "moss-image",
       "license": "Apache-2.0",
       "tags": ["comfyui"],
-      "notes": "ComfyUI 单文件，仅供下载；不能绑定到官方 Gradio。"
+      "notes": "ComfyUI 单文件 BF16 主模型；引擎能读这种格式，但没有专门验证过。"
     },
     {
       "id": "moss-base-comfy-int8_convrot",
@@ -225,8 +225,8 @@
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": ["comfyui"],
-      "notes": "ComfyUI 单文件，仅供下载；不能绑定到官方 Gradio。"
+      "tags": ["comfyui", "certified"],
+      "notes": "Base 的 INT8 单文件主模型，引擎已验证；配合运行配置使用。"
     },
     {
       "id": "moss-sft-comfy-bf16",
@@ -244,7 +244,7 @@
       "family": "moss-image",
       "license": "Apache-2.0",
       "tags": ["comfyui"],
-      "notes": "ComfyUI 单文件，仅供下载；不能绑定到官方 Gradio。"
+      "notes": "ComfyUI 单文件 BF16 主模型；引擎能读这种格式，但没有专门验证过。"
     },
     {
       "id": "moss-sft-comfy-int8_convrot",
@@ -261,8 +261,62 @@
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": ["comfyui"],
-      "notes": "ComfyUI 单文件，仅供下载；不能绑定到官方 Gradio。"
+      "tags": ["comfyui", "certified"],
+      "notes": "SFT 的 INT8 单文件主模型，引擎已验证；配合运行配置使用。"
+    },
+    {
+      "id": "moss-sft-comfy-int4_convrot",
+      "name": "MOSS SFT · INT4_CONVROT (社区)",
+      "choice": "MOSS-Image SFT · INT4",
+      "provider": "hf",
+      "repo": "toxicdog/MOSS-Image-SFT-INT4-ConvRot-ComfyUI",
+      "revision": "220f724ceede0144e01c5353e9e96a1c538adba4",
+      "role": "dit",
+      "precision": "int4",
+      "size_bytes": 3035537312,
+      "files": ["diffusion_models/moss_image_sft_int4_convrot.safetensors"],
+      "subfolder": "",
+      "format": "comfyui",
+      "family": "moss-image",
+      "license": "Apache-2.0",
+      "tags": ["comfyui", "community", "certified"],
+      "notes": "SFT 的 INT4 单文件主模型（社区），引擎已验证；按 turbo 档运行。"
+    },
+    {
+      "id": "moss-sft-comfy-nvfp4",
+      "name": "MOSS SFT · NVFP4 (社区)",
+      "choice": "MOSS-Image SFT · NVFP4",
+      "provider": "hf",
+      "repo": "BennyDaBall/MOSS-Image-SFT-NVFP4",
+      "revision": "46b5146214892a7648350548828dc168e1fcaa7a",
+      "role": "dit",
+      "precision": "nvfp4",
+      "size_bytes": 4486106614,
+      "files": ["moss_image_sft_nvfp4.safetensors"],
+      "subfolder": "",
+      "format": "comfyui",
+      "family": "moss-image",
+      "license": "Apache-2.0",
+      "tags": ["comfyui", "community", "certified"],
+      "notes": "SFT 的 NVFP4 单文件主模型（社区），引擎已验证；只能在 RTX 50 系列显卡上运行。"
+    },
+    {
+      "id": "moss-sft-turbo-comfy-int8_convrot",
+      "name": "MOSS SFT Turbo · INT8_CONVROT (社区)",
+      "choice": "MOSS-Image SFT Turbo · INT8",
+      "provider": "hf",
+      "repo": "toxicdog/MOSS-Image-SFT-Turbo-INT8-ConvRot",
+      "revision": "a04afd66c4f9a3b41658a611906723b55ee40301",
+      "role": "dit",
+      "precision": "int8",
+      "size_bytes": 5413707240,
+      "files": ["diffusion_models/moss_image_sft_turbo_int8_convrot.safetensors"],
+      "subfolder": "",
+      "format": "comfyui",
+      "family": "moss-image",
+      "license": "Apache-2.0",
+      "tags": ["comfyui", "community", "certified"],
+      "notes": "8 步出图的 SFT 变体（社区，INT8）；引擎只验证了文件格式。"
     },
     {
       "id": "qwen35-comfy-bf16",
@@ -280,7 +334,7 @@
       "family": "moss-image",
       "license": "Apache-2.0",
       "tags": ["comfyui"],
-      "notes": "ComfyUI 编码器，量化版本需对应加载器。"
+      "notes": "ComfyUI 单文件 BF16 文本编码器；引擎能读这种格式，但没有专门验证过。"
     },
     {
       "id": "qwen35-comfy-int8_convrot",
@@ -297,8 +351,8 @@
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": ["comfyui"],
-      "notes": "ComfyUI 编码器，量化版本需对应加载器。"
+      "tags": ["comfyui", "certified"],
+      "notes": "INT8 单文件文本编码器，引擎已验证；单文件模型默认用它。"
     },
     {
       "id": "qwen35-comfy-w4a8_gptq",
@@ -315,8 +369,8 @@
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": ["comfyui"],
-      "notes": "ComfyUI 编码器，量化版本需对应加载器。"
+      "tags": ["comfyui", "certified"],
+      "notes": "W4A8 单文件文本编码器，比 INT8 更省空间，引擎已验证。"
     },
     {
       "id": "flux2-vae-comfy-small",
@@ -333,8 +387,8 @@
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": ["comfyui"],
-      "notes": "ComfyUI VAE 单文件，仅供下载。"
+      "tags": ["comfyui", "certified"],
+      "notes": "FLUX.2 small VAE 单文件（FP32），引擎已验证；单文件模型用它。"
     },
     {
       "id": "flux2-vae-comfy-full",
@@ -351,8 +405,8 @@
       "format": "comfyui",
       "family": "moss-image",
       "license": "Apache-2.0",
-      "tags": ["comfyui"],
-      "notes": "ComfyUI VAE 单文件，仅供下载。"
+      "tags": ["comfyui", "certified"],
+      "notes": "完整 FLUX.2 VAE 单文件（含编码器），引擎已验证。"
     }
   ],
   "adapters": [
@@ -449,31 +503,33 @@
     {
       "id": "moss-sft",
       "name": "MOSS-Image SFT",
-      "description": "官方推荐，适合日常生成。",
+      "description": "官方原版，画质的基准；显存占用最多，速度最慢。",
       "components": {
         "dit": "moss-sft-dit",
         "textEncoder": "qwen35-encoder",
         "vae": "flux2-vae-small"
       },
       "support": "moss-pipeline",
-      "recommended": true
+      "recommended": true,
+      "certified": true
     },
     {
       "id": "moss-base",
       "name": "MOSS-Image Base",
-      "description": "官方 Base，适合微调与继续训练。",
+      "description": "官方 Base，适合微调和继续训练；日常出图选 SFT。",
       "components": {
         "dit": "moss-base-dit",
         "textEncoder": "qwen35-encoder",
         "vae": "flux2-vae-small"
       },
       "support": "moss-pipeline",
-      "recommended": false
+      "recommended": false,
+      "certified": true
     },
     {
       "id": "moss-sft-fp16",
       "name": "SFT · FP16-fixed",
-      "description": "社区修复版，主模型按 FP16 加载。",
+      "description": "社区修复版，主模型按 FP16 加载；引擎没有验证过。",
       "components": {
         "dit": "moss-sft-fp16-fixed",
         "textEncoder": "qwen35-encoder",
@@ -485,7 +541,7 @@
     {
       "id": "moss-base-fp16",
       "name": "Base · FP16-fixed",
-      "description": "社区修复版，与其他组合共用编码器和 VAE。",
+      "description": "社区修复版，主模型按 FP16 加载；引擎没有验证过。",
       "components": {
         "dit": "moss-base-fp16-fixed",
         "textEncoder": "qwen35-encoder",
@@ -493,6 +549,90 @@
       },
       "support": "moss-pipeline",
       "recommended": false
+    }
+  ],
+  "single_file_bundles": [
+    {
+      "id": "moss-sft-int8",
+      "name": "SFT · INT8",
+      "description": "显存占用约减四成，速度约快 2.5 倍，日常首选。",
+      "components": {
+        "dit": "moss-sft-comfy-int8_convrot",
+        "textEncoder": "qwen35-comfy-int8_convrot",
+        "vae": "flux2-vae-comfy-small"
+      },
+      "support": "moss-runtime-config",
+      "recommended": false,
+      "certified": true,
+      "tier": "high",
+      "recommendedFor": "limited-vram"
+    },
+    {
+      "id": "moss-sft-nvfp4",
+      "name": "SFT · NVFP4",
+      "description": "RTX 50 专用：速度约快 3.3 倍，显存占用约减一半。",
+      "components": {
+        "dit": "moss-sft-comfy-nvfp4",
+        "textEncoder": "qwen35-comfy-int8_convrot",
+        "vae": "flux2-vae-comfy-small"
+      },
+      "support": "moss-runtime-config",
+      "recommended": false,
+      "certified": true,
+      "tier": "turbo",
+      "requires": {
+        "computeCapability": {
+          "major": 12,
+          "minor": 0
+        },
+        "label": "RTX 50 系列显卡"
+      }
+    },
+    {
+      "id": "moss-sft-int4",
+      "name": "SFT · INT4",
+      "description": "4 位压缩，比 INT8 更省显存，适合显存紧张的显卡；细节略有损失。",
+      "components": {
+        "dit": "moss-sft-comfy-int4_convrot",
+        "textEncoder": "qwen35-comfy-int8_convrot",
+        "vae": "flux2-vae-comfy-small"
+      },
+      "support": "moss-runtime-config",
+      "recommended": false,
+      "certified": true,
+      "tier": "turbo"
+    },
+    {
+      "id": "moss-sft-turbo-int8",
+      "name": "SFT Turbo · INT8 8 步",
+      "description": "8 步就能出图，适合快速试想法；引擎只验证了文件格式。",
+      "components": {
+        "dit": "moss-sft-turbo-comfy-int8_convrot",
+        "textEncoder": "qwen35-comfy-int8_convrot",
+        "vae": "flux2-vae-comfy-small"
+      },
+      "support": "moss-runtime-config",
+      "recommended": false,
+      "certified": true,
+      "tier": "high",
+      "defaults": {
+        "steps": 8,
+        "cfg": 1
+      }
+    },
+    {
+      "id": "moss-base-int8",
+      "name": "Base · INT8",
+      "description": "Base 的 INT8 版，更省显存，适合用 Base 出图或做对比。",
+      "components": {
+        "dit": "moss-base-comfy-int8_convrot",
+        "textEncoder": "qwen35-comfy-int8_convrot",
+        "vae": "flux2-vae-comfy-small"
+      },
+      "support": "moss-runtime-config",
+      "recommended": false,
+      "certified": true,
+      "tier": "high"
     }
   ]
 }
