@@ -239,14 +239,15 @@ describe('store.init', () => {
   describe('events that arrive while the startup snapshots are in flight', () => {
     it('keeps an update event over the older update:state answer (a slow envScan holds every snapshot)', async () => {
       const { backend, store } = await loadStore(
-        scenario('ready', { update: updateDownloadingFixture('1.0.4', 100, { phase: 'installing' }) }),
+        scenario('ready', { update: updateDownloadingFixture('1.0.4', 100, { autoDownload: false, phase: 'installing' }) }),
       )
       const env = backend.hold(Ipc.envScan)
       const starting = store().init()
       await env.called
       await flush()
       // main finished materializing while envScan was still probing the GPU
-      backend.emit(Events.updateState, updateReadyFixture('1.0.4'))
+      // (by hand, so that it is announced)
+      backend.emit(Events.updateState, updateReadyFixture('1.0.4', { autoDownload: false }))
       await env.release()
       await starting
       expect(store().update).toMatchObject({ phase: 'ready', pending: '1.0.4' })

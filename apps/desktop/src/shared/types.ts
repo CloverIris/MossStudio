@@ -162,13 +162,15 @@ export interface Settings {
   lanWebPort: number | null
   lanWebInstanceId: string | null
   updateChannel: 'stable' | 'beta'
-  /** 自动下载更新: download and prepare new versions in the background (applied on restart). */
+  /** 自动更新: download and prepare new versions in the background; the next start installs them. */
   autoDownloadUpdates: boolean
   /** Set by 回到上一个版本: this version (and older) is not offered again until the user asks. */
   skippedUpdateVersion: string | null
   dismissedAnnouncements: string[]
   /** Versions whose automatic rollback the user has already been told about (once each). */
   noticedFailedUpdates: string[]
+  /** The version that ran last: a newer one starting says once that it was updated. */
+  lastRunVersion: string | null
   sidebarCollapsed: boolean
   onboardingState: 'pending' | 'active' | 'dismissed' | 'completed'
   onboardingHostId: string

@@ -32,13 +32,17 @@ export function targetVersion(state: UpdaterState): string | null {
   return state.available?.version ?? state.pending ?? null
 }
 
+/** How long a downloaded update waits quietly before the title bar mentions it. */
+export const READY_NUDGE_MS = 3 * 24 * 60 * 60_000
+
 /**
- * The chip in the title bar. Nothing while there is nothing to do; a thin bar
- * while downloading; 重启以更新 once ready; 必须更新 (warning) when this
- * version may no longer generate; 新版本没能启动 (warning) on the first start
- * after a failed version was rolled back.
+ * The chip in the title bar. With 自动更新 on, updates download and install
+ * on the next start without a word: the chip shows only 必须更新 (this
+ * version may no longer generate), 新版本没能启动 (rolled back), a restart
+ * the user asked for, and a quiet 重启以更新 once an update has waited
+ * READY_NUDGE_MS. With it off, every step shows, since the user installs by hand.
  */
-export function chipView(state: UpdaterState | null): ChipView | null {
+export function chipView(state: UpdaterState | null, now: number = Date.now(), popoverOpen = false): ChipView | null {
   if (!state || !state.supported) return null
   const version = targetVersion(state)
   const name = version ? `MossStudio ${version}` : 'MossStudio'
@@ -53,12 +57,16 @@ export function chipView(state: UpdaterState | null): ChipView | null {
       description: version ? `必须更新：这个版本已停止支持生成，请更新到 ${version}` : '必须更新：这个版本已停止支持生成，请更新',
     }
   }
+  // While its popover is open (e.g. right after 再试一次), the chip keeps showing what happens.
+  const quiet = state.autoDownload && !popoverOpen
   switch (state.phase) {
     case 'available':
+      if (quiet) return null
       return version ? { label: `新版本 ${version}`, tone: 'quiet', description: `MossStudio ${version} 可以更新` } : null
     case 'downloading':
     case 'verifying':
     case 'installing':
+      if (quiet) return null
       return {
         label: state.phase === 'downloading' ? '正在下载更新' : '正在准备更新',
         tone: 'quiet',
@@ -68,13 +76,21 @@ export function chipView(state: UpdaterState | null): ChipView | null {
             ? `正在下载 ${name} 更新，${Math.round(progress ?? 0)}%`
             : `正在准备 ${name} 更新`,
       }
-    case 'ready':
-      return { label: '重启以更新', tone: 'ready', description: `${name} 已准备好，重启即可更新` }
+    case 'ready': {
+      if (!quiet) return { label: '重启以更新', tone: 'ready', description: `${name} 已准备好，重启即可更新` }
+      // Installed on the next start anyway; only someone who never quits hears about it, quietly.
+      const since = state.readyAt ? Date.parse(state.readyAt) : NaN
+      return Number.isFinite(since) && now - since >= READY_NUDGE_MS
+        ? { label: '重启以更新', tone: 'quiet', description: `${name} 已准备好，下次打开时更新，也可以现在重启` }
+        : null
+    }
     case 'waiting-idle':
       return { label: '空闲后重启', tone: 'quiet', description: '当前任务结束后会自动重启以更新' }
     case 'restarting':
       return { label: '正在重启…', tone: 'quiet', progress: null, description: '正在重启以更新' }
     case 'error':
+      // A background update that failed is retried at the next check; 设置 says why meanwhile.
+      if (quiet) return null
       return version ? { label: '更新没有完成', tone: 'quiet', description: `更新没有完成：${state.error ?? '请稍后重试'}` } : null
     default:
       return state.failedNotice && state.failedVersion
@@ -271,7 +287,7 @@ export function settingsStatus(state: UpdaterState): string {
     case 'installing':
       return `正在准备 ${version}`
     case 'ready':
-      return `${version} 已准备好，重启即可更新`
+      return `${version} 已下载，下次打开时更新`
     case 'waiting-idle':
       return `${version} 会在当前任务结束后安装`
     case 'restarting':
@@ -293,6 +309,11 @@ export function checkedTitle(checkedAt: string | null): string | undefined {
 }
 
 export const RELEASES_URL = 'https://github.com/CloverIris/MossStudio/releases'
+
+/** A version's own release page. */
+export function releaseNotesUrl(version: string): string {
+  return `${RELEASES_URL}/tag/v${version}`
+}
 
 /** Notes link for the settings row: the release's own page, else the releases list. */
 export function notesLink(state: UpdaterState | null): string {

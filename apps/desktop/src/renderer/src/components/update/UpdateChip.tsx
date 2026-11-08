@@ -6,7 +6,7 @@ import { useApp } from '../../store'
 import { Notice } from '../common/Notice'
 import { Popover } from '../common/Popover'
 import { Button, MarkdownBody, ProgressBar, Spinner, cn, useToast } from '../ui'
-import { ACTION_LABEL, chipView, popoverView, restartFeedback, type ChipView, type PopoverAction } from './updateModel'
+import { ACTION_LABEL, chipView, popoverView, releaseNotesUrl, restartFeedback, type ChipView, type PopoverAction } from './updateModel'
 
 // Ready is a state, not a second main action next to 生成: the accent tint, not solid ink.
 const CHIP_TONE: Record<ChipView['tone'], string> = {
@@ -20,6 +20,9 @@ function ChipIcon({ view }: { view: ChipView }): React.JSX.Element {
   if (view.tone === 'ready') return <RotateCw className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
   return <ArrowUpCircle className="size-3.5 text-ink-2" strokeWidth={1.6} aria-hidden="true" />
 }
+
+/** Once per run, even if the title bar mounts again. */
+let announcedUpdate = false
 
 /**
  * The update chip in the title bar and its popover: version, notes and the
@@ -39,7 +42,19 @@ export function UpdateChip(): React.JSX.Element | null {
   const retryFailed = useApp((s) => s.retryFailedUpdate)
   const dismissFailed = useApp((s) => s.dismissFailedUpdate)
   const [working, setWorking] = useState<PopoverAction | null>(null)
-  const view = chipView(state)
+  const view = chipView(state, Date.now(), open)
+
+  // The first start after an update says so once, with that version's notes.
+  const updatedFrom = state?.updatedFrom ?? null
+  const current = state?.current
+  useEffect(() => {
+    if (!updatedFrom || !current || announcedUpdate) return
+    announcedUpdate = true
+    toast.push(`已更新到 ${current}`, 'success', {
+      label: '看看新内容',
+      onClick: () => void call(Ipc.openExternal, { url: releaseNotesUrl(current) }),
+    })
+  }, [updatedFrom, current, toast])
 
   // Nothing to offer any more (e.g. the check found nothing): close.
   useEffect(() => {

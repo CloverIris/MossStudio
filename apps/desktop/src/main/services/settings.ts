@@ -37,6 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   skippedUpdateVersion: null,
   dismissedAnnouncements: [],
   noticedFailedUpdates: [],
+  lastRunVersion: null,
   sidebarCollapsed: false,
   onboardingState: 'pending',
   onboardingHostId: 'local',
@@ -106,6 +107,7 @@ export function getSettings(): Settings {
     }
     if (!Array.isArray(cache.dismissedAnnouncements)) cache.dismissedAnnouncements = []
     if (!Array.isArray(cache.noticedFailedUpdates)) cache.noticedFailedUpdates = []
+    if (typeof cache.lastRunVersion !== 'string') cache.lastRunVersion = null
     // Optional features arrived after users had already configured them: keep
     // them visible for anyone who was using them before the switch existed.
     if (parsed.remoteHostsEnabled === undefined) cache.remoteHostsEnabled = hasConfiguredRemoteHosts()

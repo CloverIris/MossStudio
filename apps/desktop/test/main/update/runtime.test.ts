@@ -177,6 +177,7 @@ function harness(
     dismissedAnnouncements: [],
     skippedUpdateVersion: null,
     noticedFailedUpdates: [],
+    lastRunVersion: version,
     ...options.settings,
   }
   const states: UpdaterState[] = []
@@ -261,6 +262,19 @@ describe('check → download → materialize → pending', () => {
     await h.runtime.download()
     expect(h.runtime.getState()).toMatchObject({ phase: 'ready', pending: '1.1.0' })
     expect(hitsOf('/v1.1.0/full.zip')).toBe(1)
+  })
+
+  it('remembers when the update became ready, and forgets it once nothing is pending', async () => {
+    publish('1.1.0')
+    const h = harness()
+    await h.runtime.check()
+    expect(h.runtime.getState().readyAt).toBeNull()
+    await h.runtime.download()
+    const readyAt = h.runtime.getState().readyAt
+    expect(readyAt).not.toBeNull()
+    // A later check keeps the first time it was ready.
+    await h.runtime.check()
+    expect(h.runtime.getState().readyAt).toBe(readyAt)
   })
 
   it('prefers the delta from the running version and never fetches the full package', async () => {
@@ -610,6 +624,27 @@ describe('restart handoff (macOS)', () => {
     expect(existsSync(failedMarkerPath(h.recordPath))).toBe(false)
     expect(existsSync(join(h.root, '.MossStudio-1.1.0.app'))).toBe(false)
     expect(h.runtime.getState()).toMatchObject({ failedVersion: null })
+  })
+
+  it('says once that this is the first run after an update', async () => {
+    const h = harness({ settings: { lastRunVersion: '1.0.2' } })
+    await h.runtime.init()
+    expect(h.runtime.getState().updatedFrom).toBe('1.0.2')
+    expect(h.settings.lastRunVersion).toBe('1.0.3')
+    // The next start of the same version says nothing.
+    const again = new UpdateRuntime(h.host)
+    await again.init()
+    expect(again.getState().updatedFrom).toBeNull()
+  })
+
+  it('a fresh install or an older version than last time is not an update', async () => {
+    const fresh = harness({ settings: { lastRunVersion: null } })
+    await fresh.runtime.init()
+    expect(fresh.runtime.getState().updatedFrom).toBeNull()
+    expect(fresh.settings.lastRunVersion).toBe('1.0.3')
+    const older = harness({ settings: { lastRunVersion: '1.1.0' } })
+    await older.runtime.init()
+    expect(older.runtime.getState().updatedFrom).toBeNull()
   })
 
   it('tells about a version the macOS helper rolled back, once', async () => {

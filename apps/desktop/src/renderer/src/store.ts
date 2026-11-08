@@ -203,14 +203,16 @@ export const useApp = create<AppStore>((set, get) => {
    */
   function announceUpdate(state: UpdaterState): void {
     const version = state.available?.version ?? state.pending
-    if (state.supported && state.phase === 'available' && version && once(`available:${version}`)) {
+    // With 自动更新 on, a new version downloads and installs on the next start without a word.
+    const byHand = !state.autoDownload
+    if (byHand && state.supported && state.phase === 'available' && version && once(`available:${version}`)) {
       get().pushNotification({
         tone: 'info',
         title: '发现新版本',
-        message: state.autoDownload ? `MossStudio ${version} 正在后台下载` : `MossStudio ${version} 可以更新，点击标题栏的更新按钮下载`,
+        message: `MossStudio ${version} 可以更新，点击标题栏的更新按钮下载`,
       })
     }
-    if (state.supported && state.phase === 'ready' && version && once(`ready:${version}`)) {
+    if (byHand && state.supported && state.phase === 'ready' && version && once(`ready:${version}`)) {
       get().pushNotification({ tone: 'success', title: '更新已准备好', message: `重启 MossStudio 即可更新到 ${version}` })
     }
     if (state.required && state.minimumVersion && once(`required:${state.minimumVersion}`)) {
@@ -225,7 +227,7 @@ export const useApp = create<AppStore>((set, get) => {
       // Said once, plainly: open the title bar popover, where 再试一次 is.
       set({ updatePopoverOpen: true })
     }
-    if (state.phase === 'error' && state.error && once(`error:${state.error}`)) {
+    if (byHand && state.phase === 'error' && state.error && once(`error:${state.error}`)) {
       get().pushNotification({ tone: 'error', title: '更新没有完成', message: state.error })
     }
     for (const announcement of state.announcements.slice(0, 3)) {
