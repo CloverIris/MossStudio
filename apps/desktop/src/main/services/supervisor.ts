@@ -108,6 +108,29 @@ async function loadJobs(): Promise<void> {
   }
 }
 
+/**
+ * Work the caller does not wait for (a job's state never waits for the disk): job list, log and
+ * preview-removal writes, and engine queue pumps from the moment they are scheduled.
+ */
+const pendingWork = new Set<Promise<unknown>>()
+
+function inBackground(work: Promise<unknown>): void {
+  pendingWork.add(work)
+  const done = (): void => {
+    pendingWork.delete(work)
+  }
+  work.then(done, done)
+}
+
+/**
+ * Resolves once all background work started or scheduled so far has finished: job list, log and
+ * preview-removal writes, and engine queue pumps, with the writes and pumps those start in turn.
+ * Not called by the app; tests use it before removing the data root.
+ */
+export async function settleJobWrites(): Promise<void> {
+  while (pendingWork.size > 0) await Promise.allSettled([...pendingWork])
+}
+
 async function saveJobs(): Promise<void> {
   try {
     await mkdir(jobsDir(), { recursive: true })
@@ -137,7 +160,7 @@ function update(job: JobRecord, patch: Partial<JobRecord>): void {
       route: job.state === 'succeeded' ? undefined : '/diagnostics',
     })
   }
-  void saveJobs()
+  inBackground(saveJobs())
 }
 
 function appendLog(job: JobRecord, stream: JobLogLine['stream'], text: string, runningJob?: RunningJob): void {
@@ -161,7 +184,8 @@ function appendLog(job: JobRecord, stream: JobLogLine['stream'], text: string, r
     if (runningJob.lastLines.length > 40) runningJob.lastLines.shift()
   }
   emit(Events.jobLog, line)
-  void appendFile(logPath(job.id), `${JSON.stringify(line)}\n`, 'utf8').catch(() => undefined)
+  // Best effort: the line is already in memory and on its way to the renderer.
+  inBackground(appendFile(logPath(job.id), `${JSON.stringify(line)}\n`, 'utf8').catch(() => undefined))
 }
 
 function recordError(job: JobRecord, raw: string, rule = matchRule(raw)): void {
@@ -298,7 +322,7 @@ function clearPreview(job: JobRecord): void {
   previewThrottle.stop(job.id)
   job.preview = undefined
   if (job.engine === 'mossinfer' && !job.hostId) {
-    void rm(jobPreviewPath(job.id), { force: true }).catch(() => undefined)
+    inBackground(rm(jobPreviewPath(job.id), { force: true }).catch(() => undefined))
   }
 }
 
@@ -519,9 +543,8 @@ function engineSlotKey(job: { deviceUuid?: string; hostId?: string }): string | 
 }
 
 function scheduleEngineQueue(slot: string): void {
-  setTimeout(() => {
-    void pumpEngineQueue(slot)
-  }, 0)
+  // Tracked from now, not from when it runs: its first write comes after awaited reads.
+  inBackground(new Promise<void>((resolve) => setTimeout(() => resolve(pumpEngineQueue(slot)), 0)))
 }
 
 async function pumpEngineQueue(slot: string): Promise<void> {

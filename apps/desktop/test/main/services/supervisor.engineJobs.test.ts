@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Events } from '@shared/channels'
 import { decodeEngineHello } from '@shared/engineProtocol'
 import { engineBinaryName } from '@shared/enginePackages'
@@ -41,8 +41,24 @@ vi.mock('@main/services/desktopNotifications', () => ({ pushLocalNotification: v
 vi.mock('@main/services/diagnostics', () => ({ pushDiagnostic: vi.fn() }))
 vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async () => undefined }))
 
+/** While `hold` is set, writes of jobs.json wait for it (the test of settleJobWrites); otherwise writes pass through. */
+const jobListGate = vi.hoisted(() => ({ hold: null as Promise<void> | null }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const writeFile: typeof actual.writeFile = async (file, ...rest) => {
+    if (jobListGate.hold && String(file).endsWith('jobs.json')) await jobListGate.hold
+    return actual.writeFile(file, ...rest)
+  }
+  return { ...actual, writeFile, default: { ...actual, writeFile } }
+})
+
 const dataRoot = useTempDataRoot()
 let supervisor: typeof import('@main/services/supervisor')
+// Runs before useTempDataRoot removes the folder (after-hooks run last-registered first): the job list and
+// log writes the supervisor does not wait for must be done, or the removal races them (ENOTEMPTY).
+afterEach(async () => {
+  await supervisor?.settleJobWrites()
+})
 
 const gpu: GpuInventoryDevice = {
   uuid: 'GPU-a',
@@ -137,9 +153,52 @@ describe("engine jobs: the moss-server of the GPU's own install", () => {
 
     const { rmSync } = await import('node:fs')
     rmSync(join(dataRoot(), 'mossinfer'), { recursive: true, force: true })
+    // The first instance's writes are its own; the afterEach only sees the second one.
+    await supervisor.settleJobWrites()
     vi.resetModules()
     supervisor = await import('@main/services/supervisor')
     await expect(supervisor.startEngineJob(request('nothing installed'))).rejects.toThrow('未找到 moss-server')
+  })
+})
+
+describe('engine jobs: writes the caller does not wait for', () => {
+  /** 'settled' when settleJobWrites resolves within `ms`, else 'waiting'. */
+  const settledWithin = (ms: number): Promise<'settled' | 'waiting'> =>
+    Promise.race([
+      supervisor.settleJobWrites().then(() => 'settled' as const),
+      new Promise<'waiting'>((resolve) => setTimeout(() => resolve('waiting'), ms)),
+    ])
+
+  it('settleJobWrites resolves once the job list is on disk with every job, and at once when nothing is left', async () => {
+    const jobs = [
+      await supervisor.startEngineJob(request('first')),
+      await supervisor.startEngineJob(request('second')),
+      await supervisor.startEngineJob(request('third')),
+    ]
+    await supervisor.settleJobWrites()
+    const saved = JSON.parse(readFileSync(join(dataRoot(), 'jobs', 'jobs.json'), 'utf8')) as JobRecord[]
+    expect(saved.map((job) => job.id).sort()).toEqual(jobs.map((job) => job.id).sort())
+    expect(await settledWithin(50)).toBe('settled')
+  })
+
+  it('settleJobWrites waits for a job list write that is still running', async () => {
+    // Hold every write of jobs.json until the test lets it through.
+    let release!: () => void
+    jobListGate.hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    try {
+      // The second job waits in the GPU's queue: queuing it saves the job list.
+      await supervisor.startEngineJob(request('running'))
+      await supervisor.startEngineJob(request('queued'))
+      expect(await settledWithin(50)).toBe('waiting')
+      release()
+      expect(await settledWithin(1000)).toBe('settled')
+      expect(existsSync(join(dataRoot(), 'jobs', 'jobs.json'))).toBe(true)
+    } finally {
+      release()
+      jobListGate.hold = null
+    }
   })
 })
 
