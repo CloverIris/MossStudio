@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { appendFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Events } from '@shared/channels'
 import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, ModelBundle, GpuInventoryDevice } from '@shared/types'
@@ -16,7 +16,7 @@ import { jobWeightPrecisions } from './weightPrecision'
 import { cancelCliJob, cliBundleDtypeProblem, hipDeviceIndex, runCliJob, type HipIndexResult } from './cliEngine'
 import { currentEngineMachine, localServerPath, resolveDeviceEngine, type DeviceEngine } from './engineInstalls'
 import { getCatalog } from './models'
-import { getSettings } from './settings'
+import { atomicWriteJson, getSettings } from './settings'
 import { refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 import { selectAutomaticGpu } from '@shared/gpuScheduling'
@@ -132,14 +132,35 @@ export async function settleJobWrites(): Promise<void> {
   while (pendingWork.size > 0) await Promise.allSettled([...pendingWork])
 }
 
-async function saveJobs(): Promise<void> {
-  try {
-    await mkdir(jobsDir(), { recursive: true })
-    const list = [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 60)
-    await writeFile(join(jobsDir(), 'jobs.json'), JSON.stringify(list, null, 2), 'utf8')
-  } catch {
-    // best effort
+/** The job list save in progress, and whether jobs changed since it took its snapshot. */
+let saving: Promise<void> | null = null
+let saveAgain = false
+
+/**
+ * Writes the job list, one write at a time and atomically (temp file, then rename), so jobs.json is never
+ * half written or overwritten by an older snapshot. A call during a save makes that save write once more
+ * with the newest jobs; every caller's promise resolves after a write that includes its change.
+ */
+function saveJobs(): Promise<void> {
+  if (saving) {
+    saveAgain = true
+    return saving
   }
+  saving = (async () => {
+    try {
+      do {
+        saveAgain = false
+        await mkdir(jobsDir(), { recursive: true })
+        const list = [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 60)
+        atomicWriteJson(join(jobsDir(), 'jobs.json'), list)
+      } while (saveAgain)
+    } catch {
+      // Best effort: the jobs stay in memory, and the next change writes them again.
+    } finally {
+      saving = null
+    }
+  })()
+  return saving
 }
 
 function snapshot(job: JobRecord): JobRecord {

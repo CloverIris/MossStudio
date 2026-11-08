@@ -41,15 +41,28 @@ vi.mock('@main/services/desktopNotifications', () => ({ pushLocalNotification: v
 vi.mock('@main/services/diagnostics', () => ({ pushDiagnostic: vi.fn() }))
 vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async () => undefined }))
 
-/** While `hold` is set, writes of jobs.json wait for it (the test of settleJobWrites); otherwise writes pass through. */
-const jobListGate = vi.hoisted(() => ({ hold: null as Promise<void> | null }))
+/**
+ * While `hold` is set, a job list save waits for it at its first step (making the jobs folder);
+ * otherwise everything passes through. `writes` counts the job list writes.
+ */
+const jobListGate = vi.hoisted(() => ({ hold: null as Promise<void> | null, writes: 0 }))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
-  const writeFile: typeof actual.writeFile = async (file, ...rest) => {
-    if (jobListGate.hold && String(file).endsWith('jobs.json')) await jobListGate.hold
-    return actual.writeFile(file, ...rest)
+  const mkdir = (async (path: Parameters<typeof actual.mkdir>[0], options?: Parameters<typeof actual.mkdir>[1]) => {
+    if (jobListGate.hold && /[\\/]jobs$/.test(String(path))) await jobListGate.hold
+    return actual.mkdir(path, options)
+  }) as typeof actual.mkdir
+  return { ...actual, mkdir, default: { ...actual, mkdir } }
+})
+vi.mock('@main/services/settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/services/settings')>()
+  return {
+    ...actual,
+    atomicWriteJson: (file: string, value: unknown) => {
+      if (file.endsWith('jobs.json')) jobListGate.writes += 1
+      actual.atomicWriteJson(file, value)
+    },
   }
-  return { ...actual, writeFile, default: { ...actual, writeFile } }
 })
 
 const dataRoot = useTempDataRoot()
@@ -182,7 +195,7 @@ describe('engine jobs: writes the caller does not wait for', () => {
   })
 
   it('settleJobWrites waits for a job list write that is still running', async () => {
-    // Hold every write of jobs.json until the test lets it through.
+    // Hold every job list save until the test lets it through.
     let release!: () => void
     jobListGate.hold = new Promise<void>((resolve) => {
       release = resolve
@@ -195,6 +208,32 @@ describe('engine jobs: writes the caller does not wait for', () => {
       release()
       expect(await settledWithin(1000)).toBe('settled')
       expect(existsSync(join(dataRoot(), 'jobs', 'jobs.json'))).toBe(true)
+    } finally {
+      release()
+      jobListGate.hold = null
+    }
+  })
+})
+
+describe('engine jobs: the job list on disk', () => {
+  it('is written one save at a time: saves asked for meanwhile become one more write with the newest jobs', async () => {
+    let release!: () => void
+    jobListGate.hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    try {
+      // The first save is held; four more jobs queue up and each asks for a save meanwhile.
+      const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+      const writesBefore = jobListGate.writes
+      for (const prompt of ['q2', 'q3', 'q4', 'q5']) jobs.push(await supervisor.startEngineJob(request(prompt)))
+      release()
+      await supervisor.settleJobWrites()
+      // The held save, then one more for everything asked during it.
+      expect(jobListGate.writes - writesBefore).toBe(2)
+      const saved = JSON.parse(readFileSync(join(dataRoot(), 'jobs', 'jobs.json'), 'utf8')) as JobRecord[]
+      expect(saved.map((job) => job.id).sort()).toEqual(jobs.map((job) => job.id).sort())
+      // Written through a temp file and a rename: nothing is left beside it.
+      expect(existsSync(join(dataRoot(), 'jobs', 'jobs.json.tmp'))).toBe(false)
     } finally {
       release()
       jobListGate.hold = null
