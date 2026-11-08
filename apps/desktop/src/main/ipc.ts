@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, statSync } from 'node:fs'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
 import { schemas } from '@shared/schemas'
-import { STUDIO_TOOLS } from '@shared/mcp'
+import { resolveToolset, toolDefinitions } from '@shared/agent/registry'
 import type { AiToolCall, AiToolResult } from '@shared/ai'
 import type { IpcResult } from '@shared/types'
 import { emit } from './lib/events'
@@ -211,7 +211,7 @@ export function registerIpc(): void {
         if (!event.sender.isDestroyed()) event.sender.send(Events.aiStream, payload)
       },
       runTool: (call) => runToolInRenderer(event, call),
-      tools: STUDIO_TOOLS,
+      tools: toolDefinitions(resolveToolset({ page: 'studio' })),
     }),
   )
 

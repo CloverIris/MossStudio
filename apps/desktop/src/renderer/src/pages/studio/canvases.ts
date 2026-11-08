@@ -277,8 +277,64 @@ export function applyJobs(canvases: ProjectCanvas[], jobs: readonly JobRecord[])
 
 export const MIN_REGION = 12
 
-export function newRegion(kind: ProjectLayerKind, bbox: [number, number, number, number], id: string = crypto.randomUUID()): ProjectLayer {
-  return { id, kind, caption: '', text: kind === 'text' ? '' : undefined, bbox, visible: true, locked: false, opacity: 1 }
+export function newRegion(
+  kind: ProjectLayerKind,
+  bbox: [number, number, number, number],
+  id: string = crypto.randomUUID(),
+  text?: string,
+): ProjectLayer {
+  return { id, kind, caption: '', text: kind === 'text' ? (text ?? '') : undefined, bbox, visible: true, locked: false, opacity: 1 }
+}
+
+/** A region to add: a normalised box (omitted puts it in the middle) and its two strings. */
+export interface RegionInput {
+  kind: ProjectLayerKind
+  caption: string
+  /** Only text regions carry words. */
+  text?: string
+  bbox?: { x: number; y: number; w: number; h: number }
+}
+
+/**
+ * Add one region to a canvas and return both the new canvas and the region.
+ * The box arrives normalised (as the tools take it) and leaves in pixels,
+ * pulled back inside the picture.
+ */
+export function addRegion(canvas: ProjectCanvas, input: RegionInput): { canvas: ProjectCanvas; region: ProjectLayer } {
+  const { width, height } = canvas
+  const box = input.bbox
+    ? clampBox(
+        [input.bbox.x * width, input.bbox.y * height, (input.bbox.x + input.bbox.w) * width, (input.bbox.y + input.bbox.h) * height],
+        width,
+        height,
+      )
+    : clampBox([width * 0.2, height * 0.2, width * 0.8, height * 0.8], width, height)
+  const region = { ...newRegion(input.kind, box, crypto.randomUUID(), input.text), caption: input.caption }
+  return { canvas: { ...canvas, layers: [...canvas.layers, region] }, region }
+}
+
+/** Fields a region edit may carry; the box is already in canvas pixels. */
+export interface LayerEdit {
+  caption?: string
+  text?: string
+  bbox?: [number, number, number, number]
+  visible?: boolean
+  opacity?: number
+}
+
+/**
+ * Apply an edit to one region. Only text regions keep a `text`, and an edited
+ * box is pulled back inside the canvas, so a tool cannot move a region out of
+ * the picture.
+ */
+export function editLayer(layer: ProjectLayer, edit: LayerEdit, size: Pick<ProjectCanvas, 'width' | 'height'>): ProjectLayer {
+  const next: ProjectLayer = { ...layer }
+  if (edit.caption !== undefined) next.caption = edit.caption
+  if (edit.text !== undefined && next.kind === 'text') next.text = edit.text
+  if (edit.visible !== undefined) next.visible = edit.visible
+  if (edit.opacity !== undefined) next.opacity = Math.min(1, Math.max(0.1, edit.opacity))
+  if (edit.bbox) next.bbox = clampBox(edit.bbox, size.width, size.height)
+  return next
 }
 
 /** A drawn rectangle becomes a region only when it is big enough to be intentional. */
