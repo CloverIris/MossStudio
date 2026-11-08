@@ -606,7 +606,10 @@ export function Board(props: BoardProps): React.JSX.Element {
               }}
               onOpenRegion={props.onOpenRegion}
               onDragStart={(event) => startCardDrag(canvas, event)}
-              onOpenViewer={(index) => props.onOpenViewer(shownRun.id, index)}
+              onOpenViewer={(index) => {
+                // Letting go of a moved card is not a click on its picture.
+                if (!cardDrag.isDragTail()) props.onOpenViewer(shownRun.id, index)
+              }}
               onRerun={(seed) => props.onRerun(canvas.id, seed)}
               onCancel={() => {
                 if (jobId) props.onCancel(jobId)

@@ -288,6 +288,42 @@ describe('studio board', () => {
     expect(Math.abs(start.y - port.y)).toBeLessThan(3)
   })
 
+  it('moves a card by dragging its picture; a click still selects it', async () => {
+    const page = await openBoard(app)
+    const saved = (): Promise<{ x: number; y: number } | undefined> =>
+      page.evaluate(() => {
+        const card = window.__mock.state.projects[0]?.canvases.find((canvas) => canvas.id === 'img-1')
+        return card ? { x: card.x, y: card.y } : undefined
+      })
+    const before = (await saved())!
+    const picture = await center(page, 'article[data-canvas-card="img-1"] [data-card-body]')
+    await page.mouse.move(picture.x, picture.y)
+    await page.mouse.down()
+    await page.mouse.move(picture.x + 30, picture.y + 120, { steps: 6 })
+    await page.mouse.up()
+    await expect.poll(async () => (await saved())!.y, { timeout: 10_000 }).toBeGreaterThan(before.y + 60)
+    expect((await saved())!.x).toBeGreaterThan(before.x)
+
+    const moved = await center(page, 'article[data-canvas-card="img-1"] [data-card-body]')
+    await page.mouse.click(moved.x, moved.y)
+    await expect.poll(() => page.evaluate(() => window.__mock.state.projects[0]?.selectedCanvasId), { timeout: 10_000 }).toBe('img-1')
+  })
+
+  it("pulls a wire from anywhere along a picture's right edge", async () => {
+    const page = await openBoard(app)
+    const body = (await page.locator('article[data-canvas-card="img-1"] [data-card-body]').boundingBox())!
+    // Near the top of the right edge, away from the dot in its middle.
+    await page.mouse.move(body.x + body.width - 2, body.y + 12)
+    await page.mouse.down()
+    const target = await center(page, 'article[data-canvas-card="canvas-1"] [data-card-body]')
+    await page.mouse.move(target.x, target.y, { steps: 8 })
+    await expect.poll(() => page.locator('article[data-canvas-card="canvas-1"] [data-drop-zone]').count()).toBeGreaterThan(0)
+    const socket = await center(page, 'article[data-canvas-card="canvas-1"] [data-drop-zone="起始图"]')
+    await page.mouse.move(socket.x, socket.y, { steps: 3 })
+    await page.mouse.up()
+    await expect.poll(() => savedInputs(page), { timeout: 10_000 }).toMatchObject({ init: { link: { canvasId: 'img-1' } } })
+  })
+
   it('turns dropped and pasted pictures into image cards', async () => {
     const page = await openBoard(app)
     const before = await page.locator('article[data-canvas-kind="image"]').count()

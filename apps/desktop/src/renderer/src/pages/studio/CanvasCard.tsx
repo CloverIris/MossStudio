@@ -368,8 +368,20 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
         )}
         style={{ height: bodyHeight }}
         onPointerDown={(event) => {
+          const target = event.target as HTMLElement
+          const onRegion = Boolean(target.closest('[data-region-id]'))
           // A press on the picture outside every region clears the region selection.
-          if (editable && !(event.target as HTMLElement).closest('[data-region-id]')) props.onSelectRegion(null)
+          if (editable && !onRegion) props.onSelectRegion(null)
+          // The picture moves its card, as the title row does.
+          if (
+            props.tool === 'select' &&
+            !props.pick &&
+            !painting &&
+            !editing &&
+            !onRegion &&
+            !target.closest('textarea, input, [data-board-ui]')
+          )
+            props.onDragStart(event)
         }}
         onDoubleClick={(event) => {
           if (!blankFace || props.tool !== 'select' || !props.onChangeDescription || props.pick) return
@@ -489,6 +501,21 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
         ) : null}
       </div>
 
+      {props.hasOutput ? (
+        // The whole right edge pulls out a wire, not only its dot.
+        <div
+          aria-hidden="true"
+          data-board-ui
+          data-output-edge={canvas.id}
+          className="absolute z-[5] cursor-crosshair touch-none"
+          style={{ left: width - 8, top: CARD_HEADER, width: 16, height: bodyHeight }}
+          onPointerDown={(event) => {
+            event.stopPropagation()
+            props.onPortDown(event)
+          }}
+          onClick={(event) => event.stopPropagation()}
+        />
+      ) : null}
       {props.hasOutput ? (
         <button
           type="button"
