@@ -18,7 +18,7 @@
 | 布局 Prompt 合成 | ✅ | 有区域自动编译，无区域用手写提示词；提交前可预览 |
 | Project tabs | ✅ | 重命名、删除、拖动排序、`Ctrl/Cmd+S` 显式保存、自动保存 |
 | 本机 MossInfer | ✅ | Windows + RTX 2080 真实出图（1024² / 8 步 / 69.2s） |
-| GPU 质量档兼容 | ✅ | 按任务实际分配的 GPU 生效；SM 8.0 以下固定 Reference（BF16），不影响同机其他 GPU |
+| GPU 质量档兼容 | ✅ | 按任务实际加载的权重决定：INT4 DiT 用 Turbo，INT8 DiT 或量化文本编码器用 High；BF16 权重在 SM 8.0 以下用 Reference，其余按设置 |
 | 引擎管理页 | ✅ | 状态、探测、Release 选择、安装进度、本机版本切换与删除；下载/探测/兼容性都在 `.staging` 完成，安装失败不进版本列表 |
 | GPU 清单与默认设备 | 🟡 | 启动扫描 UUID/SM/显存；OOBE/引擎页可选默认卡与显存建议；按 GPU 持久化 memory/tier 覆盖并随 Job 快照；标题栏展示统一遥测与队列；Canvas UUID 绑定、每卡独立 sidecar/队列；真实双卡硬件复验待完成 |
 | system/bundled 引擎包 | 🟡 | Windows ZIP、Linux tar、预检、CUDA wheel 解压已接 |
