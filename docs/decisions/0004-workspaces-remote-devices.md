@@ -1,9 +1,11 @@
+---
+status: superseded
+date: 2026-10-19
+superseded-by: ADR-0007, ADR-0008, ADR-0009
+---
+
 # ADR-0004：工作台、远程部署与全局设备管理器
 
-- 状态：**部分实现（2026-10-19）**；工作台/Gradio 参数、设备管理器、远端 Instance
-  （部署/删除/切版本）与官方 Gradio 隧道/输出回传已落地（fake ssh 端到端）；
-  真实 host、远端模型下载/runner 未实现；
-  同日修订：取消浏览器 WebUI
 - 关联：[ADR-0002](0002-trainer-backend.md)、[ADR-0003](0003-launcher-first.md)
 - 影响：启动条语义、Instance/Case/Job 数据模型、窗口数量、创作前端形态、SSH 边界
 

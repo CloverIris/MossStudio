@@ -1,7 +1,11 @@
+---
+status: superseded
+date: 2026-10-19
+superseded-by: ADR-0009
+---
+
 # ADR-0001：macOS 首个运行时选 MNN，而不是 MPS
 
-- 状态：**已接受，V2 执行**（V1 不实现自有引擎，见 [ADR-0003](0003-launcher-first.md)）
-- 日期：2026-10-19
 - 决策者：项目发起人 + 引擎负责人
 
 ## 1. 背景

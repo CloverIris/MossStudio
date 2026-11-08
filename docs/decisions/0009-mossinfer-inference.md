@@ -1,7 +1,11 @@
+---
+status: accepted
+date: 2026-10-23
+amended-by: ADR-0012
+---
+
 # ADR-0009：MossInfer 作为唯一推理引擎
 
-- 状态：Accepted
-- 日期：2026-10-23
 
 ## 决策
 

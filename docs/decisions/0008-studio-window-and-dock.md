@@ -1,7 +1,11 @@
+---
+status: superseded
+date: 2026-10-22
+superseded-by: ADR-0011
+---
+
 # ADR-0008：单 Studio 窗口、工作台覆盖层与可停靠面板
 
-- 状态：Accepted
-- 日期：2026-10-22
 
 ## 背景
 
