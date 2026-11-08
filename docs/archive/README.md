@@ -26,4 +26,5 @@ Documents and files that described the project at an earlier stage. They are kep
 | [model-management.md](model-management.md) | Model components in the Gradio era | [reference/models.md](../reference/models.md) |
 | [model-directories.md](model-directories.md) | The 1.0.3 model directories design | [reference/models.md](../reference/models.md) |
 | [toolchain-and-onboarding.md](toolchain-and-onboarding.md) | Prerequisites and the old first-run checklist | [how-to/setup.md](../how-to/setup.md) |
+| [1.0.3-release-draft.md](1.0.3-release-draft.md) | Release text drafted as `release/README.md` for 1.0.3, which was never published | [release/notes/2.0.0.md](../../release/notes/2.0.0.md), which covers everything since 1.0.2 |
 | [windows-validation-guide.md](windows-validation-guide.md) | The manual Windows validation guide before the installer | [how-to/release-qa-checklist.md](../how-to/release-qa-checklist.md) |
