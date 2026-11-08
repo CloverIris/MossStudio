@@ -104,6 +104,10 @@ const STOPS: Stop[] = [
   { page: 'setup', state: 'first-run', open: { scenario: 'firstRun', route: '/setup' } },
   { page: 'setup', state: 'no-gpu', open: { scenario: 'noGpu', route: '/setup' } },
   { page: 'setup', state: 'installing', open: { scenario: 'engineInstalling', route: '/setup' } },
+  { page: 'setup', state: 'cannot-run-gpu', open: { scenario: 'machineUnusableGpu', route: '/setup' } },
+  { page: 'setup', state: 'cannot-run-memory', open: { scenario: 'machineTinyGpu', route: '/setup' } },
+  { page: 'setup', state: 'slow', open: { scenario: 'machineIntel', route: '/setup' } },
+  { page: 'setup', state: 'low-disk', open: { scenario: 'lowDisk', route: '/setup' } },
   { page: 'studio', state: 'empty', open: { scenario: 'ready', route: '/studio' } },
   { page: 'studio', state: 'model-missing', open: { scenario: 'engineInstalledModelMissing', route: '/studio' } },
   {

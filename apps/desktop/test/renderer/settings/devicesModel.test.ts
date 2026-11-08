@@ -135,7 +135,11 @@ describe('engine per GPU', () => {
       'auto',
       gpuEngineInfo(engineMissingFixture(), unusable),
     )
-    expect(row).toMatchObject({ status: 'error', statusLabel: '不能使用', reason: expect.stringContaining('no shaderInt64') })
+    expect(row).toMatchObject({
+      status: 'error',
+      statusLabel: '不能使用',
+      reason: 'Intel(R) Arc(TM) A770 Graphics 缺少引擎需要的 Vulkan 功能（shaderInt64），没法在它上面运行',
+    })
   })
 
   it('replaces the memory mode / tier pickers of a Vulkan or HIP GPU with one quiet line', () => {
@@ -162,6 +166,19 @@ describe('engine per GPU', () => {
     const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(laptop)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), p))
     expect(rows[1]).toMatchObject({ status: 'unknown', statusLabel: '未使用', reason: expect.stringContaining('集成显卡') })
     expect(planLines(p)[1]).toMatchObject({ detail: '不使用（已有独立显卡）', skipped: true })
+  })
+
+  it('a 2 GB card next to a GPU that runs is quietly unused, and says why', () => {
+    const laptop = machineFixture('laptopSmallGpu')
+    const p = enginePlanFor(laptop, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, [])
+    const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(laptop)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), p))
+    expect(rows[0]).toMatchObject({
+      status: 'unknown',
+      statusLabel: '未使用',
+      reason: 'NVIDIA GeForce MX250 只有 2 GB 显存，默认用另一块显卡（可在 高级 › 每块 GPU 的引擎 里选用它）',
+    })
+    expect(planLines(p)[0]).toMatchObject({ detail: '不使用（显存太小，用另一块显卡）', skipped: true })
+    expect(planLines(p)[1]).toMatchObject({ detail: '兼容模式 · 599 KB', supported: true })
   })
 
   it('labels the engine in use', () => {

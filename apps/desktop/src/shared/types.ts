@@ -1083,6 +1083,20 @@ export interface AppInfo {
   modelDirectories: Record<ModelDirectoryId, string>
   acrylic: boolean
   backend?: BackendInfo
+  /** Installed system memory (os.totalmem). */
+  memoryTotalBytes?: number
+}
+
+/** One disk the missing parts of a model land on (models:space). */
+export interface ModelSpaceDisk {
+  /** The folder to name: the models folder, or a part's own folder from 设置 › 存储. */
+  path: string
+  /** A part here follows the models folder, so choosing another models folder moves it. */
+  modelsFolder: boolean
+  /** Free bytes; null when unreadable or slower to answer than the check allows. */
+  freeBytes: number | null
+  /** What each part landing here still has to download. */
+  missingBytes: number[]
 }
 
 export interface IpcError {

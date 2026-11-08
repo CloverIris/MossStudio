@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, statSync } from 'node:fs'
+import { totalmem } from 'node:os'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
 import { schemas } from '@shared/schemas'
@@ -25,6 +26,7 @@ import {
   scanModels,
   startDownload,
   installBundle,
+  modelSpace,
 } from './services/models'
 import { deleteCombination, listCombinations, saveCombination } from './services/modelCombinations'
 import { galleryDetail, listGallery, recordJobOutputs, revealInFolder, trashGalleryItem } from './services/gallery'
@@ -187,6 +189,7 @@ export function registerIpc(): void {
       },
       acrylic: false,
       backend: getBackendInfo(),
+      memoryTotalBytes: totalmem(),
     }
   })
 
@@ -678,6 +681,8 @@ export function registerIpc(): void {
     emit(Events.modelsChanged, { reason: 'combination', id })
     return { ok: true }
   })
+
+  handle(Ipc.modelsSpace, schemas.modelsSpace, ({ modelIds }) => modelSpace(getSettings(), modelIds))
 
   handle(Ipc.modelsCleanupEmpty, null, async () => {
     const removed = await cleanupEmptyModelDirs(getSettings())

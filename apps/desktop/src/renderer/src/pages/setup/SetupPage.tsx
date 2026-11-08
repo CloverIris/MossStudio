@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Monitor, RefreshCw } from 'lucide-react'
+import { Check, ChevronRight, ExternalLink, Monitor, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Ipc } from '@shared/channels'
@@ -8,13 +8,15 @@ import { bytes } from '../../lib/format'
 import { timeLeftLabel, type Preparation } from '../../lib/preparation'
 import { useApp } from '../../store'
 import { Button, ProgressBar, Spinner, cn, useToast } from '../../components/ui'
-import { useAppInfo } from '../settings/useAppInfo'
 import { pickFolder } from '../settings/fields'
 import { HostDialog } from '../settings/HostDialog'
 import { emptyHostForm, hostPathsPatch, hostSavePayload, type HostForm } from '../settings/hostForm'
 import type { PlanLine } from '../../lib/engineInstall'
-import { setupSpaceLabel, stepsToStart, type SetupStep } from './setupState'
+import { setupNeedLine, setupSpaceLabel, stepsToStart, type SetupStep } from './setupState'
 import { useSetup } from './useSetup'
+
+/** The README section on which computers run MossStudio. */
+const WHICH_COMPUTERS_URL = 'https://github.com/ShallowElec/MossStudio#哪些电脑能用'
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -39,29 +41,48 @@ function PlanLines({ lines }: { lines: PlanLine[] }): React.JSX.Element | null {
   )
 }
 
-/** The GPU in one quiet line; what each GPU runs opens under it when there is more to say. */
-function GpuLine({ step, lines }: { step: SetupStep | undefined; lines: PlanLine[] }): React.JSX.Element | null {
+/**
+ * The GPU in one quiet line; what each GPU runs opens under it when there is
+ * more to say. When it will run slowly, the tick turns amber and one line says why.
+ */
+function GpuLine({ step, lines, slow }: { step: SetupStep | undefined; lines: PlanLine[]; slow?: string }): React.JSX.Element | null {
   const [open, setOpen] = useState(false)
   if (!step || step.state !== 'done') return null
   const more = lines.length > 1 || lines.some((line) => line.note || line.tip || !line.supported)
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-ui text-ink-2">
-        <span className="flex size-[18px] items-center justify-center rounded-full bg-ok text-on-ink">
-          <Check className="size-3" strokeWidth={2.6} aria-hidden="true" />
-        </span>
-        <span className="tabular min-w-0 truncate" data-setup-gpu>
-          {step.detail}
-        </span>
-        {lines.length > 0 ? (
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={() => setOpen((value) => !value)}
-            className={cn('shrink-0 rounded-md px-1.5 text-ui hover:bg-well hover:text-ink', more ? 'text-ink' : 'text-ink-2')}
-          >
-            {open ? '收起' : '详情'}
-          </button>
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-2 text-ui text-ink-2">
+          {slow ? (
+            <span
+              className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-warn text-[12px] font-bold leading-none text-on-ink"
+              aria-hidden="true"
+            >
+              !
+            </span>
+          ) : (
+            <span className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-ok text-on-ink">
+              <Check className="size-3" strokeWidth={2.6} aria-hidden="true" />
+            </span>
+          )}
+          <span className="tabular min-w-0 truncate" data-setup-gpu>
+            {step.detail}
+          </span>
+          {lines.length > 0 ? (
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen((value) => !value)}
+              className={cn('shrink-0 rounded-md px-1.5 text-ui hover:bg-well hover:text-ink', more ? 'text-ink' : 'text-ink-2')}
+            >
+              {open ? '收起' : '详情'}
+            </button>
+          ) : null}
+        </div>
+        {slow ? (
+          <p className="pl-[26px] text-ui text-warn" data-setup-slow>
+            {slow}
+          </p>
         ) : null}
       </div>
       {open ? <PlanLines lines={lines} /> : null}
@@ -146,8 +167,7 @@ export function SetupPage(): React.JSX.Element {
   const toast = useToast()
   const settings = useApp((state) => state.settings)
   const saveSettings = useApp((state) => state.saveSettings)
-  const info = useAppInfo()
-  const { view, progress, modelName, starting, start, redetect, redetecting, chooseModelFolder, usingFolder } = useSetup()
+  const { view, progress, modelName, starting, start, redetect, redetecting, chooseModelFolder, usingFolder, info } = useSetup()
   const [leaving, setLeaving] = useState(false)
   const [hostForm, setHostForm] = useState<HostForm | null>(null)
   const space = setupSpaceLabel(view)
@@ -167,6 +187,7 @@ export function SetupPage(): React.JSX.Element {
   const running = view.phase === 'running'
   const pending = stepsToStart(view)
   const mac = view.os === 'macos'
+  const need = setupNeedLine(view)
   const gpuStep = view.steps.find((step) => step.id === 'gpu')
   const modelStep = view.steps.find((step) => step.id === 'model')
   const failedStep = view.steps.find((step) => step.state === 'error')
@@ -248,7 +269,23 @@ export function SetupPage(): React.JSX.Element {
           <>
             <div className="flex flex-col gap-1.5">
               <h1 className="text-display font-semibold text-ink">{mac ? '这台 Mac 不能在本机生成' : '这台电脑跑不了模型'}</h1>
-              <p className="text-ui text-ink-2">{mac ? '需要一台装有 NVIDIA 显卡的电脑。' : gpuStep?.detail}</p>
+              <p className="text-ui text-ink-2" data-setup-reason>
+                {mac ? '需要一台装有 NVIDIA 显卡的电脑。' : gpuStep?.detail}
+              </p>
+              {need ? (
+                <p className="text-ui text-ink-3" data-setup-need>
+                  {need}
+                  {/* An inline link inside the sentence (ui-rules §3). */}
+                  <button
+                    type="button"
+                    onClick={() => void call(Ipc.openExternal, { url: WHICH_COMPUTERS_URL })}
+                    className="inline-flex items-center gap-0.5 rounded-sm align-baseline text-ink-2 underline underline-offset-2 hover:text-ink"
+                  >
+                    哪些电脑能用
+                    <ExternalLink className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                  </button>
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-col gap-2.5">
               <Choice
@@ -302,10 +339,16 @@ export function SetupPage(): React.JSX.Element {
                 正在检查这台电脑…
               </p>
             ) : (
-              <GpuLine step={gpuStep} lines={view.lines} />
+              <GpuLine step={gpuStep} lines={view.lines} {...(view.slow ? { slow: view.slow } : {})} />
             )}
             <div className="flex flex-col gap-3 rounded-xl bg-surface px-5 py-4" data-setup-summary>
               <span className="tabular text-title font-semibold text-ink">{space ? `下载${space}` : '正在计算大小…'}</span>
+              {view.diskShort ? (
+                // Plain danger text in the card's own rhythm, not a Notice box (ui-rules §4).
+                <p className="text-ui text-danger" role="status" data-setup-disk>
+                  {view.diskShort}
+                </p>
+              ) : null}
               <div className="flex items-center gap-3 text-ui text-ink-2">
                 <span className="min-w-0 flex-1 truncate" title={modelsPath}>
                   保存到 {modelsPath ?? '…'}
@@ -331,7 +374,13 @@ export function SetupPage(): React.JSX.Element {
               <Button tone="ghost" size="lg" disabled={leaving} onClick={() => void leave('dismissed', '/studio')}>
                 稍后
               </Button>
-              <Button tone="primary" size="lg" disabled={starting || view.phase === 'checking'} onClick={() => void start()}>
+              <Button
+                tone="primary"
+                size="lg"
+                // Not enough room in the chosen folder: 更改 is the way on.
+                disabled={starting || view.phase === 'checking' || Boolean(view.diskShort)}
+                onClick={() => void start()}
+              >
                 {starting ? <Spinner /> : null}
                 {view.phase === 'error' ? '重试' : '开始下载'}
               </Button>

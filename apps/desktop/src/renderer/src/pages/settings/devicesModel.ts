@@ -19,7 +19,7 @@ import type {
   CheckStatus,
   GpuProfileOverride,
 } from '@shared/types'
-import { bytes } from '../../lib/format'
+import { memorySize } from '../../lib/format'
 
 export interface GpuRow {
   uuid: string
@@ -45,8 +45,10 @@ export interface GpuEngineInfo {
   plannedId: string | null
   reason?: string
   tip?: string
-  /** An integrated GPU left unused because a discrete one runs an engine. */
+  /** Left unused on purpose: an integrated GPU next to a discrete one, or a card too small for the model next to one that runs. */
   skipped?: boolean
+  /** Why, when it is not the integrated-GPU case. */
+  skipReason?: string
 }
 
 export function gpuEngineInfo(readiness: EngineReadiness | null, plan: EnginePlanView | null): GpuEngineInfo[] {
@@ -62,7 +64,8 @@ export function gpuEngineInfo(readiness: EngineReadiness | null, plan: EnginePla
       packageId: used?.packageId ?? null,
       plannedId: choice ? choice.packageId : (used?.packageId ?? null),
       ...(choice && !choice.package ? { reason: choice.reason } : {}),
-      ...(choice?.integratedSkipped ? { skipped: true } : {}),
+      ...(choice?.integratedSkipped || choice?.memorySkipped ? { skipped: true } : {}),
+      ...(choice?.memorySkipped ? { skipReason: choice.reason } : {}),
       ...(choice?.tip ? { tip: choice.tip } : {}),
     }
   })
@@ -123,7 +126,7 @@ export function defaultGpuUuid(inventory: GpuInventorySnapshot | null, selection
 }
 
 export function gpuMemoryLabel(device: Pick<GpuInventoryDevice, 'memoryTotalBytes'>): string {
-  return device.memoryTotalBytes ? bytes(device.memoryTotalBytes) : '显存未知'
+  return device.memoryTotalBytes ? memorySize(device.memoryTotalBytes) : '显存未知'
 }
 
 /** Rows for the GPU group: name, memory, which one is the default, and whether the engine can use it. */
@@ -143,7 +146,7 @@ export function gpuRows(
     const compatibility = cli
       ? { status: 'supported' as const, reason: undefined }
       : engine?.skipped && !engine.packageId
-        ? { status: 'skipped' as const, reason: '已有独立显卡运行引擎，默认不使用这块集成显卡' }
+        ? { status: 'skipped' as const, reason: engine.skipReason ?? '已有独立显卡运行引擎，默认不使用这块集成显卡' }
         : engine && engine.plannedId === null && engine.reason
           ? { status: 'unsupported' as const, reason: engine.reason }
           : probe?.devices.find((candidate) => candidate.uuid === device.uuid)

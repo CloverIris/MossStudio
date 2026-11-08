@@ -216,6 +216,108 @@ describe('first run', () => {
   })
 })
 
+/** The recommended model's four parts (25.3 GiB) plus one margin, (25.3 + 1) × 1.1 ≈ 29 GB, against 12 GB free. */
+const LOW_DISK_LINE = '这个位置只剩 12 GB，换一个有 29 GB 空闲的位置。'
+
+describe('first run on a computer that cannot run it, or runs it slowly', () => {
+  const app = useApp()
+  const reason = (page: Page) => page.locator('[data-setup-reason]').textContent()
+  const need = '需要 NVIDIA RTX 30 及更新的显卡，或支持 Vulkan 1.2 的显卡。哪些电脑能用'
+
+  /** The ways forward stay the same whatever the reason; nothing can start. */
+  async function expectWaysForward(page: Page): Promise<void> {
+    expect(await page.getByRole('button', { name: /用另一台电脑/ }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: /重新检测/ }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: '先随便看看' }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: '开始下载' }).count()).toBe(0)
+  }
+
+  it('a GPU the engine cannot use: names the card and why, says what is needed, links to which computers work', async () => {
+    const page = await app.open({ scenario: 'machineUnusableGpu', route: '/setup', theme: 'light' })
+    await expect.poll(() => page.getByRole('heading', { name: '这台电脑跑不了模型' }).isVisible()).toBe(true)
+    await expect.poll(() => reason(page)).toBe('Intel(R) UHD Graphics 620 不支持 Vulkan 1.2，引擎没法在它上面运行。')
+    expect(await page.locator('[data-setup-need]').textContent()).toBe(need)
+    await expectWaysForward(page)
+    await app.screenshot('setup-cannot-run-gpu-light')
+    await page.getByRole('button', { name: '哪些电脑能用' }).click()
+    await expect.poll(() => app.calls('app:open-external')).toEqual([{ url: 'https://github.com/ShallowElec/MossStudio#哪些电脑能用' }])
+  })
+
+  it('a GPU with 2 GB: blocked, with how much it has and how much it needs', async () => {
+    const page = await app.open({ scenario: 'machineTinyGpu', route: '/setup', theme: 'dark' })
+    await expect.poll(() => page.getByRole('heading', { name: '这台电脑跑不了模型' }).isVisible()).toBe(true)
+    await expect.poll(() => reason(page)).toBe('NVIDIA GeForce GT 1030 只有 2 GB 显存，至少需要 4 GB。')
+    // What is needed names memory: the person already has a card.
+    expect(await page.locator('[data-setup-need]').textContent()).toBe(
+      '需要显存至少 4 GB 的显卡：NVIDIA RTX 30 及更新，或支持 Vulkan 1.2 的显卡。哪些电脑能用',
+    )
+    await expectWaysForward(page)
+    await app.screenshot('setup-cannot-run-memory-dark')
+  })
+
+  it('the Mac screen keeps its own sentence, without the GPU line', async () => {
+    const page = await app.open({ scenario: 'machineMac', route: '/setup' })
+    await expect.poll(() => reason(page)).toBe('需要一台装有 NVIDIA 显卡的电脑。')
+    expect(await page.locator('[data-setup-need]').count()).toBe(0)
+  })
+
+  it('兼容模式: the tick turns amber and one line says it will be very slow; 开始下载 still works', async () => {
+    const page = await app.open({ scenario: 'machineIntel', route: '/setup', theme: 'light' })
+    // Vulkan reports no memory size for a non-NVIDIA card.
+    await expect.poll(() => page.locator('[data-setup-gpu]').textContent()).toBe('Intel(R) Arc(TM) A770 Graphics · 显存未知 · 兼容模式')
+    expect(await page.locator('[data-setup-slow]').textContent()).toBe('能用，但会很慢：一张图可能要几分钟甚至更久。')
+    expect(await page.getByRole('button', { name: '详情' }).count()).toBe(1)
+    await expect.poll(() => page.getByRole('button', { name: '开始下载' }).isEnabled()).toBe(true)
+    await app.screenshot('setup-slow-light')
+  })
+
+  it('a laptop whose 2 GB card is too small runs on its integrated GPU: not blocked, slow', async () => {
+    const page = await app.open({ scenario: 'machineLaptopSmallGpu', route: '/setup' })
+    await expect
+      .poll(() => page.locator('[data-setup-gpu]').textContent())
+      .toBe('Intel(R) UHD Graphics 620 · 显存未知 · 兼容模式 · 共 2 块')
+    expect(await page.locator('[data-setup-slow]').textContent()).toBe('能用，但会很慢：一张图可能要几分钟甚至更久。')
+    expect(await page.getByRole('heading', { name: '这台电脑跑不了模型' }).count()).toBe(0)
+    await expect.poll(() => page.getByRole('button', { name: '开始下载' }).isEnabled()).toBe(true)
+  })
+
+  it('a 6 GB card, or 8 GB of memory: one line with the number', async () => {
+    let page = await app.open({ scenario: 'machineSmallGpu', route: '/setup' })
+    await expect.poll(() => page.locator('[data-setup-slow]').textContent()).toBe('显存 6 GB，能用，生成会慢一些。')
+    page = await app.open({ scenario: 'lowMemory', route: '/setup' })
+    await expect.poll(() => page.locator('[data-setup-slow]').textContent()).toBe('内存 8 GB，能用，生成会慢一些。')
+    await expect.poll(() => page.getByRole('button', { name: '开始下载' }).isEnabled()).toBe(true)
+    // A computer with room to spare has no such line.
+    page = await app.open({ scenario: 'firstRun', route: '/setup' })
+    await expect.poll(() => page.locator('[data-setup-gpu]').textContent()).toBe('NVIDIA GeForce RTX 4090 · 24 GB')
+    expect(await page.locator('[data-setup-slow]').count()).toBe(0)
+  })
+
+  it('too little room in the folder: says so before the download, and 更改 to a bigger one lets it start', async () => {
+    const page = await app.open({ scenario: 'lowDisk', route: '/setup', theme: 'dark' })
+    const summary = page.locator('[data-setup-summary]')
+    await expect.poll(() => summary.innerText()).toContain('下载约 26 GB')
+    const line = page.locator('[data-setup-disk]')
+    await expect.poll(() => line.textContent()).toBe(LOW_DISK_LINE)
+    expect(await line.getAttribute('role')).toBe('status')
+    expect(await page.getByRole('button', { name: '开始下载' }).isDisabled()).toBe(true)
+    await app.screenshot('setup-low-disk-dark')
+
+    // Space freed in the file manager: coming back to the window reads it again.
+    await page.evaluate(() => {
+      window.__mock.state.diskFree = { '/fixture/data/models': 13 * 1024 ** 3 }
+      window.dispatchEvent(new Event('focus'))
+    })
+    await expect.poll(() => line.textContent()).toBe(LOW_DISK_LINE.replace('只剩 12 GB', '只剩 13 GB'))
+
+    await page.evaluate(() => window.__mock.handle(window.__mock.Ipc.pickDialog, () => '/mnt/big/models'))
+    await summary.getByRole('button', { name: '更改' }).click()
+    await expect.poll(() => summary.innerText()).toContain('保存到 /mnt/big/models')
+    await expect.poll(() => page.locator('[data-setup-disk]').count()).toBe(0)
+    await expect.poll(() => page.getByRole('button', { name: '开始下载' }).isEnabled()).toBe(true)
+  })
+})
+
 describe('readiness in 创作', () => {
   const app = useApp()
 

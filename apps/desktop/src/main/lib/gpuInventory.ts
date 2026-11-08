@@ -1,4 +1,5 @@
 import type { EngineMachineGpu } from '@shared/engineChoice'
+import { gpuMemoryTooSmall } from '@shared/machineFit'
 import type { GpuInventoryDevice, GpuInventorySnapshot, GpuSelection } from '@shared/types'
 
 function parseBytes(value: string | undefined): number | undefined {
@@ -53,10 +54,13 @@ export function parseNvidiaComputeCapabilities(output: string): Map<string, { ma
 }
 
 export function recommendedGpu(inventory: GpuInventoryDevice[]): GpuInventoryDevice | null {
-  const nvidia = recommendedNvidiaGpu(inventory)
+  // A card with too little memory for the model is the last choice: another GPU that can run it is the better default.
+  const roomy = inventory.filter((device) => !gpuMemoryTooSmall(device.memoryTotalBytes))
+  const pool = roomy.length > 0 ? roomy : inventory
+  const nvidia = recommendedNvidiaGpu(pool)
   if (nvidia) return nvidia
   // No NVIDIA GPU with a known compute capability: the first other GPU, discrete ones were listed first by Vulkan.
-  return inventory.find((device) => device.vendor !== undefined) ?? null
+  return pool.find((device) => device.vendor !== undefined) ?? null
 }
 
 function recommendedNvidiaGpu(inventory: GpuInventoryDevice[]): GpuInventoryDevice | null {
@@ -84,6 +88,12 @@ export function resolveGpuSelection(
 ): GpuInventoryDevice | null {
   const uuid = canvasDeviceUuid ?? (typeof selection === 'object' ? selection.uuid : recommendedGpu(inventory)?.uuid)
   return uuid ? (inventory.find((device) => device.uuid === uuid) ?? null) : null
+}
+
+/** nvidia-smi's pick stands unless it is too small and the probe added a GPU that may run instead. */
+function keepsRecommendation(devices: GpuInventoryDevice[], uuid: string | undefined): boolean {
+  const current = devices.find((device) => device.uuid === uuid)
+  return Boolean(current) && !gpuMemoryTooSmall(current!.memoryTotalBytes)
 }
 
 /**
@@ -120,6 +130,8 @@ export function mergeEngineGpus(snapshot: GpuInventorySnapshot, gpus: EngineMach
     ...snapshot,
     ...(added && snapshot.status !== 'ok' ? { status: 'ok' as const, error: undefined } : {}),
     devices,
-    recommendedGpuUuid: snapshot.recommendedGpuUuid ?? recommendedGpu(devices)?.uuid,
+    recommendedGpuUuid: keepsRecommendation(devices, snapshot.recommendedGpuUuid)
+      ? snapshot.recommendedGpuUuid
+      : (recommendedGpu(devices)?.uuid ?? snapshot.recommendedGpuUuid),
   }
 }

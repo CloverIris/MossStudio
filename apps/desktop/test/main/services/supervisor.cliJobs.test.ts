@@ -8,6 +8,7 @@ import type { MossInferSink } from '@main/services/mossInfer'
 import type { CliJobOptions } from '@main/services/cliEngine'
 import type { DeviceEngine } from '@main/services/engineInstalls'
 import { useTempDataRoot } from '@test/helpers/tempDir'
+import { inventoryDevicesFor, machineFixture } from '@test/mocks/backend/machines'
 
 /** Routing of local jobs by the package a GPU runs: moss-server for CUDA, the one-shot CLI for Vulkan / HIP. */
 const emit = vi.hoisted(() => vi.fn())
@@ -411,6 +412,36 @@ describe('automatic GPU assignment on a mixed machine', () => {
     refreshGpuInventory.mockResolvedValue({ devices: [igpu, arc] })
     const job = await supervisor.startEngineJob(request())
     expect(job.deviceUuid).toBe(arc.uuid)
+  })
+
+  it('a laptop with a 2 GB card sends automatic work to its integrated GPU, never to the card that cannot hold the model', async () => {
+    const machine = machineFixture('laptopSmallGpu')
+    const [mx250, uhd] = inventoryDevicesFor(machine)
+    // Worst case: an older plan left a Vulkan engine on the 2 GB card too.
+    engines.set(mx250!.uuid, deviceEngine('vulkan', mx250!))
+    engines.set(uhd!.uuid, deviceEngine('vulkan', uhd!))
+    currentEngineMachine.mockReturnValue({ machine })
+    refreshGpuInventory.mockResolvedValue({ devices: [mx250, uhd] })
+    expect((await supervisor.startEngineJob(request())).deviceUuid).toBe(uhd!.uuid)
+  })
+
+  it('a 2 GB card that runs moss-server still gives way to the integrated GPU', async () => {
+    const machine = machineFixture('laptopSmallGpu')
+    const [card, uhd] = inventoryDevicesFor(machine)
+    const mx450 = { ...card!, name: 'NVIDIA GeForce MX450', computeCapability: { major: 7, minor: 5 } }
+    const small = decodeEngineHello({
+      protocol_version: 2,
+      probe: { devices: [{ index: 0, name: mx450.name, supported: true, compute_capability: '7.5' }] },
+    })
+    engines.set(mx450.uuid, { ...deviceEngine('cuda', mx450), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+    engines.set(uhd!.uuid, deviceEngine('vulkan', uhd!))
+    probeLocalEngineGpuCompatibility.mockResolvedValue({ hello: small, helloFor: (uuid: string) => (uuid === mx450.uuid ? small : null) })
+    currentEngineMachine.mockReturnValue({ machine })
+    refreshGpuInventory.mockResolvedValue({ devices: [mx450, uhd] })
+    expect((await supervisor.startEngineJob(request())).deviceUuid).toBe(uhd!.uuid)
+    // With nothing else there, the small card is still used.
+    refreshGpuInventory.mockResolvedValue({ devices: [mx450] })
+    expect((await supervisor.startEngineJob(request({ prompt: 'alone' }))).deviceUuid).toBe(mx450.uuid)
   })
 
   it('a CLI GPU picked by hand runs plain jobs and refuses what its engine cannot do', async () => {

@@ -366,3 +366,71 @@ describe('download queue order (ported from tools/test-download-queue.mjs)', () 
     expect(hf.requests.some((r) => r.includes('/resolve/'))).toBe(false)
   })
 })
+
+describe('what a model part still has to download, and where', () => {
+  const GiB = 1024 ** 3
+  const oid = (digit: string): string => digit.repeat(64)
+  /** An interrupted download of vae-big, as runModelDownload leaves it: the resolved files in the .pending record. */
+  function interrupted(files: Array<{ digit: string; size: number; blob?: number; part?: number }>): void {
+    const dir = cacheDirFor(modelsRoot(), 'vae', 'org/big')
+    mkdirSync(join(dir, 'blobs'), { recursive: true })
+    const entries = files.map((file, index) => ({ path: `vae/f${index}`, size: file.size, oid: oid(file.digit) }))
+    writeFileSync(join(dir, '.clover-vae-big.json.pending'), JSON.stringify({ version: 2, id: 'vae-big', entries, owned: [] }))
+    for (const file of files) {
+      const blob = join(dir, 'blobs', oid(file.digit))
+      if (file.blob !== undefined) writeFileSync(blob, Buffer.alloc(file.blob))
+      if (file.part !== undefined) writeFileSync(`${blob}.part`, Buffer.alloc(file.part))
+    }
+  }
+  const entry = async (id: string) => (await models.getCatalog(settings, true)).models.find((model) => model.id === id)!
+
+  it('counts a partial download like the check on start: complete and reused files are free, .part bytes are kept', async () => {
+    interrupted([
+      // Reused from another installation: the blob is already complete.
+      { digit: 'a', size: 4000, blob: 4000 },
+      // Partly downloaded.
+      { digit: 'b', size: 3000, part: 1000 },
+      // Not started.
+      { digit: 'c', size: 500 },
+      // A blob of the wrong size is not complete: only what its .part holds is kept.
+      { digit: 'd', size: 800, blob: 10, part: 300 },
+    ])
+    expect(await models.modelMissingBytes(settings, await entry('vae-big'))).toBe(2000 + 500 + 500)
+  })
+
+  it('a part that never started counts its catalog size; an installed one nothing', async () => {
+    expect(await models.modelMissingBytes(settings, await entry('vae-a'))).toBe(100)
+    expect(await models.modelMissingBytes(settings, { ...(await entry('vae-a')), installed: true })).toBe(0)
+  })
+
+  it('groups the parts by disk: the models folder, and a part with its own folder named by that folder', async () => {
+    interrupted([{ digit: 'b', size: 3 * GiB, part: 1000 }])
+    // support-a has nothing to download (size 0), and an unknown id is skipped.
+    const ids = ['vae-a', 'vae-big', 'support-a', 'not-in-catalog']
+    const disks = await models.modelSpace(settings, ids)
+    expect(disks).toHaveLength(1)
+    expect(disks[0]).toMatchObject({ path: modelsRoot(), modelsFolder: true, missingBytes: [100, 3 * GiB - 1000] })
+    expect(disks[0]!.freeBytes).toBeGreaterThan(0)
+
+    // VAEs in a folder of their own: named by that folder, and 更改 would not move them. The folder does not
+    // exist yet, so its disk is the one of the nearest folder that does.
+    // (vae-big's interrupted files stay in the old folder, and its catalog size is 0, so only vae-a lands there.)
+    const own = join(dataRoot(), 'nowhere', 'vae')
+    const custom = await models.modelSpace({ ...settings, modelDirectories: { ...settings.modelDirectories, vae: own } }, ids)
+    expect(custom).toEqual([{ path: own, modelsFolder: false, freeBytes: expect.any(Number), missingBytes: [100] }])
+  })
+
+  it('a disk that does not answer in time, at any step, gives up and answers unknown (no disks)', async () => {
+    vi.resetModules()
+    vi.doMock('@main/lib/disk', async (original) => ({
+      ...(await original<typeof import('@main/lib/disk')>()),
+      nearestExisting: () => new Promise<string>(() => undefined),
+    }))
+    try {
+      const slow = await import('@main/services/models')
+      expect(await slow.modelSpace(settings, ['vae-a'], 20)).toEqual([])
+    } finally {
+      vi.doUnmock('@main/lib/disk')
+    }
+  })
+})
