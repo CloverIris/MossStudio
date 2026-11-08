@@ -24,6 +24,14 @@ Channels:
 
 Test builds from `build.yml` trust an ephemeral key and read a local feed. They can never update from the real feed.
 
+## Nightly builds
+
+`.github/workflows/nightly.yml` builds `main` every night at 18:00 UTC. It replaces the rolling `nightly` prerelease, moving its tag to the new commit, and uploads the setups and portable packages for all four platforms.
+
+- The version is `<next release>-nightly.<UTC date>`, for example `1.0.3-nightly.20261108`. The next release is the `package.json` version, or one patch later when that version is already tagged. So a nightly always ranks below the release that follows it.
+- A nightly is download-only. It has no full or delta packages, it is on no update feed, and it never enters the `release` environment or touches the signing key.
+- The scheduled run skips a night when `main` is still at the `nightly` tag. To build one now, run `gh workflow run nightly.yml`.
+
 ## One-time setup (a maintainer)
 
 1. Run `pnpm release:keygen`. It prints a `PRODUCTION_UPDATE_KEYS` entry and the private key.
