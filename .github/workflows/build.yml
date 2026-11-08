@@ -4,6 +4,7 @@ name: Build
 #   every pull request    typecheck, unit, launcher (Go) and E2E tests (`checks`)
 #   + install/update      the package + install/update/rollback matrix, without macOS Intel,
 #     paths changed       when the PR touches what it tests (launcher, install, update, release)
+#   merge queue           the same as the pull request, on the PR merged onto the queue ahead of it
 #   push to main, manual  everything on all four platforms
 # Run the full matrix for a pull request by hand: `gh workflow run build.yml --ref <branch>`.
 # `CI result` is the one check to require: it passes when every job that ran passed.
@@ -12,6 +13,8 @@ name: Build
 # and reads its update feed from a local server, so it can never update from the real feed.
 on:
   pull_request:
+  # The merge queue on main tests each PR on top of the ones ahead of it before merging.
+  merge_group:
   push:
     branches: [main]
   workflow_dispatch:
@@ -41,8 +44,8 @@ jobs:
         run: bash .github/scripts/ci-scope.sh
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
 
   checks:
     name: Typecheck, unit tests, launcher tests, E2E (Linux)

@@ -50,13 +50,15 @@ Before opening a PR, run lint, format check, typecheck and unit tests, plus E2E 
 - Every PR runs typecheck, lint, format check, unit, launcher, build, E2E and scenarios.
 - A PR that touches the launcher, install, update, setup or release code, the workflow or dependencies also runs the package + install/update/rollback test on Windows, Linux and macOS arm64.
 - `main` and manual runs add macOS Intel. To run the full matrix on a PR: `gh workflow run build.yml --ref <branch>`.
-- **`CI result`** is the single required check. It passes only when every job that ran passed.
+- The merge queue runs the same jobs as the PR, on the PR merged onto `main` and the PRs ahead of it.
+- **`CI result`** and **`Conventional Commit title`** (`.github/workflows/pr-title.yml`) are the required checks. `CI result` passes only when every job that ran passed.
 
 ## Branches, commits and pull requests
 
 - Work on a branch named after the change type: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `ci/`, `test/`.
-- Commit messages and PR titles follow Conventional Commits, in English: `fix(update): tell the user once when a version is rolled back`. User-facing UI text stays Chinese.
-- Every change reaches `main` through a pull request, **squash-merged**. The PR title becomes the commit on `main`, so make it a good one. Branches are deleted after merging.
+- Commit messages and PR titles follow Conventional Commits, in English: `fix(update): tell the user once when a version is rolled back`. CI checks the PR title, because it becomes the commit on `main`. Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `style`, `test`, `build`, `ci`, `chore`, `revert`. User-facing UI text stays Chinese.
+- Every change reaches `main` through a pull request, **squash-merged** by the **merge queue**: when a PR is approved and green, add it to the queue (`gh pr merge <n> --squash`, or "Merge when ready"). The queue tests it on top of the PRs ahead of it and merges them in order, so nobody rebases by hand to catch up with `main`. Branches are deleted after merging.
+- Do not stack PRs (one PR based on another's branch). With squash merges, the base PR lands as a new commit and the stacked branch then carries the old one. If a stack cannot be avoided, merge the base first, then retarget the next PR to `main` and drop the base's commits: `git rebase --onto origin/main <last commit of the old base> <branch>`.
 - A PR says what changed and why, how it was verified, and which platforms it affects (the template asks).
 - Reformat-only commits go into `.git-blame-ignore-revs`. Run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once.
 - Commit trailers name people only. No tool attribution lines (see [AI-assisted contributions](#ai-assisted-contributions)).
@@ -91,4 +93,4 @@ Rules that no tool checks are in [docs/reference/coding-standards.md](docs/refer
 
 ## Releases
 
-See [docs/how-to/release.md](docs/how-to/release.md). In short: bump both `package.json` versions, add `release/notes/<version>.md`, merge the PR, then tag `v<version>` on `main`.
+See [docs/how-to/release.md](docs/how-to/release.md). In short: bump both `package.json` versions, draft `release/notes/<version>.md` with `pnpm release:notes` and rewrite it for users, merge the PR, then tag `v<version>` on `main`.
