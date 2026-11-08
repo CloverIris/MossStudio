@@ -27,6 +27,12 @@ describe('studio/assistant format', () => {
     expect(toolDetail(JSON.stringify({ layers: [{}, {}] }))).toBe('2 个区域')
   })
 
+  it('describes a held-back write as a plan step, never as raw arguments', () => {
+    const proposed = { proposed: { tool: 'studio_create_scenes', args: {}, label: '新建 6 个画面：01 推门迎春' } }
+    expect(toolDetail(JSON.stringify(proposed))).toBe('已加入方案：新建 6 个画面：01 推门迎春')
+    expect(toolDetail(JSON.stringify({ proposed: {} }))).toBe('已加入方案，等你确认')
+  })
+
   it('clips what is still too long to read', () => {
     const detail = toolDetail(JSON.stringify({ note: 'x'.repeat(400) }))
     expect(detail.length).toBeLessThanOrEqual(121)

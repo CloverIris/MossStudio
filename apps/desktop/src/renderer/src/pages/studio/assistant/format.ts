@@ -30,6 +30,11 @@ export function toolDetail(content: string): string {
     const problems = Array.isArray(parsed.problems) ? parsed.problems.filter((item): item is string => typeof item === 'string') : []
     if (typeof parsed.summary === 'string') return clip(problems.length ? `${parsed.summary} · 还差：${problems[0]}` : parsed.summary, 120)
     if (problems.length) return clip(`还差：${problems[0]}`, 120)
+    // A write the advanced mode held back: it is a plan step, not a result.
+    const proposed = parsed.proposed as { label?: unknown } | undefined
+    if (proposed && typeof proposed === 'object') {
+      return clip(typeof proposed.label === 'string' ? `已加入方案：${proposed.label}` : '已加入方案，等你确认', 120)
+    }
     const overview = summarize(parsed)
     if (overview) return overview
     return clip(
