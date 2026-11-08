@@ -19,7 +19,7 @@ import type {
   CheckStatus,
   GpuProfileOverride,
 } from '@shared/types'
-import { bytes } from '../../lib/format'
+import { memorySize } from '../../lib/format'
 
 export interface GpuRow {
   uuid: string
@@ -123,7 +123,7 @@ export function defaultGpuUuid(inventory: GpuInventorySnapshot | null, selection
 }
 
 export function gpuMemoryLabel(device: Pick<GpuInventoryDevice, 'memoryTotalBytes'>): string {
-  return device.memoryTotalBytes ? bytes(device.memoryTotalBytes) : '显存未知'
+  return device.memoryTotalBytes ? memorySize(device.memoryTotalBytes) : '显存未知'
 }
 
 /** Rows for the GPU group: name, memory, which one is the default, and whether the engine can use it. */

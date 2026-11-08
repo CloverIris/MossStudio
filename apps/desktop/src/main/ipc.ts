@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, statSync } from 'node:fs'
+import { totalmem } from 'node:os'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
 import { schemas } from '@shared/schemas'
@@ -8,6 +9,7 @@ import type { AgentMode, AiToolCall, AiToolResult } from '@shared/ai'
 import type { IpcResult } from '@shared/types'
 import { emit } from './lib/events'
 import { ensureDirs, paths } from './lib/paths'
+import { freeSpace } from './lib/disk'
 import { openDirectoryInFileManager, revealInFileManager } from './lib/fileManager'
 import { scanEnvironment } from './services/env'
 import { getPythonInstallState, installManagedPython } from './services/managedPython'
@@ -165,8 +167,10 @@ export function registerIpc(): void {
   // Learn which GPUs this computer has (AMD / Intel via the small Vulkan probe) without blocking start-up.
   void startupEnginePlan().catch((error: unknown) => console.warn('[engine-plan]', error instanceof Error ? error.message : error))
 
-  handle(Ipc.appInfo, null, () => {
+  handle(Ipc.appInfo, null, async () => {
     const settings = getSettings()
+    // The folder the model download checks before it starts (models.ts), so Setup can say so first.
+    const modelsFree = await freeSpace(paths.roleRoot('dit', settings.modelsRoot, settings.modelDirectories))
     return {
       name: 'MossStudio',
       version: app.getVersion(),
@@ -187,6 +191,8 @@ export function registerIpc(): void {
       },
       acrylic: false,
       backend: getBackendInfo(),
+      memoryTotalBytes: totalmem(),
+      ...(Number.isFinite(modelsFree) ? { modelsFreeBytes: modelsFree } : {}),
     }
   })
 

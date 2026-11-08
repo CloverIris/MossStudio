@@ -46,7 +46,9 @@ import type {
 import {
   ENGINE_JOBS_CHANNEL,
   ENGINE_PATH,
+  FIXTURE_MODELS_PATH,
   FIXTURE_NOW,
+  GiB,
   controlAdapterFixture,
   localHostFixture,
   downloadFixture,
@@ -197,25 +199,31 @@ function defaultHandlers(): Map<string, Handler> {
   const h = new Map<string, Handler>()
   const p = <T>(payload: unknown) => (payload ?? {}) as T
 
-  h.set(Ipc.appInfo, () => ({
-    name: 'MossStudio',
-    version: '1.0.3',
-    electron: '44.9.0',
-    chrome: '140',
-    node: '24',
-    platform: 'win32',
-    arch: 'x64',
-    dataPath: '/fixture/data',
-    modelsPath: '/fixture/data/models',
-    modelDirectories: {
-      dit: '/fixture/data/models/moss',
-      textEncoder: '/fixture/data/models/text-encoder',
-      vae: '/fixture/data/models/vae',
-      support: '/fixture/data/models/support',
-      adapters: '/fixture/data/models/adapters',
-    },
-    acrylic: false,
-  }))
+  h.set(Ipc.appInfo, (_, { state }) => {
+    // Like main: the models folder follows settings, and its free space is read there.
+    const modelsPath = state.settings.modelsRoot || FIXTURE_MODELS_PATH
+    return {
+      name: 'MossStudio',
+      version: '1.0.3',
+      electron: '44.9.0',
+      chrome: '140',
+      node: '24',
+      platform: 'win32',
+      arch: 'x64',
+      dataPath: '/fixture/data',
+      modelsPath,
+      modelDirectories: {
+        dit: `${modelsPath}/moss`,
+        textEncoder: `${modelsPath}/text-encoder`,
+        vae: `${modelsPath}/vae`,
+        support: `${modelsPath}/support`,
+        adapters: `${modelsPath}/adapters`,
+      },
+      acrylic: false,
+      memoryTotalBytes: state.systemMemoryBytes,
+      modelsFreeBytes: state.diskFree[modelsPath] ?? 900 * GiB,
+    }
+  })
   h.set(Ipc.backendInfo, () => ({ ready: true, url: 'http://studio-fixture', token: 'fixture' }))
 
   // Settings

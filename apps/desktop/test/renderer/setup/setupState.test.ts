@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { deriveSetup, modelDownloads, setupSpaceLabel, stepsToStart, type SetupInput } from '@renderer/pages/setup/setupState'
 import type { LocalEngineVersion, OnboardingStatus } from '@shared/types'
-import { RELEASE_220, enginePlanFor, machineFixture, type MachineName } from '@test/mocks/backend/machines'
+import { RELEASE_220, enginePlanFor, inventoryDevicesFor, machineFixture, type MachineName } from '@test/mocks/backend/machines'
 import {
   FIXTURE_NOW,
   GiB,
@@ -75,11 +75,11 @@ describe('deriveSetup', () => {
     expect(view.steps[0]!.detail).toBe('NVIDIA GeForce RTX 3060 · 12 GB · 共 2 块')
   })
 
-  it('is blocked without an NVIDIA GPU', () => {
+  it('is blocked without a usable GPU', () => {
     const view = deriveSetup(input({ gpu: gpuInventoryFixture([]) }))
     expect(view.phase).toBe('blocked')
     expect(states(view)).toEqual(['blocked', 'blocked', 'blocked'])
-    expect(view.steps[0]!.detail).toBe('没有找到 NVIDIA 显卡')
+    expect(view.steps[0]!.detail).toBe('没有找到能用的显卡')
     expect(stepsToStart(view)).toEqual([])
   })
 
@@ -219,5 +219,111 @@ describe('deriveSetup with the engine plan', () => {
     expect(setupSpaceLabel(deriveSetup(input({ plan: planFor('intel'), onboarding: onboarding('partial', 300 * 1024 ** 2) })))).toBe(
       '约 301 MB',
     )
+  })
+})
+
+describe('deriveSetup: can this computer run it, and how fast', () => {
+  /** A first run on one of the mock machines: its plan and the GPU inventory that goes with it. */
+  const on = (name: MachineName, patch: Partial<SetupInput> = {}): ReturnType<typeof deriveSetup> => {
+    const machine = machineFixture(name)
+    return deriveSetup(
+      input({
+        gpu: gpuInventoryFixture(inventoryDevicesFor(machine)),
+        plan: enginePlanFor(machine, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, []),
+        systemMemoryBytes: 32 * GiB,
+        ...patch,
+      }),
+    )
+  }
+
+  it('a GPU the engine cannot use: blocked, with the card and the reason', () => {
+    const view = on('unusableGpu')
+    expect(view.phase).toBe('blocked')
+    expect(view.steps[0]!.detail).toBe('Intel(R) UHD Graphics 620 不支持 Vulkan 1.2，引擎没法在它上面运行。')
+    expect(stepsToStart(view)).toEqual([])
+  })
+
+  it('a GPU with 2 GB: blocked, with how much it has and how much it needs', () => {
+    const view = on('tinyGpu')
+    expect(view.phase).toBe('blocked')
+    expect(view.steps[0]!.detail).toBe('NVIDIA GeForce GT 1030 只有 2 GB 显存，至少需要 4 GB。')
+    expect(stepsToStart(view)).toEqual([])
+  })
+
+  it('a GPU whose memory is not known is never blocked on memory', () => {
+    const machine = machineFixture('tinyGpu')
+    const unknown = { ...machine, gpus: [{ ...machine.gpus[0]!, memoryBytes: undefined }] }
+    const view = deriveSetup(
+      input({
+        gpu: gpuInventoryFixture(inventoryDevicesFor(unknown)),
+        plan: enginePlanFor(unknown, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, []),
+      }),
+    )
+    expect(view.phase).toBe('idle')
+    expect(view.steps[0]!.detail).toBe('NVIDIA GeForce GT 1030 · 显存未知 · 兼容模式')
+  })
+
+  it('a fast computer: no slow line', () => {
+    const view = on('nvidia')
+    expect(view.steps[0]!.detail).toBe('NVIDIA GeForce RTX 4090 · 24 GB')
+    expect(view.slow).toBeUndefined()
+  })
+
+  it('兼容模式: the GPU line says so, and that it will be very slow', () => {
+    const view = on('intel', { systemMemoryBytes: 8 * GiB })
+    expect(view.phase).toBe('idle')
+    expect(view.steps[0]!.detail).toBe('Intel(R) Arc(TM) A770 Graphics · 16 GB · 兼容模式')
+    // 兼容模式 comes before memory.
+    expect(view.slow).toBe('能用，但会很慢：一张图可能要几分钟甚至更久。')
+  })
+
+  it('a 6 GB card: slower, says how much memory it has', () => {
+    expect(on('smallGpu', { systemMemoryBytes: 8 * GiB }).slow).toBe('显存 6 GB，能用，生成会慢一些。')
+  })
+
+  it('under 16 GB of system memory: slower, and still not blocked', () => {
+    const view = on('nvidia', { systemMemoryBytes: 7.7 * GiB })
+    expect(view.phase).toBe('idle')
+    expect(view.slow).toBe('内存 8 GB，能用，生成会慢一些。')
+    expect(on('nvidia', { systemMemoryBytes: 15.6 * GiB }).slow).toBeUndefined()
+  })
+
+  it('without the machine probe, an NVIDIA card is still judged on its own memory', () => {
+    const view = deriveSetup(input({ gpu: gpuInventoryFixture([gpuDeviceFixture({ memoryTotalBytes: 6 * GiB })]), plan: undefined }))
+    expect(view.slow).toBe('显存 6 GB，能用，生成会慢一些。')
+  })
+
+  it('says nothing about speed while blocked', () => {
+    expect(on('tinyGpu', { systemMemoryBytes: 8 * GiB }).slow).toBeUndefined()
+  })
+})
+
+describe('deriveSetup: room for the download', () => {
+  // 12 GiB of model plus the engine estimate: 「下载约 13 GB」.
+  it('a folder with too little room says what it has and what to look for', () => {
+    const view = deriveSetup(input({ freeBytes: 10 * GiB }))
+    expect(setupSpaceLabel(view)).toBe('约 13 GB')
+    // (12 GiB + 400 MiB + 1 GiB) × 1.1, as the check on start asks.
+    expect(view.diskShort).toBe('这个位置只剩 10 GB，换一个有 15 GB 空闲的位置。')
+  })
+
+  it('a full disk reads 0 GB, not 未知', () => {
+    expect(deriveSetup(input({ freeBytes: 0 })).diskShort).toBe('这个位置只剩 0 GB，换一个有 15 GB 空闲的位置。')
+  })
+
+  it('a folder with room enough says nothing', () => {
+    expect(deriveSetup(input({ freeBytes: 15 * GiB })).diskShort).toBeUndefined()
+  })
+
+  it('free space that is not known says nothing', () => {
+    expect(deriveSetup(input()).diskShort).toBeUndefined()
+  })
+
+  it('counts only what is still missing', () => {
+    const view = deriveSetup(
+      input({ engine: engineReadyFixture(), onboarding: onboarding('partial', 300 * 1024 ** 2), freeBytes: 2 * GiB }),
+    )
+    expect(view.diskShort).toBeUndefined()
+    expect(deriveSetup(input({ engine: engineReadyFixture(), onboarding: onboarding('ok'), freeBytes: 0 })).diskShort).toBeUndefined()
   })
 })

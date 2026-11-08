@@ -42,6 +42,9 @@ export const FIXTURE_NOW = '2026-11-01T00:00:00.000Z'
 
 export const GiB = 1024 ** 3
 
+/** Where app:info says models go while settings name no folder of their own. */
+export const FIXTURE_MODELS_PATH = '/fixture/data/models'
+
 // ---------------------------------------------------------------------------
 // Settings
 

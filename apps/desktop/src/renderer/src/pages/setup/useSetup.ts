@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Ipc } from '@shared/channels'
-import type { EnginePlanView, MossInferDownloadState, OnboardingStatus } from '@shared/types'
+import type { AppInfo, EnginePlanView, MossInferDownloadState, OnboardingStatus } from '@shared/types'
 import { call } from '../../lib/api'
 import { engineDownloadActive } from '../../lib/engineInstall'
 import { preparationProgress, type Preparation } from '../../lib/preparation'
 import { importFolderMessage, type ImportFolderResult } from '../../lib/modelFolder'
 import { useGpuInventory } from '../../lib/useGpuInventory'
 import { useApp } from '../../store'
+import { useAppInfo } from '../settings/useAppInfo'
 import { deriveSetup, modelDownloads, stepsToStart, type SetupView } from './setupState'
 
 function message(error: unknown): string {
@@ -33,6 +34,8 @@ export function useSetup(): {
   /** 已有模型文件？: use a model folder where it is; null when canceled, else what happened. */
   chooseModelFolder: () => Promise<{ message: string; ready: boolean } | null>
   usingFolder: boolean
+  /** Folders, system memory and free space from the main process; re-read when settings change (a new folder). */
+  info: AppInfo | null
 } {
   const settings = useApp((state) => state.settings)
   const engine = useApp((state) => state.engineReadiness)
@@ -43,6 +46,7 @@ export function useSetup(): {
   const setMossInferDownload = useApp((state) => state.setMossInferDownload)
   const refreshEngineReadiness = useApp((state) => state.refreshEngineReadiness)
   const gpu = useGpuInventory()
+  const info = useAppInfo()
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
   const [engineError, setEngineError] = useState<string | null>(null)
   const [modelError, setModelError] = useState<string | null>(null)
@@ -98,8 +102,22 @@ export function useSetup(): {
         onboarding,
         downloads,
         modelError,
+        systemMemoryBytes: info?.memoryTotalBytes,
+        freeBytes: info?.modelsFreeBytes,
       }),
-    [gpu.inventory, settings?.gpuSelection, engine, plan, engineDownload, engineError, onboarding, downloads, modelError],
+    [
+      gpu.inventory,
+      settings?.gpuSelection,
+      engine,
+      plan,
+      engineDownload,
+      engineError,
+      onboarding,
+      downloads,
+      modelError,
+      info?.memoryTotalBytes,
+      info?.modelsFreeBytes,
+    ],
   )
 
   const progress = useMemo(
@@ -181,5 +199,5 @@ export function useSetup(): {
   }, [gpu, loadPlan])
 
   const modelName = onboarding?.bundleName ?? '推荐模型'
-  return { view, progress, modelName, starting, start, gpu, redetect, redetecting, chooseModelFolder, usingFolder }
+  return { view, progress, modelName, starting, start, gpu, redetect, redetecting, chooseModelFolder, usingFolder, info }
 }

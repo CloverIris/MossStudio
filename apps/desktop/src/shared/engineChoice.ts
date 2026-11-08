@@ -201,12 +201,42 @@ function usableStep(machine: EngineMachine, gpu: EngineMachineGpu, step: Step): 
   return step.pkg[0]!.kind !== 'vulkan' || vulkanUsable(machine, gpu)
 }
 
+/**
+ * The Vulkan probe's `unusable:` reason in plain words, or null for one it does
+ * not know. Mirrors the reasons of `describe()` in MossInfer vulkan/runtime.cpp:
+ * `needs Vulkan 1.2`, `no bufferDeviceAddress`, `no shaderInt64`.
+ */
+export function vulkanReasonText(reason: string): string | null {
+  const version = /^needs Vulkan (\d+(?:\.\d+)*)$/.exec(reason.trim())
+  if (version) return `不支持 Vulkan ${version[1]}`
+  const feature = /^no (\w+)$/.exec(reason.trim())
+  if (feature) return `不支持 Vulkan 的 ${feature[1]} 功能`
+  return null
+}
+
 function unsupportedReason(machine: EngineMachine, gpu: EngineMachineGpu, cudaOnly: boolean): string {
   if (cudaOnly) {
     return gpu.vendor === 'nvidia' ? `${gpu.name} 没有可用的 CUDA 引擎` : `${gpu.name} 不是 NVIDIA 显卡，远程主机只能运行 CUDA 引擎`
   }
-  if (gpu.vulkan && !gpu.vulkan.usable) return `${gpu.name} 不能运行引擎（${gpu.vulkan.reason ?? 'Vulkan 不可用'}）`
+  if (gpu.vulkan && !gpu.vulkan.usable) {
+    const known = gpu.vulkan.reason ? vulkanReasonText(gpu.vulkan.reason) : null
+    if (known) return `${gpu.name} ${known}，引擎没法在它上面运行`
+    return `${gpu.name} 不能运行引擎（${gpu.vulkan.reason ?? 'Vulkan 不可用'}）`
+  }
   return `${gpu.name} 不能运行引擎`
+}
+
+/** Of GPUs that all cannot run, the one most worth naming: a discrete card before an integrated one, then the most memory. */
+function strongestChoice(machine: EngineMachine, choices: GpuEngineChoice[]): GpuEngineChoice {
+  const rank = (choice: GpuEngineChoice): [number, number] => {
+    const gpu = machine.gpus.find((item) => item.id === choice.gpuId)
+    const discrete = gpu?.vulkan?.discrete ?? gpu?.vendor === 'nvidia'
+    return [discrete ? 1 : 0, gpu?.memoryBytes ?? 0]
+  }
+  return choices.reduce((best, choice) => {
+    const [a, b] = [rank(choice), rank(best)]
+    return a[0] > b[0] || (a[0] === b[0] && a[1] > b[1]) ? choice : best
+  })
 }
 
 /** Plan for every GPU of a machine against one release. */
@@ -294,7 +324,10 @@ export function chooseEnginePackages(machine: EngineMachine, release: EngineAsse
   }
   plan.totalBytes = plan.packages.reduce((sum, item) => sum + item.asset.size, 0)
   if (plan.packages.length === 0) {
-    plan.blocked = plan.choices.length === 1 ? `${plan.choices[0]!.reason}。` : '这台电脑的显卡都不能运行引擎。'
+    plan.blocked =
+      plan.choices.length === 1
+        ? `${plan.choices[0]!.reason}。`
+        : `这台电脑的 ${plan.choices.length} 块显卡都用不了。${strongestChoice(machine, plan.choices).reason}。`
   }
   return plan
 }

@@ -135,7 +135,11 @@ describe('engine per GPU', () => {
       'auto',
       gpuEngineInfo(engineMissingFixture(), unusable),
     )
-    expect(row).toMatchObject({ status: 'error', statusLabel: '不能使用', reason: expect.stringContaining('no shaderInt64') })
+    expect(row).toMatchObject({
+      status: 'error',
+      statusLabel: '不能使用',
+      reason: 'Intel(R) Arc(TM) A770 Graphics 不支持 Vulkan 的 shaderInt64 功能，引擎没法在它上面运行',
+    })
   })
 
   it('replaces the memory mode / tier pickers of a Vulkan or HIP GPU with one quiet line', () => {

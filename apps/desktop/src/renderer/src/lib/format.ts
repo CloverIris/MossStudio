@@ -1,3 +1,4 @@
+import { memoryGb } from '@shared/machineFit'
 import type { JobProgress, JobRecord } from '@shared/types'
 
 /**
@@ -21,6 +22,12 @@ export function bytes(value: number | null | undefined): string {
     index += 1
   }
   return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`
+}
+
+/** GPU and system memory in whole GB, as people know their hardware: "8 GB", "24 GB". */
+export function memorySize(value: number | null | undefined): string {
+  if (!value || value <= 0) return '未知'
+  return memoryGb(value) >= 1 ? `${memoryGb(value)} GB` : bytes(value)
 }
 
 export function percent(current: number, total: number): number {

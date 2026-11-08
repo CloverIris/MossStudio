@@ -1077,6 +1077,10 @@ export interface AppInfo {
   modelDirectories: Record<ModelDirectoryId, string>
   acrylic: boolean
   backend?: BackendInfo
+  /** Installed system memory (os.totalmem). */
+  memoryTotalBytes?: number
+  /** Free space where model downloads land, as the download's own check reads it; absent when unknown. */
+  modelsFreeBytes?: number
 }
 
 export interface IpcError {

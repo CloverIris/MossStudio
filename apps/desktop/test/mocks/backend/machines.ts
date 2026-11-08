@@ -82,9 +82,55 @@ const ARC_A770: EngineMachineGpu = {
   vulkan: vk(0),
 }
 
-export type MachineName = 'nvidia' | 'nvidiaOldDriver' | 'turing' | 'volta' | 'amdRocm' | 'amd' | 'intel' | 'multiGpu' | 'macos'
+/** An integrated GPU whose driver stops at Vulkan 1.1: the engine's probe lists it as unusable. */
+const UHD_620: EngineMachineGpu = {
+  id: 'vk-8086-5917-0',
+  name: 'Intel(R) UHD Graphics 620',
+  vendor: 'intel',
+  pciId: '8086:5917',
+  vulkan: { index: 0, usable: false, discrete: false, reason: 'needs Vulkan 1.2' },
+}
+/** A 2 GB card with no CUDA build (SM61): Vulkan runs on it, but it has too little memory. */
+const GT_1030: EngineMachineGpu = {
+  id: 'GPU-10301030-aaaa-bbbb-cccc-dddddddddddd',
+  name: 'NVIDIA GeForce GT 1030',
+  vendor: 'nvidia',
+  pciId: '10de:1d01',
+  memoryBytes: 2 * GiB,
+  computeCapability: { major: 6, minor: 1 },
+  driverVersion: '581.42',
+  vulkan: vk(0),
+}
+/** A 6 GB laptop card: CUDA 13 runs, slowly. */
+const RTX_3060_LAPTOP: EngineMachineGpu = {
+  id: 'GPU-30603060-aaaa-bbbb-cccc-dddddddddddd',
+  name: 'NVIDIA GeForce RTX 3060 Laptop GPU',
+  vendor: 'nvidia',
+  pciId: '10de:2520',
+  memoryBytes: 6 * GiB,
+  computeCapability: { major: 8, minor: 6 },
+  driverVersion: '581.42',
+  vulkan: vk(0),
+}
 
-/** The machines the spec asks for: NVIDIA new/old driver, Turing, Volta, AMD with/without ROCm, Intel, multi-GPU, macOS. */
+export type MachineName =
+  | 'nvidia'
+  | 'nvidiaOldDriver'
+  | 'turing'
+  | 'volta'
+  | 'amdRocm'
+  | 'amd'
+  | 'intel'
+  | 'multiGpu'
+  | 'macos'
+  | 'unusableGpu'
+  | 'tinyGpu'
+  | 'smallGpu'
+
+/**
+ * The machines the spec asks for: NVIDIA new/old driver, Turing, Volta, AMD with/without ROCm, Intel, multi-GPU, macOS;
+ * and the ones that cannot run or run slowly: a GPU the engine cannot use, a 2 GB card, a 6 GB card.
+ */
 export function machineFixture(name: MachineName): EngineMachine {
   const base = { systemCuda: [], rocm7: false, vulkanProbed: true }
   switch (name) {
@@ -115,6 +161,12 @@ export function machineFixture(name: MachineName): EngineMachine {
       }
     case 'macos':
       return { ...base, os: 'macos', gpus: [], vulkanProbed: false }
+    case 'unusableGpu':
+      return { ...base, os: 'windows', gpus: [UHD_620] }
+    case 'tinyGpu':
+      return { ...base, os: 'windows', gpus: [GT_1030] }
+    case 'smallGpu':
+      return { ...base, os: 'windows', gpus: [RTX_3060_LAPTOP] }
   }
 }
 

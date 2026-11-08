@@ -1,7 +1,9 @@
+import { MIN_GPU_MEMORY_BYTES, dedicatedGpuMemory, freeSpaceNeeded, slowReason, tooLittleGpuMemory } from '@shared/machineFit'
 import type {
   DownloadTask,
   EnginePlanView,
   EngineReadiness,
+  GpuInventoryDevice,
   GpuInventorySnapshot,
   GpuSelection,
   MossInferDownloadState,
@@ -16,7 +18,7 @@ import {
   planMissingBytes,
   type PlanLine,
 } from '../../lib/engineInstall'
-import { bytes } from '../../lib/format'
+import { bytes, memorySize } from '../../lib/format'
 import { defaultGpuUuid, gpuMemoryLabel } from '../settings/devicesModel'
 
 export type SetupStepId = 'gpu' | 'engine' | 'model'
@@ -36,7 +38,7 @@ export interface SetupStep {
  * - idle: ready for 开始准备
  * - running: something is being installed or downloaded
  * - done: everything is in place, 开始创作 is available
- * - blocked: no GPU the engine runs on (or macOS), nothing can be prepared here
+ * - blocked: no GPU the engine runs on, or too little GPU memory (or macOS); nothing can be prepared here
  * - error: a step failed and needs 重试
  */
 export type SetupPhase = 'checking' | 'idle' | 'running' | 'done' | 'blocked' | 'error'
@@ -53,6 +55,10 @@ export interface SetupInput {
   onboarding: OnboardingStatus | null
   downloads: DownloadTask[]
   modelError?: string | null
+  /** Installed system memory; undefined while not known. */
+  systemMemoryBytes?: number
+  /** Free space where the models go; undefined when not known. */
+  freeBytes?: number
 }
 
 export interface SetupView {
@@ -66,26 +72,73 @@ export interface SetupView {
   lines: PlanLine[]
   /** From the plan; macOS never runs the engine locally. */
   os?: EnginePlanView['os']
+  /** It runs, but slowly: the one most important reason, for the GPU line. */
+  slow?: string
+  /** The chosen folder has too little room for the download. */
+  diskShort?: string
 }
 
 /** Rough size of an engine package, for the "需要约 N GB" sentence. */
 export const ENGINE_ESTIMATE_BYTES = 400 * 1024 ** 2
+
+/** The GPU the GPU line names: the one chosen in settings, else the recommended one. */
+function lineDevice(input: SetupInput): GpuInventoryDevice | null {
+  const { gpu } = input
+  if (gpu?.status !== 'ok' || gpu.devices.length === 0) return null
+  const uuid = defaultGpuUuid(gpu, input.gpuSelection)
+  return gpu.devices.find((item) => item.uuid === uuid) ?? gpu.devices[0]!
+}
+
+/** This GPU runs the Vulkan engine (兼容模式). */
+function compatibilityMode(plan: EnginePlanView | null | undefined, device: GpuInventoryDevice): boolean {
+  return plan?.choices.find((choice) => choice.gpuId === device.uuid)?.package?.kind === 'vulkan'
+}
 
 function gpuStep(input: SetupInput): SetupStep {
   const base = { id: 'gpu' as const, title: '检测 GPU' }
   const { gpu, plan } = input
   if (plan?.blocked) return { ...base, state: 'blocked', detail: plan.blocked }
   if (!gpu || plan === null) return { ...base, state: 'running', detail: '正在检测显卡…' }
-  if (gpu.status === 'ok' && gpu.devices.length > 0) {
-    const uuid = defaultGpuUuid(gpu, input.gpuSelection)
-    const device = gpu.devices.find((item) => item.uuid === uuid) ?? gpu.devices[0]!
+  const small = plan ? tooLittleGpuMemory(plan) : null
+  if (small) {
+    return {
+      ...base,
+      state: 'blocked',
+      detail: `${small.name} 只有 ${memorySize(small.bytes)} 显存，至少需要 ${memorySize(MIN_GPU_MEMORY_BYTES)}。`,
+    }
+  }
+  const device = lineDevice(input)
+  if (device) {
+    const mode = compatibilityMode(plan, device) ? ' · 兼容模式' : ''
     const more = gpu.devices.length > 1 ? ` · 共 ${gpu.devices.length} 块` : ''
-    return { ...base, state: 'done', detail: `${device.name} · ${gpuMemoryLabel(device)}${more}` }
+    return { ...base, state: 'done', detail: `${device.name} · ${gpuMemoryLabel(device)}${mode}${more}` }
   }
   if (gpu.status === 'error') {
     return { ...base, state: 'blocked', detail: `检测显卡失败：${gpu.error ?? '未知原因'}` }
   }
-  return { ...base, state: 'blocked', detail: '没有找到 NVIDIA 显卡' }
+  return { ...base, state: 'blocked', detail: '没有找到能用的显卡' }
+}
+
+/** It runs, but slowly: one line for the GPU line, the most important reason only. */
+function slowLine(input: SetupInput, device: GpuInventoryDevice): string | null {
+  const machineGpu = input.plan?.machine.gpus.find((gpu) => gpu.id === device.uuid)
+  // Without the machine probe only nvidia-smi rows (no vendor) are known, and their memory is the card's own.
+  const gpuMemoryBytes = machineGpu ? dedicatedGpuMemory(machineGpu) : device.vendor ? null : device.memoryTotalBytes
+  const reason = slowReason({
+    compatibility: compatibilityMode(input.plan, device),
+    gpuMemoryBytes,
+    systemMemoryBytes: input.systemMemoryBytes,
+  })
+  switch (reason?.kind) {
+    case undefined:
+      return null
+    case 'compatibility':
+      return '能用，但会很慢：一张图可能要几分钟甚至更久。'
+    case 'gpuMemory':
+      return `显存 ${memorySize(reason.bytes)}，能用，生成会慢一些。`
+    case 'systemMemory':
+      return `内存 ${memorySize(reason.bytes)}，能用，生成会慢一些。`
+  }
 }
 
 function engineStep(input: SetupInput, gpuReady: boolean): SetupStep {
@@ -160,6 +213,8 @@ export function deriveSetup(input: SetupInput): SetupView {
   const modelBytes = input.onboarding?.steps.find((step) => step.id === 'model')?.sizeBytes ?? 0
   const engineBytes = input.plan ? planMissingBytes(input.plan) : ENGINE_ESTIMATE_BYTES
   const lines = input.plan && !input.plan.blocked ? planLines(input.plan) : []
+  const device = gpuReady ? lineDevice(input) : null
+  const slow = device ? slowLine(input, device) : null
   let phase: SetupPhase
   if (steps.every((step) => step.state === 'done')) phase = 'done'
   else if (gpu.state === 'blocked') phase = 'blocked'
@@ -168,13 +223,41 @@ export function deriveSetup(input: SetupInput): SetupView {
   else if (steps.some((step) => step.state === 'error')) phase = 'error'
   else if (!input.gpu || input.plan === null || !input.onboarding || !input.engine) phase = 'checking'
   else phase = 'idle'
-  return { steps, phase, modelBytes, engineBytes, lines, ...(input.plan ? { os: input.plan.os } : {}) }
+  const view: SetupView = {
+    steps,
+    phase,
+    modelBytes,
+    engineBytes,
+    lines,
+    ...(input.plan ? { os: input.plan.os } : {}),
+    ...(slow ? { slow } : {}),
+  }
+  const diskShort = setupDiskShort(view, input.freeBytes)
+  return diskShort ? { ...view, diskShort } : view
+}
+
+/** Bytes still to download: the model, plus the engine while it is not done. */
+function setupDownloadBytes(view: SetupView): number {
+  const engineMissing = view.steps.find((step) => step.id === 'engine')?.state !== 'done'
+  return view.modelBytes + (engineMissing ? view.engineBytes : 0)
+}
+
+/**
+ * The folder cannot hold the download: what it has and what to look for. The
+ * room asked for is the model download's own check on start (assertFreeSpace,
+ * plus the 1 GiB models.ts adds), so the two agree.
+ */
+function setupDiskShort(view: SetupView, freeBytes: number | undefined): string | null {
+  const total = setupDownloadBytes(view)
+  if (freeBytes === undefined || total <= 0) return null
+  const required = freeSpaceNeeded(total + (view.modelBytes > 0 ? 1024 ** 3 : 0))
+  if (freeBytes >= required) return null
+  return `这个位置只剩 ${freeBytes > 0 ? bytes(freeBytes) : '0 GB'}，换一个有 ${Math.ceil(required / 1024 ** 3)} GB 空闲的位置。`
 }
 
 /** "需要约 13 GB 空间" — counts only what is still missing. */
 export function setupSpaceLabel(view: SetupView): string | null {
-  const engineMissing = view.steps.find((step) => step.id === 'engine')?.state !== 'done'
-  const total = view.modelBytes + (engineMissing ? view.engineBytes : 0)
+  const total = setupDownloadBytes(view)
   if (total <= 0) return null
   const gb = total / 1024 ** 3
   return gb >= 1 ? `约 ${Math.ceil(gb)} GB` : `约 ${Math.ceil(total / 1024 ** 2)} MB`

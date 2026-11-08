@@ -11,6 +11,7 @@ import {
   jobStateLabel,
   jobSummary,
   jobTitle,
+  memorySize,
   percent,
   relative,
   shortSha,
@@ -56,6 +57,19 @@ describe('lib/format sizes and numbers', () => {
     [5000 * 1024 ** 4, '5000 TB'],
   ])('bytes(%s) = %s', (value, expected) => {
     expect(bytes(value)).toBe(expected)
+  })
+
+  it.each([
+    [undefined, '未知'],
+    [0, '未知'],
+    [2 * 1024 ** 3, '2 GB'],
+    [8192 * 1024 ** 2, '8 GB'],
+    // A 16 GB computer reports a little less.
+    [15.6 * 1024 ** 3, '16 GB'],
+    [24 * 1024 ** 3, '24 GB'],
+    [256 * 1024 ** 2, '256 MB'],
+  ])('memorySize(%s) = %s', (value, expected) => {
+    expect(memorySize(value)).toBe(expected)
   })
 
   it.each([
