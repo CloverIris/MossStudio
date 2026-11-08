@@ -43,9 +43,8 @@ async function lastJobId(page: Page): Promise<string> {
   return page.evaluate(() => window.__mock.state.jobs[0]!.id)
 }
 
-/** Drag a region on the selected canvas, in fractions of its picture. */
+/** Drag a box on the selected canvas's face, in fractions of its picture. */
 async function drawRegion(page: Page, from: [number, number], to: [number, number]): Promise<void> {
-  await page.getByRole('button', { name: '画框', exact: true }).click()
   const surface = page.locator('[aria-current="true"] [data-region-surface]')
   const box = (await surface.boundingBox())!
   await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1])
@@ -205,11 +204,14 @@ describe('studio', () => {
     const page = await app.open({ scenario: 'ready', route: '/studio', theme: 'light' })
     await openStudio(page)
     await drawRegion(page, [0.1, 0.1], [0.6, 0.5])
-    const caption = page.getByRole('textbox', { name: '区域描述' })
-    await caption.waitFor()
-    await caption.fill('一只橘猫')
+    // The box's own field opens under it.
+    const field = page.getByRole('textbox', { name: '框里的描述' })
+    await field.waitFor()
+    await field.fill('一只橘猫')
+    await field.press('Enter')
     await drawRegion(page, [0.65, 0.6], [0.95, 0.95])
-    await caption.fill('一盆绿植')
+    await field.fill('一盆绿植')
+    await field.press('Enter')
     // The regions are listed under the description.
     await expect.poll(() => page.getByRole('region', { name: '全部区域' }).locator('[data-layer-id]').count()).toBe(2)
     // Regions alone are not a prompt: the overall description is still asked for.
@@ -227,6 +229,79 @@ describe('studio', () => {
     const [, again] = await submitted(page, 2)
     expect(again!.prompt).toBe(run!.prompt)
     expect(again!.seed).not.toBe(run!.seed)
+  })
+
+  it('draws a box by dragging on the selected 画面 and says what goes there on the box', async () => {
+    const page = await app.open({ scenario: 'ready', route: '/studio', theme: 'light' })
+    await openStudio(page)
+    const card = page.locator('[aria-current="true"][data-canvas-card]')
+    const boxes = card.locator('[data-region-id]')
+    // No tool to switch on first.
+    expect(await page.getByRole('button', { name: '画框', exact: true }).count()).toBe(0)
+
+    // A click on the face is not a box.
+    const surface = card.locator('[data-region-surface]')
+    const face = (await surface.boundingBox())!
+    await page.mouse.click(face.x + face.width * 0.5, face.y + face.height * 0.5)
+    expect(await boxes.count()).toBe(0)
+
+    // Drawn: the field opens focused, 物体 by default; the words show on the box.
+    await drawRegion(page, [0.1, 0.1], [0.5, 0.45])
+    const field = page.getByRole('textbox', { name: '框里的描述' })
+    await expect.poll(() => field.evaluate((element) => element === document.activeElement)).toBe(true)
+    const kinds = page.getByRole('group', { name: '框的类型' })
+    expect(await kinds.getByRole('button', { name: '物体' }).getAttribute('aria-pressed')).toBe('true')
+    await field.fill('一只橘猫趴着睡觉')
+    await kinds.getByRole('button', { name: '人物' }).click()
+    await app.screenshot('studio-box-field-light')
+    await field.press('Enter')
+    await expect.poll(() => field.count()).toBe(0)
+    expect(await boxes.count()).toBe(1)
+    expect(await boxes.first().locator('[data-region-words]').textContent()).toBe('一只橘猫趴着睡觉')
+    expect(await boxes.first().getByLabel('人物').count()).toBe(1)
+
+    // Esc on a box just drawn and left empty takes it back.
+    await drawRegion(page, [0.6, 0.6], [0.9, 0.9])
+    await field.waitFor()
+    await field.press('Escape')
+    await expect.poll(() => boxes.count()).toBe(1)
+
+    // 文字 asks for the text too, and the box shows it.
+    await drawRegion(page, [0.6, 0.6], [0.9, 0.9])
+    await kinds.getByRole('button', { name: '文字' }).click()
+    const words = page.getByRole('textbox', { name: '框里的文字' })
+    await expect.poll(() => words.evaluate((element) => element === document.activeElement)).toBe(true)
+    await words.fill('慵懒周末')
+    // A click elsewhere finishes.
+    await page.mouse.click(face.x + face.width * 0.75, face.y + face.height * 0.2)
+    await expect.poll(() => words.count()).toBe(0)
+    expect(await boxes.nth(1).locator('[data-region-words]').textContent()).toBe('「慵懒周末」')
+
+    // Double-click reopens the field; a corner resizes the selected box.
+    await boxes.first().dblclick()
+    expect(await field.inputValue()).toBe('一只橘猫趴着睡觉')
+    await field.press('Enter')
+    const before = (await boxes.first().boundingBox())!
+    const corner = boxes.first().locator('[data-corner="se"]')
+    const handle = (await corner.boundingBox())!
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handle.x + 30, handle.y + 20, { steps: 4 })
+    await page.mouse.up()
+    const after = (await boxes.first().boundingBox())!
+    expect(after.width).toBeGreaterThan(before.width + 20)
+    expect(after.x).toBeCloseTo(before.x, 0)
+
+    // Right-click a box: its words, its type, delete.
+    await boxes.first().click({ button: 'right' })
+    const menu = page.locator('[data-board-menu]')
+    expect(await menu.getByRole('menuitem').allTextContents()).toEqual(['改描述', '物体', '人物', '文字', '删除'])
+    await menu.getByRole('menuitem', { name: '物体' }).click()
+    expect(await boxes.first().getByLabel('物体').count()).toBe(1)
+    await boxes.first().click({ button: 'right' })
+    await menu.getByRole('menuitem', { name: '删除' }).click()
+    await expect.poll(() => boxes.count()).toBe(1)
+    await app.screenshot('studio-boxes-light')
   })
 
   it('reruns a saved region-only canvas whose description lives in the layout', async () => {

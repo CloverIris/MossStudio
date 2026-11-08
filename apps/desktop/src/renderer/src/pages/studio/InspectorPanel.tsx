@@ -1,5 +1,5 @@
 import { Eye, EyeOff, GripVertical, Lock, LockOpen, Trash2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { Button, ConfirmDialog, EmptyState, FieldLabel, IconButton, Input, Segmented, Textarea, cn } from '../../components/ui'
 import { SliderField } from './InputControls'
@@ -12,26 +12,18 @@ const KINDS = Object.keys(KIND_LABEL) as ProjectLayerKind[]
 export function InspectorPanel({
   canvas,
   selectedRegionId,
-  focusToken,
   onSelectRegion,
   onChangeLayers,
 }: {
   canvas: ProjectCanvas | null
   selectedRegionId: string | null
-  /** Changes when the user asks to edit a region (double-click on the board); focuses its caption. */
-  focusToken: number
   onSelectRegion: (id: string | null) => void
   onChangeLayers: (update: (layers: ProjectLayer[]) => ProjectLayer[]) => void
 }): React.JSX.Element {
-  const caption = useRef<HTMLTextAreaElement>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (focusToken) requestAnimationFrame(() => caption.current?.focus())
-  }, [focusToken])
 
   if (!canvas) return <EmptyState size="section" title="没有选中画面" description="选中一个画面后，这里显示它的区域。" />
   if (canvas.kind === 'image') {
@@ -65,7 +57,6 @@ export function InspectorPanel({
             options={KINDS.map((kind) => ({ value: kind, label: KIND_LABEL[kind] }))}
           />
           <Textarea
-            ref={caption}
             aria-label="区域描述"
             value={region.caption}
             onChange={(event) => patch(region.id, { caption: event.target.value })}

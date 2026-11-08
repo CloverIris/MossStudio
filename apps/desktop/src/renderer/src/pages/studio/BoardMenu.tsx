@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MenuGap, MenuItem } from '../../components/common/Popover'
 
-export type BoardMenuEntry = { label: string; onSelect: () => void; tone?: 'danger'; disabled?: boolean; title?: string } | { gap: true }
+export type BoardMenuEntry =
+  { label: string; onSelect: () => void; tone?: 'danger'; disabled?: boolean; title?: string; selected?: boolean } | { gap: true }
 
 const MENU_WIDTH = 200
 
@@ -82,6 +83,7 @@ export function BoardMenu({
             key={entry.label}
             tone={entry.tone}
             disabled={entry.disabled}
+            selected={entry.selected}
             title={entry.title}
             onSelect={() => {
               onClose()

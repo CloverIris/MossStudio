@@ -396,19 +396,32 @@ export function moveBox(
   return [left, top, left + width, top + height]
 }
 
+/** A corner of a region box: north/south, west/east. */
+export type BoxCorner = 'nw' | 'ne' | 'sw' | 'se'
+
+/** Drags one corner of a box; the opposite corner stays put. */
+export function resizeFrom(
+  origin: [number, number, number, number],
+  corner: BoxCorner,
+  dx: number,
+  dy: number,
+  canvas: Pick<ProjectCanvas, 'width' | 'height'>,
+): [number, number, number, number] {
+  let [x1, y1, x2, y2] = origin
+  if (corner.endsWith('w')) x1 = Math.max(0, Math.min(x2 - MIN_REGION, x1 + dx))
+  else x2 = Math.max(x1 + MIN_REGION, Math.min(canvas.width, x2 + dx))
+  if (corner.startsWith('n')) y1 = Math.max(0, Math.min(y2 - MIN_REGION, y1 + dy))
+  else y2 = Math.max(y1 + MIN_REGION, Math.min(canvas.height, y2 + dy))
+  return [Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2)]
+}
+
 export function resizeBox(
   origin: [number, number, number, number],
   dx: number,
   dy: number,
   canvas: Pick<ProjectCanvas, 'width' | 'height'>,
 ): [number, number, number, number] {
-  const [x1, y1, x2, y2] = origin
-  return [
-    x1,
-    y1,
-    Math.round(Math.max(x1 + MIN_REGION, Math.min(canvas.width, x2 + dx))),
-    Math.round(Math.max(y1 + MIN_REGION, Math.min(canvas.height, y2 + dy))),
-  ]
+  return resizeFrom(origin, 'se', dx, dy, canvas)
 }
 
 /** Move a region to another position in the list; list order is region numbering. */

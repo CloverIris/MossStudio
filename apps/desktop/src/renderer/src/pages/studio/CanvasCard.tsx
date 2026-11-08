@@ -1,6 +1,6 @@
 import { ChevronRight, Copy, Image as ImageIcon, MoreHorizontal, Palette, PenLine, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { ImageResizeMode, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
+import type { ImageResizeMode, ProjectCanvas, ProjectLayer } from '@shared/types'
 import { Button, IconButton, Pill, cn } from '../../components/ui'
 import { MenuGap, MenuItem, Popover } from '../../components/common/Popover'
 import { cloverUrl } from '../../lib/clover'
@@ -15,7 +15,8 @@ import type { Size } from './mask'
 import type { RerunCheck } from './readiness'
 import { canvasDescription } from './prompt'
 import { Filmstrip } from './Filmstrip'
-import { RegionLayer, type BoardTool } from './RegionLayer'
+import { RegionEditor, RegionLayer, useRegionDraw, type BoardTool } from './RegionLayer'
+import { newRegion } from './canvases'
 import type { StripItem } from './runs'
 import { StartPicture } from './StartPicture'
 
@@ -47,8 +48,11 @@ export interface CanvasCardProps {
   selected: boolean
   dragging: boolean
   tool: BoardTool
-  regionKind: ProjectLayerKind
   selectedRegionId: string | null
+  /** The region whose words are being typed on its box. */
+  editingRegionId?: string | null
+  /** Keeps on-card controls (the field on a box) at screen size: 1 / zoom. */
+  screenScale: number
   rerun: RerunCheck
   /** The linked start picture, drawn as the backdrop of a layout canvas. */
   initPicture?: { path: string; resize?: ImageResizeMode; size: Size | null } | null
@@ -94,8 +98,12 @@ export interface CanvasCardProps {
   onSelect: () => void
   onSelectRegion: (id: string | null) => void
   onChangeLayers: (update: (layers: ProjectLayer[]) => ProjectLayer[]) => void
+  /** A box was just drawn: its field opens. */
   onRegionDrawn: (id: string) => void
-  onOpenRegion: (id: string) => void
+  /** Open the field on a box (double-click). */
+  onEditRegion: (id: string) => void
+  /** The field on a box closed; `cancel` on Esc. */
+  onEditDone: (cancel: boolean) => void
   onDragStart: (event: React.PointerEvent<HTMLElement>) => void
   onOpenViewer: (index: number) => void
   onRerun: (seed: 'new' | 'same') => void
@@ -222,6 +230,13 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
   const painting = Boolean(props.mask?.interactive && props.initPicture)
   const pictureSize = usePictureSize(props.mask ? props.initPicture?.path : undefined, props.initPicture?.size ?? null)
   const [editing, setEditing] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
+  const draw = useRegionDraw(canvas, (bbox) => {
+    const region = newRegion('object', bbox)
+    props.onChangeLayers((layers) => [...layers, region])
+    props.onRegionDrawn(region.id)
+  })
+  const editingRegion = editable && props.editingRegionId ? canvas.layers.find((layer) => layer.id === props.editingRegionId) : undefined
   // An empty face (nothing generated, no start picture or underlay) shows the description instead.
   // A 风格 always shows its description.
   const blankFace =
@@ -316,9 +331,10 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
       </header>
 
       <div
+        ref={body}
         data-card-body
         className={cn(
-          'relative overflow-hidden rounded-md bg-well-strong transition-shadow',
+          'relative select-none overflow-hidden rounded-md bg-well-strong transition-shadow',
           selected && 'ring-2 ring-accent ring-offset-2 ring-offset-board',
           view.active && !preview && 'studio-card-running',
         )}
@@ -328,9 +344,10 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           const onRegion = Boolean(target.closest('[data-region-id]'))
           // A press on the picture outside every region clears the region selection.
           if (editable && !onRegion) props.onSelectRegion(null)
-          // The picture moves its card, as the title row does.
-          if (props.tool === 'select' && !painting && !editing && !onRegion && !target.closest('textarea, input, [data-board-ui]'))
-            props.onDragStart(event)
+          if (props.tool !== 'select' || painting || editing || onRegion || target.closest('textarea, input, [data-board-ui]')) return
+          // On the selected 画面 a drag draws a box; otherwise the picture moves its card, as the title row does.
+          if (editable) draw.start(event, body.current)
+          else props.onDragStart(event)
         }}
         onDoubleClick={(event) => {
           if (!blankFace || props.tool !== 'select' || !props.onChangeDescription) return
@@ -393,14 +410,12 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
         {showRegions && !preview ? (
           <RegionLayer
             canvas={canvas}
-            interactive={editable && props.tool !== 'mask'}
-            tool={props.tool}
-            regionKind={props.regionKind}
+            interactive={editable && props.tool === 'select'}
             selectedRegionId={props.selectedRegionId}
+            drawing={draw.box}
             onSelectRegion={props.onSelectRegion}
             onChangeLayers={props.onChangeLayers}
-            onRegionDrawn={props.onRegionDrawn}
-            onOpenRegion={props.onOpenRegion}
+            onEditRegion={props.onEditRegion}
           />
         ) : null}
 
@@ -427,6 +442,21 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           </div>
         ) : null}
       </div>
+
+      {editingRegion && props.tool === 'select' ? (
+        <RegionEditor
+          key={editingRegion.id}
+          layer={editingRegion}
+          // Under its box, at screen size.
+          style={{
+            left: (editingRegion.bbox[0] / canvas.width) * width,
+            top: CARD_HEADER + (editingRegion.bbox[3] / canvas.height) * bodyHeight + 6,
+            transform: `scale(${props.screenScale})`,
+          }}
+          onChange={(next) => props.onChangeLayers((layers) => layers.map((layer) => (layer.id === next.id ? next : layer)))}
+          onDone={props.onEditDone}
+        />
+      ) : null}
 
       {props.dropZones ? (
         <div data-drop-zones className="pointer-events-none absolute left-0 z-[6]" style={{ top: CARD_HEADER, height: bodyHeight }}>

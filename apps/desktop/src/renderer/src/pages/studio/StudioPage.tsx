@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { GalleryItem, GpuInventorySnapshot, ManagedHost, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
+import type { GalleryItem, GpuInventorySnapshot, ManagedHost, ProjectCanvas, ProjectLayer } from '@shared/types'
 import { ADAPTER_STRENGTH_DEFAULT, normalizeCanvasAdapters } from '@shared/adapters'
 import { activeCanvasBranchIds } from '@shared/canvasJobBranch'
 import { Events, Ipc } from '@shared/channels'
@@ -130,11 +130,9 @@ export function StudioPage(): React.JSX.Element {
   const [hosts, setHosts] = useState<ManagedHost[]>([])
   const [remoteHostId, setRemoteHostId] = useState(() => readStorage(HOST_KEY) ?? '')
   const [tool, setTool] = useState<BoardTool>('select')
-  const [regionKind, setRegionKind] = useState<ProjectLayerKind>('object')
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null)
   /** 助手 opens beside the board from the title bar; closed, the board takes the room. */
   const [assistantOpen, setAssistantOpen] = useState(false)
-  const [focusToken, setFocusToken] = useState(0)
   const [widths, setWidths] = useState(initialWidths)
   const [viewer, setViewer] = useState<{ canvasId: string; index: number } | null>(null)
   const [deleting, setDeleting] = useState<ProjectCanvas | null>(null)
@@ -619,7 +617,7 @@ export function StudioPage(): React.JSX.Element {
     return () => registerStudioTools(null)
   }, [])
 
-  // Keyboard: Ctrl+Enter generates; V / B / H pick tools; Delete removes a region.
+  // Keyboard: Ctrl+Enter generates; V / H / M pick tools; Delete removes a region.
   useEffect(() => {
     if (!shown) return
     const onKey = (event: KeyboardEvent): void => {
@@ -632,7 +630,6 @@ export function StudioPage(): React.JSX.Element {
       if (event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target) || document.querySelector('dialog[open]')) return
       const key = event.key.toLowerCase()
       if (key === 'v') setTool('select')
-      else if (key === 'b') setTool('draw')
       else if (key === 'h') setTool('pan')
       else if (key === 'm') setTool((current) => (current === 'mask' ? 'select' : 'mask'))
       else if (key === 'escape') setSelectedRegionId(null)
@@ -708,7 +705,6 @@ export function StudioPage(): React.JSX.Element {
             <InspectorPanel
               canvas={selected}
               selectedRegionId={selectedRegionId}
-              focusToken={focusToken}
               onSelectRegion={setSelectedRegionId}
               onChangeLayers={(update) => {
                 if (selected) changeLayers(selected.id, update)
@@ -731,14 +727,8 @@ export function StudioPage(): React.JSX.Element {
           blockers={readiness.blockers}
           tool={tool}
           onTool={setTool}
-          regionKind={regionKind}
-          onRegionKind={setRegionKind}
           selectedRegionId={selectedRegionId}
           onSelectRegion={setSelectedRegionId}
-          onOpenRegion={(id) => {
-            setSelectedRegionId(id)
-            setFocusToken((value) => value + 1)
-          }}
           onSelectCanvas={(id) => project.select(id)}
           onMoveCanvas={(id, x, y) => project.updateCanvas(id, { x, y })}
           onChangeLayers={changeLayers}

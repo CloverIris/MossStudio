@@ -1,18 +1,6 @@
-import {
-  Brush,
-  ChevronDown,
-  Eraser,
-  FlipHorizontal2,
-  Hand,
-  Maximize2,
-  Minus,
-  MousePointer2,
-  Plus,
-  SquareDashed,
-  Trash2,
-} from 'lucide-react'
+import { Brush, Eraser, FlipHorizontal2, Hand, Maximize2, Minus, MousePointer2, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import type { GalleryItem, ProjectLayerKind } from '@shared/types'
+import type { GalleryItem } from '@shared/types'
 import { Ipc } from '@shared/channels'
 import { FieldLabel, IconButton, LoadingRow, cn } from '../../components/ui'
 import { MenuGap, MenuItem, Popover } from '../../components/common/Popover'
@@ -20,7 +8,7 @@ import { call } from '../../lib/api'
 import { cloverUrl } from '../../lib/clover'
 import { BRUSH_MAX, BRUSH_MIN } from './mask'
 import type { MaskBrush } from './MaskLayer'
-import { KIND_LABEL, type BoardTool } from './RegionLayer'
+import type { BoardTool } from './RegionLayer'
 
 /** Whether the 遮罩 tool shows, and why it is off. Hidden when the engine cannot inpaint. */
 export interface MaskToolState {
@@ -31,7 +19,6 @@ export interface MaskToolState {
 
 const TOOLS: Array<{ id: BoardTool; label: string; key: string; icon: React.ReactNode }> = [
   { id: 'select', label: '选择', key: 'V', icon: <MousePointer2 className="size-4" strokeWidth={1.6} /> },
-  { id: 'draw', label: '画框', key: 'B', icon: <SquareDashed className="size-4" strokeWidth={1.6} /> },
   { id: 'pan', label: '平移', key: 'H', icon: <Hand className="size-4" strokeWidth={1.6} /> },
 ]
 
@@ -145,10 +132,10 @@ export function Toolbar({
       data-board-ui
       className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[10px] bg-raised p-1 shadow-float"
     >
-      {TOOLS.filter((item) => item.id !== 'draw').map((item) => (
+      {TOOLS.map((item) => (
         <ToolButton
           key={item.id}
-          on={tool === item.id || (item.id === 'select' && (tool === 'draw' || tool === 'mask'))}
+          on={tool === item.id || (item.id === 'select' && tool === 'mask')}
           aria-label={item.label}
           title={`${item.label}（${item.key}）`}
           onClick={() => onTool(item.id)}
@@ -178,25 +165,20 @@ export function Toolbar({
   )
 }
 
-/** A selected 画面's tools, on the card: 画框 (and what it draws), 底图 and 遮罩. */
+/** A selected 画面's tools, on the card: 底图 and 遮罩. Boxes are drawn straight on its face. */
 export function CardToolbar({
   tool,
   onTool,
-  regionKind,
-  onRegionKind,
   underlay,
   onUnderlay,
   mask,
 }: {
   tool: BoardTool
   onTool: (tool: BoardTool) => void
-  regionKind: ProjectLayerKind
-  onRegionKind: (kind: ProjectLayerKind) => void
   underlay?: string
   onUnderlay: (item: GalleryItem | null) => void
   mask: MaskToolState
 }): React.JSX.Element {
-  const draw = TOOLS.find((item) => item.id === 'draw')!
   return (
     <div
       role="toolbar"
@@ -205,41 +187,6 @@ export function CardToolbar({
       data-card-tools
       className="flex w-max items-center gap-0.5 whitespace-nowrap rounded-[10px] bg-raised p-1 shadow-float"
     >
-      <ToolButton
-        on={tool === 'draw'}
-        aria-label={draw.label}
-        title={`${draw.label}（${draw.key}）`}
-        onClick={() => onTool(tool === 'draw' ? 'select' : 'draw')}
-      >
-        {draw.icon}
-      </ToolButton>
-      <Popover
-        align="start"
-        label="新区域的类型"
-        className="min-w-[140px]"
-        trigger={(menu) => (
-          <ToolButton title="画什么" onClick={menu.toggle} aria-expanded={menu['aria-expanded']} aria-haspopup="menu">
-            {KIND_LABEL[regionKind]}
-            <ChevronDown className="size-3.5 text-ink-2" aria-hidden="true" strokeWidth={1.6} />
-          </ToolButton>
-        )}
-      >
-        {(close) =>
-          (Object.keys(KIND_LABEL) as ProjectLayerKind[]).map((kind) => (
-            <MenuItem
-              key={kind}
-              selected={kind === regionKind}
-              onSelect={() => {
-                onRegionKind(kind)
-                if (tool !== 'draw') onTool('draw')
-                close()
-              }}
-            >
-              {KIND_LABEL[kind]}
-            </MenuItem>
-          ))
-        }
-      </Popover>
       <Popover
         align="start"
         label="底图"

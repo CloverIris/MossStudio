@@ -32,7 +32,7 @@ import { linkSourceImage, type LinkRole } from './links'
 import { BRUSH_DEFAULT, maskAvailability, startPictureSize } from './mask'
 import type { MaskBrush, MaskCommand } from './MaskLayer'
 import { rerunEligibility, type Blocker, type ReadinessInput } from './readiness'
-import type { BoardTool } from './RegionLayer'
+import { KIND_LABEL, withKind, type BoardTool } from './RegionLayer'
 import { CardToolbar, MaskBar, Toolbar } from './Toolbar'
 import { useCardDrag } from './useCardDrag'
 import { useWireConnect } from './useWireConnect'
@@ -82,11 +82,8 @@ export interface BoardProps {
   update?: ReadinessInput['update']
   tool: BoardTool
   onTool: (tool: BoardTool) => void
-  regionKind: ProjectLayerKind
-  onRegionKind: (kind: ProjectLayerKind) => void
   selectedRegionId: string | null
   onSelectRegion: (id: string | null) => void
-  onOpenRegion: (id: string) => void
   onSelectCanvas: (id: string) => void
   onMoveCanvas: (id: string, x: number, y: number) => void
   onChangeLayers: (canvasId: string, update: (layers: ProjectLayer[]) => ProjectLayer[]) => void
@@ -162,6 +159,8 @@ export function Board(props: BoardProps): React.JSX.Element {
   const cards = useMemo(() => boardCanvases(props.canvases, folded), [props.canvases, folded])
 
   const [hoveredWire, setHoveredWire] = useState<string | null>(null)
+  /** The box whose field is open; `fresh` while it is the one just drawn. */
+  const [editingRegion, setEditingRegion] = useState<{ canvasId: string; id: string; fresh: boolean } | null>(null)
   const [contextMenu, setContextMenu] = useState<{ at: { x: number; y: number }; label: string; entries: BoardMenuEntry[] } | null>(null)
   /** The card under the pointer: its wires show their labels, and it shows its ＋. */
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
@@ -470,6 +469,32 @@ export function Board(props: BoardProps): React.JSX.Element {
     ]
   }
 
+  // A box on a 画面: its words, its type, delete.
+  const regionMenu = (canvas: ProjectCanvas, region: ProjectLayer): BoardMenuEntry[] => {
+    const change = (update: (layer: ProjectLayer) => ProjectLayer | null): void =>
+      props.onChangeLayers(canvas.id, (layers) => layers.flatMap((layer) => (layer.id === region.id ? (update(layer) ?? []) : [layer])))
+    return [
+      { label: '改描述', onSelect: () => setEditingRegion({ canvasId: canvas.id, id: region.id, fresh: false }) },
+      { gap: true },
+      ...(Object.keys(KIND_LABEL) as ProjectLayerKind[]).map((kind) => ({
+        label: KIND_LABEL[kind],
+        selected: kind === region.kind,
+        onSelect: () => change((layer) => withKind(layer, kind)),
+      })),
+      { gap: true },
+      {
+        label: '删除',
+        tone: 'danger' as const,
+        disabled: region.locked,
+        title: region.locked ? '已锁定' : undefined,
+        onSelect: () => {
+          change(() => null)
+          props.onSelectRegion(null)
+        },
+      },
+    ]
+  }
+
   const openMenu = (event: React.MouseEvent<HTMLDivElement>): void => {
     // Text fields keep the system menu (copy, paste).
     if (isTyping(event.target)) return
@@ -480,6 +505,13 @@ export function Board(props: BoardProps): React.JSX.Element {
     const target = event.target as HTMLElement
     const cardId = target.closest<HTMLElement>('article[data-canvas-card]')?.dataset.canvasCard
     const card = cardId ? cards.find((canvas) => canvas.id === cardId) : undefined
+    const regionId = target.closest<HTMLElement>('[data-region-id]')?.dataset.regionId
+    const region = card && regionId ? card.layers.find((layer) => layer.id === regionId) : undefined
+    if (card && region) {
+      props.onSelectRegion(region.id)
+      setContextMenu({ at, label: '区域', entries: regionMenu(card, region) })
+      return
+    }
     if (card) {
       if (card.id !== props.selectedCanvasId) props.onSelectCanvas(card.id)
       const { run, item } = shownOf(card)
@@ -633,8 +665,9 @@ export function Board(props: BoardProps): React.JSX.Element {
               selected={isSelected}
               dragging={cardDrag.draggingId === canvas.id}
               tool={props.tool}
-              regionKind={props.regionKind}
               selectedRegionId={props.selectedRegionId}
+              editingRegionId={editingRegion?.canvasId === canvas.id ? editingRegion.id : null}
+              screenScale={1 / Math.max(0.01, view.zoom)}
               rerun={rerunEligibility(canvas, { busy, submitting: props.submitting, update: props.update })}
               initPicture={initPath ? { path: initPath, resize: init?.resize, size: startPictureSize(canvas, props.canvases) } : null}
               mask={
@@ -683,9 +716,23 @@ export function Board(props: BoardProps): React.JSX.Element {
               onChangeLayers={(update) => props.onChangeLayers(canvas.id, update)}
               onRegionDrawn={(id) => {
                 props.onSelectRegion(id)
-                props.onTool('select')
+                setEditingRegion({ canvasId: canvas.id, id, fresh: true })
               }}
-              onOpenRegion={props.onOpenRegion}
+              onEditRegion={(id) => {
+                props.onSelectRegion(id)
+                setEditingRegion({ canvasId: canvas.id, id, fresh: false })
+              }}
+              onEditDone={(cancel) => {
+                const editing = editingRegion
+                setEditingRegion(null)
+                if (!cancel || !editing?.fresh) return
+                // Esc on a box just drawn and still empty takes it back.
+                const layer = canvas.layers.find((item) => item.id === editing.id)
+                if (layer && !layer.caption.trim() && !layer.text?.trim()) {
+                  props.onChangeLayers(canvas.id, (layers) => layers.filter((item) => item.id !== editing.id))
+                  props.onSelectRegion(null)
+                }
+              }}
               onDragStart={(event) => startCardDrag(canvas, event)}
               onOpenViewer={(index) => {
                 // Letting go of a moved card is not a click on its picture.
@@ -711,8 +758,6 @@ export function Board(props: BoardProps): React.JSX.Element {
             <CardToolbar
               tool={props.tool}
               onTool={props.onTool}
-              regionKind={props.regionKind}
-              onRegionKind={props.onRegionKind}
               underlay={selected.backgroundPath}
               onUnderlay={props.onUnderlay}
               mask={mask}
