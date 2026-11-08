@@ -46,7 +46,7 @@ Test builds from `build.yml` trust an ephemeral key and read a local feed. They 
 ## Each release
 
 1. Bump the version in **both** `package.json` and `apps/desktop/package.json`. Use strict semver; a prerelease looks like `1.2.0-beta.1`.
-2. Write `release/notes/<version>.md`. It is the GitHub release text and the in-app notes. Optional front matter:
+2. Write `release/notes/<version>.md`. It is the GitHub release text and the in-app notes. Start from a draft: `pnpm release:notes` writes the Conventional Commit subjects since the last release tag, grouped by type, into that file (`--stdout` prints it instead; `--since <tag>` picks another start). Rewrite the draft for users, in Chinese and by what they notice, and delete its comment line. Optional front matter:
 
    ```markdown
    ---

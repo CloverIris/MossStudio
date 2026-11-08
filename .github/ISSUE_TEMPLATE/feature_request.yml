@@ -1,0 +1,21 @@
+name: 功能建议
+description: 想让 MossStudio 多做一件事，或者换一种做法
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 你想做成什么
+      description: 说说你在创作时想完成的事，而不是具体的按钮或设置。
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: 现在是怎么做的
+      description: 现在用 MossStudio 或别的工具怎么完成它，哪里不方便。
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你的想法
+      description: 可以写你设想的做法，也可以留空。

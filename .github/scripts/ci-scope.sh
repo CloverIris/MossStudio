@@ -2,12 +2,12 @@
 # Decides how much of build.yml runs, and writes `install` and `matrix` to $GITHUB_OUTPUT.
 #
 #   EVENT  github.event_name
-#   BASE   base commit of a pull request (github.event.pull_request.base.sha)
-#   HEAD   head commit of a pull request (github.event.pull_request.head.sha)
+#   BASE   base commit of a pull request or merge-queue group
+#   HEAD   head commit of a pull request or merge-queue group
 #
-# Pull requests run the package + install/update/rollback matrix only when they touch what it
-# tests (INSTALL_PATHS below), and then without macOS Intel. Pushes to main and manual runs
-# (workflow_dispatch, e.g. `gh workflow run build.yml --ref <branch>`) always run all four.
+# Pull requests and merge-queue groups run the package + install/update/rollback matrix only when
+# they touch what it tests (INSTALL_PATHS below), and then without macOS Intel. Pushes to main and
+# manual runs (workflow_dispatch, e.g. `gh workflow run build.yml --ref <branch>`) always run all four.
 set -euo pipefail
 
 INSTALL_PATHS='^(apps/launcher/|apps/desktop/src/main/install/|apps/desktop/src/main/update/|apps/desktop/src/shared/(install|update|updateKeys|setup)\.ts$|apps/desktop/src/renderer/src/pages/(install|uninstall)/|apps/desktop/electron\.vite\.config\.|apps/desktop/package\.json$|package\.json$|pnpm-lock\.yaml$|tools/release/|\.github/workflows/build\.yml$|\.github/scripts/)'
@@ -16,7 +16,7 @@ ALL='[{"runner":"windows-latest","platform":"win32-x64"},{"runner":"ubuntu-lates
 PR='[{"runner":"windows-latest","platform":"win32-x64"},{"runner":"ubuntu-latest","platform":"linux-x64"},{"runner":"macos-latest","platform":"darwin-arm64"}]'
 
 out="${GITHUB_OUTPUT:-/dev/stdout}"
-if [[ "${EVENT:-}" != "pull_request" ]]; then
+if [[ "${EVENT:-}" != "pull_request" && "${EVENT:-}" != "merge_group" ]]; then
   echo "${EVENT:-unknown} run: full matrix"
   { echo "install=true"; echo "matrix=$ALL"; } >> "$out"
   exit 0

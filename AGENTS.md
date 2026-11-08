@@ -87,8 +87,9 @@ On Linux, `pnpm test:e2e`, `pnpm test:scenarios` and `pnpm test:install` run the
 ### Git and PRs
 
 - Branch names: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `ci/`, `test/`.
-- Conventional Commits in English (`fix(update): tell the user once when a version is rolled back`). PRs are squash-merged; the PR title becomes the commit on `main`.
-- Do not push to `main`. Do not merge unless asked.
+- Conventional Commits in English (`fix(update): tell the user once when a version is rolled back`). PRs are squash-merged; the PR title becomes the commit on `main`, and CI rejects a title that is not a Conventional Commit.
+- Do not push to `main`. Do not merge unless asked; when asked, add the PR to the merge queue (`gh pr merge <n> --squash`) instead of rebasing it onto `main` by hand.
+- Do not stack PRs. If one must build on another, wait for the base to merge, then branch from `main`.
 - No AI attribution anywhere: no `Co-Authored-By` for a tool, no `Assisted-by`, no "Generated with" lines. The human contributor is the author and is responsible for the change.
 - Fill in the PR template: what and why, how it was verified (commands and results, light and dark screenshots for UI), platforms affected.
 

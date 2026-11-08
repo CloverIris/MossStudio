@@ -25,7 +25,8 @@
     "release:deltas": "node tools/release/make-deltas.mjs",
     "release:feed": "node tools/release/make-feed.mjs",
     "release:sign": "node tools/release/sign-feed.mjs",
-    "release:verify": "node --no-warnings tools/release/verify-artifacts.mjs"
+    "release:verify": "node --no-warnings tools/release/verify-artifacts.mjs",
+    "release:notes": "node tools/release/draft-notes.mjs"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
