@@ -255,7 +255,8 @@ describe('models', () => {
       window.__mock.state.catalog = {
         ...catalog,
         models: catalog.models.map((model) =>
-          model.id === 'qwen35-comfy-int8_convrot'
+          // The W4A8 encoder: no catalog model uses it (the INT8 one belongs to the certified INT8 models).
+          model.id === 'qwen35-comfy-w4a8_gptq'
             ? { ...model, installed: true, installState: 'ready', installedBytes: model.sizeBytes }
             : model,
         ),
@@ -266,12 +267,12 @@ describe('models', () => {
     expect(await page.getByText('单独的部件').count()).toBe(0)
     const unused = page.locator('[data-unused-files]')
     await unused.scrollIntoViewIfNeeded()
-    await expect.poll(() => unused.getByText('1 个文件 · 9.7 GB').isVisible()).toBe(true)
+    await expect.poll(() => unused.getByText('1 个文件 · 7.3 GB').isVisible()).toBe(true)
     await unused.scrollIntoViewIfNeeded()
     await app.screenshot('models-advanced-light')
     await unused.getByRole('button', { name: '全部删除' }).click()
     await page.getByRole('dialog').getByRole('button', { name: '删除' }).click()
-    await expect.poll(() => app.calls('models:delete')).toEqual([{ kind: 'model', id: 'qwen35-comfy-int8_convrot' }])
+    await expect.poll(() => app.calls('models:delete')).toEqual([{ kind: 'model', id: 'qwen35-comfy-w4a8_gptq' }])
     await expect.poll(() => unused.count()).toBe(0)
   })
 
