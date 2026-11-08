@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { appendFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Events } from '@shared/channels'
 import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, ModelBundle, GpuInventoryDevice } from '@shared/types'
@@ -17,6 +17,7 @@ import { cancelCliJob, cliBundleDtypeProblem, hipDeviceIndex, runCliJob, type Hi
 import { currentEngineMachine, localServerPath, resolveDeviceEngine, type DeviceEngine } from './engineInstalls'
 import { getCatalog } from './models'
 import { getSettings } from './settings'
+import { writeFileAtomic } from '../lib/atomicWrite'
 import { refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 import { selectAutomaticGpu } from '@shared/gpuScheduling'
@@ -132,14 +133,71 @@ export async function settleJobWrites(): Promise<void> {
   while (pendingWork.size > 0) await Promise.allSettled([...pendingWork])
 }
 
-async function saveJobs(): Promise<void> {
-  try {
-    await mkdir(jobsDir(), { recursive: true })
-    const list = [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 60)
-    await writeFile(join(jobsDir(), 'jobs.json'), JSON.stringify(list, null, 2), 'utf8')
-  } catch {
-    // best effort
+/** The job list save in progress, and whether jobs changed since it took its snapshot. */
+let saving: Promise<void> | null = null
+let saveAgain = false
+/**
+ * A failed save is tried once more after this long (a file briefly locked on Windows), so a job's final
+ * state is not left behind. Once: after that, the next change writes again.
+ */
+const SAVE_RETRY_MS = 1500
+let retry: 'ready' | 'scheduled' | 'used' = 'ready'
+
+/** One save: the snapshot is taken right before the write, so a change during the write sets saveAgain. */
+async function writeJobList(): Promise<void> {
+  await mkdir(jobsDir(), { recursive: true })
+  const list = [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 60)
+  await writeFileAtomic(join(jobsDir(), 'jobs.json'), JSON.stringify(list, null, 2))
+}
+
+async function runSaves(): Promise<void> {
+  for (;;) {
+    saveAgain = false
+    try {
+      await writeJobList()
+    } catch {
+      // Best effort: the jobs stay in memory; one delayed retry, then the next change writes them again.
+      saving = null
+      scheduleSaveRetry()
+      return
+    }
+    // Checked and cleared in the same turn as the write's end: a change can't slip in between.
+    if (!saveAgain) {
+      saving = null
+      retry = 'ready'
+      return
+    }
   }
+}
+
+function scheduleSaveRetry(): void {
+  if (retry !== 'ready') return
+  retry = 'scheduled'
+  inBackground(
+    new Promise<void>((resolve) => {
+      // The retry alone never keeps the process alive (quitting with a pending retry loses only that retry).
+      setTimeout(() => {
+        retry = 'used'
+        resolve(saveJobs())
+      }, SAVE_RETRY_MS).unref()
+    }),
+  )
+}
+
+/**
+ * Writes the job list, one write at a time and atomically (temp file, then rename), so jobs.json is never
+ * half written or overwritten by an older snapshot. A call during a save makes that save write once more
+ * with the newest jobs. Every caller's promise resolves after a write that includes its change, or after
+ * the save fails (best effort). A caller may wait a little longer while job updates keep streaming in.
+ */
+function saveJobs(): Promise<void> {
+  if (saving) {
+    saveAgain = true
+    return saving
+  }
+  // Started in a microtask, so `saving` is stored before runSaves can clear it, whatever fails first.
+  saving = Promise.resolve().then(runSaves)
+  return saving
 }
 
 function snapshot(job: JobRecord): JobRecord {
@@ -1467,6 +1525,7 @@ export async function purgeLegacySimulationJobs(): Promise<number> {
     await rm(join(jobsDir(), `${id}.json`), { force: true }).catch(() => undefined)
     removed += 1
   }
+  // Waits for the save in flight and the one more it makes for this change.
   if (removed) await saveJobs()
   return removed
 }

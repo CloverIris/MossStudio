@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
 import type { EngineInstallAttempt, EngineInstallProgress } from '@shared/types'
 import { engineBinaryName, type EnginePackageKind } from '@shared/enginePackages'
+import { isLockedError, renameWithRetry, writeFileAtomic } from './atomicWrite'
 
 export interface EngineInstallPromotion {
   installDir: string
@@ -53,29 +53,17 @@ function isInside(base: string, target: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
-function errorCode(error: unknown): string | undefined {
-  return typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : undefined
+function renameRetrying(from: string, to: string, ops: EngineStoreOps, retryDelayMs: number): Promise<void> {
+  return renameWithRetry(from, to, { rename: ops.rename, delayMs: retryDelayMs })
 }
 
-async function renameWithRetry(from: string, to: string, ops: EngineStoreOps, retryDelayMs: number): Promise<void> {
-  let lastError: unknown
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    try {
-      await ops.rename(from, to)
-      return
-    } catch (error) {
-      lastError = error
-      if (!['EBUSY', 'EPERM', 'EACCES'].includes(errorCode(error) ?? '') || attempt === 4) throw error
-      if (retryDelayMs > 0) await delay(retryDelayMs)
-    }
-  }
-  throw lastError
-}
-
-async function atomicWriteJson(file: string, value: unknown, ops: EngineStoreOps, retryDelayMs: number): Promise<void> {
-  const temporary = `${file}.tmp`
-  await ops.writeFile(temporary, JSON.stringify(value, null, 2))
-  await renameWithRetry(temporary, file, ops, retryDelayMs)
+function atomicWriteJson(file: string, value: unknown, ops: EngineStoreOps, retryDelayMs: number): Promise<void> {
+  return writeFileAtomic(file, JSON.stringify(value, null, 2), {
+    writeFile: ops.writeFile,
+    rename: ops.rename,
+    rm: ops.rm,
+    delayMs: retryDelayMs,
+  })
 }
 
 async function bestEffortRm(path: string | undefined, ops: EngineStoreOps): Promise<void> {
@@ -169,10 +157,10 @@ export async function promoteInstall(
     await atomicWriteJson(journalPath, journal, ops, retryDelayMs)
     if (replacingCurrent && previousDir && input.beforeReplace) await input.beforeReplace()
     if (previousDir) {
-      await renameWithRetry(installDir, previousDir, ops, retryDelayMs)
+      await renameRetrying(installDir, previousDir, ops, retryDelayMs)
       movedPrevious = true
     }
-    await renameWithRetry(stagingDir, installDir, ops, retryDelayMs)
+    await renameRetrying(stagingDir, installDir, ops, retryDelayMs)
     promoted = true
     await bestEffortRm(journalPath, ops)
     return {
@@ -185,17 +173,14 @@ export async function promoteInstall(
       let rollbackError: unknown
       if (movedPrevious && previousDir && existsSync(previousDir) && !existsSync(installDir)) {
         try {
-          await renameWithRetry(previousDir, installDir, ops, retryDelayMs)
+          await renameRetrying(previousDir, installDir, ops, retryDelayMs)
         } catch (cause) {
           rollbackError = cause
         }
       }
       await bestEffortRm(stagingDir, ops)
       if (!rollbackError) await bestEffortRm(journalPath, ops)
-      const currentMessage =
-        replacingCurrent && ['EBUSY', 'EPERM', 'EACCES'].includes(errorCode(error) ?? '')
-          ? '引擎正在使用，无法替换旧目录'
-          : '引擎目录晋升失败'
+      const currentMessage = replacingCurrent && isLockedError(error) ? '引擎正在使用，无法替换旧目录' : '引擎目录晋升失败'
       const rollbackMessage = rollbackError
         ? `；自动回滚也失败，已保留 .pending.json 供下次启动恢复：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
         : ''
@@ -238,7 +223,7 @@ export async function recoverEngineInstall(
         .every((path) => isInside(root, path) && resolve(path) !== root)
       if (!safePaths) throw new Error('引擎安装日志包含越界路径，已停止自动恢复')
       if (!existsSync(journal.installDir) && journal.previousDir && existsSync(journal.previousDir)) {
-        await renameWithRetry(journal.previousDir, journal.installDir, ops, retryDelayMs)
+        await renameRetrying(journal.previousDir, journal.installDir, ops, retryDelayMs)
         restored.push(journal.installDir)
       } else if (existsSync(journal.installDir) && journal.previousDir) {
         await bestEffortRm(journal.previousDir, ops)
