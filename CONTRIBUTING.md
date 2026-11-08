@@ -59,8 +59,24 @@ Before opening a PR, run lint, format check, typecheck and unit tests, plus E2E 
 - Every change reaches `main` through a pull request, **squash-merged**. The PR title becomes the commit on `main`, so make it a good one. Branches are deleted after merging.
 - A PR says what changed and why, how it was verified, and which platforms it affects (the template asks).
 - Reformat-only commits go into `.git-blame-ignore-revs`. Run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once.
+- Commit trailers name people only. No tool attribution lines (see [AI-assisted contributions](#ai-assisted-contributions)).
+
+## AI-assisted contributions
+
+You may use any tool to write code, tests or docs, and you do not have to say which. How a change was produced is up to you; the bar is the same for everyone.
+
+You are the author. That means:
+
+- You have read, run and understood every line you submit, and you can explain any of it in review. A PR whose author cannot answer questions about it may be closed without a detailed review.
+- You have tested it the way the PR template asks, on the platforms it touches. "The tool said it works" is not verification.
+- You have the right to contribute it, and it meets the project's licence, like any other contribution.
+- Commits and PRs carry no tool attribution: no `Co-Authored-By`, `Assisted-by` or similar lines for tools.
+
+Review is done by people, and they will treat your PR as your own work. A PR that is too large to review, or that bundles unrelated changes, will be sent back to be split, however it was written.
 
 ## Code standards
+
+Rules that no tool checks are in [docs/reference/coding-standards.md](docs/reference/coding-standards.md). In short:
 
 - **TypeScript:** `strict`. Prettier owns formatting; ESLint catches unhandled promises, unused code, hook misuse, non-exhaustive `switch` over unions, missing `type` on type-only imports, and imports across process boundaries (renderer, shared, main). No `.only`, `.skip` or TODO stubs in tests.
 - **Go:** `gofmt`, `go vet`.
