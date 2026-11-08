@@ -32,7 +32,7 @@ pnpm build      # production build
 
 | Command | What it runs |
 | --- | --- |
-| `pnpm lint` | ESLint: bug-finding rules only (`eslint.config.mjs`) |
+| `pnpm lint` | ESLint: bug-finding rules, exhaustive `switch`, type-only imports and the process import boundaries (`eslint.config.mjs`) |
 | `pnpm format` / `pnpm format:check` | Prettier for code and config |
 | `pnpm typecheck` | `tsc` over all five TypeScript projects |
 | `pnpm test:unit` | Vitest. Pass a file to run one: `pnpm test:unit -- test/renderer/lib/format.test.ts` |
@@ -62,7 +62,7 @@ Before opening a PR, run lint, format check, typecheck and unit tests, plus E2E 
 
 ## Code standards
 
-- **TypeScript:** `strict`. Prettier owns formatting; ESLint catches unhandled promises, unused code and hook misuse. No `.only`, `.skip` or TODO stubs in tests.
+- **TypeScript:** `strict`. Prettier owns formatting; ESLint catches unhandled promises, unused code, hook misuse, non-exhaustive `switch` over unions, missing `type` on type-only imports, and imports across process boundaries (renderer, shared, main). No `.only`, `.skip` or TODO stubs in tests.
 - **Go:** `gofmt`, `go vet`.
 - **UI:** follow [docs/design/ui-rules.md](docs/design/ui-rules.md), which covers:
   - which primitive to use for what, and which button tone for which action;
