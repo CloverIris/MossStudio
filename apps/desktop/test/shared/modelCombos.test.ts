@@ -37,25 +37,25 @@ const labels = (list: { label: string }[]): string[] => list.map((choice) => cho
 describe('slotChoices', () => {
   it('lists each 主模型 once by its label, without the unusable FP16-fixed single files', () => {
     expect(labels(slotChoices(models(), 'dit'))).toEqual([
-      'MOSS-Image SFT · BF16',
-      'MOSS-Image Base · BF16',
-      'MOSS-Image Base · FP16 社区修复',
-      'MOSS-Image SFT · FP16 社区修复',
-      'MOSS-Image Base · INT8',
-      'MOSS-Image SFT · INT8',
+      'MOSS-Image SFT BF16',
+      'MOSS-Image Base BF16',
+      'MOSS-Image Base FP16 社区修复',
+      'MOSS-Image SFT FP16 社区修复',
+      'MOSS-Image Base INT8',
+      'MOSS-Image SFT INT8',
       // The engine-certified single files (INT4, NVFP4, Turbo) are parts too.
-      'MOSS-Image SFT · INT4',
-      'MOSS-Image SFT · NVFP4',
-      'MOSS-Image SFT Turbo · INT8',
+      'MOSS-Image SFT INT4',
+      'MOSS-Image SFT NVFP4',
+      'MOSS-Image SFT Turbo INT8',
     ])
   })
 
   it('uses the folder version of a part both repositories offer, unless the single file is already here', () => {
-    const fresh = slotChoices(models(), 'textEncoder').find((choice) => choice.label === 'Qwen3.5 · BF16')!
+    const fresh = slotChoices(models(), 'textEncoder').find((choice) => choice.label === 'Qwen3.5 BF16')!
     expect(fresh).toMatchObject({ id: 'qwen35-encoder', ids: ['qwen35-encoder', 'qwen35-comfy-bf16'], installed: false })
-    const here = slotChoices(models(['qwen35-comfy-bf16']), 'textEncoder').find((choice) => choice.label === 'Qwen3.5 · BF16')!
+    const here = slotChoices(models(['qwen35-comfy-bf16']), 'textEncoder').find((choice) => choice.label === 'Qwen3.5 BF16')!
     expect(here).toMatchObject({ id: 'qwen35-comfy-bf16', installed: true })
-    expect(labels(slotChoices(models(), 'vae'))).toEqual(['FLUX.2 VAE · Small', 'FLUX.2 VAE · Full'])
+    expect(labels(slotChoices(models(), 'vae'))).toEqual(['FLUX.2 VAE Small', 'FLUX.2 VAE Full'])
   })
 
   it('adds the person’s own single files that are still there, after the downloads', () => {
@@ -104,7 +104,7 @@ describe('combinationBundle', () => {
     expect(bundle).toEqual({
       id: 'combo-1',
       name: '我的 INT8',
-      description: 'my-dit.safetensors + Qwen3.5 · W4A8 + FLUX.2 VAE · Small',
+      description: 'my-dit.safetensors + Qwen3.5 W4A8 + FLUX.2 VAE Small',
       components: { dit: 'my-dit', textEncoder: 'qwen35-comfy-w4a8_gptq', vae: 'flux2-vae-small' },
       support: 'moss-runtime-config',
       recommended: false,
@@ -117,12 +117,12 @@ describe('combinationBundle', () => {
       { dit: 'moss-sft-comfy-int8_convrot', textEncoder: 'qwen35-comfy-w4a8_gptq', vae: 'flux2-vae-small' },
       models(),
     )
-    expect(name).toBe('SFT · INT8 + Qwen3.5 · W4A8')
+    expect(name).toBe('SFT INT8 + Qwen3.5 W4A8')
     const ownFile = suggestedName(
       { dit: 'my-dit', textEncoder: 'qwen35-encoder', vae: 'flux2-vae-small' },
       models([], [own('my-dit', 'dit')]),
     )
-    expect(ownFile).toBe('my-dit + Qwen3.5 · BF16')
+    expect(ownFile).toBe('my-dit + Qwen3.5 BF16')
   })
 })
 

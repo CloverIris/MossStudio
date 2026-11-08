@@ -67,10 +67,10 @@ describe('studio', () => {
     await describeCanvas(page, '海边的灯塔，黄昏，暖色调')
     // Model, size and LoRA fold into one line under the description.
     const summary = page.locator('[data-settings-summary]')
-    expect(await summary.textContent()).toBe('MOSS-Image SFT · 1:1')
+    expect(await summary.textContent()).toBe('MOSS-Image SFT 1:1')
     await summary.click()
     await page.getByRole('group', { name: '尺寸' }).getByRole('button', { name: '16:9' }).click()
-    expect(await summary.textContent()).toBe('MOSS-Image SFT · 16:9')
+    expect(await summary.textContent()).toBe('MOSS-Image SFT 16:9')
     await page.getByRole('group', { name: '质量' }).getByRole('button', { name: '精细' }).click()
     await expect.poll(() => generate.isEnabled()).toBe(true)
     await generate.click()
@@ -387,7 +387,7 @@ describe('studio', () => {
     await settle(page)
   })
 
-  describe('a few-step model (SFT Turbo · INT8 8 步)', () => {
+  describe('a few-step model (MOSS-Image SFT Turbo INT8 8 步)', () => {
     const TURBO = ['moss-sft-turbo-comfy-int8_convrot', 'qwen35-comfy-int8_convrot', 'flux2-vae-comfy-small', 'moss-runtime-config']
     const install = async (page: Page, ids: string[], only: boolean): Promise<void> => {
       await page.evaluate(
@@ -413,8 +413,12 @@ describe('studio', () => {
       await describeCanvas(page, '雨夜的霓虹街道')
       // The model is in the settings folded under the description.
       await page.locator('[data-settings-summary]').click()
-      const model = page.getByRole('combobox', { name: '模型', exact: true })
-      await model.selectOption({ label: 'SFT Turbo · INT8 8 步' })
+      // The picker lists names with their tags; a menu item reads "<name> <size>".
+      const pick = async (name: RegExp): Promise<void> => {
+        await page.locator('[data-model-picker]').click()
+        await page.getByRole('menu', { name: '模型' }).getByRole('menuitem', { name }).click()
+      }
+      await pick(/^MOSS-Image SFT Turbo INT8 8 步 \d/)
       const generate = page.locator('[data-studio-generate]')
       await expect.poll(() => generate.isEnabled()).toBe(true)
       await generate.click()
@@ -422,7 +426,7 @@ describe('studio', () => {
       expect(turbo).toMatchObject({ steps: 8, cfg: 1 })
       await page.evaluate(() => window.__mock.finishJob(window.__mock.state.jobs[0]!.id))
 
-      await model.selectOption({ label: 'MOSS-Image SFT' })
+      await pick(/^MOSS-Image SFT \d/)
       await expect.poll(() => generate.isEnabled()).toBe(true)
       await generate.click()
       const [, sft] = await submitted(page, 2)

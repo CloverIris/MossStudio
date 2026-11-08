@@ -4,10 +4,11 @@ import { unusedDownloads } from '@shared/modelCombos'
 import type { Catalog, DownloadTask, ModelEntry } from '@shared/types'
 import { call } from '../../lib/api'
 import { ModelDirectoriesCard } from '../../components/ModelDirectoriesCard'
-import { Button, ConfirmDialog, Field, Group, Modal, Row, Section, Spinner, useToast } from '../../components/ui'
+import { ModelName } from '../../components/common/ModelName'
+import { Button, ConfirmDialog, Field, Group, Modal, Row, Section, Spinner, Tag, useToast } from '../../components/ui'
 import { TextSetting } from '../training/TextSetting'
 import { sizeText } from './logic'
-import { RemoveButton } from './ModelEntries'
+import { RemoveButton, SizeText } from './ModelEntries'
 import type { ModelLocation } from './useModelLocation'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
@@ -40,7 +41,8 @@ function UnusedFiles({ catalog, location }: { catalog: Catalog; location: ModelL
   return (
     <div data-unused-files>
       <Group>
-        <Row title="没有用到的文件" description={<span className="tabular">{`${unused.length} 个文件 · ${sizeText(bytes(unused))}`}</span>}>
+        <Row title="没有用到的文件" description={<span className="tabular">{`${unused.length} 个文件`}</span>}>
+          <SizeText bytes={bytes(unused)} />
           <Button tone="ghost" onClick={() => setListing(true)}>
             查看
           </Button>
@@ -54,13 +56,11 @@ function UnusedFiles({ catalog, location }: { catalog: Catalog; location: ModelL
           {unused.map((model) => (
             <Row
               key={model.id}
-              title={model.name}
-              description={
-                <span className="tabular">
-                  {[model.precision.toUpperCase(), sizeText(model.installedBytes || model.sizeBytes)].join(' · ')}
-                </span>
-              }
+              title={<ModelName item={model} />}
+              // The precision is a tag of its own unless the name already carries it.
+              description={model.variant?.length ? undefined : <Tag>{model.precision.toUpperCase()}</Tag>}
             >
+              <SizeText bytes={model.installedBytes || model.sizeBytes} />
               <RemoveButton name={model.name} onClick={() => setRemoving([model])} />
             </Row>
           ))}

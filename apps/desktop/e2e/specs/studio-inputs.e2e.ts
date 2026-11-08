@@ -270,7 +270,8 @@ describe('模型 › 控制适配器', () => {
     await page.evaluate(() => window.__mock.handle(window.__mock.Ipc.pickDialog, () => '/home/me/models/depth-control.safetensors'))
     await section.getByRole('button', { name: '添加文件' }).click()
     await expect.poll(() => section.getByText('depth-control.safetensors').isVisible()).toBe(true)
-    expect(await section.getByText(/^深度 · 边缘 · 姿态 · /).isVisible()).toBe(true)
+    // The kinds are tags; the size is a column of its own.
+    for (const kind of ['深度', '边缘', '姿态']) expect(await section.getByText(kind, { exact: true }).first().isVisible()).toBe(true)
     await app.screenshot('models-control-adapters-light')
 
     await section.getByRole('button', { name: '移除 depth-control.safetensors' }).click()

@@ -44,6 +44,7 @@ interface RawModel {
   id: string
   name: string
   choice?: string
+  variant?: string[]
   provider: 'hf'
   repo: string
   revision?: string
@@ -417,6 +418,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
         name: model.name,
         // An older remote catalog has no labels: the packaged one names the same ids.
         choice: model.choice ?? BUILTIN.models.find((item) => item.id === model.id)?.choice,
+        variant: model.variant,
         provider: model.provider,
         repo: model.repo,
         revision: model.revision ?? 'main',

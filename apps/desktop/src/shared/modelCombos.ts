@@ -132,7 +132,7 @@ export function missingBytes(
   }, 0)
 }
 
-/** A name for a new combination from its 主模型 and 文本编码器, e.g. "SFT · INT8 + Qwen3.5 · W4A8"; an own file by its name without the extension. */
+/** A name for a new combination from its 主模型 and 文本编码器, e.g. "SFT INT8 + Qwen3.5 W4A8"; an own file by its name without the extension. */
 export function suggestedName(components: Record<SlotKey, string>, models: readonly ModelEntry[]): string {
   const label = (id: string): string => {
     const model = models.find((entry) => entry.id === id)

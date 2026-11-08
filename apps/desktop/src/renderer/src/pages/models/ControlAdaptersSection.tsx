@@ -2,13 +2,12 @@ import { FileUp, SlidersHorizontal } from 'lucide-react'
 import { useState } from 'react'
 import { Ipc } from '@shared/channels'
 import type { ControlAdapterEntry } from '@shared/types'
-import { Button, ConfirmDialog, EmptyState, Group, Row, Section, Spinner, useToast } from '../../components/ui'
+import { Button, ConfirmDialog, EmptyState, Group, Row, Section, Spinner, Tag, useToast } from '../../components/ui'
 import { call } from '../../lib/api'
 import { useControlAdapters } from '../../lib/useControlAdapters'
 import { controlKindLabel } from '../studio/links'
 import { useEngineFeatures } from '../studio/useEngineFeatures'
-import { sizeText } from './logic'
-import { RemoveButton } from './ModelEntries'
+import { RemoveButton, SizeText } from './ModelEntries'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 
@@ -72,9 +71,14 @@ export function ControlAdaptersSection(): React.JSX.Element | null {
               key={entry.id}
               title={entry.name}
               description={
-                <span className="tabular">{[...entry.controlKinds.map(controlKindLabel), sizeText(entry.sizeBytes)].join(' · ')}</span>
+                <span className="flex flex-wrap items-center gap-1.5">
+                  {entry.controlKinds.map((kind) => (
+                    <Tag key={kind}>{controlKindLabel(kind)}</Tag>
+                  ))}
+                </span>
               }
             >
+              <SizeText bytes={entry.sizeBytes} />
               <RemoveButton remove name={entry.name} onClick={() => setRemoving(entry)} />
             </Row>
           ))

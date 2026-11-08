@@ -5,7 +5,7 @@
     {
       "id": "moss-sft-dit",
       "name": "MOSS-Image SFT",
-      "choice": "MOSS-Image SFT · BF16",
+      "choice": "MOSS-Image SFT BF16",
       "provider": "hf",
       "repo": "OpenMOSS-Team/MOSS-Image-SFT",
       "revision": "main",
@@ -23,7 +23,7 @@
     {
       "id": "moss-base-dit",
       "name": "MOSS-Image Base",
-      "choice": "MOSS-Image Base · BF16",
+      "choice": "MOSS-Image Base BF16",
       "provider": "hf",
       "repo": "OpenMOSS-Team/MOSS-Image-Base",
       "revision": "main",
@@ -40,8 +40,9 @@
     },
     {
       "id": "moss-base-fp16-fixed",
-      "name": "MOSS-Image Base FP16-fixed (社区)",
-      "choice": "MOSS-Image Base · FP16 社区修复",
+      "name": "MOSS-Image Base FP16-fixed 社区",
+      "variant": ["FP16-fixed", "社区"],
+      "choice": "MOSS-Image Base FP16 社区修复",
       "provider": "hf",
       "repo": "KBlueLeaf/MOSS-Image-FP16-fixed",
       "revision": "main",
@@ -59,8 +60,9 @@
     },
     {
       "id": "moss-sft-fp16-fixed",
-      "name": "MOSS-Image SFT FP16-fixed (社区)",
-      "choice": "MOSS-Image SFT · FP16 社区修复",
+      "name": "MOSS-Image SFT FP16-fixed 社区",
+      "variant": ["FP16-fixed", "社区"],
+      "choice": "MOSS-Image SFT FP16 社区修复",
       "provider": "hf",
       "repo": "KBlueLeaf/MOSS-Image-FP16-fixed",
       "revision": "main",
@@ -78,7 +80,8 @@
     },
     {
       "id": "moss-base-fp16-fixed-comfy",
-      "name": "MOSS-Image Base FP16-fixed · ComfyUI (社区)",
+      "name": "MOSS-Image Base FP16-fixed ComfyUI 社区",
+      "variant": ["FP16-fixed", "ComfyUI", "社区"],
       "provider": "hf",
       "repo": "KBlueLeaf/MOSS-Image-FP16-fixed",
       "revision": "main",
@@ -96,7 +99,8 @@
     },
     {
       "id": "moss-sft-fp16-fixed-comfy",
-      "name": "MOSS-Image SFT FP16-fixed · ComfyUI (社区)",
+      "name": "MOSS-Image SFT FP16-fixed ComfyUI 社区",
+      "variant": ["FP16-fixed", "ComfyUI", "社区"],
       "provider": "hf",
       "repo": "KBlueLeaf/MOSS-Image-FP16-fixed",
       "revision": "main",
@@ -114,8 +118,8 @@
     },
     {
       "id": "qwen35-encoder",
-      "name": "Qwen3.5 · 文本编码器",
-      "choice": "Qwen3.5 · BF16",
+      "name": "Qwen3.5 文本编码器",
+      "choice": "Qwen3.5 BF16",
       "provider": "hf",
       "repo": "OpenMOSS-Team/MOSS-Image-SFT",
       "revision": "main",
@@ -132,8 +136,9 @@
     },
     {
       "id": "flux2-vae-small",
-      "name": "FLUX.2 VAE · Small",
-      "choice": "FLUX.2 VAE · Small",
+      "name": "FLUX.2 VAE Small",
+      "variant": ["Small"],
+      "choice": "FLUX.2 VAE Small",
       "provider": "hf",
       "repo": "OpenMOSS-Team/MOSS-Image-SFT",
       "revision": "main",
@@ -194,8 +199,9 @@
     },
     {
       "id": "moss-base-comfy-bf16",
-      "name": "MOSS BASE · BF16",
-      "choice": "MOSS-Image Base · BF16",
+      "name": "MOSS Base BF16",
+      "variant": ["BF16"],
+      "choice": "MOSS-Image Base BF16",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -212,8 +218,9 @@
     },
     {
       "id": "moss-base-comfy-int8_convrot",
-      "name": "MOSS BASE · INT8_CONVROT",
-      "choice": "MOSS-Image Base · INT8",
+      "name": "MOSS Base INT8 ConvRot",
+      "variant": ["INT8", "ConvRot"],
+      "choice": "MOSS-Image Base INT8",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -230,8 +237,9 @@
     },
     {
       "id": "moss-sft-comfy-bf16",
-      "name": "MOSS SFT · BF16",
-      "choice": "MOSS-Image SFT · BF16",
+      "name": "MOSS SFT BF16",
+      "variant": ["BF16"],
+      "choice": "MOSS-Image SFT BF16",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -248,8 +256,9 @@
     },
     {
       "id": "moss-sft-comfy-int8_convrot",
-      "name": "MOSS SFT · INT8_CONVROT",
-      "choice": "MOSS-Image SFT · INT8",
+      "name": "MOSS SFT INT8 ConvRot",
+      "variant": ["INT8", "ConvRot"],
+      "choice": "MOSS-Image SFT INT8",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -266,8 +275,9 @@
     },
     {
       "id": "moss-sft-comfy-int4_convrot",
-      "name": "MOSS SFT · INT4_CONVROT (社区)",
-      "choice": "MOSS-Image SFT · INT4",
+      "name": "MOSS SFT INT4 ConvRot 社区",
+      "variant": ["INT4", "ConvRot", "社区"],
+      "choice": "MOSS-Image SFT INT4",
       "provider": "hf",
       "repo": "toxicdog/MOSS-Image-SFT-INT4-ConvRot-ComfyUI",
       "revision": "220f724ceede0144e01c5353e9e96a1c538adba4",
@@ -284,8 +294,9 @@
     },
     {
       "id": "moss-sft-comfy-nvfp4",
-      "name": "MOSS SFT · NVFP4 (社区)",
-      "choice": "MOSS-Image SFT · NVFP4",
+      "name": "MOSS SFT NVFP4 社区",
+      "variant": ["NVFP4", "社区"],
+      "choice": "MOSS-Image SFT NVFP4",
       "provider": "hf",
       "repo": "BennyDaBall/MOSS-Image-SFT-NVFP4",
       "revision": "46b5146214892a7648350548828dc168e1fcaa7a",
@@ -302,8 +313,9 @@
     },
     {
       "id": "moss-sft-turbo-comfy-int8_convrot",
-      "name": "MOSS SFT Turbo · INT8_CONVROT (社区)",
-      "choice": "MOSS-Image SFT Turbo · INT8",
+      "name": "MOSS SFT Turbo INT8 ConvRot 社区",
+      "variant": ["INT8", "ConvRot", "社区"],
+      "choice": "MOSS-Image SFT Turbo INT8",
       "provider": "hf",
       "repo": "toxicdog/MOSS-Image-SFT-Turbo-INT8-ConvRot",
       "revision": "a04afd66c4f9a3b41658a611906723b55ee40301",
@@ -320,8 +332,9 @@
     },
     {
       "id": "qwen35-comfy-bf16",
-      "name": "Qwen3.5 · BF16",
-      "choice": "Qwen3.5 · BF16",
+      "name": "Qwen3.5 BF16",
+      "variant": ["BF16"],
+      "choice": "Qwen3.5 BF16",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -338,8 +351,9 @@
     },
     {
       "id": "qwen35-comfy-int8_convrot",
-      "name": "Qwen3.5 · INT8_CONVROT",
-      "choice": "Qwen3.5 · INT8",
+      "name": "Qwen3.5 INT8 ConvRot",
+      "variant": ["INT8", "ConvRot"],
+      "choice": "Qwen3.5 INT8",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -356,8 +370,9 @@
     },
     {
       "id": "qwen35-comfy-w4a8_gptq",
-      "name": "Qwen3.5 · W4A8_GPTQ",
-      "choice": "Qwen3.5 · W4A8",
+      "name": "Qwen3.5 W4A8 GPTQ",
+      "variant": ["W4A8", "GPTQ"],
+      "choice": "Qwen3.5 W4A8",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -374,8 +389,9 @@
     },
     {
       "id": "flux2-vae-comfy-small",
-      "name": "FLUX.2 VAE · Small",
-      "choice": "FLUX.2 VAE · Small",
+      "name": "FLUX.2 VAE Small",
+      "variant": ["Small"],
+      "choice": "FLUX.2 VAE Small",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -392,8 +408,9 @@
     },
     {
       "id": "flux2-vae-comfy-full",
-      "name": "FLUX.2 VAE · Full",
-      "choice": "FLUX.2 VAE · Full",
+      "name": "FLUX.2 VAE Full",
+      "variant": ["Full"],
+      "choice": "FLUX.2 VAE Full",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -528,7 +545,8 @@
     },
     {
       "id": "moss-sft-fp16",
-      "name": "SFT · FP16-fixed",
+      "name": "MOSS-Image SFT FP16-fixed",
+      "variant": ["FP16-fixed"],
       "description": "社区修复版，主模型按 FP16 加载；引擎没有验证过。",
       "components": {
         "dit": "moss-sft-fp16-fixed",
@@ -540,7 +558,8 @@
     },
     {
       "id": "moss-base-fp16",
-      "name": "Base · FP16-fixed",
+      "name": "MOSS-Image Base FP16-fixed",
+      "variant": ["FP16-fixed"],
       "description": "社区修复版，主模型按 FP16 加载；引擎没有验证过。",
       "components": {
         "dit": "moss-base-fp16-fixed",
@@ -554,7 +573,8 @@
   "single_file_bundles": [
     {
       "id": "moss-sft-int8",
-      "name": "SFT · INT8",
+      "name": "MOSS-Image SFT INT8",
+      "variant": ["INT8"],
       "description": "显存占用约减四成，速度约快 2.5 倍，日常首选。",
       "components": {
         "dit": "moss-sft-comfy-int8_convrot",
@@ -569,7 +589,8 @@
     },
     {
       "id": "moss-sft-nvfp4",
-      "name": "SFT · NVFP4",
+      "name": "MOSS-Image SFT NVFP4",
+      "variant": ["NVFP4"],
       "description": "RTX 50 专用：速度约快 3.3 倍，显存占用约减一半。",
       "components": {
         "dit": "moss-sft-comfy-nvfp4",
@@ -590,7 +611,8 @@
     },
     {
       "id": "moss-sft-int4",
-      "name": "SFT · INT4",
+      "name": "MOSS-Image SFT INT4",
+      "variant": ["INT4"],
       "description": "4 位压缩，比 INT8 更省显存，适合显存紧张的显卡；细节略有损失。",
       "components": {
         "dit": "moss-sft-comfy-int4_convrot",
@@ -604,7 +626,8 @@
     },
     {
       "id": "moss-sft-turbo-int8",
-      "name": "SFT Turbo · INT8 8 步",
+      "name": "MOSS-Image SFT Turbo INT8 8 步",
+      "variant": ["INT8", "8 步"],
       "description": "8 步就能出图，适合快速试想法；引擎只验证了文件格式。",
       "components": {
         "dit": "moss-sft-turbo-comfy-int8_convrot",
@@ -622,7 +645,8 @@
     },
     {
       "id": "moss-base-int8",
-      "name": "Base · INT8",
+      "name": "MOSS-Image Base INT8",
+      "variant": ["INT8"],
       "description": "Base 的 INT8 版，更省显存，适合用 Base 出图或做对比。",
       "components": {
         "dit": "moss-base-comfy-int8_convrot",

@@ -42,6 +42,9 @@ import {
 } from './defaults'
 import { canvasDescription, withDescription, type CompiledPrompt } from './prompt'
 import { installedBundles, type Blocker, type BundleChoice } from './readiness'
+import { ModelPicker } from './ModelPicker'
+import { ModelName } from '../../components/common/ModelName'
+import { bundleComponentIds, sizeText } from '../models/logic'
 import type { Preparation } from '../../lib/preparation'
 import { resizeCanvas } from './canvases'
 import { useApp } from '../../store'
@@ -201,12 +204,29 @@ function CanvasParams({
     : sizePreset === 'custom'
       ? `${canvas.width} × ${canvas.height}`
       : sizePreset
-  const summary = [bundle.bundle?.name ?? '没有模型', sizeLabel, adapters.length ? `LoRA ${adapters.length}` : null]
-    .filter(Boolean)
-    .join(' · ')
+  // Model, size and LoRA as separate pieces; the spaces keep the plain text readable ("MOSS-Image SFT INT8 1:1").
+  const summary = (
+    <>
+      {bundle.bundle ? <ModelName item={bundle.bundle} /> : <span>没有模型</span>} <span className="shrink-0 text-ink-2">{sizeLabel}</span>
+      {adapters.length ? (
+        <>
+          {' '}
+          <span className="shrink-0 text-ink-2">LoRA {adapters.length}</span>
+        </>
+      ) : null}
+    </>
+  )
 
-  const bundleOptions = [...installed]
-  if (bundle.bundle && !bundleOptions.some((item) => item.id === bundle.bundle!.id)) bundleOptions.unshift(bundle.bundle)
+  const notDownloaded = (catalog?.bundles ?? [])
+    .filter((item) => !installed.some((entry) => entry.id === item.id))
+    // Certified models first, as on the 模型 page.
+    .sort((a, b) => Number(Boolean(b.certified)) - Number(Boolean(a.certified)))
+  const bundleSizes = new Map(
+    installed.map((item) => [
+      item.id,
+      sizeText(bundleComponentIds(item).reduce((sum, id) => sum + (catalog?.models.find((model) => model.id === id)?.sizeBytes ?? 0), 0)),
+    ]),
+  )
 
   const setAdapters = (next: ProjectCanvas['adapters']): void =>
     onChange((current) => ({ ...current, adapters: normalizeCanvasAdapters(next) }))
@@ -253,7 +273,7 @@ function CanvasParams({
             onClick={() => setSettingsOpen((open) => !open)}
             className="flex h-9 items-center justify-between gap-2 rounded-md bg-well px-3 text-ui text-ink transition-colors hover:bg-well-strong"
           >
-            <span className="tabular min-w-0 truncate">{summary}</span>
+            <span className="tabular flex min-w-0 items-center gap-3 overflow-hidden">{summary}</span>
             <ChevronDown
               className={cn('size-4 shrink-0 text-ink-2 transition-transform', settingsOpen && 'rotate-180')}
               aria-hidden="true"
@@ -264,19 +284,17 @@ function CanvasParams({
             <>
               <section className="flex flex-col gap-2.5">
                 <FieldLabel htmlFor="studio-model">模型</FieldLabel>
-                <Select
+                <ModelPicker
                   id="studio-model"
-                  value={bundle.bundle?.id ?? ''}
-                  disabled={readOnly || bundleOptions.length === 0}
-                  onChange={(event) => onPickBundle(event.target.value)}
-                >
-                  {bundleOptions.length === 0 ? <option value="">{catalog ? '还没有可用的模型' : '正在读取模型…'}</option> : null}
-                  {bundleOptions.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {installed.some((entry) => entry.id === item.id) ? item.name : `${item.name}（未下载）`}
-                    </option>
-                  ))}
-                </Select>
+                  current={bundle.bundle}
+                  installed={installed}
+                  others={notDownloaded}
+                  sizes={bundleSizes}
+                  disabled={readOnly || !catalog}
+                  placeholder={catalog ? '还没有可用的模型' : '正在读取模型…'}
+                  onPick={onPickBundle}
+                  onDownload={(id) => onNavigate(`/models?bundle=${encodeURIComponent(id)}`)}
+                />
                 <LoraSection
                   adapters={adapters}
                   catalog={catalog}

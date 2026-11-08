@@ -3,29 +3,21 @@ import { useState } from 'react'
 import type { AdapterEntry, Catalog, DownloadTask } from '@shared/types'
 import { useApp } from '../../store'
 import { Notice } from '../../components/common/Notice'
-import {
-  Button,
-  ConfirmDialog,
-  EmptyState,
-  Group,
-  LoadingRow,
-  Pill,
-  ProgressBar,
-  Row,
-  Section,
-  Spinner,
-  useToast,
-} from '../../components/ui'
-import { itemState, sizeText, taskFor } from './logic'
-import { DownloadActionIcon, RemoveButton } from './ModelEntries'
+import { Button, ConfirmDialog, EmptyState, Group, LoadingRow, Pill, Row, Section, Spinner, useToast } from '../../components/ui'
+import { DownloadProgress } from './DownloadProgress'
+import { itemProgress, itemState, sizeText, taskFor } from './logic'
+import { DownloadActionIcon, RemoveButton, SizeText } from './ModelEntries'
 import type { ModelLocation } from './useModelLocation'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 
-function adapterDescription(adapter: AdapterEntry): string {
-  const origin = adapter.provider === 'local' ? (adapter.tags.includes('trained') ? '自己训练的' : '从电脑导入') : adapter.notes
-  return [origin, sizeText(adapter.installed ? adapter.installedBytes || adapter.sizeBytes : adapter.sizeBytes)].filter(Boolean).join(' · ')
+/** Where a LoRA comes from; its size is a column of its own. */
+function adapterOrigin(adapter: AdapterEntry): string | undefined {
+  return adapter.provider === 'local' ? (adapter.tags.includes('trained') ? '自己训练的' : '从电脑导入') : adapter.notes
 }
+
+const adapterBytes = (adapter: AdapterEntry): number =>
+  adapter.installed ? adapter.installedBytes || adapter.sizeBytes : adapter.sizeBytes
 
 /** LoRA: installed ones (import local files, delete) and ones available to download. */
 export function LoraTab({ catalog, location }: { catalog: Catalog; location: ModelLocation }): React.JSX.Element {
@@ -105,7 +97,8 @@ export function LoraTab({ catalog, location }: { catalog: Catalog; location: Mod
         {installed.length ? (
           <Group>
             {installed.map((adapter) => (
-              <Row key={adapter.id} title={adapter.name} description={adapterDescription(adapter)}>
+              <Row key={adapter.id} title={adapter.name} description={adapterOrigin(adapter)}>
+                <SizeText bytes={adapterBytes(adapter)} />
                 <RemoveButton name={adapter.name} onClick={() => setRemoving(adapter)} />
               </Row>
             ))}
@@ -128,20 +121,20 @@ export function LoraTab({ catalog, location }: { catalog: Catalog; location: Mod
             {available.map((adapter) => {
               const task = taskFor(location.tasks, 'adapter', adapter.id)
               const state = itemState(adapter, false, task)
+              const progress = itemProgress(false, task)
               return (
                 <Row
                   key={adapter.id}
                   title={adapter.name}
                   description={
                     <span className="flex flex-col gap-1.5">
-                      <span>{adapterDescription(adapter)}</span>
-                      {state.percent !== null ? (
-                        <ProgressBar value={state.percent} label={`${adapter.name} 下载进度`} className="max-w-64" />
-                      ) : null}
+                      <span>{adapterOrigin(adapter)}</span>
+                      {progress ? <DownloadProgress info={progress} label={`${adapter.name} 下载进度`} className="max-w-md pt-1" /> : null}
                     </span>
                   }
                 >
-                  {state.text ? (
+                  <SizeText bytes={adapterBytes(adapter)} />
+                  {state.text && !progress ? (
                     <Pill tone={state.tone} className="tabular">
                       {state.text}
                     </Pill>

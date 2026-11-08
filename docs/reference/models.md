@@ -16,7 +16,7 @@ The catalog is the list of everything the app can download or has found. Its sch
 
 | Term | Code | Meaning |
 | --- | --- | --- |
-| component, 部件 | `ModelEntry.role` | One downloadable or registered unit: `dit` 主模型, `text_encoder` 文本编码器, `vae` VAE, `support` (config files, never chosen by hand), `full` (a whole registered folder). `ModelEntry.choice` is the label 自己组合 shows (`MOSS-Image SFT · INT8`); a folder and a single file of the same weights share one. |
+| component, 部件 | `ModelEntry.role` | One downloadable or registered unit: `dit` 主模型, `text_encoder` 文本编码器, `vae` VAE, `support` (config files, never chosen by hand), `full` (a whole registered folder). `ModelEntry.choice` is the label 自己组合 shows (`MOSS-Image SFT INT8`); a folder and a single file of the same weights share one. |
 | combination, 我的组合 | `ModelCombination`, `ModelBundle.custom` | A 主模型, 文本编码器 and VAE the person saved in 自己组合 (section 7). It is a bundle in the catalog like the others. |
 | bundle, 模型包 | `ModelBundle` | A DiT, a text encoder and a VAE (`components`) plus a `support` entry with the pipeline and scheduler configs. The 模型 page calls a bundle a "model". |
 | binding | `ModelBinding` | A bundle id with its three component ids, built by `bundleBinding()` in `main/services/modelBundles.ts`. This is what a job carries. |
@@ -32,7 +32,7 @@ Where the catalog comes from (`getCatalog` in `main/services/models.ts`):
 The shipped catalog (`schema_version: 3`) has two kinds of bundles:
 
 - **Folder bundles** (`bundles`): `moss-sft` (recommended), `moss-base`, `moss-sft-fp16` and `moss-base-fp16`. All four share `qwen35-encoder`, `flux2-vae-small` and `moss-pipeline`, so switching between them downloads only the DiT.
-- **Single-file bundles** (`single_file_bundles`): SFT · INT8, Base · INT8 (both `Comfy-Org/MOSS-Image`), SFT · INT4, SFT · NVFP4 and SFT Turbo · INT8. Each is a `format: 'comfyui'` DiT file, the INT8 text encoder file, the FLUX.2 small VAE file and `moss-runtime-config` (`RUNTIME_CONFIG_ID` in `shared/bundleFit.ts`: about 20 MB of configs and tokenizer). Files added for these bundles are pinned to the revisions the engine tested; a file downloaded earlier from `main` still counts as installed (`installMatchesRevision`).
+- **Single-file bundles** (`single_file_bundles`): MOSS-Image SFT INT8, MOSS-Image Base INT8 (both `Comfy-Org/MOSS-Image`), MOSS-Image SFT INT4, MOSS-Image SFT NVFP4 and MOSS-Image SFT Turbo INT8 8 步. Each is a `format: 'comfyui'` DiT file, the INT8 text encoder file, the FLUX.2 small VAE file and `moss-runtime-config` (`RUNTIME_CONFIG_ID` in `shared/bundleFit.ts`: about 20 MB of configs and tokenizer). Files added for these bundles are pinned to the revisions the engine tested; a file downloaded earlier from `main` still counts as installed (`installMatchesRevision`).
 
 The other `Comfy-Org/MOSS-Image` single files (W4A8, the Full VAE) are used through combinations (自己组合, below). `getCatalog` appends `single_file_bundles` and then the saved combinations to `bundles`, so the app sees one list. Older app versions read only `bundles` and never offer a single-file bundle they cannot load. A schema-2 catalog fetched remotely gets the built-in single-file bundles and their components added.
 
@@ -45,6 +45,8 @@ Bundle fields beyond the components (`ModelBundle` in `shared/types.ts`):
 | `requires` | Hardware it needs: NVFP4 runs only on compute capability 12.0 (RTX 50). Automatic GPU assignment waits for a GPU that matches. |
 | `recommendedFor: 'limited-vram'` | Picked instead of the official SFT on a GPU with less than 16 GB of VRAM (`bestBundleFor` in `shared/bundleFit.ts`, also used by first-run setup). |
 | `defaults` | Steps and CFG a few-step model brings when Studio picks it (`samplingForBundle` in `renderer/src/pages/studio/defaults.ts`): Turbo uses 8 steps and CFG 1. |
+
+Names: `name` is the whole name as plain text, used in toasts, errors, job names and by older app versions; it never contains "·". `variant` lists the words at its end that tell a model from its family (`["INT8"]`, `["INT8", "8 步"]`, `["FP16-fixed"]`). The UI shows the rest of the name followed by those words as tags (`ModelName` in `renderer/src/components/common/ModelName.tsx`, `nameParts` in `shared/modelName.ts`); a name that does not end with its variant words is shown whole. Components carry `variant` the same way (`["INT8", "ConvRot"]`).
 
 Which GPU can run which bundle is decided in one place, `bundleGpuProblem` in `shared/bundleFit.ts`, shared by job start, the 模型 page and Studio.
 
@@ -70,6 +72,10 @@ Where this is set in the UI: the models root in 设置 › 存储 › 模型文�
 ## 3. Downloads
 
 A download is one `DownloadTask` per component or adapter (`DownloadState`: `queued`, `running`, `verifying`, `paused`, `done`, `error`, `canceled`). `installBundle(id)` queues a task for each component of a bundle that is not installed; the 模型 page's 下载 button on a bundle calls it. Pause aborts the request and keeps the partial file; 继续 and 重试 start the task again and resume from the partial file.
+
+The 下载 tab shows one row per model, not per task (`downloadGroups` in `renderer/src/pages/models/logic.ts`, `DownloadQueue.tsx`): a task for a bundle's DiT names the row, and the tasks of its other parts join it; a part or LoRA downloading on its own is a row of its own. 暂停 and 取消 act on every unfinished task of the row; 继续 and 重试 on a model row call `downloadBundle`, which re-queues every missing part. The parts fold out under the bar, finished ones as 完成. The tab's count is the number of rows.
+
+Every download progress block on the 模型 page (featured card, model rows, 下载 rows, LoRA rows) is `DownloadProgress` over a `ProgressInfo` (`progressInfo`, `bundleProgress`, `taskProgress`): state words and percentage on top, a `ProgressBar size="md"`, then the amount (or what went wrong) on the left and speed and time left (or what is left) on the right, each a separate item. The bar's tone is the state: `accent` while queued, downloading or checking, `muted` when paused or disconnected, `danger` after an error.
 
 | Step | Code | Behaviour |
 | --- | --- | --- |
@@ -163,7 +169,7 @@ UI: 模型 › 控制适配器 › 添加文件 (`ControlAdaptersSection.tsx`). 
 
 ## 7. The Models page
 
-Route `/models`, Rail entry 模型, `renderer/src/pages/models/ModelsPage.tsx`. Tabs: 模型, LoRA, 下载 (with the count of unfinished tasks).
+Route `/models`, Rail entry 模型, `renderer/src/pages/models/ModelsPage.tsx`. Tabs: 模型, LoRA, 下载 (with the number of models downloading). No line on the page joins pieces with "·": a row's size is a column of its own beside its action (`SizeText` in `ModelEntries.tsx`), kinds and precisions are `Tag`s, and the native selects of 自己组合 put the size in brackets (`MOSS-Image SFT INT8（15.4 GB，已下载）`).
 
 | Area | Component | Shows |
 | --- | --- | --- |

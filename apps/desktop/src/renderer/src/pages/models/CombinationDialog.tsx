@@ -35,8 +35,10 @@ function defaults(catalog: Catalog, location: ModelLocation, initial?: Partial<R
   return { dit: pick('dit'), textEncoder: pick('textEncoder'), vae: pick('vae') }
 }
 
+/** A native option holds plain text only: the size and whether it is here go in brackets, "MOSS-Image SFT INT8（15 GB，已下载）". */
 function optionText(choice: SlotChoice): string {
-  return [choice.label, sizeText(choice.sizeBytes), !choice.local && choice.installed ? '已下载' : ''].filter(Boolean).join(' · ')
+  const facts = [choice.sizeBytes ? sizeText(choice.sizeBytes) : '', !choice.local && choice.installed ? '已下载' : ''].filter(Boolean)
+  return facts.length ? `${choice.label}（${facts.join('，')}）` : choice.label
 }
 
 /**

@@ -35,7 +35,9 @@ describe('models', () => {
         })
       }
     })
-    await expect.poll(() => card.getByText(/下载中 \d+%/).isVisible()).toBe(true)
+    // The state and the percentage are separate pieces of the progress block, not one "下载中 49%" line.
+    await expect.poll(() => card.getByText('下载中', { exact: true }).isVisible()).toBe(true)
+    expect(await card.getByText(/^\d+%$/).isVisible()).toBe(true)
     await expect.poll(() => card.getByRole('progressbar').isVisible()).toBe(true)
     expect(await card.getByRole('button', { name: '暂停' }).isVisible()).toBe(true)
     await app.screenshot('models-downloading-light')
@@ -55,31 +57,32 @@ describe('models', () => {
     for (const name of [
       'MOSS-Image SFT',
       'MOSS-Image Base',
-      'SFT · INT8',
-      'SFT · NVFP4',
-      'SFT · INT4',
-      'SFT Turbo · INT8 8 步',
-      'Base · INT8',
+      'MOSS-Image SFT INT8',
+      'MOSS-Image SFT NVFP4',
+      'MOSS-Image SFT INT4',
+      'MOSS-Image SFT Turbo INT8 8 步',
+      'MOSS-Image Base INT8',
     ]) {
-      expect(await recommended.getByText(name, { exact: true }).count()).toBe(1)
+      // A name is its base plus tags ("MOSS-Image SFT" + INT8): match the whole name, not the base text.
+      expect(await recommended.locator(`[data-model-name="${name}"]`).count()).toBe(1)
     }
     expect(await recommended.getByText('显存占用约减四成，速度约快 2.5 倍，日常首选。', { exact: false }).count()).toBe(1)
     const others = section('其他模型')
     expect(await others.getByText('引擎没有验证过', { exact: false }).count()).toBeGreaterThan(0)
-    expect(await others.getByText('SFT · FP16-fixed', { exact: true }).count()).toBe(1)
-    expect(await recommended.getByText('SFT · FP16-fixed', { exact: true }).count()).toBe(0)
+    expect(await others.locator('[data-model-name="MOSS-Image SFT FP16-fixed"]').count()).toBe(1)
+    expect(await recommended.locator('[data-model-name="MOSS-Image SFT FP16-fixed"]').count()).toBe(0)
     await app.screenshot('models-certified-light')
 
     // NVFP4 runs only on RTX 50: this RTX 4090 says why and offers no download.
     const nvfp4 = recommended
-      .getByText('SFT · NVFP4', { exact: true })
+      .getByText('MOSS-Image SFT NVFP4', { exact: true })
       .locator('xpath=ancestor::*[.//button or .//span[text()="用不了"]][1]')
     await expect.poll(() => nvfp4.getByText('只能在 RTX 50 系列显卡上运行').isVisible()).toBe(true)
     expect(await nvfp4.getByText('用不了', { exact: true }).isVisible()).toBe(true)
     expect(await nvfp4.getByRole('button', { name: '下载' }).count()).toBe(0)
 
     // A single-file model downloads its four files in one action.
-    const int8 = recommended.getByText('SFT · INT8', { exact: true }).locator('xpath=ancestor::*[.//button][1]')
+    const int8 = recommended.getByText('MOSS-Image SFT INT8', { exact: true }).locator('xpath=ancestor::*[.//button][1]')
     await int8.getByRole('button', { name: '下载' }).click()
     await expect.poll(() => app.calls('models:install-bundle')).toEqual([{ id: 'moss-sft-int8' }])
     expect(await page.evaluate(() => window.__mock.state.downloads.map((task) => task.targetId))).toEqual([
@@ -97,7 +100,9 @@ describe('models', () => {
     expect(await card.getByText('最适合这台电脑').isVisible()).toBe(true)
     expect(await card.getByText(/RTX 5090 显存充足/).isVisible()).toBe(true)
     // NVFP4 runs here, so it is offered with a download, just not featured.
-    const nvfp4 = page.getByText('SFT · NVFP4', { exact: true }).locator('xpath=ancestor::*[.//button or .//span[text()="用不了"]][1]')
+    const nvfp4 = page
+      .getByText('MOSS-Image SFT NVFP4', { exact: true })
+      .locator('xpath=ancestor::*[.//button or .//span[text()="用不了"]][1]')
     await expect.poll(() => nvfp4.getByRole('button', { name: '下载' }).isVisible()).toBe(true)
     expect(await nvfp4.getByText('用不了', { exact: true }).count()).toBe(0)
     await card.getByRole('button', { name: '下载' }).click()
@@ -118,7 +123,7 @@ describe('models', () => {
     const card = featured(page)
     await expect.poll(() => card.getByRole('heading', { name: 'MOSS-Image SFT' }).isVisible()).toBe(true)
     expect(await card.getByText('上的引擎只能运行官方模型', { exact: false }).isVisible()).toBe(true)
-    const int8 = page.getByText('SFT · INT8', { exact: true }).locator('xpath=ancestor::*[.//span[text()="用不了"]][1]')
+    const int8 = page.getByText('MOSS-Image SFT INT8', { exact: true }).locator('xpath=ancestor::*[.//span[text()="用不了"]][1]')
     await expect.poll(() => int8.getByText('上的引擎只能运行官方模型', { exact: false }).isVisible()).toBe(true)
     expect(await int8.getByRole('button', { name: '下载' }).count()).toBe(0)
   })
@@ -167,25 +172,25 @@ describe('models', () => {
     // It starts from the recommended model, which is here: nothing to download.
     expect(await parts.getByLabel('主模型').inputValue()).toBe('moss-sft-dit')
     await expect.poll(() => page.locator('[data-combination-need]').textContent()).toBe('不用再下载')
-    await parts.getByLabel('主模型').selectOption({ label: 'MOSS-Image SFT · INT8 · 5.4 GB' })
-    await parts.getByLabel('文本编码器').selectOption({ label: 'Qwen3.5 · W4A8 · 7.3 GB' })
+    await parts.getByLabel('主模型').selectOption({ label: 'MOSS-Image SFT INT8（5.4 GB）' })
+    await parts.getByLabel('文本编码器').selectOption({ label: 'Qwen3.5 W4A8（7.3 GB）' })
     // The two single files and the 20 MB of configs they need.
     await expect.poll(() => page.locator('[data-combination-need]').textContent()).toBe('还要下载 12.8 GB')
-    expect(await parts.getByLabel('名字').inputValue()).toBe('SFT · INT8 + Qwen3.5 · W4A8')
+    expect(await parts.getByLabel('名字').inputValue()).toBe('SFT INT8 + Qwen3.5 W4A8')
     await app.screenshot('models-combine-light')
     await page.getByRole('button', { name: '下载并保存' }).click()
     await expect
       .poll(() => app.calls('models:save-combination'))
       .toEqual([
         {
-          name: 'SFT · INT8 + Qwen3.5 · W4A8',
+          name: 'SFT INT8 + Qwen3.5 W4A8',
           components: { dit: 'moss-sft-comfy-int8_convrot', textEncoder: 'qwen35-comfy-w4a8_gptq', vae: 'flux2-vae-small' },
         },
       ])
     await expect.poll(() => app.calls('models:install-bundle')).toEqual([{ id: 'combo-1' }])
     const tasks = await page.evaluate(() => window.__mock.state.downloads.map((task) => task.targetId).sort())
     expect(tasks).toEqual(['moss-runtime-config', 'moss-sft-comfy-int8_convrot', 'qwen35-comfy-w4a8_gptq'])
-    await expect.poll(() => comboTitle(page, 'SFT · INT8 + Qwen3.5 · W4A8').isVisible()).toBe(true)
+    await expect.poll(() => comboTitle(page, 'SFT INT8 + Qwen3.5 W4A8').isVisible()).toBe(true)
   })
 
   it('fills the slots from the model files in a folder on this computer', async () => {
@@ -238,7 +243,7 @@ describe('models', () => {
     const page = await app.open({ scenario: 'ready', route: '/models' })
     await openCombine(page, '挑选要下载的部件')
     await page.getByRole('button', { name: '保存', exact: true }).click()
-    const name = 'SFT · BF16 + Qwen3.5 · BF16'
+    const name = 'SFT BF16 + Qwen3.5 BF16'
     await expect.poll(() => comboTitle(page, name).isVisible()).toBe(true)
     await page.getByRole('button', { name: `删除 ${name}` }).click()
     await expect.poll(() => page.getByText('只删除这个组合，它用到的文件都会保留。').isVisible()).toBe(true)
@@ -267,7 +272,8 @@ describe('models', () => {
     expect(await page.getByText('单独的部件').count()).toBe(0)
     const unused = page.locator('[data-unused-files]')
     await unused.scrollIntoViewIfNeeded()
-    await expect.poll(() => unused.getByText('1 个文件 · 7.3 GB').isVisible()).toBe(true)
+    await expect.poll(() => unused.getByText('1 个文件', { exact: true }).isVisible()).toBe(true)
+    expect(await unused.getByText('7.3 GB', { exact: true }).isVisible()).toBe(true)
     await unused.scrollIntoViewIfNeeded()
     await app.screenshot('models-advanced-light')
     await unused.getByRole('button', { name: '全部删除' }).click()
@@ -290,7 +296,7 @@ describe('models', () => {
     await expect.poll(() => page.getByText(/模型保存在 Linux GPU 上/).isVisible()).toBe(true)
     // Single files load only on this computer: offered there, not on the SSH host.
     await expect.poll(() => page.getByText('只能在这台电脑上使用，其他电脑请用官方模型').first().isVisible()).toBe(true)
-    const int8 = page.getByText('SFT · INT8', { exact: true }).locator('xpath=ancestor::*[.//span[text()="用不了"]][1]')
+    const int8 = page.getByText('MOSS-Image SFT INT8', { exact: true }).locator('xpath=ancestor::*[.//span[text()="用不了"]][1]')
     expect(await int8.getByRole('button', { name: '下载' }).count()).toBe(0)
     await app.screenshot('models-remote-dark')
   })

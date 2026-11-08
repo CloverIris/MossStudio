@@ -242,8 +242,11 @@ export function ModelDirectoriesCard(): React.JSX.Element {
       >
         {scan ? (
           <div className="flex flex-col gap-2">
-            <p className="truncate text-caption text-ink-2" title={scan.root}>
-              {scan.root} · 找到 {scan.candidates.length} 项
+            <p className="flex min-w-0 gap-3 text-caption text-ink-2">
+              <span className="min-w-0 truncate" title={scan.root}>
+                {scan.root}
+              </span>
+              <span className="tabular shrink-0">找到 {scan.candidates.length} 项</span>
             </p>
             <div className="flex max-h-[52vh] flex-col gap-0.5 overflow-y-auto">
               {scan.candidates.map((candidate) => {

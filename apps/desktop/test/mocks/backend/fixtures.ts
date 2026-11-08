@@ -112,6 +112,7 @@ function toModel(raw: RawModel): ModelEntry {
     id: raw.id,
     name: raw.name,
     choice: 'choice' in raw ? (raw.choice as string) : undefined,
+    variant: 'variant' in raw ? (raw.variant as string[]) : undefined,
     provider: raw.provider as ModelEntry['provider'],
     repo: raw.repo,
     revision: raw.revision,

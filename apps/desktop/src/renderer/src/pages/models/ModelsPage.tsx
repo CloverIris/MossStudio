@@ -33,8 +33,11 @@ import { CombinationDialog } from './CombinationDialog'
 import { ControlAdaptersSection } from './ControlAdaptersSection'
 import { LoraTab } from './LoraTab'
 import { DeleteModelDialog, FeaturedModel, ModelList } from './ModelEntries'
-import { bundleBlocker, bundleDeletePlan, bundleView, modelSections, parseModelsQuery, visibleTasks } from './logic'
+import { bundleBlocker, bundleDeletePlan, bundleView, downloadGroups, modelSections, parseModelsQuery, type DownloadGroup } from './logic'
 import { useModelLocation, useSshHosts, type ModelLocation } from './useModelLocation'
+
+/** Until the catalog is read, downloads are named after their own labels. */
+const EMPTY_CATALOG: Pick<Catalog, 'bundles' | 'models' | 'adapters'> = { bundles: [], models: [], adapters: [] }
 
 type Tab = 'models' | 'lora' | 'downloads'
 
@@ -275,8 +278,13 @@ function ModelsTab({
   )
 }
 
-function DownloadsTab({ location }: { location: ModelLocation }): React.JSX.Element {
-  const tasks = visibleTasks(location.tasks)
+function DownloadsTab({ catalog, location }: { catalog: Catalog | null; location: ModelLocation }): React.JSX.Element {
+  const groups = downloadGroups(location.tasks, catalog ?? EMPTY_CATALOG)
+  // A whole model resumes the way its 继续 on the 模型 tab does: every missing part again, from where it stopped.
+  const resume = (group: DownloadGroup): Promise<unknown> =>
+    group.bundle
+      ? location.downloadBundle(group.bundle)
+      : Promise.all(group.open.filter((task) => task.state === 'paused' || task.state === 'error').map(location.resume))
   return (
     <div className="flex flex-col gap-3">
       {location.kind === 'remote' ? (
@@ -292,8 +300,8 @@ function DownloadsTab({ location }: { location: ModelLocation }): React.JSX.Elem
           </IconButton>
         </div>
       ) : null}
-      {tasks.length ? (
-        <DownloadQueue tasks={tasks} onPause={location.pause} onResume={location.resume} onCancel={location.cancel} />
+      {groups.length ? (
+        <DownloadQueue groups={groups} onPause={location.pause} onResume={resume} onCancel={location.cancel} />
       ) : (
         <Group>
           <EmptyState
@@ -337,7 +345,8 @@ export function ModelsPage(): React.JSX.Element {
 
   const host = remoteEnabled ? (hosts.find((item) => item.id === locationId) ?? null) : null
   const location = useModelLocation(host)
-  const downloadCount = visibleTasks(location.tasks).length
+  // One per model, as the 下载 tab lists them.
+  const downloadCount = downloadGroups(location.tasks, catalog ?? EMPTY_CATALOG).length
 
   const locationOptions = [{ value: 'local', label: '本机' }, ...hosts.map((item) => ({ value: item.id, label: item.name }))]
   const locationPicker =
@@ -398,7 +407,7 @@ export function ModelsPage(): React.JSX.Element {
       ) : tab === 'lora' ? (
         <LoraTab catalog={catalog} location={location} />
       ) : (
-        <DownloadsTab location={location} />
+        <DownloadsTab catalog={catalog} location={location} />
       )}
     </PageScroll>
   )
