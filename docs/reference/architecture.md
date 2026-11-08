@@ -120,7 +120,7 @@ Events go through `emit(channel, payload)` in `main/lib/events.ts`, which sends 
 | `GET /api/studio/bootstrap` | Projects, models and the first gallery page for the web page |
 | `GET /` → `/web.html` and static assets | The LAN page |
 
-The LAN page (`renderer/src/web/main.tsx` with `web/LayoutEditor.tsx`) is a separate small app for a phone or another computer on the same network, turned on in 设置 › 功能 › 局域网访问, which shows the URLs and access code (`web:access-info`). It shares `components/ui` and `lib/layout` with the desktop and nothing else. At fec4fe3 its generate button posts to `POST /api/jobs`, a route the backend no longer serves, and the bootstrap's `instances` list is always empty, so generating from the LAN page fails; projects, pictures and the layout editor work. The HTTP contract is in [project-and-backend.md](/docs/reference/project-and-backend.md).
+The LAN page (`renderer/src/web/main.tsx` with `web/LayoutEditor.tsx`) is a separate small app for a phone or another computer on the same network, turned on in 设置 › 功能 › 局域网访问, which shows the URLs and access code (`web:access-info`). It shares `components/ui` and `lib/layout` with the desktop and nothing else. At fec4fe3 its generate button posts to `POST /api/jobs`, a route the backend no longer serves, and the bootstrap's `instances` list is always empty, so generating from the LAN page fails. Saving a project from it fails too: it sends the pre-v3 project body, which the backend rejects. Browsing projects and pictures and the layout editor work. The HTTP contract is in [project-and-backend.md](/docs/reference/project-and-backend.md).
 
 ## The data root
 
