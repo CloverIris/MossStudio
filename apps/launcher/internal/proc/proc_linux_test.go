@@ -7,15 +7,36 @@ import (
 	"time"
 )
 
+// sleeperEnv makes the test binary a process that only sleeps (TestSleeper).
+const sleeperEnv = "MOSS_PROC_TEST_SLEEPER"
+
+// TestSleeper is the process TestRunnerListAndWait runs: a copy of this test
+// binary under another name. Not a copy of /bin/sleep: where coreutils is one
+// multi-call binary (uutils, Ubuntu 26.04) a renamed copy refuses to run.
+func TestSleeper(t *testing.T) {
+	if os.Getenv(sleeperEnv) != "1" {
+		t.Skip("only runs as TestRunnerListAndWait's child")
+	}
+	time.Sleep(500 * time.Millisecond)
+	os.Exit(0)
+}
+
 func TestRunnerListAndWait(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "根 R")
 	os.MkdirAll(root, 0o755)
-	sleepBin, _ := os.ReadFile("/bin/sleep")
-	exe := filepath.Join(root, "sleeper")
-	if err := os.WriteFile(exe, sleepBin, 0o755); err != nil {
+	self, err := os.Executable()
+	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := ExecRunner{}.Start(exe, []string{"0.5"}, os.Environ())
+	bin, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(root, "sleeper")
+	if err := os.WriteFile(exe, bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p, err := ExecRunner{}.Start(exe, []string{"-test.run=^TestSleeper$"}, append(os.Environ(), sleeperEnv+"=1"))
 	if err != nil {
 		t.Fatal(err)
 	}
