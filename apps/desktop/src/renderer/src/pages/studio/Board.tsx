@@ -37,7 +37,8 @@ import { CardToolbar, MaskBar, Toolbar } from './Toolbar'
 import { useCardDrag } from './useCardDrag'
 import { useWireConnect } from './useWireConnect'
 import { useWireSelection } from './useWireSelection'
-import { InputAdder, InputThumbs, NewMenu, StartRow } from './BoardControls'
+import { InputAdder, InputThumbs, StartRow } from './BoardControls'
+import { BoardMenu, type BoardMenuEntry } from './BoardMenu'
 import type { PortActions } from './SlotMenu'
 import { inputSlots, socketY } from './ports'
 import { WireChips, WireLayer } from './WireLayer'
@@ -65,6 +66,8 @@ const FIT_PADDING = { top: 116, side: 48 }
 export interface BoardHandle {
   fit: () => void
   reveal: (canvasId: string) => void
+  /** Moves a card just placed at the pointer back inside the view where it sticks out; the view stays put. */
+  keepInView: (canvasId: string) => void
 }
 
 export interface BoardProps {
@@ -88,7 +91,8 @@ export interface BoardProps {
   onMoveCanvas: (id: string, x: number, y: number) => void
   onChangeLayers: (canvasId: string, update: (layers: ProjectLayer[]) => ProjectLayer[]) => void
   onUnderlay: (item: GalleryItem | null) => void
-  onAddCanvas: () => void
+  /** A new 画面; at a board point when given (the right-click menu). */
+  onAddCanvas: (at?: Point) => void
   onOpenViewer: (canvasId: string, index: number) => void
   onRerun: (canvasId: string, seed: 'new' | 'same') => void
   onCancel: (jobId: string) => void
@@ -124,12 +128,15 @@ export interface BoardProps {
   onUseRunSettings: (layoutId: string, runId: string) => void
   /** Remove one run from a 画面's filmstrip. */
   onDropRun: (runId: string) => void
-  /** A recipe from the new-canvas tile: a 画面 wired to a picture the user chooses. */
-  onRecipe: (recipe: Recipe) => void
+  /** A recipe: a 画面 wired to a picture the user chooses; at a board point when given. */
+  onRecipe: (recipe: Recipe, at?: Point) => void
   /** 放大: a 放大 node fed by this card's picture (to its right, or at a board point). */
   onUpscale: (sourceId: string, at?: Point) => void
-  /** A new 风格 node from the new-canvas tile. */
-  onAddStyle: () => void
+  /** A new 风格 node; at a board point when given. */
+  onAddStyle: (at?: Point) => void
+  /** 导入图片… / 从作品选择… from the right-click menu: pictures placed at a board point. */
+  onImportPictures: (at: Point) => void
+  onPicturesFromGallery: (at: Point) => void
 }
 
 function isTyping(target: EventTarget | null): boolean {
@@ -153,11 +160,9 @@ export function Board(props: BoardProps): React.JSX.Element {
   // Results folded into a 画面's filmstrip are not cards on the board.
   const folded = useMemo(() => foldedRunIds(props.canvases), [props.canvases])
   const cards = useMemo(() => boardCanvases(props.canvases, folded), [props.canvases, folded])
-  const tileSize = selected && (selected.kind === 'layout' || selected.kind === 'result') ? selected : { width: 1024, height: 1024 }
-  const newSpot = nextFreeSpot(cards, tileSize)
-  const tileRect = { x: newSpot.x, y: newSpot.y, w: cardWidth(tileSize), h: CARD_HEADER + cardBodyHeight(tileSize) }
 
   const [hoveredWire, setHoveredWire] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ at: { x: number; y: number }; label: string; entries: BoardMenuEntry[] } | null>(null)
   /** The card under the pointer: its wires show their labels, and it shows its ＋. */
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const { engineFeatures, controlAdapters, blockers } = props
@@ -267,7 +272,21 @@ export function Board(props: BoardProps): React.JSX.Element {
     if (!visible) setView(centerOn(size, rect, current.zoom))
   }, [])
 
-  useImperativeHandle(props.ref, () => ({ fit, reveal }), [fit, reveal])
+  const keepInView = useCallback((canvasId: string) => {
+    const canvas = latest.current.canvases.find((item) => item.id === canvasId)
+    const size = viewportSize()
+    if (!canvas || !size.width) return
+    const rect = cardRect(canvas)
+    const { zoom, pan } = viewRef.current
+    const margin = 16
+    // Past the right or bottom edge it moves back; the top-left corner always stays in sight.
+    const fit = (value: number, low: number, high: number): number => Math.round(Math.max(low, Math.min(value, high)))
+    const fx = fit(rect.x, (margin - pan.x) / zoom, (size.width - margin - pan.x) / zoom - rect.w)
+    const fy = fit(rect.y, (FIT_PADDING.top - pan.y) / zoom, (size.height - margin - pan.y) / zoom - rect.h)
+    if (fx !== canvas.x || fy !== canvas.y) latest.current.onMoveCanvas(canvas.id, fx, fy)
+  }, [])
+
+  useImperativeHandle(props.ref, () => ({ fit, reveal, keepInView }), [fit, reveal, keepInView])
 
   // Fit once per opened project, as soon as its cards are measurable.
   const fitted = useRef<string | null>(null)
@@ -399,6 +418,86 @@ export function Board(props: BoardProps): React.JSX.Element {
     return actions
   }
   const recipeList = recipes(props.engineFeatures, props.controlAdapters, props.blockers)
+
+  /** The run a card shows: a 画面's picked filmstrip run, or the card itself. */
+  const shownOf = (canvas: ProjectCanvas): { run: ProjectCanvas; item: StripItem | undefined } => {
+    const film = canvas.kind === 'layout' ? filmstripOf(canvas, props.canvases) : null
+    const item = film ? film.items[film.shown] : undefined
+    return { run: (item && film?.runs.find((run) => run.id === item.runId)) || canvas, item }
+  }
+
+  /** A card's menu, the same under its ⋯ and on right-click. */
+  const cardMenu = (canvas: ProjectCanvas, run: ProjectCanvas, item: StripItem | undefined): BoardMenuEntry[] => {
+    const actions = cardActions(canvas, run, item)
+    const danger = (entry: BoardMenuEntry): boolean => !('gap' in entry) && entry.tone === 'danger'
+    const jobId = run.jobId ?? canvas.jobId
+    const plain = canvas.kind === 'image' || canvas.kind === 'style'
+    return [
+      ...actions.filter((entry) => !danger(entry)),
+      { label: plain ? '复制' : '复制为新画面', onSelect: () => props.onCopy(canvas) },
+      ...(jobId && canvas.kind !== 'image' ? [{ label: '查看详情', onSelect: () => props.onShowActivity(jobId) }] : []),
+      { gap: true },
+      ...actions.filter(danger),
+      {
+        label: canvas.kind === 'image' ? '删除' : canvas.kind === 'style' ? '删除风格' : '删除画面',
+        tone: 'danger',
+        onSelect: () => props.onDelete(canvas),
+      },
+    ]
+  }
+
+  /** Right-click on empty board: make something where the click was. */
+  const blankMenu = (point: Point): BoardMenuEntry[] => {
+    // New cards put their top-left corner at the click.
+    const at = { x: Math.round(point.x), y: Math.round(point.y) }
+    const recipeEntry = (recipe: Recipe): BoardMenuEntry => ({
+      label: recipe.label,
+      disabled: Boolean(recipe.disabled),
+      title: recipe.disabled,
+      onSelect: () => props.onRecipe(recipe, at),
+    })
+    return [
+      { label: '新建画面', onSelect: () => props.onAddCanvas(at) },
+      ...recipeList.filter((recipe) => recipe.role).map(recipeEntry),
+      { gap: true },
+      { label: '新建风格', onSelect: () => props.onAddStyle(at) },
+      ...recipeList.filter((recipe) => !recipe.role).map(recipeEntry),
+      { gap: true },
+      { label: '导入图片…', onSelect: () => props.onImportPictures(at) },
+      { label: '从作品选择…', onSelect: () => props.onPicturesFromGallery(at) },
+      { gap: true },
+      { label: '显示全部', onSelect: fit },
+    ]
+  }
+
+  const openMenu = (event: React.MouseEvent<HTMLDivElement>): void => {
+    // Text fields keep the system menu (copy, paste).
+    if (isTyping(event.target)) return
+    event.preventDefault()
+    if (connect.draft) return
+    const rect = viewport.current?.getBoundingClientRect()
+    const at = { x: event.clientX - (rect?.left ?? 0), y: event.clientY - (rect?.top ?? 0) }
+    const target = event.target as HTMLElement
+    const cardId = target.closest<HTMLElement>('article[data-canvas-card]')?.dataset.canvasCard
+    const card = cardId ? cards.find((canvas) => canvas.id === cardId) : undefined
+    if (card) {
+      if (card.id !== props.selectedCanvasId) props.onSelectCanvas(card.id)
+      const { run, item } = shownOf(card)
+      setContextMenu({ at, label: `${card.title} 操作`, entries: cardMenu(card, run, item) })
+      return
+    }
+    const wireId =
+      target.closest<HTMLElement>('[data-wire]')?.dataset.wire ?? target.closest<HTMLElement>('[data-wire-chip]')?.dataset.wireChip
+    const wire = wireId ? wires.find((item) => item.id === wireId && item.kind === 'input') : undefined
+    if (wire) {
+      setSelectedWireId(wire.id)
+      setContextMenu({ at, label: '连线', entries: [{ label: '断开连线', tone: 'danger', onSelect: () => wireSelection.remove(wire) }] })
+      return
+    }
+    // The board's own controls (toolbar, menus) have no menu of their own.
+    if (target.closest('[data-board-ui]')) return
+    setContextMenu({ at, label: '画板', entries: blankMenu(boardPoint(event.clientX, event.clientY)) })
+  }
   // Wire labels show for the cards being looked at: the selected one and the one under the pointer.
   const focusIds = new Set([props.selectedCanvasId, hoveredCard].filter((id): id is string => Boolean(id)))
   // The ＋ that adds an input: on the hovered or selected 画面, below its linked inputs.
@@ -461,6 +560,7 @@ export function Board(props: BoardProps): React.JSX.Element {
         if (importFiles(event.dataTransfer.files, boardPoint(event.clientX, event.clientY))) event.preventDefault()
       }}
       onPaste={onPaste}
+      onContextMenu={openMenu}
     >
       <Toolbar tool={props.tool} onTool={props.onTool} zoom={view.zoom} onZoom={zoomBy} onFit={fit} />
       {props.tool === 'mask' && mask.enabled ? (
@@ -529,7 +629,7 @@ export function Board(props: BoardProps): React.JSX.Element {
               view={views.get(shownRun.id) ?? viewOf(shownRun)}
               strip={strip}
               jobId={jobId}
-              menuActions={cardActions(canvas, shownRun, item)}
+              menuActions={cardMenu(canvas, shownRun, item)}
               selected={isSelected}
               dragging={cardDrag.draggingId === canvas.id}
               tool={props.tool}
@@ -596,8 +696,6 @@ export function Board(props: BoardProps): React.JSX.Element {
                 if (jobId) props.onCancel(jobId)
               }}
               onShowActivity={() => props.onShowActivity(jobId)}
-              onCopy={() => props.onCopy(canvas)}
-              onDelete={() => props.onDelete(canvas)}
             />
           )
         })}
@@ -663,14 +761,6 @@ export function Board(props: BoardProps): React.JSX.Element {
             {connect.draft.reason}
           </div>
         ) : null}
-        <NewMenu
-          point={{ x: tileRect.x, y: tileRect.y + CARD_HEADER + Math.min(cardBodyHeight(tileSize), 256) / 2 }}
-          zoom={view.zoom}
-          recipes={recipeList}
-          onAddCanvas={props.onAddCanvas}
-          onAddStyle={props.onAddStyle}
-          onRecipe={props.onRecipe}
-        />
         {startFor ? (
           <StartRow
             point={{ x: startFor.x, y: startFor.y + cardRect(startFor).h + 12 / view.zoom }}
@@ -693,6 +783,15 @@ export function Board(props: BoardProps): React.JSX.Element {
         ) : null}
       </div>
 
+      {contextMenu ? (
+        <BoardMenu
+          label={contextMenu.label}
+          entries={contextMenu.entries}
+          at={contextMenu.at}
+          bounds={viewportSize()}
+          onClose={() => setContextMenu(null)}
+        />
+      ) : null}
       {connect.menu ? (
         <LinkMenu
           title={`用「${menuSource?.title ?? '图片'}」新建画面`}

@@ -140,7 +140,8 @@ export function StudioPage(): React.JSX.Element {
   const [deleting, setDeleting] = useState<ProjectCanvas | null>(null)
   const [adapterPickerOpen, setAdapterPickerOpen] = useState(false)
   // 从作品选择: the input a picture from 作品 goes into.
-  const [galleryTarget, setGalleryTarget] = useState<PickTarget | null>(null)
+  // 从作品选择: the input a picture from 作品 goes into, or (right-click on the board) where it goes on the board.
+  const [galleryTarget, setGalleryTarget] = useState<PickTarget | { at: { x: number; y: number } } | null>(null)
 
   const remoteEnabled = settings?.remoteHostsEnabled === true
   const remoteHost = remoteEnabled ? (hosts.find((host) => host.id === remoteHostId) ?? null) : null
@@ -364,20 +365,23 @@ export function StudioPage(): React.JSX.Element {
   }
 
   /** A new 风格, wired into `canvasId` when given; selected so its description can be written. */
-  const addStyle = (canvasId?: string, styleId?: string): void => {
+  const addStyle = (canvasId?: string, styleId?: string, at?: { x: number; y: number }): void => {
     if (canvasId && styleId) {
       linkInto(canvasId, 'style', { canvasId: styleId })
       return
     }
     const list = project.canvasesRef.current
     const near = canvasId ? list.find((canvas) => canvas.id === canvasId) : undefined
-    const style = createStyleCanvas(list, near ? { at: { x: near.x - cardWidth(STYLE_CARD) - BOARD_GAP * 2, y: near.y } } : {})
+    const style = createStyleCanvas(
+      list,
+      at ? { at } : near ? { at: { x: near.x - cardWidth(STYLE_CARD) - BOARD_GAP * 2, y: near.y } } : {},
+    )
     project.setCanvases((previous) => {
       const next = [...previous, style]
       return canvasId ? next.map((canvas) => (canvas.id === canvasId ? setLink(canvas, 'style', { canvasId: style.id }) : canvas)) : next
     })
     project.select(style.id)
-    requestAnimationFrame(() => board.current?.reveal(style.id))
+    requestAnimationFrame(() => (at ? board.current?.keepInView(style.id) : board.current?.reveal(style.id)))
   }
 
   /** Pick one picture file and bring it onto the board as a picture card. */
@@ -394,8 +398,43 @@ export function StudioPage(): React.JSX.Element {
     return image ?? null
   }
 
+  /** Pictures brought onto the board with their first card's corner at `at` (the right-click point). */
+  const importAt = async (paths: readonly string[], at: { x: number; y: number }): Promise<void> => {
+    const created = await inputImport.importPaths(paths)
+    if (!created.length) return
+    const first = created[0]!
+    const ids = new Set(created.map((card) => card.id))
+    project.setCanvases((previous) =>
+      previous.map((canvas) => (ids.has(canvas.id) ? { ...canvas, x: canvas.x - first.x + at.x, y: canvas.y - first.y + at.y } : canvas)),
+    )
+    project.select(first.id)
+    requestAnimationFrame(() => board.current?.keepInView(first.id))
+  }
+
+  const importPicturesAt = async (at: { x: number; y: number }): Promise<void> => {
+    let paths: string[]
+    try {
+      paths = await call<string[]>(Ipc.pickImages, { title: '选择图片' })
+    } catch (error) {
+      toast.push(error instanceof Error ? error.message : String(error), 'error')
+      return
+    }
+    if (paths?.length) await importAt(paths, at)
+  }
+
+  /** A new 画面, at a board point when given. */
+  const addCanvasAt = (at?: { x: number; y: number }): ProjectCanvas => {
+    const created = project.addCanvas()
+    // Placed where the user right-clicked, moved back inside the view where it would stick out.
+    if (at) {
+      project.setCanvases((previous) => previous.map((canvas) => (canvas.id === created.id ? { ...canvas, x: at.x, y: at.y } : canvas)))
+      requestAnimationFrame(() => board.current?.keepInView(created.id))
+    } else requestAnimationFrame(() => board.current?.reveal(created.id))
+    return created
+  }
+
   /** A recipe: nodes laid out and wired, most starting from a picture chosen from a file. */
-  const startRecipe = async (recipe: Recipe): Promise<void> => {
+  const startRecipe = async (recipe: Recipe, at?: { x: number; y: number }): Promise<void> => {
     if (recipe.id === 'series') {
       const series = seriesFromStyle(project.canvasesRef.current, latestSettings())
       project.setCanvases(series.canvases)
@@ -409,8 +448,7 @@ export function StudioPage(): React.JSX.Element {
       return
     }
     if (!recipe.role) return
-    const created = project.addCanvas()
-    requestAnimationFrame(() => board.current?.reveal(created.id))
+    const created = addCanvasAt(at)
     if (recipe.role === 'control') {
       const adapter = controlAdapters.find((item) => item.controlKinds.length)
       if (!adapter) return
@@ -705,10 +743,9 @@ export function StudioPage(): React.JSX.Element {
           onMoveCanvas={(id, x, y) => project.updateCanvas(id, { x, y })}
           onChangeLayers={changeLayers}
           onUnderlay={(item) => applyUnderlay(item?.path)}
-          onAddCanvas={() => {
-            const created = project.addCanvas()
-            requestAnimationFrame(() => board.current?.reveal(created.id))
-          }}
+          onAddCanvas={(at) => void addCanvasAt(at)}
+          onImportPictures={(at) => void importPicturesAt(at)}
+          onPicturesFromGallery={(at) => setGalleryTarget({ at })}
           onOpenViewer={(canvasId, index) => setViewer({ canvasId, index })}
           onRerun={(canvasId, seed) => void run(canvasId, seed)}
           onCancel={(jobId) => {
@@ -782,9 +819,9 @@ export function StudioPage(): React.JSX.Element {
             project.setCanvases((previous) => dropRun(previous, runId))
             toast.push('已删除这次生成，图片仍保留在作品里', 'info')
           }}
-          onRecipe={(recipe) => void startRecipe(recipe)}
+          onRecipe={(recipe, at) => void startRecipe(recipe, at)}
           onUpscale={upscaleFrom}
-          onAddStyle={() => addStyle()}
+          onAddStyle={(at) => addStyle(undefined, undefined, at)}
         />
       </main>
 
@@ -804,12 +841,13 @@ export function StudioPage(): React.JSX.Element {
 
       <GalleryPicker
         open={galleryTarget !== null}
-        title={galleryTarget ? `选择${roleLabel(galleryTarget.role)}` : '选择图片'}
+        title={galleryTarget && 'role' in galleryTarget ? `选择${roleLabel(galleryTarget.role)}` : '选择图片'}
         onClose={() => setGalleryTarget(null)}
         onPick={(path) => {
           const target = galleryTarget
           setGalleryTarget(null)
-          if (target) void inputImport.addPaths(target.canvasId, target.role, target.kind, [path])
+          if (target && 'role' in target) void inputImport.addPaths(target.canvasId, target.role, target.kind, [path])
+          else if (target) void importAt([path], target.at)
         }}
       />
 

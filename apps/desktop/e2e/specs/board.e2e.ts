@@ -110,6 +110,17 @@ async function dragToZone(page: Page, from: string, to: string, zone?: string, h
   return labels
 }
 
+/** Right-click an empty spot of the board (near its lower right corner, or `from` its right and top); returns where. */
+async function openBlankMenu(page: Page, from?: { right: number; top: number }): Promise<{ x: number; y: number }> {
+  const board = (await page.locator('[data-board]').boundingBox())!
+  const at = from
+    ? { x: board.x + board.width - from.right, y: board.y + from.top }
+    : { x: board.x + board.width - 120, y: board.y + board.height - 120 }
+  await page.mouse.click(at.x, at.y, { button: 'right' })
+  await page.getByRole('menu', { name: '画板' }).waitFor()
+  return at
+}
+
 /** Open the ＋ beside a card and choose an input (and, when given, how to fill it). */
 async function addInput(page: Page, canvasId: string, input: string, how?: string): Promise<void> {
   await page.locator(`article[data-canvas-card="${canvasId}"]`).hover()
@@ -278,6 +289,65 @@ describe('studio board', () => {
     await page.keyboard.press('Escape')
     await expect.poll(() => page.locator('[data-wire-draft]').count()).toBe(0)
     expect((await savedInputs(page))?.references).toBeUndefined()
+  })
+
+  it('right-click on empty board makes things where the click was; there is no ＋ button', async () => {
+    const page = await openBoard(app)
+    expect(await page.locator('[data-new-canvas]').count()).toBe(0)
+    // With room around the click, the new card's corner is right there.
+    const at = await openBlankMenu(page, { right: 360, top: 140 })
+    expect(await page.getByRole('menu', { name: '画板' }).getByRole('menuitem').allTextContents()).toEqual([
+      '新建画面',
+      '改一张图',
+      '局部重绘',
+      '按构图生成',
+      '参考风格',
+      '放大一张图',
+      '新建风格',
+      '一组同风格的图',
+      '导入图片…',
+      '从作品选择…',
+      '显示全部',
+    ])
+    await app.screenshot('board-blank-menu-light')
+    await page.getByRole('menuitem', { name: '新建画面' }).click()
+    await expect.poll(() => page.locator('article[data-canvas-kind="layout"]').count()).toBe(2)
+    const created = page.locator('article[data-canvas-kind="layout"][aria-current="true"]')
+    const box = (await created.boundingBox())!
+    expect(Math.abs(box.x - at.x)).toBeLessThan(4)
+    expect(Math.abs(box.y - at.y)).toBeLessThan(4)
+
+    // Near the corner of the view, the new card moves back inside it; 从作品选择… puts a picture there.
+    await openBlankMenu(page)
+    await page.getByRole('menuitem', { name: '从作品选择…' }).click()
+    await page.getByRole('dialog', { name: '选择图片' }).getByRole('button', { name: 'prompt 0' }).click()
+    await expect.poll(() => page.locator('article[data-canvas-kind="image"]').count(), { timeout: 10_000 }).toBe(3)
+    const board = (await page.locator('[data-board]').boundingBox())!
+    const inside = async (): Promise<boolean> => {
+      const box = (await page.locator('article[data-canvas-kind="image"][aria-current="true"]').boundingBox())!
+      return box.x + box.width <= board.x + board.width && box.y + box.height <= board.y + board.height
+    }
+    await expect.poll(inside).toBe(true)
+  })
+
+  it('right-click on a card shows its menu; on a wire, 断开连线', async () => {
+    const page = await openBoard(app, { inputs: { init: { link: { canvasId: 'img-1' }, strength: 0.6 } } })
+    const picture = await center(page, 'article[data-canvas-card="img-2"] [data-card-body]')
+    await page.mouse.click(picture.x, picture.y, { button: 'right' })
+    const menu = page.getByRole('menu', { name: '线稿 操作' })
+    await menu.waitFor()
+    expect(await menu.getByRole('menuitem').allTextContents()).toEqual(['用作起始图', '放大', '复制', '删除'])
+    // The card is selected, as with a click.
+    expect(await page.locator('article[data-canvas-card="img-2"]').getAttribute('aria-current')).toBe('true')
+    await app.screenshot('board-card-menu-light')
+    await menu.getByRole('menuitem', { name: '复制' }).click()
+    await expect.poll(() => page.locator('article[data-canvas-kind="image"]').count()).toBe(3)
+
+    await page.locator('article[data-canvas-card="canvas-1"]').hover()
+    const chip = await center(page, '[data-wire-chip="input:canvas-1:init:"]')
+    await page.mouse.click(chip.x, chip.y, { button: 'right' })
+    await page.getByRole('menu', { name: '连线' }).getByRole('menuitem', { name: '断开连线' }).click()
+    await expect.poll(async () => (await savedInputs(page))?.init ?? null, { timeout: 10_000 }).toBeNull()
   })
 
   it('leaves out roles the engine does not support', async () => {
@@ -860,8 +930,8 @@ describe('filmstrip, 用作起始图 and recipes', () => {
 
   it('starts from a recipe: the picture comes from a file, and 局部重绘 opens the mask', async () => {
     const page = await openWithRuns()
-    // One ＋ holds the ways to start. No control adapter yet: 按构图生成 is off and says why on hover.
-    await page.getByRole('button', { name: '新建', exact: true }).click()
+    // Right-click on empty board holds the ways to start. No control adapter yet: 按构图生成 is off and says why on hover.
+    await openBlankMenu(page)
     const compose = page.getByRole('menuitem', { name: /按构图生成/ })
     expect(await compose.isDisabled()).toBe(true)
     expect(await compose.getAttribute('title')).toBe('需要先在模型页添加控制适配器')
@@ -921,7 +991,7 @@ describe('风格 and 放大 nodes', () => {
 
   it('a 风格 wired into a 画面 adds its description to what the 画面 generates', async () => {
     const page = await openBoard(app)
-    await page.getByRole('button', { name: '新建', exact: true }).click()
+    await openBlankMenu(page)
     await page.getByRole('menuitem', { name: '新建风格' }).click()
     await expect.poll(() => page.locator('article[data-canvas-kind="style"]').count()).toBe(1)
     const styleId = (await selectedId(page))!
@@ -949,7 +1019,7 @@ describe('风格 and 放大 nodes', () => {
 
   it('一组同风格的图: a 风格 and three 画面 wired to it', async () => {
     const page = await openBoard(app)
-    await page.getByRole('button', { name: '新建', exact: true }).click()
+    await openBlankMenu(page)
     await page.getByRole('menuitem', { name: '一组同风格的图' }).click()
     await expect.poll(() => page.locator('article[data-canvas-kind="style"]').count()).toBe(1)
     // The 风格 is selected, ready to be described.

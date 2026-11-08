@@ -2,8 +2,9 @@ import { ChevronRight, Copy, Image as ImageIcon, MoreHorizontal, Palette, PenLin
 import { useEffect, useRef, useState } from 'react'
 import type { ImageResizeMode, ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { Button, IconButton, Pill, cn } from '../../components/ui'
-import { MenuItem, Popover } from '../../components/common/Popover'
+import { MenuGap, MenuItem, Popover } from '../../components/common/Popover'
 import { cloverUrl } from '../../lib/clover'
+import { tidyEntries, type BoardMenuEntry } from './BoardMenu'
 import type { LinkRole } from './links'
 import { OutputImage } from './OutputImage'
 import { CARD_FOOTER, CARD_HEADER, cardBodyHeight, cardWidth } from './boardLayout'
@@ -37,11 +38,8 @@ export interface CardStrip {
   onPointerDown: (index: number, event: React.PointerEvent<HTMLButtonElement>) => void
 }
 
-export interface CardMenuAction {
-  label: string
-  onSelect: () => void
-  tone?: 'danger'
-}
+/** An entry of a card's ⋯ menu (and its right-click menu). */
+export type CardMenuAction = BoardMenuEntry
 
 export interface CanvasCardProps {
   canvas: ProjectCanvas
@@ -67,7 +65,7 @@ export interface CanvasCardProps {
   jobId?: string
   /** A 风格 card: how many 画面 use it. */
   styleUsers?: number
-  /** Entries of the ⋯ menu: 用作起始图, 固定到画板 and so on (danger ones next to 删除). */
+  /** Entries of the ⋯ menu, the same as its right-click menu: 用作起始图, 复制, 删除 and so on. */
   menuActions?: readonly CardMenuAction[]
   /**
    * While a wire is out and this card can take it: the inputs it could fill,
@@ -103,8 +101,6 @@ export interface CanvasCardProps {
   onRerun: (seed: 'new' | 'same') => void
   onCancel: () => void
   onShowActivity: () => void
-  onCopy: () => void
-  onDelete: () => void
 }
 
 /**
@@ -297,9 +293,10 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           >
             {(close) => (
               <>
-                {props.menuActions
-                  ?.filter((action) => action.tone !== 'danger')
-                  .map((action) => (
+                {tidyEntries(props.menuActions ?? []).map((action, index) =>
+                  'gap' in action ? (
+                    <MenuGap key={`gap-${index}`} />
+                  ) : (
                     <MenuItem
                       key={action.label}
                       tone={action.tone}
@@ -310,48 +307,8 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
                     >
                       {action.label}
                     </MenuItem>
-                  ))}
-                <MenuItem
-                  onSelect={() => {
-                    close()
-                    props.onCopy()
-                  }}
-                >
-                  {isImage || isStyle ? '复制' : '复制为新画面'}
-                </MenuItem>
-                {jobId && !isImage ? (
-                  <MenuItem
-                    onSelect={() => {
-                      close()
-                      props.onShowActivity()
-                    }}
-                  >
-                    查看详情
-                  </MenuItem>
-                ) : null}
-                {props.menuActions
-                  ?.filter((action) => action.tone === 'danger')
-                  .map((action) => (
-                    <MenuItem
-                      key={action.label}
-                      tone="danger"
-                      onSelect={() => {
-                        close()
-                        action.onSelect()
-                      }}
-                    >
-                      {action.label}
-                    </MenuItem>
-                  ))}
-                <MenuItem
-                  tone="danger"
-                  onSelect={() => {
-                    close()
-                    props.onDelete()
-                  }}
-                >
-                  {isImage ? '删除' : isStyle ? '删除风格' : '删除画面'}
-                </MenuItem>
+                  ),
+                )}
               </>
             )}
           </Popover>

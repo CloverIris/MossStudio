@@ -2,7 +2,7 @@ import { Palette, Plus } from 'lucide-react'
 import { useState } from 'react'
 import type { ControlAdapterEntry, ProjectCanvas } from '@shared/types'
 import { cn } from '../../components/ui'
-import { MenuGap, MenuItem, Popover } from '../../components/common/Popover'
+import { MenuItem, Popover } from '../../components/common/Popover'
 import { linkSourceImage } from './links'
 import { OutputImage } from './OutputImage'
 import type { InputSlot } from './ports'
@@ -12,8 +12,8 @@ import type { Point, Wire } from './wires'
 
 /**
  * Board controls that keep their screen size at any zoom: the ＋ that adds
- * an input to a card, the thumbnails of linked pictures, and the ＋ that
- * makes a new card. Placed in board pixels, scaled by 1/zoom.
+ * an input to a card, the thumbnails of linked pictures, and the ways to
+ * start an empty project. Placed in board pixels, scaled by 1/zoom.
  */
 
 const at = (point: Point, zoom: number, anchor = 'translate(-50%, -50%)'): React.CSSProperties => ({
@@ -153,105 +153,6 @@ export function InputThumbs({
         )
       })}
     </>
-  )
-}
-
-/** The ＋ after the last card: a blank 画面, a recipe, or a 风格. */
-export function NewMenu({
-  point,
-  zoom,
-  recipes,
-  onAddCanvas,
-  onAddStyle,
-  onRecipe,
-}: {
-  point: Point
-  zoom: number
-  recipes: readonly Recipe[]
-  onAddCanvas: () => void
-  onAddStyle: () => void
-  onRecipe: (recipe: Recipe) => void
-}): React.JSX.Element {
-  return (
-    <div
-      data-board-ui
-      data-new-canvas
-      className="absolute left-0 top-0 z-[6] origin-top-left"
-      style={at(point, zoom, 'translate(0, -50%)')}
-    >
-      <Popover
-        align="start"
-        label="新建"
-        className="w-[180px]"
-        trigger={(menu) => (
-          <button
-            type="button"
-            aria-label="新建"
-            title="新建"
-            aria-expanded={menu['aria-expanded']}
-            aria-controls={menu['aria-controls']}
-            aria-haspopup={menu['aria-haspopup']}
-            onClick={menu.toggle}
-            className={cn(
-              'flex size-10 items-center justify-center rounded-full transition-colors',
-              menu.open ? 'bg-well-strong text-ink' : 'bg-well text-ink-2 hover:bg-well-strong hover:text-ink',
-            )}
-          >
-            <Plus className="size-5" aria-hidden="true" strokeWidth={1.6} />
-          </button>
-        )}
-      >
-        {(close) => (
-          <>
-            <MenuItem
-              onSelect={() => {
-                close()
-                onAddCanvas()
-              }}
-            >
-              新建画面
-            </MenuItem>
-            {recipes
-              .filter((recipe) => recipe.role)
-              .map((recipe) => (
-                <MenuItem
-                  key={recipe.id}
-                  disabled={Boolean(recipe.disabled)}
-                  title={recipe.disabled}
-                  onSelect={() => {
-                    close()
-                    onRecipe(recipe)
-                  }}
-                >
-                  {recipe.label}
-                </MenuItem>
-              ))}
-            <MenuGap />
-            <MenuItem
-              onSelect={() => {
-                close()
-                onAddStyle()
-              }}
-            >
-              新建风格
-            </MenuItem>
-            {recipes
-              .filter((recipe) => !recipe.role)
-              .map((recipe) => (
-                <MenuItem
-                  key={recipe.id}
-                  onSelect={() => {
-                    close()
-                    onRecipe(recipe)
-                  }}
-                >
-                  {recipe.label}
-                </MenuItem>
-              ))}
-          </>
-        )}
-      </Popover>
-    </div>
   )
 }
 
