@@ -693,7 +693,7 @@ export function StudioPage(): React.JSX.Element {
         />
       </StudioSidebar>
 
-      <main aria-label="画布" className="min-w-0 flex-1">
+      <main aria-label="画布" className="min-w-120 flex-1">
         <Board
           ref={board}
           projectKey={String(project.sessionKey)}

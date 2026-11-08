@@ -299,6 +299,18 @@ const cases = {
 
   announcementsDismiss: { valid: { id: 'welcome' }, rejects: { 'empty id': { id: '' }, 'overlong id': { id: long(121) } } },
 
+  windowControl: {
+    valid: { action: 'minimize' },
+    accepts: {
+      maximize: { action: 'toggle-maximize' },
+      close: { action: 'close' },
+      'read the state': { action: 'state' },
+    },
+    rejects: {
+      'unknown action': { action: 'fullscreen' },
+      'no action': {},
+    },
+  },
   windowOpen: {
     valid: { kind: 'studio' },
     accepts: {
