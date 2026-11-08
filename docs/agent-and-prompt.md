@@ -51,6 +51,7 @@
 - 系列页间引用/一次回复多页（基础多页已接）
 - 润色/翻译/图像反推的多模型顺序后备
 - Web 端 Agent 栏与 Provider 管理
-- 对话内的选择/方案卡、自动/高级模式、分镜助手（工具层已落地，见 [design/agent-tool-rack.md](design/agent-tool-rack.md)）
+
+> 工具挂架、对话内的选择/方案卡、自动与高级模式、分镜助手已实现，见 [design/agent-tool-rack.md](design/agent-tool-rack.md)。
 
 > 标签/角色数据不会凭训练数据虚构；必须下载可核对、可再分发的数据并记录来源与版本。

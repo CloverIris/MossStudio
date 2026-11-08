@@ -1,6 +1,6 @@
 # Agent 工具挂架、交互卡与分镜助手
 
-- 状态：🟡 **P0/P1 已实现**（2026-11-08）；P2–P4 仍是设计
+- 状态：🟡 **P0–P4 已实现**（2026-11-08）；真机对话验收待做
 - 日期：2026-11-08
 - 关联：[agent-and-prompt.md](../agent-and-prompt.md)（Provider 与现状）、[multi-canvas-studio.md](./multi-canvas-studio.md)（画布板）、[layout-schema.md](../layout-schema.md)（布局编译契约）、[ui-rules.md](./ui-rules.md)（界面规则）
 - 触发：右侧 Agent 创建「文字区域」时，提示词和要显示的文字没有分开，工具建出来的区域无法生成
@@ -19,9 +19,12 @@
 | `studio_add_layer` 一个工具带 `label: text`，用 JSON Schema `oneOf` 约束 | 拆成 `studio_add_layer`（object/character）与 `studio_add_text_layer`（`caption`、`text` 都必填） | Gemini 的 `FunctionDeclaration.parameters` 只接受对象根、不支持 `oneOf` / `const`；拆工具在所有 provider 上都能表达「文字必须给原文」，模型也更容易选对 |
 | 回执 `{ ok, data, note, blockers }` | `{ ...data, summary, problems }`；失败 `{ error, fix? }` | `blockers` 会让人以为是引擎就绪状态；实现的 `problems` 只来自布局编译（`compileCanvasPrompt`），是「还差什么才能生成」的最小子集 |
 | 按 `hasSelection` 卸载写工具 | 工具常驻，执行前用 `requires: ['editable']` 统一拦 | 一轮对话中途卸工具，历史里的 tool_calls 会引用未定义的工具，部分 provider 会报错 |
-| 交互卡、自动/高级模式 | 未实现，仍是 P2/P3 | 本阶段只做工具层，避免一次改动过大 |
+| 交互卡：Choice / Plan / Review 三种 | 只做 Choice 与 Plan | 高级模式不放行写操作，`set_prompt` 本身就是一行方案卡，复核卡是重复的 |
+| 高级模式按工具逐个确认 | 执行器扣留 `write`/`run`，一轮里的所有扣留由主进程**聚合成一张** PlanCard | 一次改动常常是多步；让用户点五次「应用」没有意义 |
+| 分镜：`storyboard_plan` / `create` / `fill` | 一个 `studio_create_scenes` + `studio_select_canvas` | 模型本来就会先想清楚；多一个「只出方案」的工具只会多一轮 |
+| 切模式写一条「已切换」分隔线 | 只换简介文字 | 少一类需要持久化的对话条目；模式本来就随下一轮生效 |
 
-实现位置：`apps/desktop/src/shared/agent/schemas.ts`、`shared/agent/registry.ts`、`renderer/src/lib/agent/{types,executor}.ts`；`shared/mcp.ts` 已删除。
+实现位置：`shared/agent/{schemas,registry,cards}.ts`、`renderer/src/lib/agent/{types,executor}.ts`、`renderer/src/pages/studio/assistant/{ChoiceCard,PlanCard}.tsx`；`shared/mcp.ts` 已删除。
 
 
 ## 1. 本次故障复盘：文字工具的字段对不齐
@@ -230,20 +233,22 @@ resolveToolset({ mode?, page?, toolsSupported? }) → AgentTool[]
 
 好处：可持久化、可回放、可恢复、可审计。代价是每张卡多一次模型调用——可以接受，因为卡本来就是「需要人介入」的地方。
 
-### 3.2 卡片数据
+### 3.2 卡片数据（已实现）
 
 ```ts
 interface AgentCard {
   id: string
-  kind: 'choice' | 'plan' | 'review'
+  kind: 'choice' | 'plan' | 'scenes'
   title: string
-  /** 为什么问这一句，一句话，别让用户猜。 */
+  /** 为什么问这一句，或者这个方案要干什么。 */
   why?: string
-  options?: Array<{ id: string; label: string; detail?: string; preview?: CardPreview }>
+  options?: Array<{ id: string; label: string; detail?: string }>
   multiple?: boolean
   allowFreeText?: boolean
-  /** 已答：用户选了什么。 */
-  answer?: { selected: string[]; freeText?: string; skipped?: boolean }
+  /** plan：确认后要执行的工具调用，按顺序。 */
+  steps?: Array<{ tool: string; args: Record<string, unknown>; label: string }>
+  /** 已答：选了什么 / 跳过了 / 应用了 / 提了调整意见。 */
+  answer?: { selected: string[]; freeText?: string; skipped?: boolean; applied?: boolean }
   createdAt: string
 }
 
@@ -254,16 +259,17 @@ interface AiMessage {
 ```
 
 - 卡片挂在 assistant 消息上，持久化进 `agent.json`，历史对话里原样回放；已答的卡只读。
-- 同一对话最多一张未答的卡；新卡到来时旧卡自动标「已跳过」。
-- 跳过永远可用。
+- 应答走 `Ipc.aiCardAnswer`：先把 `answer` 写回对话，再把答案当作一条正常 user 消息发出去，触发下一轮。
+- 跳过永远可用；跳过也会留下一条 `「…」先跳过` 的 user 消息，记录不撒谎。
 
-### 3.3 三种卡
+### 3.3 两种卡
 
 | 卡 | 由谁发起 | 长什么样 | 答完之后 |
 | --- | --- | --- | --- |
-| **ChoiceCard** 选择 | `ask_user` | 单选 `Segmented`、多选 `Checkbox` 列表；选项可带副标题或小图；底部「选好了」+「跳过」 | 追加 user 消息，自动续一轮 |
-| **PlanCard** 方案 | `propose_plan`、`storyboard_plan` | 将要发生的改动清单：尺寸、区域（带 bbox 小图）、描述 diff、预计耗时 | 「应用」在本地确定性执行（同一套 handler），不经过模型；「调整」把意见当 user 消息发回去 |
-| **ReviewCard** 复核 | 高级模式下的 `set_prompt` | 现描述 vs 新描述，红/绿对照（复用现有「替换描述」弹窗的呈现） | 采纳 / 放弃 |
+| **ChoiceCard** 选择 | `ask_user` | 单选（圆点）/ 多选（勾）列表，选项带副标题；可自由输入；底部「跳过」+「选好了」 | 追加 user 消息，自动续一轮 |
+| **PlanCard** 方案 | 高级模式里任何写操作 | 改动清单（每行一句工具摘要）；「放弃 / 调整 / 应用」 | 「应用」在本地按顺序执行，不经过模型；「调整」把意见当 user 消息发回 |
+
+原设计里的 ReviewCard 没有做：高级模式不直接放行写操作，`set_prompt` 本身就会变成一张只有一行的 PlanCard，再单独做复核卡是重复的。
 
 PlanCard 的「应用」很重要：它走的是 handler，不是模型，所以**确定、可测、不花钱**。模型提出方案、人点确认、机器执行——这也是高级模式的基本手感。
 
@@ -271,7 +277,7 @@ PlanCard 的「应用」很重要：它走的是 handler，不是模型，所以
 
 | 要问的 | 选项怎么产生 | 要不要 GPU |
 | --- | --- | --- |
-| 构图 | 模型给 3 个 bbox 方案；卡上用本地 SVG 画三分法/居中/对角小图 | 不要 |
+| 构图 | 模型给 3 个 bbox 方案（目前纯文字描述，构图小图待做） | 不要 |
 | 特征 | 从当前角色描述、历史画面里抽 6–10 个可多选标签 | 不要 |
 | 文案 | 模型给 3 条候选，每条显示「原文 / 样式」两栏 | 不要 |
 | 风格参考 | 先从作品里挑（`library` 包）；需要新图时才低步数跑草图 | 要，且要确认 |
@@ -282,75 +288,92 @@ PlanCard 的「应用」很重要：它走的是 handler，不是模型，所以
 
 - 一张卡只问一件事；标题是问句，`why` 一句话说清为什么问。
 - 选项 2–5 个。超过 5 个说明应该分两次问，或者让模型先给方案。
-- 卡里不放大段提示词；要展示提示词用 PlanCard / ReviewCard。
+- 卡里不放大段提示词；要展示提示词用 PlanCard。
 - 卡上永远能看到「这会改动什么」；纯询问卡不写「将修改画面」。
 
-## 4. 分镜助手
 
-目标是「一句话得到一套图」，不是「一句话得到一张图」。流程固定为四步：
+## 4. 分镜助手（已实现，做了简化）
 
-1. **出方案**：`storyboard_plan({ brief, shots, ratio, style })` → 返回 `shots[]`（标题、描述、构图、出场角色、画面文字、预计耗时），渲染成 PlanCard。人可勾选、改标题、删镜。
-2. **建画布**：应用后本地创建 N 个 Canvas，按顺序落到画布板，返回 id 列表给模型。这一步不花 GPU。
-3. **逐镜细化**：模型对每一镜 `set_prompt` / `add_layer` / `ask_user`（构图、特征、文字），卡上显示「第 3/8 镜」，人可以只改其中几镜。
-4. **批量生成**：一次一镜（引擎本来就是串行），进度回到画布板；高级模式下先给「8 张 × 约 28 秒」的确认卡。
+目标是「一句话得到一套图」，不是「一句话得到一张图」。落地成一个工具而不是三个：
 
-和现有画布板的关系：分镜就是一批有顺序的 Canvas，用 `seriesId` + `page` 排序，**不新增数据结构**。分镜助手是「批量建画布 + 批量填内容」的编排层，不是新的文档类型。
+1. **出方案**：模型把每一镜想清楚——标题、英文描述、尺寸、区域、画面文字——然后**一次调用** `studio_create_scenes({ scenes: [...] })`。
+2. **建画布**：`create_scenes` 在本地按顺序建 N 个 Canvas，落到画布板空位，返回 id 和标题；这一步不花 GPU。自动模式直接建，高级模式先把这一调用做成 PlanCard，确认后建。
+3. **逐镜细化**：`studio_select_canvas({ id })` 切到某一镜，再用 `set_prompt` / `update_layer` / `ask_user` 调；没有选中画面时写工具会明确报错。
+4. **批量生成**：仍然是用户点「开始生成」或模型逐镜 `generate`（引擎串行）；高级模式下 `generate` 也是一张 PlanCard。
 
-## 5. 自动 / 高级
+和现有画布板的关系：分镜就是一批有顺序的 Canvas，**不新增数据结构**；排序仍按创建顺序，`seriesId`/`page` 留给以后的「系列」。
+
+原设计里的 `storyboard_plan` / `storyboard_fill` 没有单独做：模型本来就会先想清楚再调用，多一个「只出方案不建画布」的工具只会多一轮对话。
+
+## 5. 自动 / 高级（已实现）
 
 ### 5.1 差异
 
 | | 自动 | 高级 |
 | --- | --- | --- |
 | 一句话 | 直接改，关键处问一句 | 先给方案，点头再改 |
-| 挂载的包 | `canvas.read` + `canvas.write` + `ask` | 全部，含 `storyboard` |
-| 写入 | 立即执行 | `proposeInAdvanced` 的工具先出卡，确认后本地执行 |
+| 挂载的包 | `canvas.read` + `canvas.write` + `ask` + `storyboard` | 同一批 |
+| 写入 | 立即执行 | 执行器不写，把这一步交回主进程，聚合成一张 PlanCard |
 | 询问频率 | 只在信息缺失时（例如文字区域没给原文） | 构图、特征、尺寸、文案都可能问 |
-| 工具行 | 一行摘要（「添加区域 · 文字「新年快乐」」） | 完整参数 + 结果，可展开 |
-| 生成 | 用户点「开始生成」就跑 | 先确认尺寸/步数/张数/预计耗时 |
-| 系统提示 | Do it, then say what you did. | Propose first; never mutate without confirmation. |
+| 工具行 | 一行摘要（「添加文字 · 文字「新年快乐」」） | 先显示为方案里的一行，应用后再出现正常回执 |
+| 生成 | 模型调用即排队 | `generate` 也进方案，确认后才排队 |
+| 系统提示 | 直接做，用一两句说清改了什么 | 先计划、一次给全、不要替用户猜 |
 
-两种模式共用同一批工具和同一套 handler，差别只在**挂载哪些包、要不要先出卡、提示词怎么写**。不做两套实现。
+两种模式共用同一批工具和同一套 handler：**高级模式的差别在执行器里**——`risk` 是 `write`/`run` 的调用不执行，返回 `{ proposed: { tool, args, label } }`；主进程把一轮里所有 `proposed` 收成一张卡。应用时按顺序重放这些调用，走的是同一张 handler 表。
 
 ### 5.2 界面与文案
 
-位置：输入框上方一行，和模型下拉同一块。
+位置：模型下拉下面一行。
 
 ```
-[ 自动 | 高级 ]                    (?)
-它直接改画面，只在必须你定的时候问一句。
+[ 自动 | 高级 ]  (?)  每一步都先给你看，确认后才改；构图和文字可以细调。
 ```
 
 - 切换用 `Segmented`（不是 `Advanced` 折叠，那个是「应用自己能决定的事」）。
 - 简介一行，跟着模式变，`text-caption text-ink-2`：
-  - 自动：`它直接改画面，只在必须你定的时候问一句。`
+  - 自动：`直接改画面，只在必须你定的时候问一句。`
   - 高级：`每一步都先给你看，确认后才改；构图和文字可以细调。`
-- `?` 打开 `Popover`，三行差异，不弹窗。
-- 切换写进对话：一条居中的 `已切换到高级模式`，让记录诚实。
+- `?` 打开 `Popover`（role=dialog），三行差异，不弹窗。
+- 切换没有分隔线：简介文字本身会变，且模式随下一轮生效；写进对话的「已切换」留给以后需要审计时再加。
 
 ### 5.3 持久化与边界
 
-- `AiConversationInfo.mode: 'auto' | 'advanced'`，跟着对话存；新对话沿用上次选择（应用级设置），默认自动。
-- 模型不支持工具调用（Ollama 路径现在是直接不给 tools）时：模式禁用，下面一行 `这个模型不能调用工具，只能出文字。`
+- `AiConversationInfo.mode: 'auto' | 'advanced'`，跟着对话存；新对话沿用上次选择（`localStorage.mossstudio.agentMode`），默认自动。
+- 模型不支持工具调用（Ollama 路径现在是直接不给 tools）时：工具本来就不会出现在请求里，助手只出文字。
 - 切模式不打断进行中的回合；下一轮生效。
 
 ## 6. 落地改动清单
 
-### 6.1 已实现（P0/P1）
+### 6.1 已实现（P0–P4）
 
 | 文件 | 改动 |
 | --- | --- |
-| `shared/agent/schemas.ts` | 新增：8 个工具的 zod 参数，`ToolName` / `ToolArgs` 从这里推导 |
-| `shared/agent/registry.ts` | 新增：`AGENT_TOOLS`（名字/包/风险/前置/摘要）、`toolSchema`、`toolDefinitions`、`resolveToolset`、`TOOL_RULES` |
+| `shared/agent/schemas.ts` | 11 个工具的 zod 参数（读、写、问、分镜），`ToolName` / `ToolArgs` 从这里推导 |
+| `shared/agent/registry.ts` | `AGENT_TOOLS`（名字/包/风险/前置/摘要）、`toolSchema`、`toolDefinitions`、`resolveToolset`、`TOOL_RULES`、`MODE_RULES` |
+| `shared/agent/cards.ts` | `AgentCard` / `PlanStep` / 答案的 zod 结构与类型，`makeCard` |
 | `shared/mcp.ts` | 删除，内容并入注册表 |
-| `main/services/ai.ts` | 系统提示改写（文字的两段语义），工具规则从 `TOOL_RULES` 取 |
-| `main/ipc.ts` | 工具表由 `toolDefinitions(resolveToolset({ page: 'studio' }))` 生成 |
-| `renderer/lib/agent/types.ts` | 新增：`StudioToolApi`（含 `state` / `addTextLayer` / `updateLayer` / `removeLayer` / `problems`）、`LayerPatch` |
-| `renderer/lib/agent/executor.ts` | 新增：穷举 handler 表、参数解析、前置检查、可行动错误、摘要与 `problems` 回执 |
-| `renderer/lib/agentTools.ts` | 瘦成桥接层：`registerStudioTools`、`snapshot`、`formatStudioContext`、`installStudioToolBridge` |
-| `pages/studio/StudioPage.tsx` | 工具 API 实现；`readContext` 的说明补上两个字段的语义 |
-| `pages/studio/canvases.ts` | `addRegion`（归一化盒子 → 区域）、`editLayer`（补丁 + 夹取），`newRegion` 接受初始文字 |
+| `shared/ai.ts` | `AiMessage.card?`、`AiConversationInfo.mode`、`AiChatInput.mode`、工具调用请求带 `mode` |
+| `shared/schemas.ts` | `aiChat.mode`、`aiCardAnswer` |
+| `main/services/ai.ts` | 按模式拼系统提示；把工具回执里的卡挂到 assistant 消息；把 `proposed` 聚合成 PlanCard；`answerAgentCard` |
+| `main/ipc.ts` | 工具表由注册表生成；`aiCardAnswer`；工具调用带上模式 |
+| `renderer/lib/agent/types.ts` | `StudioToolApi`（`state` / `addTextLayer` / `updateLayer` / `removeLayer` / `createScenes` / `selectCanvas` / `problems`）、`SceneDraft` |
+| `renderer/lib/agent/executor.ts` | 穷举 handler 表、参数解析、前置检查、可行动错误、摘要与 `problems`、高级模式扣留写操作、`applyPlan` |
+| `renderer/lib/agentTools.ts` | 桥接层：`registerStudioTools`、`snapshot`、`formatStudioContext`、`installStudioToolBridge`、`applyPlan` |
+| `renderer/pages/studio/assistant/ChoiceCard.tsx` | 选择卡（单选/多选/自由输入/跳过） |
+| `renderer/pages/studio/assistant/PlanCard.tsx` | 方案卡（放弃/调整/应用） |
+| `renderer/pages/studio/assistant/Assistant.tsx` | 卡片渲染、答完自动续轮、模式开关与简介、模式随对话保存 |
+| `pages/studio/StudioPage.tsx` | 工具 API 实现，含批量建画布与切换画面 |
+| `pages/studio/canvases.ts` | `addRegion`、`editLayer`、`sceneCanvas`，`newRegion` 接受初始文字 |
 | `pages/studio/assistant/format.ts` | 工具中文名来自注册表；结果行优先显示 `summary` / `problems` |
+
+### 6.2 还没做
+
+| 文件 | 改动 |
+| --- | --- |
+| `pages/studio/assistant/` | 构图小图（三分法/居中缩略图）、场景卡的逐镜预览 |
+| `main/services/ai.ts` | `MAX_TOOL_ROUNDS` 按场景放宽（分镜一次 8 镜仍可能不够） |
+| `shared/agent/registry.ts` | `library` 包（从作品里挑参考图作为输入） |
+
 
 ### 6.2 待实现（P2–P4）
 
@@ -376,12 +399,17 @@ PlanCard 的「应用」很重要：它走的是 handler，不是模型，所以
 4. **文字区域的参数约束**：`add_text_layer` 的 `caption` / `text` 都必填，`add_layer` 的 `label` 只有 `object` / `character`，旧的 `label: "text"` 返回带 `fix` 的错误。
 5. **执行器**：参数类型错给中文提示；无选中/结果是只读时统一拦；写操作回执带 `summary` / `problems`；读操作不带。
 6. **`resolveToolset`**：Ollama 空表、非创作页只读、两种模式挂同一批工具。
+7. **问一句**：`ask_user` 生成一张 `choice` 卡（id / 选项 / 标题），不碰画布；没有选中画面也能问；少于 2 个选项被拒。
+8. **卡片落库**：工具回执里的卡挂到发起调用的 assistant 消息上；格式不对的卡被忽略；答案写回卡片并持久化；找不到对话或卡片时报中文错误。
+9. **高级模式**：写操作只返回 `proposed`（不动画布），读和问照常；一轮里多个 `proposed` 在主进程合成一张 PlanCard（标题「将改动 N 处」，`why` 用模型那句话）；`mode` 存进对话，系统提示带「高级模式」。
+10. **应用方案**：`applyPlan` 按顺序跑同一张 handler 表；未知工具、参数不合法、Studio 未就绪都拒绝并给出原因。
+11. **分镜**：`sceneCanvas` 建出的画布带自己的尺寸、描述、区域和文字；`create_scenes` 返回新 id；`select_canvas` 切选中。
 
-还需要（P2/P3）：
+还需要（真机）：
 
-- 卡片：答完追加一条 user 消息、跳过也追加、回放不重复发送、旧卡在新卡到来时自动跳过。
-- 模式：高级模式下 `set_prompt` 不直接改画面，`ReviewCard` 采纳后才改。
+- 卡片回放：历史对话里已答的卡只读显示（组件已支持，需 e2e 断言）。
 - e2e（mock backend）：模型一轮里 `add_text_layer` + `generate`，画面上出现文字区域且「开始生成」可用。
+- 真实模型对话验收：选择卡作答后自动续轮、高级模式方案卡应用。
 
 ## 8. 分期
 
@@ -389,15 +417,15 @@ PlanCard 的「应用」很重要：它走的是 handler，不是模型，所以
 | --- | --- | --- | --- |
 | P0 | 文字区域独立工具、`update_layer` / `remove_layer`、提示词语义、贯通测试 | ✅ 2026-11-08 | 「写字」类请求一次成功 |
 | P1 | 注册表 + handler 表 + `resolveToolset`，行为不变 | ✅ 2026-11-08 | 工具只有一处定义，老测试全绿 |
-| P2 | 三种卡 + 持久化 + 回放 + 自动续轮 | ⬜ | 「问一句」可用 |
-| P3 | 模式开关 + 两套提示词 + 工具行详细度 | ⬜ | 自动/高级可切 |
-| P4 | storyboard 包 + 构图小图 + 批量建画布 | ⬜ | 一句话出一套图 |
+| P2 | 选择卡 + 持久化 + 回放 + 答完自动续轮 | ✅ 2026-11-08 | 「问一句」可用 |
+| P3 | 自动/高级模式 + 两套提示词 + 方案卡与本地应用 | ✅ 2026-11-08 | 自动/高级可切 |
+| P4 | `create_scenes` + `select_canvas` + 批量建画布 | ✅ 2026-11-08 | 一句话出一套图 |
 
 
 ## 9. 未决问题
 
-- 卡的答案是「新 user 回合」还是「续同一回合」：先用前者（简单、可恢复），以后可以加「同一回合内恢复」省一次调用。
-- 自动模式要不要保留 PlanCard：建议单步直接做，**只有批量（≥3 个改动或整套分镜）才出卡**。
-- 分镜要不要独立页面：倾向不做，就在创作页的助手栏里推进，画布板本身就是分镜板。
+- 卡答完自动续一轮：现在会在用户点「选好了」后立刻发一条 user 消息并请求模型。多数场景是对的，但用户如果还想补一句就会被抢跑——可能需要一个「先不发送」的次要按钮。
+- `MAX_TOOL_ROUNDS = 4` 在分镜场景可能不够（8 镜 × 2 次调用），需要按场景放宽，并给用户一个「继续」的显式入口。
+- 构图小图：现在选项只有文字，三分法/居中/对角的缩略图还没画；做出来后选择卡的体验会明显不同。
 - 角色特征库从哪来：现有画面描述 vs 外部标签库，涉及可再分发数据，见 [agent-and-prompt.md](../agent-and-prompt.md) 的说明。
-- `MAX_TOOL_ROUNDS = 4` 在分镜场景明显不够（8 镜 × 2 次调用），需要按 `risk` 或按模式放宽，并给用户一个「继续」的显式入口。
+- 方案卡的顺序依赖：`applyPlan` 是顺序执行、遇错即停，已经执行的步骤不会回滚。要不要在应用前先校验全部步骤（预检）值得再想。
