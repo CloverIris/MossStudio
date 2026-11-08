@@ -180,7 +180,7 @@ function handleLine(active: ActiveCliJob, line: string): void {
     case 'error':
       active.errorMessage ??= parsed.message
       return
-    default:
+    case 'other':
       return
   }
 }

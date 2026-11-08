@@ -72,6 +72,7 @@ interface Behavior {
   ignoreTerm?: boolean
   pidFile?: string
   warning?: string
+  noise?: string
   listFail?: string
   devices?: unknown[]
 }
@@ -240,6 +241,14 @@ describe('runCliJob', () => {
     const r = run('job-warn', { behavior: { warning } })
     expect(await r.done).toBe(0)
     expect(r.events).toContainEqual({ type: 'log', level: 'warn', message: warning })
+  })
+
+  it('keeps a line it does not recognise in the log and raises no event for it', async () => {
+    const noise = 'ggml_backend: some banner the runner does not know'
+    const r = run('job-noise', { behavior: { noise } })
+    expect(await r.done).toBe(0)
+    expect(r.stderr).toContain(noise)
+    expect(JSON.stringify(r.events)).not.toContain(noise)
   })
 
   it('refuses inputs the CLI cannot do before starting anything', async () => {

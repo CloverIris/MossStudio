@@ -76,7 +76,9 @@ export function chipView(state: UpdaterState | null): ChipView | null {
       return { label: '正在重启…', tone: 'quiet', progress: null, description: '正在重启以更新' }
     case 'error':
       return version ? { label: '更新没有完成', tone: 'quiet', description: `更新没有完成：${state.error ?? '请稍后重试'}` } : null
-    default:
+    case 'checking':
+    case 'idle':
+    case 'unsupported':
       return state.failedNotice && state.failedVersion
         ? { label: '新版本没能启动', tone: 'warn', description: failedUpdateText(state.failedVersion, state.current).notice }
         : null
@@ -237,7 +239,9 @@ export function popoverView(state: UpdaterState, busy: UpdateBusyReason[] = []):
       return { ...base, status: '正在重启…', progress: null, primary: null, secondary: null }
     case 'error':
       return { ...base, status: state.error ?? '更新没有完成，请稍后重试。', statusTone: 'danger', primary: 'retry' }
-    default:
+    case 'checking':
+    case 'idle':
+    case 'unsupported':
       if (state.failedNotice && state.failedVersion && !state.required) {
         const text = failedUpdateText(state.failedVersion, state.current)
         return {
@@ -278,7 +282,8 @@ export function settingsStatus(state: UpdaterState): string {
       return '正在重启以更新'
     case 'error':
       return state.error ?? '更新没有完成'
-    default:
+    case 'idle':
+    case 'unsupported':
       return '已经是最新版本'
   }
 }
