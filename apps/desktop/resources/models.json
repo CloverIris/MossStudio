@@ -267,6 +267,7 @@
     {
       "id": "moss-sft-comfy-int4_convrot",
       "name": "MOSS SFT · INT4_CONVROT (社区)",
+      "choice": "MOSS-Image SFT · INT4",
       "provider": "hf",
       "repo": "toxicdog/MOSS-Image-SFT-INT4-ConvRot-ComfyUI",
       "revision": "220f724ceede0144e01c5353e9e96a1c538adba4",
@@ -284,6 +285,7 @@
     {
       "id": "moss-sft-comfy-nvfp4",
       "name": "MOSS SFT · NVFP4 (社区)",
+      "choice": "MOSS-Image SFT · NVFP4",
       "provider": "hf",
       "repo": "BennyDaBall/MOSS-Image-SFT-NVFP4",
       "revision": "46b5146214892a7648350548828dc168e1fcaa7a",
@@ -301,6 +303,7 @@
     {
       "id": "moss-sft-turbo-comfy-int8_convrot",
       "name": "MOSS SFT Turbo · INT8_CONVROT (社区)",
+      "choice": "MOSS-Image SFT Turbo · INT8",
       "provider": "hf",
       "repo": "toxicdog/MOSS-Image-SFT-Turbo-INT8-ConvRot",
       "revision": "a04afd66c4f9a3b41658a611906723b55ee40301",

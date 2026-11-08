@@ -214,6 +214,15 @@ export function modelSections(
   }
 }
 
+/** The recommended catalog model (or the deep-linked one): 自己组合 starts from its parts. */
+export function recommendedBundle(bundles: readonly ModelBundle[], preferredId?: string | null): ModelBundle | undefined {
+  return (
+    (preferredId ? bundles.find((bundle) => bundle.id === preferredId) : undefined) ??
+    bundles.find((bundle) => bundle.recommended) ??
+    bundles[0]
+  )
+}
+
 /**
  * What deleting a whole model removes: its installed parts that no other
  * model still needs. A shared part (text encoder, VAE) stays while another
