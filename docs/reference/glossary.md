@@ -29,7 +29,7 @@ The terms MossStudio coins or uses in a fixed sense, with the Chinese the UI sho
 | | run | One generation of a 画面; a result canvas. Runs that are not pinned live only in the filmstrip. | `renderer/src/pages/studio/runs.ts` |
 | | filmstrip | The strip of a 画面's runs under its card. | `renderer/src/pages/studio/Filmstrip.tsx` |
 | 改一张图, 局部重绘, 按构图生成, 参考风格, 放大一张图, 一组同风格的图 | recipe | A preset that creates and wires cards for a common task. | `renderer/src/pages/studio/recipes.ts` |
-| 区域 | region | A rectangle on a 画面 with its own description; the layout the engine composes from. | `renderer/src/pages/studio/RegionLayer.tsx`, `shared/types.ts` (`regions`), `docs/layout-schema.md` |
+| 区域 | region | A rectangle on a 画面 with its own description; the layout the engine composes from. | `renderer/src/pages/studio/RegionLayer.tsx`, `shared/types.ts` (`layers`), [layout-schema.md](layout-schema.md) |
 | 起始图 | init image, role `init` | The picture a 画面 starts from (image to image, inpaint, upscale). | `renderer/src/pages/studio/jobInputs.ts`, `recipes.ts` |
 | 遮罩 | mask | The painted area of a 起始图 that is redrawn. Recipe 局部重绘. | `renderer/src/pages/studio/MaskLayer.tsx`, `mask.ts` |
 | 控制图 | control image, role `control` | A picture whose depth or edges guide the composition. Needs a 控制适配器. | `renderer/src/pages/studio/recipes.ts`, `shared/types.ts` (`EngineFeatures.control`) |
