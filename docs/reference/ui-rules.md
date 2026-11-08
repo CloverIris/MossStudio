@@ -18,7 +18,10 @@ The visual system is fixed: flat and quiet, areas told apart by lighter and dark
 | A read-only folder, file or URL | `PathValue` (`copy` when people need to paste it; `copyLabel` when several sit together) | `components/common/PathValue.tsx` |
 | A field or block label with an optional value on the right | `FieldLabel` (`as="h3"`/`"h2"` when it heads a block) | `components/ui.tsx` |
 | A slider with its label and value (strength, opacity, CFG) | `SliderField` | `pages/studio/InputControls.tsx` |
-| Progress | `ProgressBar`; `value={null}` when the amount is unknown | `components/ui.tsx` |
+| Progress | `ProgressBar`; `value={null}` when the amount is unknown; `size="md"` for a download row, the default thin bar elsewhere | `components/ui.tsx` |
+| Download progress (state, percentage, bar, amount, speed, time left) | `DownloadProgress` | `pages/models/DownloadProgress.tsx` |
+| A word that tells a model from its family (INT8, 8 步) or a kind (单文件, 深度) | `Tag` | `components/ui.tsx` |
+| A model or part name with its variant | `ModelName` | `components/common/ModelName.tsx` |
 | Loading | `LoadingRow` (spinner + "正在读取…" or a label) | `components/ui.tsx` |
 | Nothing here yet | `EmptyState` (`size="page"` or `"section"`) | `components/ui.tsx` |
 | Status label | `Pill` | `components/ui.tsx` |
@@ -74,6 +77,7 @@ Recurring actions:
 
 ## 5. Status
 
+- `Tag` is not a state: it names what something is (INT8, 单文件). State is a `Pill`.
 - `Pill` tones: `neutral` (default, no state), `accent` (selected / in use), `ok` (ready), `warn` (needs attention, partly done), `danger` (failed, blocked). Use these names, not the aliases `blue` / `amber` / `red`.
 - Same state, same form: a list shows a state either as a `Pill` or as a `StatusDot` with text, the same way on every row.
 - In progress is `accent` (a `ProgressBar` or an accent Pill), for downloads, installs, generation and training alike.

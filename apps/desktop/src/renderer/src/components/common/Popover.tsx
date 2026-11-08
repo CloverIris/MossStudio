@@ -11,6 +11,7 @@ export function Popover({
   children,
   align = 'start',
   className,
+  rootClassName,
   label,
   role = 'menu',
   open: controlled,
@@ -27,6 +28,8 @@ export function Popover({
   children: (close: () => void) => ReactNode
   align?: 'start' | 'center' | 'end'
   className?: string
+  /** The wrapper around trigger and panel, e.g. `flex w-full` for a trigger as wide as its field. */
+  rootClassName?: string
   label?: string
   /** `dialog` for a panel of information and buttons rather than a list of choices. */
   role?: 'menu' | 'dialog'
@@ -65,7 +68,7 @@ export function Popover({
   }, [open, setOpen])
 
   return (
-    <div ref={root} className="relative inline-flex">
+    <div ref={root} className={cn('relative inline-flex', rootClassName)}>
       {trigger({ open, toggle: () => setOpen(!open), 'aria-expanded': open, 'aria-controls': id, 'aria-haspopup': role })}
       {open ? (
         <div
@@ -121,7 +124,13 @@ export function MenuItem({
       )}
     >
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      {hint ? <span className="shrink-0 text-caption text-ink-2">{hint}</span> : null}
+      {/* The space keeps the name and the hint apart when read aloud: "MOSS-Image SFT 27 GB". */}
+      {hint ? (
+        <>
+          {' '}
+          <span className="shrink-0 text-caption text-ink-2">{hint}</span>
+        </>
+      ) : null}
     </button>
   )
 }

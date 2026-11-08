@@ -3,17 +3,20 @@ import type { DownloadTask, ModelBundle, ModelEntry } from '@shared/types'
 import {
   bundleBlocker,
   bundleComponentIds,
+  amountText,
   bundleDeletePlan,
+  bundleProgress,
   bundleTone,
   bundleView,
   bundlesUsing,
+  downloadGroups,
   itemState,
   localFilesOnly,
   modelSections,
   parseModelsQuery,
   sizeText,
   taskFor,
-  taskText,
+  taskProgress,
   visibleTasks,
 } from '@renderer/pages/models/logic'
 import { GPU_GTX_1660, GPU_RTX_3060, catalogFixture, downloadFixture, gpuDeviceFixture } from '../../mocks/backend'
@@ -70,7 +73,7 @@ describe('bundleView', () => {
     const c = catalog(['moss-sft-dit', 'qwen35-encoder', 'moss-pipeline'])
     const view = bundleView(bundle('moss-sft'), c.models, [])
     expect(view.status).toBe('partial')
-    expect(view.stateText).toBe('还差 1 个文件 · 250 MB')
+    expect(view.stateText).toBe('还差 1 个文件（250 MB）')
     expect(bundleTone(view.status)).toBe('warn')
     expect(view.missing.map((item) => item.id)).toEqual(['flux2-vae-small'])
   })
@@ -79,7 +82,9 @@ describe('bundleView', () => {
     const c = catalog(['moss-sft-dit', 'qwen35-encoder', 'moss-pipeline'])
     const size = model('flux2-vae-small').sizeBytes
     const view = bundleView(bundle('moss-sft'), c.models, [task('flux2-vae-small', { state: 'running', bytes: Math.floor(size * 0.425) })])
-    expect(view).toMatchObject({ status: 'downloading', stateText: '下载中 42%', action: 'pause', actionLabel: '暂停', percent: 42 })
+    expect(view).toMatchObject({ status: 'downloading', stateText: '下载中', action: 'pause', actionLabel: '暂停', percent: 42 })
+    // The percentage is the progress block's own number, not part of the words.
+    expect(bundleProgress(view)).toMatchObject({ tone: 'accent', percent: 42, stateText: '下载中' })
     // In progress is accent, the same as generation and training.
     expect(bundleTone(view.status)).toBe('accent')
     expect(view.tasks).toHaveLength(1)
@@ -97,12 +102,14 @@ describe('bundleView', () => {
     const c = catalog()
     const paused = bundleView(bundle('moss-sft'), c.models, [task('moss-sft-dit', { state: 'paused', bytes: 1_000_000_000 })])
     expect(paused).toMatchObject({ status: 'paused', action: 'resume', actionLabel: '继续' })
-    expect(paused.stateText).toMatch(/^已暂停 \d+% · 还差 /)
+    expect(paused.stateText).toBe('已暂停')
+    expect(bundleProgress(paused)).toMatchObject({ tone: 'muted', stateText: '已暂停', facts: [expect.stringMatching(/^还差 /)] })
     const failed = bundleView(bundle('moss-sft'), c.models, [
       task('moss-sft-dit', { state: 'error', error: 'net' }),
       task('qwen35-encoder', { state: 'paused' }),
     ])
-    expect(failed).toMatchObject({ status: 'failed', action: 'resume', actionLabel: '重试' })
+    expect(failed).toMatchObject({ status: 'failed', action: 'resume', actionLabel: '重试', stateText: '下载没有完成' })
+    expect(bundleProgress(failed)).toMatchObject({ tone: 'danger', detailTone: 'danger' })
   })
 
   it('reports verifying without an action', () => {
@@ -382,23 +389,97 @@ describe('tasks', () => {
     expect(taskFor(tasks, 'adapter', 'moss-sft-dit')).toBeUndefined()
   })
 
-  it('describes a task in one line', () => {
-    expect(taskText(downloadFixture({ state: 'running', bytes: 2_000_000_000, totalBytes: 10_000_000_000, speedBps: 12_000_000 }))).toBe(
-      '下载中 20% · 2 GB / 10 GB · 12 MB/s',
-    )
-    expect(taskText(downloadFixture({ state: 'running', bytes: 0, totalBytes: 0 }))).toBe('下载中')
-    expect(taskText(downloadFixture({ state: 'queued' }))).toBe('等待下载')
-    expect(taskText(downloadFixture({ state: 'paused', bytes: 5_000_000_000, totalBytes: 10_000_000_000 }))).toBe(
-      '已暂停 50% · 5 GB / 10 GB',
-    )
-    expect(taskText(downloadFixture({ state: 'error', error: '磁盘已满' }))).toBe('下载失败：磁盘已满')
-    expect(taskText(downloadFixture({ state: 'verifying' }))).toBe('正在校验文件')
-    expect(taskText(downloadFixture({ state: 'running', connectionError: 'ssh' }))).toBe('连接中断，显示的是上次的进度')
+  it('describes a task as separate facts, never joined with "·"', () => {
+    expect(
+      taskProgress(downloadFixture({ state: 'running', bytes: 2_000_000_000, totalBytes: 10_000_000_000, speedBps: 10_000_000 })),
+    ).toEqual({
+      tone: 'accent',
+      percent: 20,
+      stateText: '下载中',
+      detail: '2 / 10 GB',
+      detailTone: 'normal',
+      facts: ['10 MB/s', '约 14 分钟'],
+    })
+    expect(taskProgress(downloadFixture({ state: 'queued', bytes: 0, totalBytes: 0 }))).toMatchObject({ stateText: '等待下载', detail: '' })
+    expect(taskProgress(downloadFixture({ state: 'paused', bytes: 5_000_000_000, totalBytes: 10_000_000_000 }))).toMatchObject({
+      tone: 'muted',
+      stateText: '已暂停',
+      detail: '5 / 10 GB',
+      facts: ['还差 5 GB'],
+    })
+    expect(taskProgress(downloadFixture({ state: 'error', error: '磁盘已满', totalBytes: 10 }))).toMatchObject({
+      tone: 'danger',
+      detail: '磁盘已满',
+      detailTone: 'danger',
+    })
+    expect(taskProgress(downloadFixture({ state: 'verifying' }))).toMatchObject({ percent: null, stateText: '正在校验文件' })
+    expect(taskProgress(downloadFixture({ state: 'running', connectionError: 'ssh' }))).toMatchObject({
+      tone: 'muted',
+      stateText: '连接中断',
+      detail: '显示的是上次的进度',
+    })
+    for (const state of ['running', 'paused', 'error', 'queued', 'verifying'] as const) {
+      const info = taskProgress(downloadFixture({ state, bytes: 1e9, totalBytes: 3e9, speedBps: 1e6, error: 'x' }))
+      expect([info.stateText, info.detail, ...info.facts].join('')).not.toContain('·')
+    }
+  })
+
+  it('writes an amount with the unit once when both sides share it', () => {
+    expect(amountText(8_900_000_000, 27_200_000_000)).toBe('8.9 / 27.2 GB')
+    expect(amountText(320_000_000, 27_200_000_000)).toBe('320 MB / 27.2 GB')
+    expect(amountText(0, 250_000_000)).toBe('0 / 250 MB')
+    expect(amountText(0, 0)).toBe('')
   })
 
   it('lists only unfinished tasks', () => {
     const tasks = (['queued', 'running', 'done', 'canceled', 'error'] as const).map((state) => downloadFixture({ id: state, state }))
     expect(visibleTasks(tasks).map((item) => item.id)).toEqual(['queued', 'running', 'error'])
+  })
+})
+
+describe('downloadGroups', () => {
+  const c = catalog()
+  const sizeOf = (id: string): number => model(id).sizeBytes
+
+  it('lists a model once: its main file names the row and its other parts join it', () => {
+    const tasks = [
+      task('moss-sft-dit', { state: 'running', bytes: sizeOf('moss-sft-dit') / 2, speedBps: 50_000_000 }),
+      task('qwen35-encoder', { state: 'queued', bytes: 0 }),
+      task('flux2-vae-small', { state: 'done', bytes: sizeOf('flux2-vae-small') }),
+      task('moss-pipeline', { state: 'running', bytes: 1, speedBps: 1_000_000 }),
+    ]
+    const [group, ...rest] = downloadGroups(tasks, c)
+    expect(rest).toEqual([])
+    expect(group).toMatchObject({ key: 'bundle:moss-sft', item: { name: 'MOSS-Image SFT' }, action: 'pause', actionLabel: '暂停' })
+    expect(group!.parts.map((part) => [part.role, part.done])).toEqual([
+      ['主模型', false],
+      ['文本编码器', false],
+      ['VAE', true],
+      ['运行配置', false],
+    ])
+    // 暂停 and 取消 act on what is still to do, not on the finished VAE.
+    expect(group!.open.map((item) => item.targetId)).toEqual(['moss-sft-dit', 'qwen35-encoder', 'moss-pipeline'])
+    expect(group!.progress).toMatchObject({
+      tone: 'accent',
+      stateText: '下载中',
+      facts: [expect.stringMatching(/MB\/s$/), expect.any(String)],
+    })
+  })
+
+  it('shows a part or LoRA downloading on its own as a row of its own, and nothing for finished downloads', () => {
+    const adapter = c.adapters[0]!
+    const tasks = [
+      task('qwen35-comfy-w4a8_gptq', { state: 'paused', bytes: 10 }),
+      downloadFixture({ id: 'adapter', kind: 'adapter', targetId: adapter.id, label: adapter.name, state: 'error', error: '网络中断' }),
+      task('moss-base-dit', { state: 'done' }),
+    ]
+    const groups = downloadGroups(tasks, c)
+    expect(groups.map((group) => [group.key, group.actionLabel])).toEqual([
+      ['model:qwen35-comfy-w4a8_gptq', '继续'],
+      [`adapter:${adapter.id}`, '重试'],
+    ])
+    expect(groups[0]!.item).toMatchObject({ name: 'Qwen3.5 W4A8 GPTQ', variant: ['W4A8', 'GPTQ'] })
+    expect(groups[1]!.progress).toMatchObject({ tone: 'danger', detail: '网络中断' })
   })
 })
 

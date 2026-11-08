@@ -282,30 +282,57 @@ export function Pill({
 }
 
 /**
+ * A word that tells a model from its family (INT8, 8 步, FP16-fixed), shown
+ * after its name. Not a state: state is a `Pill`.
+ */
+export function Tag({ children, className }: { children: ReactNode; className?: string }): React.JSX.Element {
+  return (
+    <span
+      className={cn(
+        'tabular inline-flex h-[18px] shrink-0 items-center rounded px-1.5 text-micro font-semibold tracking-wide whitespace-nowrap',
+        'bg-well-strong text-ink-2',
+        className,
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+const progressFill = {
+  accent: 'bg-accent',
+  neutral: 'bg-ink',
+  /** Paused: the amount stays, the colour steps back. */
+  muted: 'bg-ink-3',
+  danger: 'bg-danger',
+}
+
+/**
  * Progress from 0 to 100. Pass `null` when the amount is not known: the bar
  * then shows a moving segment, never a full bar that would read as done.
+ * `md` is the bar of a download row; `sm` (default) the thin one of the
+ * titlebar, popovers and the installer.
  */
 export function ProgressBar({
   value,
   tone = 'accent',
+  size = 'sm',
   className,
   label,
+  title,
 }: {
   value: number | null
-  tone?: 'accent' | 'neutral'
+  tone?: keyof typeof progressFill
+  size?: 'sm' | 'md'
   className?: string
   label?: string
+  title?: string
 }): React.JSX.Element {
-  const fill = tone === 'accent' ? 'bg-accent' : 'bg-ink'
+  const fill = progressFill[tone]
+  const track = cn('relative w-full overflow-hidden rounded-full bg-well-strong', size === 'md' ? 'h-1.5' : 'h-1', className)
   if (value === null) {
     return (
-      <div
-        role="progressbar"
-        aria-label={label}
-        aria-busy="true"
-        data-indeterminate
-        className={cn('relative h-1 w-full overflow-hidden rounded-full bg-well-strong', className)}
-      >
+      <div role="progressbar" aria-label={label} aria-busy="true" data-indeterminate title={title} className={track}>
         <div className={cn('ui-progress-indeterminate absolute inset-y-0 left-0 w-[30%] rounded-full', fill)} />
       </div>
     )
@@ -318,9 +345,13 @@ export function ProgressBar({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(width)}
-      className={cn('h-1 w-full overflow-hidden rounded-full bg-well-strong', className)}
+      title={title}
+      className={track}
     >
-      <div className={cn('h-full rounded-full transition-[width] duration-200 ease-out', fill)} style={{ width: `${width}%` }} />
+      <div
+        className={cn('h-full rounded-full transition-[width,background-color] duration-300 ease-out motion-reduce:transition-none', fill)}
+        style={{ width: `${width}%` }}
+      />
     </div>
   )
 }

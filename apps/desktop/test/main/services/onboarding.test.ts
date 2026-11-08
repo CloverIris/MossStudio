@@ -155,7 +155,7 @@ describe('getOnboardingStatus (local)', () => {
     const int8 = ['moss-sft-comfy-int8_convrot', 'qwen35-comfy-int8_convrot', 'flux2-vae-comfy-small', 'moss-runtime-config']
     const result = await status({ engine: true, installed: int8 })
     expect(result.bundleId).toBe('moss-sft-int8')
-    expect(result.bundleName).toBe('SFT · INT8')
+    expect(result.bundleName).toBe('MOSS-Image SFT INT8')
     expect(step(result, 'model').modelIds).toEqual(int8)
     expect(result.ready).toBe(true)
   })
@@ -164,7 +164,7 @@ describe('getOnboardingStatus (local)', () => {
     // A W4A8 text encoder and the folder VAE belong to no model the Studio can run.
     const installed = ['moss-sft-comfy-int8_convrot', 'qwen35-comfy-w4a8_gptq', 'flux2-vae-small', 'moss-runtime-config']
     const result = await status({ engine: true, installed })
-    expect(result.bundleName).toBe('SFT · INT8')
+    expect(result.bundleName).toBe('MOSS-Image SFT INT8')
     expect(step(result, 'model')).toMatchObject({ status: 'partial', detail: expect.stringMatching(/2\/4/) })
     expect(result.ready).toBe(false)
   })
@@ -196,7 +196,7 @@ describe('getOnboardingStatus (local)', () => {
   it('a Vulkan / HIP-only machine needs the bf16 bundle: no fp16 DiT, no single-file combination', async () => {
     const fp16 = ['moss-sft-fp16-fixed', 'qwen35-encoder', 'flux2-vae-small', 'moss-pipeline']
     const cuda = await status({ engine: true, installed: fp16 })
-    expect(result(cuda)).toBe('SFT · FP16-fixed')
+    expect(result(cuda)).toBe('MOSS-Image SFT FP16-fixed')
     const vulkan = await status({ engine: true, installed: fp16, kinds: ['vulkan'] })
     expect(step(vulkan, 'model').modelIds).toEqual(sft)
     expect(vulkan.ready).toBe(false)
@@ -205,7 +205,7 @@ describe('getOnboardingStatus (local)', () => {
     expect(hip.bundleName).toBe('MOSS-Image SFT')
     expect(hip.ready).toBe(false)
     // A machine with a CUDA GPU next to a Vulkan one keeps every bundle.
-    expect(result(await status({ engine: true, installed: fp16, kinds: ['cuda', 'vulkan'] }))).toBe('SFT · FP16-fixed')
+    expect(result(await status({ engine: true, installed: fp16, kinds: ['cuda', 'vulkan'] }))).toBe('MOSS-Image SFT FP16-fixed')
   })
 
   it('keeps the regular bundle when single-file weights would not cover more components', async () => {

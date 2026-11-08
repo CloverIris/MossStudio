@@ -481,9 +481,12 @@ export interface RuntimeInfo {
 
 export interface ModelEntry {
   id: string
+  /** The whole name as plain text; it ends with the `variant` words. */
   name: string
-  /** What 自己组合 calls this part, e.g. "MOSS-Image SFT · INT8"; a folder and a single file of the same weights share it. */
+  /** What 自己组合 calls this part, e.g. "MOSS-Image SFT INT8"; a folder and a single file of the same weights share it. */
   choice?: string
+  /** Precision and kind words shown as tags after the rest of `name` (see ModelBundle.variant). */
+  variant?: string[]
   provider: 'hf' | 'local'
   repo: string
   revision: string
@@ -533,7 +536,10 @@ export interface ModelBinding {
 
 export interface ModelBundle {
   id: string
+  /** The whole name as plain text (toasts, job names); it ends with the `variant` words. */
   name: string
+  /** The words that tell this model from its family (precision, steps), shown as tags after the rest of `name`. */
+  variant?: string[]
   description: string
   components: Pick<ModelBinding, 'dit' | 'textEncoder' | 'vae'>
   support: string
