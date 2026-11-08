@@ -129,3 +129,4 @@ Places where the code does not follow these rules yet. New code follows the rule
 | Wrap Go errors with `%w` (§9) | 12 `%w` wraps against 23 bare `errors.New` and a few `%v` wraps (`internal/winres/winres.go:133`). |
 | One error-to-message path in the renderer | About ten copies of `error instanceof Error ? error.message : String(error)` before `toast.push`; a `messageOf(error)` helper in `lib/api.ts` would replace them. |
 | Types and schemas change together (§1) | `src/shared/types.ts` and `schemas.ts` are written twice by hand. Deriving the types from the schemas would remove the rule; that is a separate decision. |
+| No `any` (lint warning) | `handle` in `src/main/ipc.ts` takes `any` input. Typing it from its schema shows that the `settingsUpdate` schema makes `modelDirectories` fields optional while `Partial<Settings>` expects `string \| null`; fix the schema, then the type. |
