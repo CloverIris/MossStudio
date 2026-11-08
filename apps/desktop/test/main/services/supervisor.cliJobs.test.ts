@@ -444,6 +444,57 @@ describe('automatic GPU assignment on a mixed machine', () => {
     expect((await supervisor.startEngineJob(request({ prompt: 'alone' }))).deviceUuid).toBe(mx450.uuid)
   })
 
+  it('a 3 GB card is still used when the only other GPU cannot run at all', async () => {
+    const gtx1060: GpuInventoryDevice = {
+      uuid: 'GPU-10601060',
+      index: 0,
+      name: 'NVIDIA GeForce GTX 1060 3GB',
+      memoryTotalBytes: 3 * 1024 ** 3,
+      computeCapability: { major: 6, minor: 1 },
+    }
+    // The integrated GPU needs Vulkan 1.2: no engine for it. The 3 GB card got the 兼容模式 engine from 设置.
+    const uhd: GpuInventoryDevice = { uuid: 'vk-8086-5917-0', index: 1, name: 'Intel(R) UHD Graphics 620', vendor: 'intel' }
+    engines.set(gtx1060.uuid, deviceEngine('vulkan', gtx1060))
+    refreshGpuInventory.mockResolvedValue({ devices: [gtx1060, uhd] })
+    expect((await supervisor.startEngineJob(request())).deviceUuid).toBe(gtx1060.uuid)
+  })
+
+  describe('a card too small for the model, picked by hand', () => {
+    const tooSmall = 'NVIDIA GeForce MX250 显存太小（2 GB），没有安装引擎。在「设置 › 设备与引擎」里改用另一块显卡。'
+    const laptop = (): { mx250: GpuInventoryDevice; uhd: GpuInventoryDevice } => {
+      const machine = machineFixture('laptopSmallGpu')
+      const [mx250, uhd] = inventoryDevicesFor(machine)
+      // The plan gives the 2 GB card no engine; the integrated GPU runs 兼容模式.
+      engines.set(uhd!.uuid, deviceEngine('vulkan', uhd!))
+      currentEngineMachine.mockReturnValue({ machine })
+      refreshGpuInventory.mockResolvedValue({ devices: [mx250, uhd] })
+      return { mx250: mx250!, uhd: uhd! }
+    }
+
+    it('as the default GPU in settings: refused with the reason and where to change it', async () => {
+      const { mx250 } = laptop()
+      const { updateSettings } = await import('@main/services/settings')
+      updateSettings({ gpuSelection: { uuid: mx250.uuid } })
+      await expect(supervisor.startEngineJob(request())).rejects.toMatchObject({ code: 'E_GPU_TOO_SMALL', message: tooSmall })
+      expect(runCliJob).not.toHaveBeenCalled()
+      expect(runMossInferJob).not.toHaveBeenCalled()
+    })
+
+    it('as the GPU a canvas is bound to: refused the same way', async () => {
+      const { mx250 } = laptop()
+      await expect(supervisor.startEngineJob(request({ deviceUuid: mx250.uuid }))).rejects.toMatchObject({
+        code: 'E_GPU_TOO_SMALL',
+        message: tooSmall,
+      })
+    })
+
+    it('runs when an engine was chosen for it in 高级', async () => {
+      const { mx250 } = laptop()
+      engines.set(mx250.uuid, deviceEngine('vulkan', mx250))
+      expect((await supervisor.startEngineJob(request({ deviceUuid: mx250.uuid }))).deviceUuid).toBe(mx250.uuid)
+    })
+  })
+
   it('a CLI GPU picked by hand runs plain jobs and refuses what its engine cannot do', async () => {
     refreshGpuInventory.mockResolvedValue({ devices: [arc, nvidia] })
     await expect(supervisor.startEngineJob(request({ deviceUuid: arc.uuid, references: { paths: ['/a/ref.png'] } }))).rejects.toMatchObject(
