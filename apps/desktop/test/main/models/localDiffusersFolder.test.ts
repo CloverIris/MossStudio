@@ -162,7 +162,7 @@ describe('using an existing diffusers folder in place', () => {
         relativePath: candidate.relativePath,
       })),
     )
-    expect(result).toEqual({ added: 1, updated: 0, missing: [] })
+    expect(result).toEqual({ added: 1, updated: 0, missing: [], ids: [expect.stringMatching(/^local-scan-/)] })
 
     const loaded = await models.getCatalog(settings, true)
     const local = loaded.models.filter((model) => model.provider === 'local')

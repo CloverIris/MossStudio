@@ -4,7 +4,7 @@ import type { AdapterEntry, DownloadTask, GpuInventoryDevice, ModelBundle, Model
 /**
  * Pure helpers for the Models page. A "model" here is a whole catalog bundle
  * (main model + text encoder + VAE + configuration); its parts are only named
- * under 高级. State texts use plain words from the user's side.
+ * in 自己组合. State texts use plain words from the user's side.
  */
 
 /** Decimal sizes, like the download sites: "9.5 GB", "320 MB", "74 MB". */
@@ -272,27 +272,8 @@ export function bundlesUsing(id: string, bundles: readonly ModelBundle[], except
 }
 
 /* ------------------------------------------------------------------ */
-/* Parts (高级)                                                         */
+/* Single entries (LoRA)                                               */
 /* ------------------------------------------------------------------ */
-
-export const ROLE_LABEL: Record<ModelEntry['role'], string> = {
-  dit: '主模型',
-  full: '完整模型',
-  text_encoder: '文本编码器',
-  vae: 'VAE',
-  support: '运行配置',
-}
-
-/**
- * Whether a part is worth offering at all. Single-file ComfyUI exports of the
- * old FP16-fixed weights cannot be used by the engine, so they are not listed.
- */
-export function isOfferedComponent(model: ModelEntry): boolean {
-  if ((model.format ?? 'diffusers') !== 'comfyui') return true
-  if (model.provider === 'local') return true
-  const legacy = model.precision === 'fp16' || model.tags.includes('fixed')
-  return !legacy
-}
 
 export interface ItemState {
   /** The state in a word or two; empty when the entry is simply not downloaded (its 下载 button says so). */

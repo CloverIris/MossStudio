@@ -482,6 +482,8 @@ export interface RuntimeInfo {
 export interface ModelEntry {
   id: string
   name: string
+  /** What 自己组合 calls this part, e.g. "MOSS-Image SFT · INT8"; a folder and a single file of the same weights share it. */
+  choice?: string
   provider: 'hf' | 'local'
   repo: string
   revision: string
@@ -546,6 +548,16 @@ export interface ModelBundle {
   recommendedFor?: 'limited-vram'
   /** Sampling the bundle is made for (a few-step model); applied when it is picked in Studio. */
   defaults?: { steps?: number; cfg?: number }
+  /** Saved by the person in 自己组合 (`ModelCombination`), not from the catalog. */
+  custom?: boolean
+}
+
+/** A 主模型, 文本编码器 and VAE the person put together in 自己组合, saved as a model. */
+export interface ModelCombination {
+  id: string
+  name: string
+  components: Pick<ModelBinding, 'dit' | 'textEncoder' | 'vae'>
+  createdAt: string
 }
 
 export interface Catalog {

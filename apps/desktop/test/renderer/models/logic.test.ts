@@ -7,7 +7,6 @@ import {
   bundleTone,
   bundleView,
   bundlesUsing,
-  isOfferedComponent,
   itemState,
   localFilesOnly,
   modelSections,
@@ -326,17 +325,6 @@ describe('bundleDeletePlan', () => {
     expect(localFilesOnly(files, models)).toBe(true)
     expect(localFilesOnly(bundle('moss-sft-int8'), models)).toBe(false)
     expect(bundleDeletePlan(files, [files], models).ids).toEqual(['l-dit', 'l-te', 'l-vae'])
-  })
-})
-
-describe('isOfferedComponent', () => {
-  it('hides only the unusable single-file FP16-fixed exports', () => {
-    const models = catalog().models
-    expect(isOfferedComponent(model('moss-sft-fp16-fixed-comfy', models))).toBe(false)
-    expect(isOfferedComponent(model('moss-sft-fp16-fixed', models))).toBe(true)
-    expect(isOfferedComponent(model('moss-sft-comfy-int8_convrot', models))).toBe(true)
-    expect(isOfferedComponent(model('qwen35-encoder', models))).toBe(true)
-    expect(isOfferedComponent({ ...model('moss-sft-fp16-fixed-comfy', models), provider: 'local' })).toBe(true)
   })
 })
 

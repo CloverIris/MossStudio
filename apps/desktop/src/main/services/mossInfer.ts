@@ -532,8 +532,8 @@ async function ensureEngine(runtime: MossInferRuntime, config: EngineConfig, set
       tier: config.tier,
       cache_dir: join(paths.cache(), 'mossinfer'),
     }
-    // `model` is always a bundle folder (configs and tokenizer); component files
-    // replace its weights for the parts they name.
+    // `model` is the folder with the configs and tokenizer; a component file
+    // replaces that part's weights in it.
     if (config.model) payload.model = config.model
     if (config.ditFile) payload.dit_file = config.ditFile
     if (config.textEncoderFile) payload.text_encoder_file = config.textEncoderFile

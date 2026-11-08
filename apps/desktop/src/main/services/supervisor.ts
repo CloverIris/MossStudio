@@ -860,13 +860,18 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
       const source = await prepareModelSource(input.modelBinding, settings)
       modelPath = source.model
       modelBundle = source.bundle
+      const manifest = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8')) as Record<string, unknown>
+      const files = Object.fromEntries(
+        Object.entries({ ditFile: source.ditFile, textEncoderFile: source.textEncoderFile, vaeFile: source.vaeFile }).filter(
+          ([, path]) => path,
+        ),
+      )
+      modelSnapshot = Object.keys(files).length ? { ...manifest, files } : manifest
       modelFiles = {
         ditFile: source.ditFile,
         textEncoderFile: source.textEncoderFile,
         vaeFile: source.vaeFile,
       }
-      const manifest: unknown = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8'))
-      modelSnapshot = source.ditFile ? { ...(manifest as object), files: modelFiles } : manifest
     } else {
       modelPath = (await resolveLegacyModelPath(join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'))) ?? undefined
     }

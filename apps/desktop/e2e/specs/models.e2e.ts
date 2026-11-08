@@ -1,7 +1,8 @@
 /**
  * 模型: every engine-certified model under 推荐模型 with the best one for this
  * computer featured (one entry, one action), download progress, LoRA,
- * components only under 高级, and the location switcher only with 远程主机.
+ * 自己组合 for parts and the person's own files, and the location switcher
+ * only with 远程主机.
  */
 import { describe, expect, it } from 'vitest'
 import type { Page } from 'playwright-core'
@@ -150,25 +151,73 @@ describe('models', () => {
     await expect.poll(() => app.calls('models:download')).toEqual([{ kind: 'adapter', id: adapter.id }])
   })
 
-  it('keeps components under 高级', async () => {
+  const openCombine = async (page: Page, item: string) => {
+    await page.getByRole('button', { name: '自己组合' }).click()
+    await page.getByRole('menuitem', { name: item }).click()
+  }
+  const dialog = (page: Page) => page.locator('[data-combination-dialog]')
+  /** A saved combination's row title: its name, then the 我的组合 tag. */
+  const comboTitle = (page: Page, name: string) => page.getByText(`${name}我的组合`, { exact: true })
+
+  it('builds a model from parts, downloading only what is missing', async () => {
     const page = await app.open({ scenario: 'ready', route: '/models', theme: 'light' })
-    const textEncoder = await page.evaluate(() => window.__mock.state.catalog.models.find((model) => model.role === 'text_encoder')!.name)
-    // Collapsed 高级 keeps its content inert and out of the accessibility tree.
-    const hidden = (text: string) =>
-      page
-        .getByText(text, { exact: true })
-        .first()
-        .evaluate((element) => Boolean(element.closest('[inert][aria-hidden="true"]')))
-    await expect.poll(() => hidden('单独的部件')).toBe(true)
-    expect(await hidden(textEncoder)).toBe(true)
-    await page.getByRole('button', { name: /高级/ }).click()
-    await expect.poll(() => hidden('单独的部件')).toBe(false)
-    expect(await hidden(textEncoder)).toBe(false)
-    await page.getByText('单独的部件', { exact: true }).scrollIntoViewIfNeeded()
-    await app.screenshot('models-advanced-light')
+    await openCombine(page, '挑选要下载的部件')
+    const parts = dialog(page)
+    await expect.poll(() => parts.isVisible()).toBe(true)
+    // It starts from the recommended model, which is here: nothing to download.
+    expect(await parts.getByLabel('主模型').inputValue()).toBe('moss-sft-dit')
+    await expect.poll(() => page.locator('[data-combination-need]').textContent()).toBe('不用再下载')
+    await parts.getByLabel('主模型').selectOption({ label: 'MOSS-Image SFT · INT8 · 5.4 GB' })
+    await parts.getByLabel('文本编码器').selectOption({ label: 'Qwen3.5 · W4A8 · 7.3 GB' })
+    // The two single files and the 20 MB of configs they need.
+    await expect.poll(() => page.locator('[data-combination-need]').textContent()).toBe('还要下载 12.8 GB')
+    expect(await parts.getByLabel('名字').inputValue()).toBe('SFT · INT8 + Qwen3.5 · W4A8')
+    await app.screenshot('models-combine-light')
+    await page.getByRole('button', { name: '下载并保存' }).click()
+    await expect
+      .poll(() => app.calls('models:save-combination'))
+      .toEqual([
+        {
+          name: 'SFT · INT8 + Qwen3.5 · W4A8',
+          components: { dit: 'moss-sft-comfy-int8_convrot', textEncoder: 'qwen35-comfy-w4a8_gptq', vae: 'flux2-vae-small' },
+        },
+      ])
+    await expect.poll(() => app.calls('models:install-bundle')).toEqual([{ id: 'combo-1' }])
+    const tasks = await page.evaluate(() => window.__mock.state.downloads.map((task) => task.targetId).sort())
+    expect(tasks).toEqual(['moss-runtime-config', 'moss-sft-comfy-int8_convrot', 'qwen35-comfy-w4a8_gptq'])
+    await expect.poll(() => comboTitle(page, 'SFT · INT8 + Qwen3.5 · W4A8').isVisible()).toBe(true)
   })
 
-  it('高级: uses an existing model folder where it is (no copy), and says so', async () => {
+  it('fills the slots from the model files in a folder on this computer', async () => {
+    const page = await app.open({ scenario: 'ready', route: '/models', theme: 'dark', defer: true })
+    await page.evaluate(() => {
+      window.__mock.state.localModelFiles = [
+        { path: '/data/ComfyUI/models/diffusion_models/moss_image_sft_int8.safetensors', role: 'dit' },
+        { path: '/data/ComfyUI/models/text_encoders/qwen3.5_int8.safetensors', role: 'text_encoder' },
+      ]
+    })
+    await app.start()
+    await openCombine(page, '用电脑上的模型文件…')
+    const parts = dialog(page)
+    await expect.poll(() => parts.isVisible()).toBe(true)
+    expect(await parts.getByLabel('主模型').inputValue()).toBe('local-scan-0')
+    expect(await parts.getByLabel('文本编码器').inputValue()).toBe('local-scan-1')
+    // Nothing found for the VAE: it takes the one already downloaded.
+    expect(await parts.getByLabel('VAE').inputValue()).toBe('flux2-vae-small')
+    expect(await parts.getByLabel('名字').inputValue()).toBe('moss_image_sft_int8 + qwen3.5_int8')
+    await expect.poll(() => page.locator('[data-combination-need]').textContent()).toBe('还要下载 20 MB')
+    await app.screenshot('models-combine-own-files-dark')
+    await page.getByRole('button', { name: '下载并保存' }).click()
+    await expect
+      .poll(() => app.calls<{ components: unknown }>('models:save-combination').then((calls) => calls[0]?.components))
+      .toEqual({
+        dit: 'local-scan-0',
+        textEncoder: 'local-scan-1',
+        vae: 'flux2-vae-small',
+      })
+  })
+
+  it('adds a complete model folder where it is (no copy), and says so', async () => {
     const page = await app.open({ scenario: 'engineInstalledModelMissing', route: '/models', theme: 'light', defer: true })
     await page.evaluate(() => {
       window.__mock.state.localModelFolder = {
@@ -178,15 +227,52 @@ describe('models', () => {
       }
     })
     await app.start()
-    await page.getByRole('button', { name: /高级/ }).click()
-    // The action says what it does: nothing is copied.
-    expect(await page.getByText('复制模型文件夹到模型库').count()).toBe(0)
-    const row = page.getByText('添加整个模型文件夹', { exact: true })
-    await row.scrollIntoViewIfNeeded()
-    await expect.poll(() => row.isVisible()).toBe(true)
-    await page.getByRole('button', { name: '选择文件夹' }).last().click()
-    await expect.poll(() => app.calls('models:import-folder').then((calls) => calls.length)).toBe(1)
+    await openCombine(page, '用电脑上的模型文件…')
+    await expect.poll(() => app.calls('models:use-folder').then((calls) => calls.length)).toBe(1)
     await expect.poll(() => page.getByText('已在原位置使用 MOSS-Image SFT（sft）').isVisible()).toBe(true)
+    await expect.poll(() => featured(page).getByText('可以使用').isVisible()).toBe(true)
+    expect(await dialog(page).count()).toBe(0)
+  })
+
+  it('deletes a saved combination, keeping the files other models use', async () => {
+    const page = await app.open({ scenario: 'ready', route: '/models' })
+    await openCombine(page, '挑选要下载的部件')
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    const name = 'SFT · BF16 + Qwen3.5 · BF16'
+    await expect.poll(() => comboTitle(page, name).isVisible()).toBe(true)
+    await page.getByRole('button', { name: `删除 ${name}` }).click()
+    await expect.poll(() => page.getByText('只删除这个组合，它用到的文件都会保留。').isVisible()).toBe(true)
+    await page.getByRole('dialog').getByRole('button', { name: '删除' }).click()
+    await expect.poll(() => app.calls('models:delete-combination')).toEqual([{ id: 'combo-1' }])
+    expect(await app.calls('models:delete')).toEqual([])
+    await expect.poll(() => comboTitle(page, name).count()).toBe(0)
+  })
+
+  it('keeps folders and unused downloads under 高级, with no parts list', async () => {
+    const page = await app.open({ scenario: 'ready', route: '/models', theme: 'light', defer: true })
+    await page.evaluate(() => {
+      const catalog = window.__mock.state.catalog
+      window.__mock.state.catalog = {
+        ...catalog,
+        models: catalog.models.map((model) =>
+          model.id === 'qwen35-comfy-int8_convrot'
+            ? { ...model, installed: true, installState: 'ready', installedBytes: model.sizeBytes }
+            : model,
+        ),
+      }
+    })
+    await app.start()
+    await page.getByRole('button', { name: /高级/ }).click()
+    expect(await page.getByText('单独的部件').count()).toBe(0)
+    const unused = page.locator('[data-unused-files]')
+    await unused.scrollIntoViewIfNeeded()
+    await expect.poll(() => unused.getByText('1 个文件 · 9.7 GB').isVisible()).toBe(true)
+    await unused.scrollIntoViewIfNeeded()
+    await app.screenshot('models-advanced-light')
+    await unused.getByRole('button', { name: '全部删除' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: '删除' }).click()
+    await expect.poll(() => app.calls('models:delete')).toEqual([{ kind: 'model', id: 'qwen35-comfy-int8_convrot' }])
+    await expect.poll(() => unused.count()).toBe(0)
   })
 
   it('shows where models live only when 远程主机 is on', async () => {

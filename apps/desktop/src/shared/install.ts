@@ -195,7 +195,7 @@ export type PortableMarker = z.infer<typeof portableMarkerSchema>
  * Where feeds live: a rolling GitHub release tagged `updates` whose assets are replaced on
  * every release. Version artifacts live in that version's own release `v<version>`.
  */
-export const FEED_REPO = 'CloverIris/MossStudio'
+export const FEED_REPO = 'ShallowElec/MossStudio'
 export function feedUrl(channel: UpdateChannel): string {
   return `https://github.com/${FEED_REPO}/releases/download/updates/update-${channel}.json`
 }

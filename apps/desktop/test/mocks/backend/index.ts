@@ -20,6 +20,7 @@
  */
 import { bestBundleFor, cliGpuUuids, generationGpus, isFileBundle } from '@shared/bundleFit'
 import { Events, Ipc } from '@shared/channels'
+import { combinationBundle } from '@shared/modelCombos'
 import type { AiChatInput, AiConversationInfo, AiMessage } from '@shared/ai'
 import type { WebAccessInfo } from '@shared/backend'
 import type { EngineHello } from '@shared/engineProtocol'
@@ -33,6 +34,8 @@ import type {
   JobRecord,
   LaunchRow,
   ManagedHost,
+  ModelCombination,
+  ModelEntry,
   OnboardingStatus,
   OnboardingStep,
   ProjectDocument,
@@ -353,6 +356,67 @@ function defaultHandlers(): Map<string, Handler> {
       ),
     }
     return { canceled: false, added: 1, duplicates: 0, folders: [folder.name] }
+  })
+  // 用电脑上的模型文件…: a complete model folder (state.localModelFolder) is added as with
+  // import-folder; loose files (state.localModelFiles) become local entries for 自己组合.
+  h.set(Ipc.modelsUseFolder, (_, ctx) => {
+    const { state, emit } = ctx
+    if (state.localModelFolder) {
+      const imported = h.get(Ipc.modelsImportFolder)!(null, ctx) as Record<string, unknown>
+      emit(Events.modelsChanged, null)
+      return { ...imported, slots: null }
+    }
+    const files = state.localModelFiles
+    if (!files) return { canceled: true, added: 0, duplicates: 0, slots: null }
+    const entries: ModelEntry[] = files.map((file, index) => ({
+      id: `local-scan-${index}`,
+      name: file.path.split('/').at(-1)!,
+      provider: 'local',
+      repo: file.path,
+      revision: 'local',
+      role: file.role,
+      format: 'comfyui',
+      family: 'local',
+      precision: 'local',
+      license: 'local',
+      tags: ['local-import', 'comfyui', 'unhashed'],
+      localPath: file.path,
+      installState: 'ready',
+      installed: true,
+      installedBytes: 5_400_000_000,
+      sizeBytes: 5_400_000_000,
+    }))
+    state.catalog = {
+      ...state.catalog,
+      models: [...state.catalog.models.filter((model) => !entries.some((entry) => entry.id === model.id)), ...entries],
+    }
+    emit(Events.modelsChanged, null)
+    const idOf = (role: ModelEntry['role']) => entries.find((entry) => entry.role === role)?.id ?? null
+    return {
+      canceled: false,
+      added: entries.length,
+      duplicates: 0,
+      slots: entries.length ? { dit: idOf('dit'), textEncoder: idOf('text_encoder'), vae: idOf('vae') } : null,
+    }
+  })
+  h.set(Ipc.modelsSaveCombination, (payload, { state, emit }) => {
+    const input = p<{ id?: string; name: string; components: ModelCombination['components'] }>(payload)
+    const combination: ModelCombination = {
+      id: input.id ?? `combo-${state.catalog.bundles.filter((bundle) => bundle.custom).length + 1}`,
+      name: input.name.trim(),
+      components: input.components,
+      createdAt: new Date(0).toISOString(),
+    }
+    const bundle = combinationBundle(combination, state.catalog.models)
+    state.catalog = { ...state.catalog, bundles: [...state.catalog.bundles.filter((item) => item.id !== bundle.id), bundle] }
+    emit(Events.modelsChanged, null)
+    return combination
+  })
+  h.set(Ipc.modelsDeleteCombination, (payload, { state, emit }) => {
+    const { id } = p<{ id: string }>(payload)
+    state.catalog = { ...state.catalog, bundles: state.catalog.bundles.filter((bundle) => bundle.id !== id) }
+    emit(Events.modelsChanged, null)
+    return { ok: true }
   })
   h.set(Ipc.downloadsList, (_, { state }) => state.downloads)
   const beginDownload = (state: MockBackendState, kind: 'model' | 'adapter', id: string): DownloadTask => {

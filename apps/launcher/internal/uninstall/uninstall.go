@@ -63,8 +63,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/fsutil"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/proc"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/fsutil"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/proc"
 )
 
 // RegistryKey is the only key a plan may remove.

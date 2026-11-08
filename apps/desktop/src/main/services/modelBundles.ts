@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ModelBinding, ModelBundle, Settings } from '@shared/types'
+import { isSingleFile, RUNTIME_CONFIG_ID } from '@shared/modelCombos'
+import type { ModelBinding, ModelBundle, ModelEntry, Settings } from '@shared/types'
 import { paths } from '../lib/paths'
-import { RUNTIME_CONFIG_ID } from '@shared/bundleFit'
 import { componentSnapshot, getCatalog } from './models'
 import { fileSize, linkInPlace, materialize, safePath } from './modelFiles'
 
@@ -38,7 +38,11 @@ export async function validateBinding(binding: ModelBinding, settings: Settings)
   return bundle
 }
 
-/** What the engine loads: the bundle folder (`model`), and the component files that replace its weights. */
+/**
+ * What the engine loads: a folder with the configs and tokenizer (`model`),
+ * and, for a part chosen as a single file, that file, which replaces the
+ * part's weights in the folder.
+ */
 export interface PreparedModelSource {
   model: string
   ditFile?: string
@@ -56,63 +60,62 @@ async function componentFile(id: string, settings: Settings): Promise<string> {
   return safePath(root, weights[0]!.path)
 }
 
+const SLOT_ROLES = [
+  ['dit', 'dit'],
+  ['textEncoder', 'text_encoder'],
+  ['vae', 'vae'],
+] as const
+
 /**
- * Resolve a binding to what the engine can load. Single files (a user's
- * ComfyUI folder registered in place, or a downloaded single-file bundle) go as
- * `dit_file` / `text_encoder_file` / `vae_file`; nothing is copied, so they keep
- * living where they are. The engine still reads the configs and tokenizer from
- * `model`, which is then the bundle's runtime-config folder.
+ * Resolve a binding to what the engine can load. Parts that are folders are
+ * linked into a prepared bundle folder; a single file (a download from a
+ * single-file repository, or the person's own file) goes to the engine where it
+ * is, beside the config folder (`moss-runtime-config`). Nothing is copied.
  */
 export async function prepareModelSource(binding: ModelBinding, settings: Settings): Promise<PreparedModelSource> {
   const catalog = await getCatalog(settings)
   const bundle = catalog.bundles.find((b) => b.id === binding.bundleId)
   if (!bundle) throw new Error('模型组合不存在，请重新选择')
-  const entries = [binding.dit, binding.textEncoder, binding.vae].map((id) => catalog.models.find((model) => model.id === id))
-  const localCount = entries.filter((entry) => entry?.provider === 'local').length
-  if (localCount > 0) {
-    if (localCount !== 3) {
-      throw new Error('本地文件组合需要同时准备 DiT、文本编码器和 VAE 三个文件')
-    }
-    const paths = entries.map((entry) => entry?.localPath)
-    if (paths.some((path) => !path)) {
-      throw new Error('本地模型缺少文件路径，请重新扫描登记')
-    }
-    return {
-      model: await prepareSupportFolder(binding.bundleId, bundle.support || RUNTIME_CONFIG_ID, settings),
-      ditFile: paths[0]!,
-      textEncoderFile: paths[1]!,
-      vaeFile: paths[2]!,
-      bundle,
-    }
+  const parts = SLOT_ROLES.map(([key, role]) => {
+    const model = catalog.models.find((entry) => entry.id === binding[key])
+    if (!model || model.role !== role) throw new Error('模型组合里的部件不对，请重新选择')
+    return model
+  })
+  const singles = parts.filter(isSingleFile)
+  if (!singles.length) return { model: await prepareModelBundle(binding, settings), bundle }
+  const folderIds = [...parts.filter((part) => !isSingleFile(part)).map((part) => part.id), RUNTIME_CONFIG_ID]
+  const model = await materializeBundle(binding.bundleId, folderIds, settings)
+  // One after another, so a missing part is named in the order 主模型, 文本编码器, VAE.
+  const files: Array<string | undefined> = []
+  for (const part of parts) {
+    if (!isSingleFile(part)) files.push(undefined)
+    else if (part.provider === 'local') {
+      if (!part.localPath) throw new Error(`找不到「${part.name}」的文件，请重新添加`)
+      files.push(part.localPath)
+    } else files.push(await componentFile(part.id, settings))
   }
-  await validateBinding(binding, settings)
-  if (entries.every((entry) => entry?.format === 'comfyui')) {
-    // One after another, so a missing part is named in the order DiT, text encoder, VAE.
-    const ditFile = await componentFile(binding.dit, settings)
-    const textEncoderFile = await componentFile(binding.textEncoder, settings)
-    const vaeFile = await componentFile(binding.vae, settings)
-    return { model: await prepareSupportFolder(binding.bundleId, bundle.support, settings), ditFile, textEncoderFile, vaeFile, bundle }
+  const [ditFile, textEncoderFile, vaeFile] = files
+  return {
+    model,
+    ...(ditFile ? { ditFile } : {}),
+    ...(textEncoderFile ? { textEncoderFile } : {}),
+    ...(vaeFile ? { vaeFile } : {}),
+    bundle,
   }
-  return { model: await prepareModelBundle(binding, settings), bundle }
 }
 
 export async function prepareModelBundle(binding: ModelBinding, settings: Settings): Promise<string> {
   const bundle = await validateBinding(binding, settings)
-  const requests = [binding.dit, binding.textEncoder, binding.vae, bundle.support]
-  return materializeBundle(binding.bundleId, await Promise.all(requests.map((id) => componentSnapshot(id, settings))), settings)
+  return materializeBundle(binding.bundleId, [binding.dit, binding.textEncoder, binding.vae, bundle.support], settings)
 }
 
-/** The configs and tokenizer of a single-file bundle, laid out as the engine's `model` folder. */
-async function prepareSupportFolder(bundleId: string, supportId: string, settings: Settings): Promise<string> {
-  return materializeBundle(bundleId, [await componentSnapshot(supportId, settings)], settings)
-}
-
-/** Lay out component snapshots as one immutable folder (links, not copies) with a manifest. */
-async function materializeBundle(
-  bundleId: string,
-  components: Array<Awaited<ReturnType<typeof componentSnapshot>>>,
-  settings: Settings,
-): Promise<string> {
+/**
+ * A diffusers folder of these parts, hard-linked from their downloads (or the
+ * person's folder) into `<models root>/bundles/<key>/`, reused while its
+ * manifest and file sizes match. A path two parts share is taken from the first.
+ */
+async function materializeBundle(bundleId: string, ids: string[], settings: Settings): Promise<string> {
+  const components = await Promise.all(ids.map((id) => componentSnapshot(id, settings)))
   const manifest = {
     version: 1,
     bundleId,
@@ -129,6 +132,7 @@ async function materializeBundle(
   const root = join(paths.models(settings.modelsRoot), 'bundles')
   let target = join(root, key)
   const expected: Array<{ source: string; path: string; local?: boolean }> = []
+  const taken = new Set<string>()
   for (const { model, record, root: snapshot, local } of components) {
     for (const file of record.entries) {
       let path: string
@@ -140,6 +144,8 @@ async function materializeBundle(
         const folder = model.role === 'dit' ? 'transformer' : model.role === 'vae' ? 'vae' : 'text_encoder'
         path = `${folder}/${file.path.slice(prefix.length)}`
       }
+      if (taken.has(path)) continue
+      taken.add(path)
       expected.push({ source: safePath(snapshot, file.path), path, ...(local ? { local } : {}) })
     }
   }

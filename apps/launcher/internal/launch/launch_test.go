@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/proc"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/record"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/proc"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/record"
 )
 
 // fakeClock advances only when slept on and runs scheduled events as time passes.

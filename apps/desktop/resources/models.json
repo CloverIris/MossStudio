@@ -5,6 +5,7 @@
     {
       "id": "moss-sft-dit",
       "name": "MOSS-Image SFT",
+      "choice": "MOSS-Image SFT · BF16",
       "provider": "hf",
       "repo": "OpenMOSS-Team/MOSS-Image-SFT",
       "revision": "main",
@@ -22,6 +23,7 @@
     {
       "id": "moss-base-dit",
       "name": "MOSS-Image Base",
+      "choice": "MOSS-Image Base · BF16",
       "provider": "hf",
       "repo": "OpenMOSS-Team/MOSS-Image-Base",
       "revision": "main",
@@ -39,6 +41,7 @@
     {
       "id": "moss-base-fp16-fixed",
       "name": "MOSS-Image Base FP16-fixed (社区)",
+      "choice": "MOSS-Image Base · FP16 社区修复",
       "provider": "hf",
       "repo": "KBlueLeaf/MOSS-Image-FP16-fixed",
       "revision": "main",
@@ -57,6 +60,7 @@
     {
       "id": "moss-sft-fp16-fixed",
       "name": "MOSS-Image SFT FP16-fixed (社区)",
+      "choice": "MOSS-Image SFT · FP16 社区修复",
       "provider": "hf",
       "repo": "KBlueLeaf/MOSS-Image-FP16-fixed",
       "revision": "main",
@@ -111,6 +115,7 @@
     {
       "id": "qwen35-encoder",
       "name": "Qwen3.5 · 文本编码器",
+      "choice": "Qwen3.5 · BF16",
       "provider": "hf",
       "repo": "OpenMOSS-Team/MOSS-Image-SFT",
       "revision": "main",
@@ -128,6 +133,7 @@
     {
       "id": "flux2-vae-small",
       "name": "FLUX.2 VAE · Small",
+      "choice": "FLUX.2 VAE · Small",
       "provider": "hf",
       "repo": "OpenMOSS-Team/MOSS-Image-SFT",
       "revision": "main",
@@ -189,6 +195,7 @@
     {
       "id": "moss-base-comfy-bf16",
       "name": "MOSS BASE · BF16",
+      "choice": "MOSS-Image Base · BF16",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -206,6 +213,7 @@
     {
       "id": "moss-base-comfy-int8_convrot",
       "name": "MOSS BASE · INT8_CONVROT",
+      "choice": "MOSS-Image Base · INT8",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -223,6 +231,7 @@
     {
       "id": "moss-sft-comfy-bf16",
       "name": "MOSS SFT · BF16",
+      "choice": "MOSS-Image SFT · BF16",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -240,6 +249,7 @@
     {
       "id": "moss-sft-comfy-int8_convrot",
       "name": "MOSS SFT · INT8_CONVROT",
+      "choice": "MOSS-Image SFT · INT8",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -308,6 +318,7 @@
     {
       "id": "qwen35-comfy-bf16",
       "name": "Qwen3.5 · BF16",
+      "choice": "Qwen3.5 · BF16",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -325,6 +336,7 @@
     {
       "id": "qwen35-comfy-int8_convrot",
       "name": "Qwen3.5 · INT8_CONVROT",
+      "choice": "Qwen3.5 · INT8",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -342,6 +354,7 @@
     {
       "id": "qwen35-comfy-w4a8_gptq",
       "name": "Qwen3.5 · W4A8_GPTQ",
+      "choice": "Qwen3.5 · W4A8",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -359,6 +372,7 @@
     {
       "id": "flux2-vae-comfy-small",
       "name": "FLUX.2 VAE · Small",
+      "choice": "FLUX.2 VAE · Small",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",
@@ -376,6 +390,7 @@
     {
       "id": "flux2-vae-comfy-full",
       "name": "FLUX.2 VAE · Full",
+      "choice": "FLUX.2 VAE · Full",
       "provider": "hf",
       "repo": "Comfy-Org/MOSS-Image",
       "revision": "main",

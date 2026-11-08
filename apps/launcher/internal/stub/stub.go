@@ -28,11 +28,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/fsutil"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/launch"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/payload"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/proc"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/ui"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/fsutil"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/launch"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/payload"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/proc"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/ui"
 )
 
 // Stub exit codes (the app's own code is passed through otherwise).

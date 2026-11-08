@@ -314,6 +314,8 @@ export interface RegisterScanResult {
   added: number
   updated: number
   missing: string[]
+  /** The registered entry id of each item, in order; null for an item whose file is gone. */
+  ids: Array<string | null>
 }
 
 /**
@@ -324,13 +326,14 @@ export interface RegisterScanResult {
 export async function registerScannedModels(indexFile: string, items: ScannedRegistration[]): Promise<RegisterScanResult> {
   const models = await readImportedModels(indexFile)
   const byPath = new Map(models.map((model) => [model.path.toLowerCase(), model]))
-  const result: RegisterScanResult = { added: 0, updated: 0, missing: [] }
+  const result: RegisterScanResult = { added: 0, updated: 0, missing: [], ids: [] }
   for (const item of items) {
     let path: string
     try {
       path = await realpath(resolve(item.path))
     } catch {
       result.missing.push(item.path)
+      result.ids.push(null)
       continue
     }
     const existing = byPath.get(path.toLowerCase())
@@ -343,6 +346,7 @@ export async function registerScannedModels(indexFile: string, items: ScannedReg
       const folder = await inspectDiffusersFolder(path)
       if (!folder) {
         result.missing.push(item.path)
+        result.ids.push(null)
         continue
       }
       size = folder.size
@@ -352,6 +356,7 @@ export async function registerScannedModels(indexFile: string, items: ScannedReg
       const info = await stat(path).catch(() => null)
       if (!info || !info.isFile() || info.size <= 0) {
         result.missing.push(item.path)
+        result.ids.push(null)
         continue
       }
       size = info.size
@@ -378,6 +383,7 @@ export async function registerScannedModels(indexFile: string, items: ScannedReg
       result.added += 1
     }
     byPath.set(path.toLowerCase(), record)
+    result.ids.push(record.id)
   }
   if (result.added || result.updated) await writeImportedModels(indexFile, models)
   return result

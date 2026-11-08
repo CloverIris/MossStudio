@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { settingsFixture } from '@test/mocks/backend/fixtures'
 
-const source = 'https://github.com/CloverIris/MossStudio.git'
+const source = 'https://github.com/ShallowElec/MossStudio.git'
 const mirrored = `https://ghproxy.net/${source}`
 
 beforeEach(() => vi.resetModules())
@@ -38,8 +38,8 @@ describe('applyGitMirror', () => {
     const { applyGitMirror } = await load()
     expect(applyGitMirror(source, null)).toBe(source)
     expect(applyGitMirror(source, '')).toBe(source)
-    expect(applyGitMirror(source, 'https://kkgithub.com/')).toBe('https://kkgithub.com/CloverIris/MossStudio.git')
-    expect(applyGitMirror(source, 'https://mirror.example/')).toBe('https://mirror.example/github.com/CloverIris/MossStudio.git')
+    expect(applyGitMirror(source, 'https://kkgithub.com/')).toBe('https://kkgithub.com/ShallowElec/MossStudio.git')
+    expect(applyGitMirror(source, 'https://mirror.example/')).toBe('https://mirror.example/github.com/ShallowElec/MossStudio.git')
   })
 })
 
@@ -62,7 +62,7 @@ describe('probeNetwork', () => {
       git: null,
       pip: 'https://pypi.org/simple',
       hf: 'https://huggingface.co',
-      manifest: 'https://raw.githubusercontent.com/CloverIris/MossStudio/main',
+      manifest: 'https://raw.githubusercontent.com/ShallowElec/MossStudio/main',
     })
   })
 
@@ -73,7 +73,7 @@ describe('probeNetwork', () => {
     expect(report.selected.git).toBe('https://ghfile.geekertao.top/')
     expect(report.selected.pip).toBe('https://mirrors.aliyun.com/pypi/simple')
     expect(report.selected.hf).toBe('https://huggingface.co')
-    expect(report.selected.manifest).toBe('https://cdn.jsdelivr.net/gh/CloverIris/MossStudio@main')
+    expect(report.selected.manifest).toBe('https://cdn.jsdelivr.net/gh/ShallowElec/MossStudio@main')
     const isteed = report.probes.find((probe) => probe.id === 'isteed')!
     expect(isteed).toMatchObject({ ok: false, error: 'HTTP 503' })
     expect(isteed.latencyMs).toEqual(expect.any(Number))

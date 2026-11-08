@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/CloverIris/MossStudio/releases"><img alt="release" src="https://img.shields.io/github/v/release/CloverIris/MossStudio?label=MossStudio&color=2F855A"></a>
+  <a href="https://github.com/ShallowElec/MossStudio/releases"><img alt="release" src="https://img.shields.io/github/v/release/ShallowElec/MossStudio?label=MossStudio&color=2F855A"></a>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6">
   <img alt="GPU" src="https://img.shields.io/badge/GPU-NVIDIA%20CUDA%20%7C%20Vulkan%20%7C%20AMD%20HIP-76B900?logo=nvidia&logoColor=white">
@@ -44,22 +44,31 @@ MossStudio 是 [MOSS-Image](https://github.com/OpenMOSS/MOSS-Image) 的桌面画
 - **助手可选**：接入你自己的 OpenAI 兼容、Anthropic、Gemini 或 Ollama 账号后，助手能直接在画板上加卡片、改描述、发起生成，「自主」或「审批」两种模式。
 - **更新很安静**：新版本在后台下载，下次打开就是新版，出问题会自动回到上一个版本。
 
-## 支持的显卡
+## 哪些电脑能用
 
-MossStudio 为每块显卡自动选一个引擎，规则来自代码（`apps/desktop/src/shared/engineChoice.ts`）。
+有一块 NVIDIA RTX 30 系列或更新的显卡，装着 Windows 10（64 位）或 Linux，就能正常用。其他电脑分几种情况，应用会按显卡自动选引擎：
 
-| 显卡 | 引擎 | 能做什么 |
+| 你的电脑 | 能不能用 | 应用里显示的引擎 |
 | --- | --- | --- |
-| NVIDIA RTX 30 / 40 / 50 系列 | 「CUDA 13」或「CUDA 12」，按驱动版本自动选 | 全部功能：LoRA、起始图、遮罩、控制图、参考图、高清修复、实时预览 |
-| Linux 上的 AMD RX 7900 系列、RX 9000 系列（gfx1100、gfx1200、gfx1201），装有 ROCm 7 | 「AMD 原生」（HIP） | 文生图 |
-| 其他显卡（Windows 上的 AMD、Intel、驱动太旧的 NVIDIA） | 「兼容模式」（Vulkan） | 文生图，速度较慢 |
-| macOS | 本机不能运行引擎 | 界面可用；生成交给一台装有 NVIDIA 显卡的 Linux 电脑（「远程主机」） |
+| NVIDIA RTX 30 系列及更新 | 能。推荐，功能最全，速度最快 | 「CUDA 13」或「CUDA 12」，按驱动自动选 |
+| Linux 上的 AMD RX 7900 系列（XTX / XT / GRE）、RX 9060 系列、RX 9070 系列，装有 ROCm 7 | 能，只能文生图。其他 RX 7000 显卡（7800 XT、7700 XT、7600）不支持原生运行 | 「AMD 原生」 |
+| 其他支持 Vulkan 1.2 的显卡（Windows 上的 AMD、Intel、核显等） | 勉强能：只能文生图，而且很慢，一张图要几分钟到半小时以上 | 「兼容模式」 |
+| 更老的 NVIDIA 显卡 | 没有正式支持。可能退到「兼容模式」，也可能跑不了 | |
+| Mac | 本机不能生成。在「设置 › 功能」打开「远程主机」，用一台有 NVIDIA 显卡的电脑生成 | |
 
-显卡驱动、每个引擎支持的功能等细节以引擎仓库为准：[mossimage-cpp/mossimage.cpp](https://github.com/mossimage-cpp/mossimage.cpp)。
+| 其他要求 | 说明 |
+| --- | --- |
+| 系统 | Windows 10 或更新（64 位），或 Linux x64（glibc 2.35 或更新，如 Ubuntu 22.04 及以后） |
+| NVIDIA 驱动 | 推荐 580 或更新。Windows 527.41 / Linux 525.60.13 或更新也能用，走较旧的 CUDA 12 引擎。需要时应用会提示更新驱动 |
+| 显存 | 至少 4 GB，推荐 8 GB 或更多。不到 8 GB 能跑，但更慢 |
+| 内存 | 推荐 16 GB 或更多。更少时模型要反复从磁盘读取，生成更慢；少于 8 GB 可能跑不起来 |
+| 磁盘 | 约 30 GB 空闲：模型约 27 GB，其余是引擎。空间不够时下载不会开始 |
+
+跑不了的电脑在第一次打开时会看到「这台电脑跑不了模型」（Mac 上是「这台 Mac 不能在本机生成」），可以「用另一台电脑」「重新检测」或「先随便看看」。每种显卡用哪个引擎、驱动怎么更新，见[安装 MossStudio 并生成第一张图](docs/how-to/setup.md)；引擎本身的细节以 [MossInfer](https://github.com/mossimage-cpp/mossimage.cpp) 仓库为准。
 
 ## 安装与第一张图
 
-1. 到 [Releases](https://github.com/CloverIris/MossStudio/releases) 下载最新版本：Windows 是 `MossStudio-Setup-<版本>-x64.exe`，Linux 是 `MossStudio-Setup-<版本>-linux-x64.run`，macOS 是 `.dmg`。每个系统还有一个解压即用的便携版。
+1. 到 [Releases](https://github.com/ShallowElec/MossStudio/releases) 下载最新版本：Windows 是 `MossStudio-Setup-<版本>-x64.exe`，Linux 是 `MossStudio-Setup-<版本>-linux-x64.run`，macOS 是 `.dmg`。每个系统还有一个解压即用的便携版。
 2. 运行安装包。安装程序会发现电脑上的旧版 MossStudio，默认沿用它的作品、模型和设置。
 3. 第一次打开进入「准备开始创作」：确认显卡那一行，点「开始下载」。引擎和推荐模型一起下载，点「先去看看」可以边下边逛。
 4. 下载完成后在「创作」里写一句描述，点「生成」。

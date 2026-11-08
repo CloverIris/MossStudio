@@ -179,13 +179,23 @@ describe('removeImportedModel', () => {
 })
 
 describe('registerScannedModels', () => {
+  it('answers null in place of the id of a file that is gone', async () => {
+    const dit = await put(join(tempDir(), 'c', 'dit.safetensors'), 'dit-weights')
+    const result = await registerScannedModels(indexFile(), [
+      { path: join(tempDir(), 'c', 'gone.safetensors'), role: 'vae' },
+      { path: dit, role: 'dit' },
+    ])
+    const [record] = await readImportedModels(indexFile())
+    expect(result.ids).toEqual([null, record!.id])
+  })
+
   it('registers files in place without hashing and updates on re-registration', async () => {
     const dit = await put(join(tempDir(), 'c', 'diffusion_models', 'dit.safetensors'), 'dit-weights')
     const result = await registerScannedModels(indexFile(), [
       { path: dit, role: 'dit', layout: 'comfyui-single-file', relativePath: 'diffusion_models/dit.safetensors' },
     ])
-    expect(result).toEqual({ added: 1, updated: 0, missing: [] })
     const [record] = await readImportedModels(indexFile())
+    expect(result).toEqual({ added: 1, updated: 0, missing: [], ids: [record!.id] })
     expect(record).toMatchObject({
       name: 'dit.safetensors',
       path: dit,
@@ -199,7 +209,7 @@ describe('registerScannedModels', () => {
 
     await writeFile(dit, 'dit-weights-v2')
     const again = await registerScannedModels(indexFile(), [{ path: dit, role: 'full', name: 'renamed' }])
-    expect(again).toEqual({ added: 0, updated: 1, missing: [] })
+    expect(again).toEqual({ added: 0, updated: 1, missing: [], ids: [record!.id] })
     const [updated] = await readImportedModels(indexFile())
     expect(updated).toMatchObject({
       id: record!.id,

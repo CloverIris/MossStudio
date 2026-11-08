@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/launch"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/payload"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/proc"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/launch"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/payload"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/proc"
 )
 
 type recSplash struct {

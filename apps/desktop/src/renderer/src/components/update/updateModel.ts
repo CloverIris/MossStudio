@@ -313,7 +313,7 @@ export function checkedTitle(checkedAt: string | null): string | undefined {
   return checkedAt ? dateTime(checkedAt) : undefined
 }
 
-export const RELEASES_URL = 'https://github.com/CloverIris/MossStudio/releases'
+export const RELEASES_URL = 'https://github.com/ShallowElec/MossStudio/releases'
 
 /** A version's own release page. */
 export function releaseNotesUrl(version: string): string {

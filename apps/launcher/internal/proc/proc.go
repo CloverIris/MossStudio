@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/fsutil"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/fsutil"
 )
 
 // Process is a started child process.

@@ -9,7 +9,7 @@ import { diagnosticsReport } from './diagnosticsReport'
 import { UninstallRow } from './UninstallRow'
 import { useAppInfo } from './useAppInfo'
 
-const REPOSITORY = 'https://github.com/CloverIris/MossStudio'
+const REPOSITORY = 'https://github.com/ShallowElec/MossStudio'
 const QQ_GROUP = '1044887698'
 
 export function AboutSection(): React.JSX.Element {

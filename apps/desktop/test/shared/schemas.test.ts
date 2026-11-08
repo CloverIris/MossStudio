@@ -254,6 +254,23 @@ const cases = {
     },
   },
 
+  modelsSaveCombination: {
+    valid: { name: ' SFT · INT8 + W4A8 ', components: { dit: 'd', textEncoder: 't', vae: 'v' } },
+    output: { name: 'SFT · INT8 + W4A8', components: { dit: 'd', textEncoder: 't', vae: 'v' } },
+    accepts: { 'an id to update': { id: 'combo-1', name: 'x', components: { dit: 'd', textEncoder: 't', vae: 'v' } } },
+    rejects: {
+      'blank name': { name: '  ', components: { dit: 'd', textEncoder: 't', vae: 'v' } },
+      'overlong name': { name: long(81), components: { dit: 'd', textEncoder: 't', vae: 'v' } },
+      'a missing part': { name: 'x', components: { dit: 'd', textEncoder: 't' } },
+      'an empty part': { name: 'x', components: { dit: '', textEncoder: 't', vae: 'v' } },
+    },
+  },
+
+  modelsDeleteCombination: {
+    valid: { id: 'combo-1' },
+    rejects: { 'no id': {}, 'empty id': { id: '' } },
+  },
+
   instanceModelBinding: {
     valid: { id: 'i1', binding: null },
     accepts: { binding: { id: 'i1', binding: { bundleId: 'b', dit: 'd', textEncoder: 't', vae: 'v' } } },
@@ -914,7 +931,7 @@ const cases = {
   pickDialog: {
     valid: {},
     output: { kind: 'folder' },
-    accepts: { file: { kind: 'file', title: 'Pick' } },
+    accepts: { file: { kind: 'file', title: 'Pick' }, 'a model file': { kind: 'model' } },
     rejects: { 'unknown kind': { kind: 'drive' } },
   },
 
