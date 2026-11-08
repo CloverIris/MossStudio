@@ -1,0 +1,30 @@
+# Weekly dependency PRs, grouped so each week brings at most a few. Minor and patch updates share
+# one PR per ecosystem; a major update gets its own PR. Titles are Conventional Commits
+# (`chore(deps): …`) so they pass the PR title check. The launcher (Go) uses the standard library
+# only, so it has nothing to update.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ['*']

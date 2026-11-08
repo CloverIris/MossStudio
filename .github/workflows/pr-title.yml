@@ -1,0 +1,33 @@
+name: PR title
+
+# The squash-merged PR title becomes the commit on main, so it must be a Conventional Commit:
+#   type(scope)!: subject
+# type is one of the list below, scope is optional (lower case, digits, - and /), ! marks a breaking
+# change, and the subject is English (it starts with a letter, a digit or a backtick) and has no final
+# period. Example: `fix(update): tell the user once when a version is rolled back`.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  # The title was checked on the pull request; the merge queue only needs the check to report.
+  merge_group:
+
+permissions: {}
+
+jobs:
+  title:
+    name: Conventional Commit title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check the title
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|style|test|build|ci|chore|revert)(\([a-z0-9/-]+\))?!?: [A-Za-z0-9`].*[^.]$'
+          if [[ "$TITLE" =~ $pattern ]]; then
+            echo "ok: $TITLE"
+          else
+            echo "::error::The PR title becomes the commit on main and must be a Conventional Commit, for example 'fix(update): tell the user once when a version is rolled back'. Got: $TITLE"
+            exit 1
+          fi

@@ -1,0 +1,46 @@
+name: 问题反馈
+description: 软件出错、生成失败或者行为和预期不一样
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        谢谢反馈。先在 设置 › 关于 › 复制诊断信息，粘贴到下面，我们就能知道版本、显卡和引擎状态。诊断信息不包含令牌、密码或主机地址。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 你做了什么，看到了什么。有截图或报错文字更好。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 怎样能再遇到
+      description: 一步一步写，比如「打开创作 → 选中画面 1 → 点生成」。
+      placeholder: |
+        1.
+        2.
+        3.
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你期望的结果
+  - type: dropdown
+    id: where
+    attributes:
+      label: 在哪里运行
+      options:
+        - 这台电脑
+        - 远程主机
+        - 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 诊断信息
+      description: 设置 › 关于 › 复制诊断信息。和某次生成有关时，也可以在「活动」里复制那条任务的诊断信息。
+      render: text
+    validations:
+      required: true
