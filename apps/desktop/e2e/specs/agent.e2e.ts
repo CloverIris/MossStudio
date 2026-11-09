@@ -162,8 +162,8 @@ describe('assistant', () => {
         .toEqual([{ conversationId: 'chat', messageId: 'a3', answer: { selected: [], applied: true } }])
       await expect
         .poll(() => app.calls<{ message?: string }>('ai:chat').then((calls) => calls.at(-1)?.message))
-        // The 画面 still has no description, so the follow-up says what is missing.
-        .toBe('已按方案改了 3 处。还差：先写一句整体描述')
+        // The follow-up names what ran and still says what the 画面 is missing.
+        .toBe('已执行方案：添加文字 · 「SPRING」、添加物体 · 盛开的樱花枝、添加物体 · 草地上的野餐篮。还差：先写一句整体描述')
     })
   }
 
