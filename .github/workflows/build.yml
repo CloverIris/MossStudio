@@ -37,7 +37,7 @@ jobs:
       install: ${{ steps.scope.outputs.install }}
       matrix: ${{ steps.scope.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: scope
@@ -54,13 +54,13 @@ jobs:
     env:
       E2E_SHOTS_DIR: ${{ github.workspace }}/e2e-shots
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: apps/launcher/go.mod
           cache-dependency-path: apps/launcher/go.mod
@@ -90,7 +90,7 @@ jobs:
         run: pnpm --filter @clover/desktop test:scenarios
       - name: Upload UI screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-screenshots
           path: e2e-shots
@@ -116,13 +116,13 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         if: ${{ !startsWith(matrix.platform, 'darwin') }}
         with:
           go-version-file: apps/launcher/go.mod
@@ -171,7 +171,7 @@ jobs:
 
       - name: Upload the test-build artifacts of ${{ env.APP_VERSION }}
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MossStudio-test-build-${{ matrix.platform }}
           path: |
@@ -184,7 +184,7 @@ jobs:
 
       - name: Upload the integration report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: install-test-report-${{ matrix.platform }}
           path: ${{ env.IT_REPORT }}
