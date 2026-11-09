@@ -296,6 +296,9 @@ describe('studio', () => {
     // A click elsewhere finishes.
     await page.mouse.click(face.x + face.width * 0.75, face.y + face.height * 0.2)
     await expect.poll(() => words.count()).toBe(0)
+    // A box shows its words only while selected or under the pointer, so overlapping labels never pile up.
+    expect(await boxes.nth(1).locator('[data-region-words]').count()).toBe(0)
+    await boxes.nth(1).hover()
     expect(await boxes.nth(1).locator('[data-region-words]').textContent()).toBe('「慵懒周末」')
 
     // Double-click reopens the field; a corner resizes the selected box.
