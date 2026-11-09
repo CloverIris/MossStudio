@@ -42,7 +42,6 @@
       "id": "moss-base-fp16-fixed",
       "name": "MOSS-Image Base FP16-fixed 社区",
       "variant": ["FP16-fixed", "社区"],
-      "choice": "MOSS-Image Base FP16 社区修复",
       "provider": "hf",
       "repo": "KBlueLeaf/MOSS-Image-FP16-fixed",
       "revision": "main",
@@ -53,7 +52,7 @@
       "license": "Apache-2.0",
       "tags": ["community", "fp16", "fixed", "base", "diffusers", "2080ti", "v100"],
       "preview": "https://huggingface.co/KBlueLeaf/MOSS-Image-FP16-fixed/resolve/main/images/gallery/base_diffusers_p3_s11.webp",
-      "notes": "社区 FP16 修复版主模型；与共享 Qwen、VAE 组合使用，按 FP16 加载。",
+      "notes": "引擎只能读取 BF16 或量化的主模型，用不了这个 FP16 版本；保留这一项是为了能删除已下载的文件。",
       "format": "diffusers",
       "family": "moss-image",
       "subfolder": "base/transformer"
@@ -62,7 +61,6 @@
       "id": "moss-sft-fp16-fixed",
       "name": "MOSS-Image SFT FP16-fixed 社区",
       "variant": ["FP16-fixed", "社区"],
-      "choice": "MOSS-Image SFT FP16 社区修复",
       "provider": "hf",
       "repo": "KBlueLeaf/MOSS-Image-FP16-fixed",
       "revision": "main",
@@ -73,7 +71,7 @@
       "license": "Apache-2.0",
       "tags": ["community", "fp16", "fixed", "sft", "diffusers", "2080ti", "v100"],
       "preview": "https://huggingface.co/KBlueLeaf/MOSS-Image-FP16-fixed/resolve/main/images/gallery/sft_diffusers_p3_s11.webp",
-      "notes": "社区 FP16 修复版主模型；与共享 Qwen、VAE 组合使用，按 FP16 加载。",
+      "notes": "引擎只能读取 BF16 或量化的主模型，用不了这个 FP16 版本；保留这一项是为了能删除已下载的文件。",
       "format": "diffusers",
       "family": "moss-image",
       "subfolder": "sft/transformer"
@@ -92,7 +90,7 @@
       "license": "Apache-2.0",
       "tags": ["community", "fp16", "fixed", "base", "comfyui", "2080ti", "v100"],
       "preview": "https://huggingface.co/KBlueLeaf/MOSS-Image-FP16-fixed/resolve/main/images/gallery/base_comfyui_p3_s11.webp",
-      "notes": "社区 FP16 修复版主模型；供 ComfyUI 使用，不支持绑定到官方 Gradio。",
+      "notes": "引擎只能读取 BF16 或量化的主模型，用不了这个 FP16 版本；保留这一项是为了能删除已下载的文件。",
       "format": "comfyui",
       "family": "moss-image",
       "subfolder": ""
@@ -111,7 +109,7 @@
       "license": "Apache-2.0",
       "tags": ["community", "fp16", "fixed", "sft", "comfyui", "2080ti", "v100"],
       "preview": "https://huggingface.co/KBlueLeaf/MOSS-Image-FP16-fixed/resolve/main/images/gallery/sft_comfyui_p3_s11.webp",
-      "notes": "社区 FP16 修复版主模型；供 ComfyUI 使用，不支持绑定到官方 Gradio。",
+      "notes": "引擎只能读取 BF16 或量化的主模型，用不了这个 FP16 版本；保留这一项是为了能删除已下载的文件。",
       "format": "comfyui",
       "family": "moss-image",
       "subfolder": ""
@@ -542,32 +540,6 @@
       "support": "moss-pipeline",
       "recommended": false,
       "certified": true
-    },
-    {
-      "id": "moss-sft-fp16",
-      "name": "MOSS-Image SFT FP16-fixed",
-      "variant": ["FP16-fixed"],
-      "description": "社区修复版，主模型按 FP16 加载；引擎没有验证过。",
-      "components": {
-        "dit": "moss-sft-fp16-fixed",
-        "textEncoder": "qwen35-encoder",
-        "vae": "flux2-vae-small"
-      },
-      "support": "moss-pipeline",
-      "recommended": false
-    },
-    {
-      "id": "moss-base-fp16",
-      "name": "MOSS-Image Base FP16-fixed",
-      "variant": ["FP16-fixed"],
-      "description": "社区修复版，主模型按 FP16 加载；引擎没有验证过。",
-      "components": {
-        "dit": "moss-base-fp16-fixed",
-        "textEncoder": "qwen35-encoder",
-        "vae": "flux2-vae-small"
-      },
-      "support": "moss-pipeline",
-      "recommended": false
     }
   ],
   "single_file_bundles": [

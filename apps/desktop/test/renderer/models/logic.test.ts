@@ -243,7 +243,7 @@ describe('modelSections', () => {
       'moss-sft-turbo-int8',
       'moss-base-int8',
     ])
-    expect(ids(result.others)).toEqual(['moss-sft-fp16', 'moss-base-fp16'])
+    expect(ids(result.others)).toEqual([])
   })
 
   it('features the official SFT on an RTX 50 card with VRAM to spare, and still lists NVFP4', () => {
@@ -303,12 +303,7 @@ describe('bundleDeletePlan', () => {
 
   it('names the models that use a part', () => {
     const c = catalog()
-    expect(bundlesUsing('qwen35-encoder', c.bundles).map((item) => item.id)).toEqual([
-      'moss-sft',
-      'moss-base',
-      'moss-sft-fp16',
-      'moss-base-fp16',
-    ])
+    expect(bundlesUsing('qwen35-encoder', c.bundles).map((item) => item.id)).toEqual(['moss-sft', 'moss-base'])
     expect(bundlesUsing('moss-sft-dit', c.bundles, 'moss-sft')).toEqual([])
   })
 
