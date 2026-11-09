@@ -6,7 +6,7 @@ import { PromptBlock } from '../../components/common/PromptBlock'
 import { Button, IconButton, Modal, cn, useToast } from '../../components/ui'
 import { call } from '../../lib/api'
 import { dimensions, duration } from '../../lib/format'
-import { OutputImage } from './CanvasCard'
+import { OutputImage } from './OutputImage'
 import { qualityFor, qualityPreset } from './defaults'
 import { canvasDescription } from './prompt'
 

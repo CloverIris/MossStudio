@@ -1,4 +1,4 @@
-import { app, clipboard, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, statSync } from 'node:fs'
 import { ZodError, type ZodType } from 'zod'
 import { Events, Ipc } from '@shared/channels'
@@ -74,7 +74,7 @@ import { errorCode } from './lib/codedError'
 import { getEngineFeatures } from './services/engineFeatures'
 import { importImageBytes, importImageFile, pruneProjectMasks, saveMask } from './services/studioAssets'
 import { addControlAdapter, listControlAdapters, removeControlAdapter } from './services/controlAdapters'
-import { applyThemeSource, openWindow } from './windows'
+import { applyThemeSource, controlWindow, openWindow } from './windows'
 import { getGpuInventory, listDevices, refreshGpuInventory } from './services/devices'
 import { getOnboardingStatus } from './services/onboarding'
 import {
@@ -280,6 +280,10 @@ export function registerIpc(): void {
     openWindow(kind, route)
     return true
   })
+
+  handle(Ipc.windowControl, schemas.windowControl, ({ action }, event) =>
+    controlWindow(BrowserWindow.fromWebContents(event.sender), action),
+  )
 
   handle(Ipc.copyText, schemas.copyText, async ({ text }) => {
     await clipboard.writeText(text)

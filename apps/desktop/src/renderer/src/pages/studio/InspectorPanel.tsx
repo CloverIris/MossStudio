@@ -1,5 +1,5 @@
 import { Eye, EyeOff, GripVertical, Lock, LockOpen, Trash2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { Button, ConfirmDialog, EmptyState, FieldLabel, IconButton, Input, Segmented, Textarea, cn } from '../../components/ui'
 import { SliderField } from './InputControls'
@@ -12,26 +12,18 @@ const KINDS = Object.keys(KIND_LABEL) as ProjectLayerKind[]
 export function InspectorPanel({
   canvas,
   selectedRegionId,
-  focusToken,
   onSelectRegion,
   onChangeLayers,
 }: {
   canvas: ProjectCanvas | null
   selectedRegionId: string | null
-  /** Changes when the user asks to edit a region (double-click on the board); focuses its caption. */
-  focusToken: number
   onSelectRegion: (id: string | null) => void
   onChangeLayers: (update: (layers: ProjectLayer[]) => ProjectLayer[]) => void
 }): React.JSX.Element {
-  const caption = useRef<HTMLTextAreaElement>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (focusToken) requestAnimationFrame(() => caption.current?.focus())
-  }, [focusToken])
 
   if (!canvas) return <EmptyState size="section" title="没有选中画面" description="选中一个画面后，这里显示它的区域。" />
   if (canvas.kind === 'image') {
@@ -39,6 +31,12 @@ export function InspectorPanel({
   }
   if (canvas.kind === 'result') {
     return <EmptyState size="section" title="生成结果的区域不能再改" description="复制成新画面后就可以编辑。" />
+  }
+  if (canvas.kind === 'style') {
+    return <EmptyState size="section" title="风格没有区域" description="风格的描述和 LoRA 在左侧编辑，接着它的画面都会用上。" />
+  }
+  if (canvas.upscale) {
+    return <EmptyState size="section" title="放大没有区域" description="放大按原图重画，不用画区域。" />
   }
 
   const layers = canvas.layers
@@ -59,7 +57,6 @@ export function InspectorPanel({
             options={KINDS.map((kind) => ({ value: kind, label: KIND_LABEL[kind] }))}
           />
           <Textarea
-            ref={caption}
             aria-label="区域描述"
             value={region.caption}
             onChange={(event) => patch(region.id, { caption: event.target.value })}
@@ -111,22 +108,17 @@ export function InspectorPanel({
             </Button>
           </div>
         </section>
-      ) : (
-        <p className="rounded-lg bg-well px-3 py-2.5 text-caption text-ink-2">
-          用工具栏的「画框」在画面上拖出一个框，就能告诉模型哪里画什么。
-        </p>
-      )}
+      ) : null}
 
-      <section aria-label="图层" className="flex flex-col gap-0.5">
+      <section aria-label="全部区域" className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between pb-2">
-          <FieldLabel as="h3">图层</FieldLabel>
+          <FieldLabel as="h3">区域</FieldLabel>
           {layers.length ? (
             <Button tone="ghost-danger" size="xs" className="-mr-2" onClick={() => setClearing(true)}>
               清空
             </Button>
           ) : null}
         </div>
-        {layers.length === 0 ? <p className="text-caption text-ink-2">还没有区域。</p> : null}
         <ul className="flex flex-col gap-0.5">
           {layers.map((layer, index) => (
             <li
@@ -193,7 +185,6 @@ export function InspectorPanel({
             </li>
           ))}
         </ul>
-        {layers.length > 1 ? <p className="pt-2 text-caption text-ink-2">拖动调整顺序；排在前面的区域先被描述。</p> : null}
       </section>
 
       <ConfirmDialog

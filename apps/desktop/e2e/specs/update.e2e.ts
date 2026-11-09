@@ -277,8 +277,9 @@ describe('update chip', () => {
         window.__mock.state.update = updateAvailableFixture('1.2.0', { required: true, minimumVersion: '1.2.0' })
       })
     })
+    // The finished run sits in its 画面's filmstrip, which reruns it.
     const rerun = page
-      .locator('article[data-canvas-card="c2"]')
+      .locator('article[data-canvas-card="c1"]')
       .getByRole('button', { name: /^重新生成/ })
       .first()
     await expect.poll(() => rerun.isDisabled()).toBe(true)

@@ -58,8 +58,13 @@ describe('first run', () => {
     expect((await app.calls<{ onboardingState?: string }>('settings:update')).at(-1)).toEqual({ onboardingState: 'active' })
     const blockers = page.locator('li').filter({ hasText: /引擎|模型/ })
     await expect.poll(() => page.getByText('引擎正在安装 · 40%', { exact: true }).isVisible()).toBe(true)
-    // 输入 gives the same reason as the footer, not "no engine".
-    await expect.poll(() => page.getByText('引擎正在安装 · 40%，就绪后才能添加图片').isVisible()).toBe(true)
+    // The card's ＋ gives the same reason as the footer on its disabled inputs, not "no engine".
+    await page.locator('article[data-canvas-card]').first().hover()
+    await page.locator('[data-input-adder] button').first().click()
+    await expect
+      .poll(() => page.getByRole('menuitem', { name: /^起始图/ }).getAttribute('title'))
+      .toBe('引擎正在安装 · 40%，就绪后才能把图片接进来')
+    await page.keyboard.press('Escape')
     await expect.poll(() => blockers.filter({ hasText: '还没有可用的模型' }).count()).toBe(1)
     await app.screenshot('studio-preparing-light')
     // 查看 goes back to the page that shows the whole preparation.

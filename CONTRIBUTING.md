@@ -1,6 +1,6 @@
 # Contributing to MossStudio
 
-This page covers how the repository is laid out, how to build and test it, and how changes reach `main`. Product and architecture docs live in [docs/](docs/README.md); the release process is in [docs/release.md](docs/release.md).
+This page covers how the repository is laid out, how to build and test it, and how changes reach `main`. Product and architecture docs live in [docs/](docs/README.md); the release process is in [docs/release.md](docs/release.md). Coding agents follow [AGENTS.md](AGENTS.md), which keeps the same rules in short form; keep the two in step when a rule changes.
 
 ## Layout
 
@@ -36,9 +36,9 @@ pnpm build      # production build
 | `pnpm format` / `pnpm format:check` | Prettier for code and config |
 | `pnpm typecheck` | `tsc` over all five TypeScript projects |
 | `pnpm test:unit` | Vitest. Pass a file to run one: `pnpm test:unit -- test/renderer/lib/format.test.ts` |
-| `pnpm test:e2e` | The Electron E2E suite against the mock backend. Run `pnpm build` first; on Linux without a display, use `xvfb-run -a` |
+| `pnpm test:e2e` | The Electron E2E suite against the mock backend. Run `pnpm build` first. On Linux it runs under `xvfb-run` by itself |
 | `pnpm test:scenarios` | In-app scenarios on the built app |
-| `pnpm test:install` | The real install → update → rollback → uninstall test on this machine |
+| `pnpm test:install` | The real install → update → rollback → uninstall test on this machine. On Linux it runs under `xvfb-run` by itself and stops if xvfb is missing |
 | `cd apps/launcher && gofmt -l . && go vet ./... && go test ./...` | The launcher |
 
 Before opening a PR, run lint, format check, typecheck and unit tests, plus E2E when you change UI.
