@@ -35,7 +35,7 @@
     "@types/ws": "^8.18.2",
     "@types/yauzl": "^3.4.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "electron": "^44.9.0",
+    "electron": "^45.2.3",
     "electron-vite": "^6.0.0",
     "happy-dom": "20.14.6",
     "lucide-react": "^1.59.0",
