@@ -286,21 +286,22 @@ describe('studio/readiness on a CLI engine (兼容模式 / AMD 原生)', () => {
   })
 
   it('blocks a bundle that is not a bf16 diffusers folder, with where to fix it', () => {
+    // An INT8 diffusers folder: moss-server runs it, a CLI engine does not.
     const cat = catalog({
-      bundles: [bundle('fp16'), bundle('comfy'), bundle('sft')],
-      models: [model('fp16-dit'), model('comfy-dit'), model('sft-dit'), model('te'), model('vae'), model('cfg')].map((entry) =>
-        entry.id === 'fp16-dit'
-          ? { ...entry, precision: 'fp16' }
+      bundles: [bundle('int8'), bundle('comfy'), bundle('sft')],
+      models: [model('int8-dit'), model('comfy-dit'), model('sft-dit'), model('te'), model('vae'), model('cfg')].map((entry) =>
+        entry.id === 'int8-dit'
+          ? { ...entry, precision: 'int8' }
           : entry.id === 'comfy-dit'
             ? { ...entry, format: 'comfyui' as const }
             : entry,
       ),
     })
     const pick = (id: string) => input({ catalog: cat, bundle: resolveBundle(cat, id, null), features: cliEngineFeatures('vulkan') })
-    expect(deriveReadiness(pick('fp16')).blockers).toEqual([
+    expect(deriveReadiness(pick('int8')).blockers).toEqual([
       {
         id: 'model-engine',
-        message: '「FP16」不是 bf16 模型，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型',
+        message: '「INT8」不是 bf16 模型，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型',
         action: { label: '去下载', to: '/models' },
       },
     ])
@@ -310,7 +311,22 @@ describe('studio/readiness on a CLI engine (兼容模式 / AMD 原生)', () => {
     })
     expect(deriveReadiness(pick('sft')).blockers).toEqual([])
     // The server engine runs all of them.
-    expect(deriveReadiness({ ...pick('fp16'), features: engineFeaturesFixture() }).blockers).toEqual([])
+    expect(deriveReadiness({ ...pick('int8'), features: engineFeaturesFixture() }).blockers).toEqual([])
+  })
+
+  it('blocks an fp16 main model on every engine with one reason', () => {
+    // A combination saved while 自己组合 still offered the FP16-fixed DiTs.
+    const cat = catalog({
+      bundles: [bundle('fp16', { custom: true })],
+      models: [{ ...model('fp16-dit'), precision: 'fp16', tags: ['fixed'] }, model('te'), model('vae'), model('cfg')],
+    })
+    const expected = [
+      { id: 'model-engine', message: '「FP16」主模型是 FP16 版本，引擎读不了，请换一个模型', action: { label: '去下载', to: '/models' } },
+    ]
+    const pick = (patch: Partial<ReadinessInput>) => input({ catalog: cat, bundle: resolveBundle(cat, 'fp16', null), ...patch })
+    expect(deriveReadiness(pick({ features: engineFeaturesFixture() })).blockers).toEqual(expected)
+    expect(deriveReadiness(pick({ features: cliEngineFeatures('vulkan') })).blockers).toEqual(expected)
+    expect(deriveReadiness(pick({ remote: { name: 'Lab', modelPath: '/models' } })).blockers).toContainEqual(expected[0])
   })
 })
 

@@ -140,9 +140,9 @@ beforeEach(async () => {
   getCatalog.mockReset().mockResolvedValue({
     bundles: [
       { id: 'moss-sft', name: 'MOSS-Image SFT', components: { dit: 'sft-dit', textEncoder: 'te', vae: 'vae' }, support: 'cfg' },
-      { id: 'moss-sft-fp16', name: 'MOSS-Image SFT FP16', components: { dit: 'fp16-dit', textEncoder: 'te', vae: 'vae' }, support: 'cfg' },
+      { id: 'moss-sft-int8', name: 'MOSS-Image SFT INT8', components: { dit: 'int8-dit', textEncoder: 'te', vae: 'vae' }, support: 'cfg' },
     ],
-    models: [part('sft-dit', 'dit'), part('fp16-dit', 'dit', 'fp16'), part('te', 'text_encoder'), part('vae', 'vae', 'fp32')],
+    models: [part('sft-dit', 'dit'), part('int8-dit', 'dit', 'int8'), part('te', 'text_encoder'), part('vae', 'vae', 'fp32')],
     adapters: [],
   })
   refreshGpuInventory.mockReset().mockResolvedValue({ devices: [arc, amdA, amdB] })
@@ -242,10 +242,10 @@ describe('local jobs on a CLI engine', () => {
       supervisor.startEngineJob(
         request({
           deviceUuid: arc.uuid,
-          modelBinding: { bundleId: 'moss-sft-fp16', dit: 'fp16-dit', textEncoder: 'te', vae: 'vae' },
+          modelBinding: { bundleId: 'moss-sft-int8', dit: 'int8-dit', textEncoder: 'te', vae: 'vae' },
         }),
       ),
-    ).rejects.toThrow('「MOSS-Image SFT FP16」不是 bf16 模型，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型')
+    ).rejects.toThrow('「MOSS-Image SFT INT8」不是 bf16 模型，兼容模式引擎只能用 bf16 的 MOSS-Image，请换一个模型')
     expect(prepareModelSource).not.toHaveBeenCalled()
     expect(runCliJob).not.toHaveBeenCalled()
   })

@@ -85,11 +85,13 @@ export function SizeText({ bytes }: { bytes: number }): React.JSX.Element | null
 
 /**
  * The state of a model as a Pill: 用不了 when it cannot run here and nothing of
- * it is under way, else its state. A download under way shows its progress
- * block instead.
+ * it is under way (downloaded or not), else its state. A download under way
+ * shows its progress block instead.
  */
 function StatePill({ view }: { view: BundleView }): React.JSX.Element | null {
-  if (view.blocked && (view.status === 'missing' || view.status === 'partial')) return <Pill tone="warn">用不了</Pill>
+  if (view.blocked && (view.status === 'missing' || view.status === 'partial' || view.status === 'ready')) {
+    return <Pill tone="warn">用不了</Pill>
+  }
   if (view.status === 'missing' || bundleProgress(view)) return null
   return (
     <Pill tone={bundleTone(view.status)} className="tabular">
@@ -153,7 +155,7 @@ export function FeaturedModel({
           {view.status === 'ready' ? (
             <>
               {deletable ? <RemoveButton remove={isLocalOnly(view)} name={view.bundle.name} onClick={() => onDelete(view.bundle)} /> : null}
-              {location.kind === 'local' ? (
+              {location.kind === 'local' && !view.blocked ? (
                 <Button tone="secondary" size="md" onClick={() => navigate('/studio')}>
                   去创作
                 </Button>

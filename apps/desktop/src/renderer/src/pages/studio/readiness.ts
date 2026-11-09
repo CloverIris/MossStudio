@@ -8,7 +8,7 @@ import type {
   ModelEntry,
   ProjectCanvas,
 } from '@shared/types'
-import { bundleGpusProblem, isFileBundle } from '@shared/bundleFit'
+import { bundleGpusProblem, bundleWeightProblem, isFileBundle } from '@shared/bundleFit'
 import { adapterStatuses, normalizeCanvasAdapters } from '@shared/adapters'
 import { CLI_ENGINE_LABEL, cliBundleProblem } from '@shared/cliEngine'
 import { compileCanvasPrompt, type CompiledPrompt } from './prompt'
@@ -141,14 +141,18 @@ export function deriveReadiness(input: ReadinessInput): Readiness {
     }
   }
 
+  // No engine loads an fp16 main model; the checks below would only add a second reason.
+  const weights = input.catalog && input.bundle.bundle ? bundleWeightProblem(input.bundle.bundle, input.catalog.models) : null
+  if (weights) blockers.push({ id: 'model-engine', message: `「${input.bundle.bundle!.name}」${weights}，请换一个模型`, action: toModels })
+
   // A CLI engine (兼容模式 / AMD 原生) reads a bf16 bundle folder only.
   const cli = input.remote ? undefined : input.features?.cli
-  if (cli && input.catalog && input.bundle.bundle && input.bundle.installed) {
+  if (!weights && cli && input.catalog && input.bundle.bundle && input.bundle.installed) {
     const problem = cliBundleProblem(cli, input.bundle.bundle, input.catalog.models)
     if (problem) blockers.push({ id: 'model-engine', message: problem, action: toModels })
   }
   // Single files load only on this computer; some quantized models need a particular GPU.
-  const picked = input.catalog && input.bundle.installed ? input.bundle.bundle : null
+  const picked = !weights && input.catalog && input.bundle.installed ? input.bundle.bundle : null
   if (picked && input.catalog) {
     const problem = input.remote
       ? isFileBundle(picked, input.catalog.models)

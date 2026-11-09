@@ -12,7 +12,7 @@ import type { ModelBundle, ModelCombination, ModelEntry } from './types'
  */
 
 // One definition: bundleFit (certified single-file models) needs it too, and it must not import this file.
-import { RUNTIME_CONFIG_ID } from './bundleFit'
+import { isFp16Dit, RUNTIME_CONFIG_ID } from './bundleFit'
 export { RUNTIME_CONFIG_ID }
 export const PIPELINE_ID = 'moss-pipeline'
 
@@ -60,15 +60,6 @@ export function legacyLocalCombination(models: readonly ModelEntry[], now = new 
   return { id: bundle.id, name: '电脑上的模型', components: { ...bundle.components }, createdAt: now.toISOString() }
 }
 
-/**
- * The community FP16-fixed DiTs, folder and single file. MossInfer reads a DiT only in BF16 or
- * a quantized format and refuses these at load; the catalog keeps them so a copy already
- * downloaded still shows up and can be deleted.
- */
-function isFp16Fixed(model: ModelEntry): boolean {
-  return model.provider !== 'local' && (model.precision === 'fp16' || model.tags.includes('fixed'))
-}
-
 export interface SlotChoice {
   /** The entry this choice uses. */
   id: string
@@ -94,7 +85,8 @@ export function slotChoices(
   const role = SLOT_ROLE[slot]
   const downloads = new Map<string, ModelEntry[]>()
   for (const model of models) {
-    if (model.role !== role || model.provider === 'local' || isFp16Fixed(model)) continue
+    // The catalog keeps the FP16-fixed DiTs only so a copy already downloaded can be found and deleted.
+    if (model.role !== role || model.provider === 'local' || isFp16Dit(model)) continue
     const label = choiceLabel(model)
     downloads.set(label, [...(downloads.get(label) ?? []), model])
   }
