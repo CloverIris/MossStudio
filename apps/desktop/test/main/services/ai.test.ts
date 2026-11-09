@@ -159,6 +159,36 @@ describe('chat with an OpenAI-compatible provider', () => {
     expect(asking).toMatchObject({ role: 'assistant', card })
   })
 
+  it('stops the turn once a card is asked, so the model cannot ask the same thing twice', async () => {
+    const { api, id } = await provider('openai')
+    const card = {
+      id: 'card-1',
+      kind: 'confirm',
+      title: '现在生成？',
+      options: [
+        { id: 'approve', label: '批准' },
+        { id: 'reject', label: '拒绝' },
+      ],
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }
+    const ask = () =>
+      Response.json({
+        choices: [
+          {
+            message: {
+              content: '',
+              tool_calls: [{ id: 'c1', function: { name: 'studio_ask_approval', arguments: '{}' } }],
+            },
+          },
+        ],
+      })
+    replies.push(ask)
+    replies.push(ask)
+    const { promise } = run(api, { providerId: id, message: '生成' }, { ok: true, content: JSON.stringify({ shown: true, card }) })
+    const result = await promise
+    expect(result.conversation.messages.map((message) => message.role)).toEqual(['user', 'assistant', 'tool'])
+  })
+
   it('ignores a tool result whose card is malformed', async () => {
     const { api, id } = await provider('openai')
     replies.push(() =>

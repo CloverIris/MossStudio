@@ -177,6 +177,13 @@ describe('lib/agentTools executeStudioTool', () => {
     })
   })
 
+  it('refuses an either-or question on a confirm card and points at the choice card', async () => {
+    registerStudioTools(api())
+    const result = await run('studio_ask_approval', { question: '只跑镜 6，还是 6 镜一起？' })
+    expect(result.ok).toBe(false)
+    expect(result.content).toContain('studio_ask_user')
+  })
+
   it('builds a set of scenes and switches the selected canvas', async () => {
     const tools = api()
     registerStudioTools(tools)

@@ -625,8 +625,12 @@ export async function chat(
           error: !result.ok,
         })
       }
-      if (card) asking.card = card
-      else if (steps.length) asking.card = planCardFor(text, steps)
+      if (card) {
+        asking.card = card
+        // An ask card ends the turn: the user answers it next. Another round used
+        // to call the same tool again, which duplicated the card and its trace.
+        if (card.kind !== 'plan') break
+      } else if (steps.length) asking.card = planCardFor(text, steps)
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
