@@ -97,11 +97,14 @@ Picture actions in a card's menu (`studio/Board.tsx` `cardActions`):
 | Entry | Does | Code |
 | --- | --- | --- |
 | 用作起始图 | A new 画面 to the right, fed by this picture; it takes the settings, description and regions | `studio/canvases.ts` (`canvasFromPicture`) |
+| 拆成区域 | A new 画面 to the right, shaped like the picture and not wired to it, that fills with the regions and description KohakuGBC finds. Offered while 看图拆区域 is on; while it cannot run, the entry names why and leads to 设置 › 功能 | `studio/pictureRegions.ts`, `studio/usePictureRegions.ts` |
 | 放大 | A 放大 node fed by this picture; offered while the engine has `imageInput` and the long edge is under 2048 | `studio/nodes.ts` (`upscaleFromPicture`) |
 | 固定到画板 | A folded run becomes a card under its 画面 and stays in the strip | `studio/runs.ts` (`pinRun`) |
 | 收回到「画面」 | A pinned result goes back into the strip, unless a canvas uses it | `unpinRun`, `canUnpin` |
 | 用这次的设置 | The 画面 takes a run's description, regions, size, model, quality, seed (locked), sampling and LoRA | `withRunSettings` |
 | 删除这次生成 | Removes a run that is only in the strip; its picture stays in 作品 | `dropRun`, `canDropRun` |
+
+While 拆成区域 reads, the new 画面 shows the picture faintly with 正在看图… (or 正在下载看图模型 on the first run) and 停止 (`ParseOverlay` in `studio/CardStatus.tsx`). The regions arrive all at once, at most `GBC_MAX_REGIONS`, as 物体; a description typed meanwhile is kept. 停止, a failure, or deleting the 画面 ends the run, and a 画面 still untouched is taken away again. Setup and the main side are in [architecture.md](/docs/reference/architecture.md#gbc).
 
 ## 7. Recipes
 

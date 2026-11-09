@@ -101,6 +101,8 @@ const cases = {
         engineDeviceOverrides: { 'GPU-1': 'cu13-sm75-system-cuda', 'vk-1002-744c-0': 'hip', 'vk-8086-56a0-0': 'vulkan' },
       },
       'no per-GPU engines': { engineDeviceOverrides: {} },
+      '拆成区域 settings': { gbcEnabled: true, gbcProviderId: 'provider-1', gbcVersionId: 'gbc-1', gbcDetector: 'sam3' },
+      '拆成区域 defaults': { gbcProviderId: null, gbcVersionId: null },
     },
     rejects: {
       'unknown theme': { theme: 'blue' },
@@ -122,6 +124,8 @@ const cases = {
       'non-boolean flag': { autoDownloadUpdates: 'yes' },
       'non-boolean feature toggle': { remoteHostsEnabled: 1 },
       'null engine auto-update': { engineAutoUpdate: null },
+      'unknown GBC detector': { gbcDetector: 'yolo' },
+      'empty GBC model': { gbcProviderId: '' },
       'unknown engine package': { engineDeviceOverrides: { 'GPU-1': 'cu11' } },
       'engine package for no GPU': { engineDeviceOverrides: { '': 'vulkan' } },
       '65 per-GPU engines': { engineDeviceOverrides: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`GPU-${i}`, 'vulkan'])) },
@@ -620,9 +624,20 @@ const cases = {
 
   gbcStatusQuery: {
     valid: {},
-    accepts: { version: { versionId: 'v1' }, 'empty version': { versionId: '' } },
-    rejects: { 'overlong version': { versionId: long(161) }, undefined: undefined },
+    accepts: { version: { versionId: 'v1' }, 'empty version': { versionId: '' }, 'checked again': { fresh: true } },
+    rejects: { 'overlong version': { versionId: long(161) }, undefined: undefined, 'fresh as text': { fresh: 'yes' } },
   },
+
+  gbcParse: {
+    valid: { runId: 'r1', path: '/a.png' },
+    rejects: {
+      'no path': { runId: 'r1', path: '' },
+      'no run id': { runId: '', path: '/a.png' },
+      'overlong run id': { runId: long(81), path: '/a.png' },
+    },
+  },
+
+  gbcCancel: { valid: { runId: 'r1' }, rejects: { 'empty run id': { runId: '' } } },
 
   gbcListImages: { valid: { folder: '/imgs' }, rejects: { 'empty folder': { folder: '' } } },
 

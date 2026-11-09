@@ -5,6 +5,10 @@ export interface RunOptions {
   env?: NodeJS.ProcessEnv
   timeoutMs?: number
   input?: string
+  /** Ends the process (`runStream` only); the result reports it as `aborted`. */
+  signal?: AbortSignal
+  /** `runStream` only: a lone carriage return also ends a line, so progress bars arrive as they redraw. */
+  splitCarriageReturn?: boolean
 }
 
 export interface RunResult {
@@ -12,6 +16,7 @@ export interface RunResult {
   stdout: string
   stderr: string
   timedOut: boolean
+  aborted?: boolean
 }
 
 export function run(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
@@ -84,6 +89,16 @@ export function runStream(
       timedOut = true
       child.kill('SIGKILL')
     }, options.timeoutMs ?? 3_600_000)
+    const abort = (): void => {
+      child.kill('SIGKILL')
+    }
+    if (options.signal?.aborted) abort()
+    else options.signal?.addEventListener('abort', abort, { once: true })
+    const done = (result: RunResult): void => {
+      clearTimeout(timer)
+      options.signal?.removeEventListener('abort', abort)
+      resolve(options.signal?.aborted ? { ...result, aborted: true } : result)
+    }
 
     const pipe = (stream: 'stdout' | 'stderr', source: NodeJS.ReadableStream | null): void => {
       let buffer = ''
@@ -92,7 +107,7 @@ export function runStream(
         if (stream === 'stdout') stdout += chunk
         else stderr += chunk
         buffer += chunk
-        const parts = buffer.split(/\r?\n/)
+        const parts = buffer.split(options.splitCarriageReturn ? /\r\n|\r|\n/ : /\r?\n/)
         buffer = parts.pop() ?? ''
         for (const line of parts) {
           if (line.trim()) onLine(line, stream)
@@ -108,14 +123,8 @@ export function runStream(
     child.stdin?.on('error', () => undefined)
     child.stdin?.end(options.input)
 
-    child.on('error', (error) => {
-      clearTimeout(timer)
-      resolve({ code: -1, stdout, stderr: stderr || String(error), timedOut })
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      resolve({ code: code ?? -1, stdout, stderr, timedOut })
-    })
+    child.on('error', (error) => done({ code: -1, stdout, stderr: stderr || String(error), timedOut }))
+    child.on('close', (code) => done({ code: code ?? -1, stdout, stderr, timedOut }))
   })
 }
 

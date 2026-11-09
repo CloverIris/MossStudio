@@ -199,6 +199,14 @@ export interface Settings {
   remoteHostsEnabled: boolean
   /** Optional feature: LoRA training. Off by default. */
   trainingEnabled: boolean
+  /** Optional feature: 拆成区域 with KohakuGBC. Off by default. */
+  gbcEnabled: boolean
+  /** The 助手 model GBC reads pictures with; null = the first usable one. */
+  gbcProviderId: string | null
+  /** The installed KohakuGBC version 拆成区域 runs; null = none installed yet. */
+  gbcVersionId: string | null
+  /** How GBC finds objects: OWLv2 for photos, SAM 3 for illustrations. */
+  gbcDetector: 'owlv2' | 'sam3'
   /** Keep the inference engine on the latest release of its channel automatically. */
   engineAutoUpdate: boolean
 }

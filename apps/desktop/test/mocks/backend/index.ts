@@ -52,6 +52,8 @@ import {
   controlAdapterFixture,
   localHostFixture,
   downloadFixture,
+  gbcStatusFixture,
+  gbcVersionFixture,
   jobLifecycle,
   submittedJobFixture,
   updateAvailableFixture,
@@ -780,6 +782,38 @@ function defaultHandlers(): Map<string, Handler> {
     state.projects = state.projects.filter((project) => project.id !== p<{ id: string }>(payload).id)
     return null
   })
+
+  // 看图拆区域: setup and reading answer at once, with the events main sends on the way.
+  h.set(Ipc.gbcStatus, (_, { state }) => state.gbc.status)
+  h.set(Ipc.gbcVersions, (_, { state }) => state.gbc.versions)
+  h.set(Ipc.gbcSetup, (_, { state, emit }) => {
+    emit(Events.gbcSetup, { phase: 'code' })
+    if (!state.gbc.versions.length) state.gbc.versions = [gbcVersionFixture()]
+    state.settings = { ...state.settings, gbcVersionId: state.gbc.versions[0]!.id }
+    emit(Events.settingsChanged, state.settings)
+    emit(Events.gbcSetup, { phase: 'packages' })
+    state.gbc.status = gbcStatusFixture(true)
+    emit(Events.gbcSetup, { phase: 'done' })
+    return state.gbc.status
+  })
+  h.set(Ipc.gbcBranches, () => [{ name: 'main', sha: '9f3c2a1b4d5e', isDefault: true, isStable: true }])
+  h.set(Ipc.gbcCommits, () => [{ sha: '9f3c2a1b4d5e', short: '9f3c2a1', date: FIXTURE_NOW, subject: 'Fixture GBC', author: 'fixture' }])
+  h.set(Ipc.gbcVersionCreate, (payload, { state }) => {
+    const { commit } = p<{ branch: string; commit: string }>(payload)
+    const version = gbcVersionFixture({ id: `gbc-${commit.slice(0, 7)}`, commit, shortCommit: commit.slice(0, 7) })
+    state.gbc.versions = [version, ...state.gbc.versions.filter((item) => item.id !== version.id)]
+    return version
+  })
+  h.set(Ipc.gbcVersionRemove, (payload, { state }) => {
+    const { id } = p<{ id: string }>(payload)
+    state.gbc.versions = state.gbc.versions.filter((item) => item.id !== id)
+    return true
+  })
+  h.set(Ipc.gbcParse, (payload, { state, emit }) => {
+    emit(Events.gbcParse, { runId: p<{ runId: string }>(payload).runId, phase: 'reading' })
+    return state.gbc.parse
+  })
+  h.set(Ipc.gbcCancel, () => true)
 
   // AI
   h.set(Ipc.aiProvidersList, (_, { state }) => state.aiProviders)

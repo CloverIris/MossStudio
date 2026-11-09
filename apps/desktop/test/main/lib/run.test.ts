@@ -84,6 +84,35 @@ describe('runStream', () => {
     const result = await runStream('/nonexistent/definitely-not-a-binary', [], {}, () => undefined)
     expect(result.code).toBe(-1)
   })
+
+  it('ends the process when its signal aborts, and says so', async () => {
+    const controller = new AbortController()
+    const started = Date.now()
+    const pending = runStream(node, script('console.log("up"); setTimeout(() => {}, 10000)'), { signal: controller.signal }, () =>
+      controller.abort(),
+    )
+    const result = await pending
+    expect(result.aborted).toBe(true)
+    expect(result.timedOut).toBe(false)
+    expect(Date.now() - started).toBeLessThan(5000)
+  })
+
+  it('does not start work for a signal already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const result = await runStream(node, script('setTimeout(() => {}, 10000)'), { signal: controller.signal }, () => undefined)
+    expect(result.aborted).toBe(true)
+  })
+
+  it('splits progress bars on a lone carriage return only when asked', async () => {
+    const source = 'process.stdout.write("10%|#\\r50%|###\\r100%|#####\\n")'
+    const split: string[] = []
+    await runStream(node, script(source), { splitCarriageReturn: true }, (line) => split.push(line))
+    expect(split).toEqual(['10%|#', '50%|###', '100%|#####'])
+    const whole: string[] = []
+    await runStream(node, script(source), {}, (line) => whole.push(line))
+    expect(whole).toEqual(['10%|#\r50%|###\r100%|#####'])
+  })
 })
 
 describe('firstLine / tail', () => {

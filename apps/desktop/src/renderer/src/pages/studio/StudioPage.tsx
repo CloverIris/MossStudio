@@ -62,6 +62,7 @@ import { resolveJobInputs } from './jobInputs'
 import { useGenerate } from './useGenerate'
 import { useInputImport } from './useInputImport'
 import { useStudioProject } from './useStudioProject'
+import { usePictureRegions } from './usePictureRegions'
 
 const BUNDLE_KEY = 'mossstudio.modelBundleId'
 const HOST_KEY = 'mossstudio.studioHostId'
@@ -375,6 +376,8 @@ export function StudioPage(): React.JSX.Element {
 
   const latestSettings = (): ReturnType<typeof settingsFrom> =>
     settingsFrom([...project.canvasesRef.current].reverse().find((canvas) => canvas.kind === 'layout' || canvas.kind === 'result'))
+
+  const regions = usePictureRegions(project, { latestSettings, reveal: (canvasId) => board.current?.reveal(canvasId) })
 
   /** 放大: a 放大 node fed by a card's picture, to its right (or where a wire was dropped). */
   const upscaleFrom = (sourceId: string, at?: { x: number; y: number }): void => {
@@ -905,6 +908,10 @@ export function StudioPage(): React.JSX.Element {
           onRecipe={(recipe, at) => void startRecipe(recipe, at)}
           onUpscale={upscaleFrom}
           onAddStyle={(at) => addStyle(undefined, undefined, at)}
+          parseBlocker={regions.blocker}
+          onParseRegions={regions.parse}
+          parsing={regions.parsing}
+          onStopParse={regions.stop}
         />
       </main>
 

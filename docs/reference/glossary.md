@@ -71,3 +71,4 @@ The terms MossStudio coins or uses in a fixed sense, with the Chinese the UI sho
 | LoRA | LoRA, `role: 'lora'` | A small add-on model applied through a 风格 node. 训练 produces them. | `shared/types.ts`, `renderer/src/pages/studio/nodes.ts` |
 | 模型文件夹 | models root, `modelsRoot` | The folder models are stored in; ComfyUI layouts are recognised in place. | `renderer/src/pages/models/ModelsPage.tsx`, `shared/types.ts` (`Settings.modelsRoot`) |
 | 训练 | Training, route `/training`, Trainer window | LoRA training through the external Trainer, behind the `trainingEnabled` feature. | `renderer/src/pages/training/`, `renderer/src/pages/TrainerWindow.tsx`, ADR-0002 |
+| 看图拆区域 / 拆成区域 | GBC, `gbcEnabled`, `gbc:parse` | The optional feature that reads a picture with KohakuGBC, and the picture-menu entry that turns it into a new 画面 with regions and a description. | `main/services/gbc.ts`, `shared/gbc.ts`, `renderer/src/pages/studio/usePictureRegions.ts` |

@@ -61,6 +61,10 @@ export const DEFAULT_SETTINGS: Settings = {
   deviceLabels: {},
   remoteHostsEnabled: false,
   trainingEnabled: false,
+  gbcEnabled: false,
+  gbcProviderId: null,
+  gbcVersionId: null,
+  gbcDetector: 'owlv2',
   engineAutoUpdate: true,
 }
 

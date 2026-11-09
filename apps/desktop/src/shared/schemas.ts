@@ -367,6 +367,10 @@ export const schemas = {
       githubToken: z.string().max(200).nullable().optional(),
       remoteHostsEnabled: z.boolean(),
       trainingEnabled: z.boolean(),
+      gbcEnabled: z.boolean(),
+      gbcProviderId: z.string().min(1).max(120).nullable(),
+      gbcVersionId: z.string().min(1).max(160).nullable(),
+      gbcDetector: z.enum(['owlv2', 'sam3']),
       engineAutoUpdate: z.boolean(),
     })
     .partial(),
@@ -678,7 +682,9 @@ export const schemas = {
   }),
   gbcVersionRemove: z.object({ id: z.string().min(1).max(160) }),
 
-  gbcStatusQuery: z.object({ versionId: z.string().max(160).optional() }),
+  gbcStatusQuery: z.object({ versionId: z.string().max(160).optional(), fresh: z.boolean().optional() }),
+  gbcParse: z.object({ runId: z.string().min(1).max(80), path: z.string().min(1).max(4096) }),
+  gbcCancel: z.object({ runId: z.string().min(1).max(80) }),
   gbcListImages: z.object({ folder: z.string().min(1).max(4096) }),
   gbcThumbnails: z.object({ paths: z.array(z.string().max(4096)).max(120), width: z.number().int().min(32).max(1600).default(160) }),
   gbcInstallEnv: z.object({ versionId: z.string().min(1).max(160) }),

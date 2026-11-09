@@ -47,7 +47,7 @@ import {
   renameConversation,
   saveProvider,
 } from './services/ai'
-import { gbcStatus, installGbcEnv, listGbcImages, runGbc } from './services/gbc'
+import { cancelParse, forgetGbcStatus, gbcStatus, installGbc, installGbcEnv, listGbcImages, parseRegions, runGbc } from './services/gbc'
 import { nativeImage } from 'electron'
 import { createGbcVersion, listGbcBranches, listGbcCommits, listGbcVersions, removeGbcVersion } from './services/gbcGit'
 import { closeSshTerminal, inputSshTerminal, listSshTerminals, openSshTerminal } from './services/sshSessions'
@@ -232,9 +232,18 @@ export function registerIpc(): void {
     }),
   )
 
-  handle(Ipc.gbcStatus, schemas.gbcStatusQuery, ({ versionId }) => gbcStatus(versionId))
+  handle(Ipc.gbcStatus, schemas.gbcStatusQuery, ({ versionId, fresh }) => gbcStatus(versionId, fresh))
 
-  handle(Ipc.gbcDoctor, schemas.gbcStatusQuery, ({ versionId }) => gbcStatus(versionId))
+  handle(Ipc.gbcDoctor, schemas.gbcStatusQuery, ({ versionId }) => gbcStatus(versionId, true))
+
+  handle(Ipc.gbcSetup, null, () => installGbc())
+
+  handle(Ipc.gbcParse, schemas.gbcParse, ({ runId, path }) => parseRegions(runId, path))
+
+  handle(Ipc.gbcCancel, schemas.gbcCancel, ({ runId }) => {
+    cancelParse(runId)
+    return true
+  })
 
   handle(Ipc.gbcInstallEnv, schemas.gbcInstallEnv, ({ versionId }) => installGbcEnv(versionId))
 
@@ -269,6 +278,8 @@ export function registerIpc(): void {
 
   handle(Ipc.gbcVersionRemove, schemas.gbcVersionRemove, async ({ id }) => {
     await removeGbcVersion(getSettings(), id)
+    if (getSettings().gbcVersionId === id) emit(Events.settingsChanged, updateSettings({ gbcVersionId: null }))
+    forgetGbcStatus()
     return true
   })
 
