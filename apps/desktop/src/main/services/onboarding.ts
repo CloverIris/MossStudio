@@ -12,7 +12,7 @@ import { scanRemoteModels } from './remoteModels'
 import { localEngineKinds, resolveDeviceEngine } from './engineInstalls'
 import { cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
 import { isCliEngine } from '@shared/enginePackages'
-import { bestBundleFor, generationGpus, isFileBundle } from '@shared/bundleFit'
+import { bestBundleFor, generationGpus, isFileBundle, isFp16Dit } from '@shared/bundleFit'
 
 export async function getOnboardingStatus(settings: Settings, hostId = 'local'): Promise<OnboardingStatus> {
   const catalog = await getCatalog(settings, true)
@@ -43,7 +43,13 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
     engineDetail = describeEngineReadiness(readiness)
     fullModelReady =
       catalog.models.some(
-        (model) => model.role === 'full' && model.installed && model.format !== 'comfyui' && (!cliKind || model.precision === 'bf16'),
+        // A registered FP16-fixed folder is a whole model the engine refuses (isFp16Dit).
+        (model) =>
+          model.role === 'full' &&
+          model.installed &&
+          model.format !== 'comfyui' &&
+          !isFp16Dit(model) &&
+          (!cliKind || model.precision === 'bf16'),
       ) || (await legacyModelReady(join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT')))
   } else {
     const host = getTrainingHost(settings, hostId)

@@ -254,6 +254,42 @@ describe('models', () => {
     await expect.poll(() => comboTitle(page, name).count()).toBe(0)
   })
 
+  it('says why a combination saved with an FP16-fixed 主模型 cannot run, and still deletes it', async () => {
+    const page = await app.open({ scenario: 'ready', route: '/models', defer: true })
+    await page.evaluate(() => {
+      const catalog = window.__mock.state.catalog
+      const parts = ['moss-sft-fp16-fixed', 'qwen35-encoder', 'flux2-vae-small', 'moss-pipeline']
+      window.__mock.state.catalog = {
+        ...catalog,
+        // Saved while 自己组合 still offered the FP16-fixed DiTs.
+        bundles: [
+          ...catalog.bundles,
+          {
+            id: 'combo-fp16',
+            name: '旧的 FP16 组合',
+            description: '',
+            components: { dit: 'moss-sft-fp16-fixed', textEncoder: 'qwen35-encoder', vae: 'flux2-vae-small' },
+            support: 'moss-pipeline',
+            recommended: false,
+            custom: true,
+          },
+        ],
+        models: catalog.models.map((model) =>
+          parts.includes(model.id) ? { ...model, installed: true, installState: 'ready', installedBytes: model.sizeBytes } : model,
+        ),
+      }
+    })
+    await app.start()
+    const row = comboTitle(page, '旧的 FP16 组合').locator('xpath=ancestor::*[.//span[text()="用不了"]][1]')
+    await expect.poll(() => row.getByText('主模型是 FP16 版本，引擎读不了').isVisible()).toBe(true)
+    // Downloaded but unusable: it says 用不了, never 可以使用.
+    expect(await row.getByText('用不了', { exact: true }).isVisible()).toBe(true)
+    expect(await row.getByText('可以使用', { exact: true }).count()).toBe(0)
+    await page.getByRole('button', { name: '删除 旧的 FP16 组合' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: '删除' }).click()
+    await expect.poll(() => app.calls('models:delete-combination')).toEqual([{ id: 'combo-fp16' }])
+  })
+
   it('keeps folders and unused downloads under 高级, with no parts list', async () => {
     const page = await app.open({ scenario: 'ready', route: '/models', theme: 'light', defer: true })
     await page.evaluate(() => {

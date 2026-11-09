@@ -1,4 +1,4 @@
-import { bestBundleFor, bundleGpusProblem, isFileBundle } from '@shared/bundleFit'
+import { bestBundleFor, bundleGpusProblem, bundleWeightProblem, isFileBundle } from '@shared/bundleFit'
 import type { AdapterEntry, DownloadTask, GpuInventoryDevice, ModelBundle, ModelEntry } from '@shared/types'
 import { eta } from '../../lib/format'
 
@@ -194,6 +194,8 @@ export interface ModelPlace {
 
 /** Why a whole model cannot run at this place, or null. */
 export function bundleBlocker(bundle: ModelBundle, models: readonly ModelEntry[], place: ModelPlace): string | null {
+  const weights = bundleWeightProblem(bundle, models)
+  if (weights) return weights
   const files = isFileBundle(bundle, models)
   if (place.remote) return files ? '只能在这台电脑上使用，其他电脑请用官方模型' : null
   return bundleGpusProblem(bundle, place.gpus, { cliGpus: place.cliGpus, files })

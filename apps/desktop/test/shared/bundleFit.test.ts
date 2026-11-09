@@ -5,8 +5,10 @@ import {
   cliGpuUuids,
   bundleGpuProblem,
   bundleGpusProblem,
+  bundleWeightProblem,
   generationGpus,
   isFileBundle,
+  isFp16Dit,
   profileForBundle,
 } from '@shared/bundleFit'
 import type { GpuInventoryDevice, ModelBundle } from '@shared/types'
@@ -227,5 +229,28 @@ describe('cliGpuUuids', () => {
     ]
     expect([...cliGpuUuids({ devices })]).toEqual(['b', 'c'])
     expect(cliGpuUuids(null).size).toBe(0)
+  })
+})
+
+describe('bundleWeightProblem', () => {
+  const combination = (dit: string): Pick<ModelBundle, 'components'> => ({
+    components: { dit, textEncoder: 'qwen35-encoder', vae: 'flux2-vae-small' },
+  })
+
+  it('refuses a model whose 主模型 is an FP16-fixed DiT, folder or single file', () => {
+    for (const dit of ['moss-sft-fp16-fixed', 'moss-base-fp16-fixed-comfy']) {
+      expect(bundleWeightProblem(combination(dit), catalog.models)).toBe('主模型是 FP16 版本，引擎读不了')
+    }
+  })
+
+  it('refuses a person’s own fp16 DiT file too, by the dtype read from it', () => {
+    const own = { id: 'own-dit', precision: 'fp16', tags: ['local-import'] }
+    expect(bundleWeightProblem(combination('own-dit'), [...catalog.models, own])).not.toBeNull()
+  })
+
+  it('lets bf16 and quantized main models through, so every catalog model passes', () => {
+    expect(bundleWeightProblem(combination('moss-sft-dit'), catalog.models)).toBeNull()
+    expect(catalog.bundles.map((item) => bundleWeightProblem(item, catalog.models)).filter(Boolean)).toEqual([])
+    expect(isFp16Dit({ precision: 'bf16', tags: ['official'] })).toBe(false)
   })
 })

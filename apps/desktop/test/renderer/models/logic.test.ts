@@ -211,6 +211,23 @@ describe('bundleBlocker', () => {
     expect(bundleBlocker(bundle('moss-sft'), models, place)).toBeNull()
   })
 
+  it('says why a combination with an FP16-fixed 主模型 runs nowhere', () => {
+    const saved = {
+      ...bundle('moss-sft'),
+      id: 'combo-1',
+      custom: true,
+      components: { ...bundle('moss-sft').components, dit: 'moss-sft-fp16-fixed' },
+    }
+    const rtx4090 = gpuDeviceFixture()
+    for (const place of [
+      { remote: false, gpus: [rtx4090] },
+      { remote: false, gpus: [] },
+      { remote: true, gpus: [] },
+    ]) {
+      expect(bundleBlocker(saved, models, place)).toBe('主模型是 FP16 版本，引擎读不了')
+    }
+  })
+
   it('keeps single-file models on this computer', () => {
     expect(bundleBlocker(bundle('moss-sft-int8'), models, { remote: true, gpus: [] })).toMatch(/^只能在这台电脑上使用/)
     expect(bundleBlocker(bundle('moss-sft'), models, { remote: true, gpus: [] })).toBeNull()

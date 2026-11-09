@@ -403,6 +403,20 @@ describe('engine jobs: single-file models', () => {
     expect(runMossInferJob).not.toHaveBeenCalled()
   })
 
+  it('refuses a saved combination with an fp16 main model before preparing it', async () => {
+    getCatalog.mockResolvedValue({
+      bundles: [{ ...folderBundle, id: 'combo', name: '我的 FP16', components: { dit: 'fp16-dit', textEncoder: 'te', vae: 'vae' } }],
+      models: [{ id: 'fp16-dit', role: 'dit', provider: 'hf', format: 'diffusers', precision: 'fp16', tags: ['fixed'] }],
+      adapters: [],
+    })
+    const binding = { bundleId: 'combo', dit: 'fp16-dit', textEncoder: 'te', vae: 'vae' }
+    await expect(supervisor.startEngineJob(request('fp16', { modelBinding: binding }))).rejects.toThrow(
+      '「我的 FP16」主模型是 FP16 版本，引擎读不了，请换一个模型',
+    )
+    expect(prepareModelSource).not.toHaveBeenCalled()
+    expect(runMossInferJob).not.toHaveBeenCalled()
+  })
+
   it('refuses a single-file model on another computer', async () => {
     await expect(
       supervisor.startEngineJob(

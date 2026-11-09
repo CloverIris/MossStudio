@@ -4,12 +4,14 @@
  * the catalog is the real resources/models.json via catalogFixture.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Catalog, GpuInventoryDevice, LaunchDevice, TrainingHost } from '@shared/types'
+import type { Catalog, GpuInventoryDevice, LaunchDevice, ModelEntry, TrainingHost } from '@shared/types'
 import { useTempDataRoot } from '@test/helpers/tempDir'
 import { SFT_BUNDLE_IDS, catalogFixture, engineMissingFixture, engineReadyFixture, settingsFixture } from '@test/mocks/backend/fixtures'
 
 interface Options {
   installed?: string[]
+  /** Entries added to the catalog, e.g. a whole model folder the person registered. */
+  extraModels?: ModelEntry[]
   partial?: string
   remoteInstalled?: string[]
   engine?: boolean
@@ -45,8 +47,10 @@ vi.mock('@main/services/engineInstalls', () => ({
   resolveDeviceEngine: (uuid: string) => (state.options.cliGpus?.includes(uuid) ? { package: { kind: 'vulkan' } } : null),
 }))
 vi.mock('@main/services/models', () => ({
-  getCatalog: async (): Promise<Catalog> =>
-    catalogFixture({ installed: state.options.installed, partial: state.options.partial ? [state.options.partial] : [] }),
+  getCatalog: async (): Promise<Catalog> => {
+    const catalog = catalogFixture({ installed: state.options.installed, partial: state.options.partial ? [state.options.partial] : [] })
+    return { ...catalog, models: [...catalog.models, ...(state.options.extraModels ?? [])] }
+  },
   modelMissingBytes: async (_settings: unknown, model: { id: string; sizeBytes: number }) =>
     state.options.missing?.[model.id] ?? model.sizeBytes,
 }))
@@ -109,6 +113,28 @@ describe('getOnboardingStatus (local)', () => {
     expect(result.ready).toBe(true)
     expect(step(result, 'engine').detail).toBe('MossInfer 已就绪')
     expect(step(result, 'model')).toMatchObject({ status: 'ok', sizeBytes: 0, detail: 'MOSS-Image SFT 已就绪' })
+  })
+
+  it('counts a registered bf16 model folder as ready, but not an FP16-fixed one the engine refuses', async () => {
+    const folder = (precision: string): ModelEntry => ({
+      id: `local-full-${precision}`,
+      name: 'MOSS-Image',
+      provider: 'local',
+      repo: '/models/moss',
+      revision: 'local',
+      role: 'full',
+      format: 'diffusers',
+      precision,
+      license: 'local',
+      tags: ['local-folder'],
+      installed: true,
+      installedBytes: 1,
+      sizeBytes: 1,
+    })
+    expect((await status({ engine: true, extraModels: [folder('bf16')] })).ready).toBe(true)
+    const fp16 = await status({ engine: true, extraModels: [folder('fp16')] })
+    expect(fp16.ready).toBe(false)
+    expect(step(fp16, 'model').status).not.toBe('ok')
   })
 
   it('does not let partial downloads complete a bundle and only counts missing bytes', async () => {

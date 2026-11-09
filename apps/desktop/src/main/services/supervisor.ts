@@ -33,7 +33,7 @@ import {
   type ResolvedGpuProfile,
   type WeightPrecisions,
 } from '@shared/gpuProfile'
-import { bundleGpuProblem, isFileBundle, profileForBundle } from '@shared/bundleFit'
+import { bundleGpuProblem, bundleWeightProblem, isFileBundle, profileForBundle } from '@shared/bundleFit'
 import { probeLocalEngineGpuCompatibility } from './engines'
 import { getTrainingHost } from './trainingHosts'
 import { cancelRemoteEngineJob, runRemoteEngineJob } from './remoteEngine'
@@ -957,6 +957,16 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
   let modelFiles: { ditFile?: string; textEncoderFile?: string; vaeFile?: string } = {}
   let modelBundle: ModelBundle | undefined
   const cliEngine = input.hostId ? null : cliEngineOf(input.deviceUuid)
+  if (input.modelBinding) {
+    // A combination saved before 自己组合 stopped offering fp16 main models would fail at load
+    // with the engine's weight error; say what is wrong with it before anything starts.
+    const catalog = await getCatalog(settings)
+    const problem = bundleWeightProblem({ components: input.modelBinding }, catalog.models)
+    if (problem) {
+      const name = catalog.bundles.find((item) => item.id === input.modelBinding!.bundleId)?.name ?? input.modelName
+      throw codedError('E_MODEL', `「${name ?? input.modelBinding.bundleId}」${problem}，请换一个模型`)
+    }
+  }
   if (input.hostId && input.modelBinding) {
     // Another computer runs the model folder at its remote path; single files load only here.
     const catalog = await getCatalog(settings)

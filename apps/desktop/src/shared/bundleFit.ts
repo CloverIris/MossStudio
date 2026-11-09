@@ -29,6 +29,28 @@ export function isFileBundle(
   })
 }
 
+/**
+ * A main model in fp16: the community FP16-fixed DiTs, or any DiT whose weights read fp16.
+ * MossInfer loads a DiT only in bf16 or a quantized format and refuses fp16 at load
+ * (https://github.com/mossimage-cpp/mossimage.cpp#supported-models).
+ */
+export function isFp16Dit(model: { precision?: string; tags?: readonly string[] }): boolean {
+  // A catalog fetched from elsewhere may leave out `tags`; it must not stop a job.
+  return model.precision === 'fp16' || Boolean(model.tags?.includes('fixed'))
+}
+
+/**
+ * Why no engine can load this bundle, or null. 自己组合 no longer offers an fp16 main
+ * model, but a combination saved before that can still name one.
+ */
+export function bundleWeightProblem(
+  bundle: Pick<ModelBundle, 'components'>,
+  models: readonly (Pick<ModelEntry, 'id'> & { precision?: string; tags?: readonly string[] })[],
+): string | null {
+  const dit = models.find((model) => model.id === bundle.components.dit)
+  return dit && isFp16Dit(dit) ? '主模型是 FP16 版本，引擎读不了' : null
+}
+
 const isNvidia = (device: GpuInventoryDevice): boolean => !device.vendor || device.vendor === 'nvidia'
 
 /**
