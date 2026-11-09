@@ -81,8 +81,14 @@ describe('studio', () => {
 
     // One run per canvas at a time: the button says so until it finishes.
     await expect.poll(() => generate.textContent()).toContain('生成中')
+    // The values the job already took are locked; the description stays open for the next run.
+    await expect.poll(() => summary.isDisabled()).toBe(true)
+    await expect.poll(() => page.getByRole('group', { name: '尺寸' }).getByRole('button', { name: '16:9' }).isDisabled()).toBe(true)
+    expect(await page.getByText('生成中：尺寸、模型和采样先锁定。描述和区域还能改，下次生成生效。').isVisible()).toBe(true)
+    expect(await page.getByRole('textbox', { name: '描述', exact: true }).isEnabled()).toBe(true)
     await page.evaluate(() => window.__mock.finishJob(window.__mock.state.jobs[0]!.id))
     await expect.poll(() => generate.isEnabled()).toBe(true)
+    await expect.poll(() => summary.isDisabled()).toBe(false)
 
     // Ctrl+Enter generates too, with a fresh random seed.
     await page.getByRole('textbox', { name: '描述', exact: true }).click()
