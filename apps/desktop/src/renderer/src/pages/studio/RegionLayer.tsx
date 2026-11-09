@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ProjectCanvas, ProjectLayer, ProjectLayerKind } from '@shared/types'
 import { Input, cn } from '../../components/ui'
 import { pointInCanvas } from './boardLayout'
-import { moveBox, regionFromDrag, resizeFrom, type BoxCorner } from './canvases'
+import { moveBox, regionFromDrag, regionsAtPoint, resizeFrom, type BoxHandle } from './canvases'
 
 export const KIND_LABEL: Record<ProjectLayerKind, string> = { object: '物体', character: '人物', text: '文字' }
 export const KIND_ICON: Record<ProjectLayerKind, typeof Box> = { object: Box, character: User, text: Type }
@@ -14,11 +14,15 @@ export type BoardTool = 'select' | 'pan' | 'mask'
 
 type Box4 = [number, number, number, number]
 
-const CORNERS: Array<{ corner: BoxCorner; className: string }> = [
+const HANDLES: Array<{ corner: BoxHandle; className: string }> = [
   { corner: 'nw', className: '-left-1 -top-1 cursor-nwse-resize' },
+  { corner: 'n', className: 'left-1/2 -top-1 -translate-x-1/2 cursor-ns-resize' },
   { corner: 'ne', className: '-right-1 -top-1 cursor-nesw-resize' },
+  { corner: 'e', className: '-right-1 top-1/2 -translate-y-1/2 cursor-ew-resize' },
+  { corner: 'se', className: '-right-1 -bottom-1 cursor-nwse-resize' },
+  { corner: 's', className: 'left-1/2 -bottom-1 -translate-x-1/2 cursor-ns-resize' },
   { corner: 'sw', className: '-bottom-1 -left-1 cursor-nesw-resize' },
-  { corner: 'se', className: '-bottom-1 -right-1 cursor-nwse-resize' },
+  { corner: 'w', className: '-left-1 top-1/2 -translate-y-1/2 cursor-ew-resize' },
 ]
 
 /** A press that moves less than this (screen pixels) is a click, not a box. */
@@ -109,7 +113,7 @@ export function useRegionDraw(
   return { box, start }
 }
 
-type Gesture = { owner: Element; pointerId: number; id: string; start: [number, number]; origin: Box4; corner?: BoxCorner }
+type Gesture = { owner: Element; pointerId: number; id: string; start: [number, number]; origin: Box4; corner?: BoxHandle }
 
 /**
  * The regions of a canvas over its picture, each with its type and words.
@@ -140,6 +144,9 @@ export function RegionLayer({
   const surface = useRef<HTMLDivElement>(null)
   // The gesture lives in a ref so back-to-back pointer events never read a stale value.
   const gestureRef = useRef<Gesture | null>(null)
+  // Where the last click landed and which box of the stack it took: clicking the
+  // same spot again walks one box down, so a covered region is reachable.
+  const stackPick = useRef<{ key: string; at: [number, number]; index: number } | null>(null)
   const visible = canvas.layers.filter((layer) => layer.visible !== false)
 
   const point = (event: React.PointerEvent): [number, number] => {
@@ -151,10 +158,30 @@ export function RegionLayer({
     if (!interactive || event.button !== 0) return
     const target = event.target as HTMLElement
     const handle = target.closest<HTMLElement>('[data-resize-id]')
-    const id = handle?.dataset.resizeId ?? target.closest<HTMLElement>('[data-region-id]')?.dataset.regionId
-    const layer = id ? canvas.layers.find((item) => item.id === id) : undefined
+    const hit = handle?.dataset.resizeId ?? target.closest<HTMLElement>('[data-region-id]')?.dataset.regionId
+    let layer = hit ? canvas.layers.find((item) => item.id === hit) : undefined
     if (!layer) return
     event.stopPropagation()
+
+    // Overlapping boxes: a click takes the topmost one, and another click on the
+    // same spot takes the next one down. Dragging a corner keeps its own box.
+    if (!handle) {
+      const at = point(event)
+      const stack = regionsAtPoint(canvas.layers, at)
+      if (stack.length > 1) {
+        const previous = stackPick.current
+        const key = stack.map((item) => item.id).join(',')
+        const again = previous !== null && previous.key === key && Math.hypot(at[0] - previous.at[0], at[1] - previous.at[1]) < 8
+        const index = again ? (previous.index + 1) % stack.length : 0
+        stackPick.current = { key, at, index }
+        layer = stack[index] ?? layer
+      } else {
+        stackPick.current = null
+      }
+    } else {
+      stackPick.current = null
+    }
+
     onSelectRegion(layer.id)
     if (layer.locked) return
     try {
@@ -169,7 +196,7 @@ export function RegionLayer({
       id: layer.id,
       start: point(event),
       origin: [...layer.bbox],
-      corner: handle?.dataset.corner as BoxCorner | undefined,
+      corner: handle?.dataset.corner as BoxHandle | undefined,
     }
   }
 
@@ -231,7 +258,7 @@ export function RegionLayer({
               {words ? <span className="truncate">{words}</span> : null}
             </span>
             {selected && !layer.locked
-              ? CORNERS.map(({ corner, className }) => (
+              ? HANDLES.map(({ corner, className }) => (
                   <span
                     key={corner}
                     data-resize-id={layer.id}

@@ -12,10 +12,12 @@ import {
   matchAdapterPath,
   moveBox,
   newRegion,
+  regionsAtPoint,
   regionFromDrag,
   reorderLayers,
   resizeBox,
   resizeCanvas,
+  resizeFrom,
   sceneCanvas,
   settingsFrom,
   taskCanvasFor,
@@ -123,6 +125,25 @@ describe('studio/canvases regions', () => {
   it('keeps moved and resized boxes inside the picture', () => {
     expect(moveBox([10, 10, 30, 30], 200, -50, size)).toEqual([80, 0, 100, 20])
     expect(resizeBox([10, 10, 30, 30], 500, -500, size)).toEqual([10, 10, 100, 22])
+  })
+
+  it('pulls one edge without moving the other side', () => {
+    const box: [number, number, number, number] = [10, 10, 90, 90]
+    expect(resizeFrom(box, 'n', 0, -20, size)).toEqual([10, 0, 90, 90])
+    expect(resizeFrom(box, 's', 0, 20, size)).toEqual([10, 10, 90, 100])
+    expect(resizeFrom(box, 'w', -5, 0, size)).toEqual([5, 10, 90, 90])
+    expect(resizeFrom(box, 'e', 30, 0, size)).toEqual([10, 10, 100, 90])
+    // A corner still pulls both sides.
+    expect(resizeFrom(box, 'nw', 5, 5, size)).toEqual([15, 15, 90, 90])
+  })
+
+  it('finds the boxes under a point, topmost first, and skips hidden ones', () => {
+    const under = layer({ id: 'under', bbox: [0, 0, 80, 80] })
+    const top = layer({ id: 'top', bbox: [10, 10, 40, 40] })
+    const hidden = layer({ id: 'hidden', bbox: [0, 0, 100, 100], visible: false })
+    expect(regionsAtPoint([under, top, hidden], [20, 20]).map((item) => item.id)).toEqual(['top', 'under'])
+    expect(regionsAtPoint([under, top], [70, 70]).map((item) => item.id)).toEqual(['under'])
+    expect(regionsAtPoint([under, top], [95, 95])).toEqual([])
   })
 
   it('reorders regions by id', () => {

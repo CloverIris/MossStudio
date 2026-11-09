@@ -519,20 +519,33 @@ export function moveBox(
 /** A corner of a region box: north/south, west/east. */
 export type BoxCorner = 'nw' | 'ne' | 'sw' | 'se'
 
-/** Drags one corner of a box; the opposite corner stays put. */
+/** An edge of a region box: pulls one side, the opposite side stays put. */
+export type BoxEdge = 'n' | 's' | 'e' | 'w'
+
+export type BoxHandle = BoxCorner | BoxEdge
+
+/** Drags one corner or edge of a box; the opposite side stays put. */
 export function resizeFrom(
   origin: [number, number, number, number],
-  corner: BoxCorner,
+  handle: BoxHandle,
   dx: number,
   dy: number,
   canvas: Pick<ProjectCanvas, 'width' | 'height'>,
 ): [number, number, number, number] {
   let [x1, y1, x2, y2] = origin
-  if (corner.endsWith('w')) x1 = Math.max(0, Math.min(x2 - MIN_REGION, x1 + dx))
-  else x2 = Math.max(x1 + MIN_REGION, Math.min(canvas.width, x2 + dx))
-  if (corner.startsWith('n')) y1 = Math.max(0, Math.min(y2 - MIN_REGION, y1 + dy))
-  else y2 = Math.max(y1 + MIN_REGION, Math.min(canvas.height, y2 + dy))
+  if (handle.includes('w')) x1 = Math.max(0, Math.min(x2 - MIN_REGION, x1 + dx))
+  else if (handle.includes('e')) x2 = Math.max(x1 + MIN_REGION, Math.min(canvas.width, x2 + dx))
+  if (handle.includes('n')) y1 = Math.max(0, Math.min(y2 - MIN_REGION, y1 + dy))
+  else if (handle.includes('s')) y2 = Math.max(y1 + MIN_REGION, Math.min(canvas.height, y2 + dy))
   return [Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2)]
+}
+
+/** The regions under a point on the canvas, topmost first: what a click there can pick. */
+export function regionsAtPoint(layers: readonly ProjectLayer[], point: readonly [number, number]): ProjectLayer[] {
+  const [x, y] = point
+  return layers
+    .filter((layer) => layer.visible !== false && x >= layer.bbox[0] && x <= layer.bbox[2] && y >= layer.bbox[1] && y <= layer.bbox[3])
+    .reverse()
 }
 
 export function resizeBox(
