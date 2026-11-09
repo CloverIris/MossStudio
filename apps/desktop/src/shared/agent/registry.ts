@@ -230,6 +230,7 @@ export const TOOL_RULES = `How to work:
 - Fix a region with studio_update_layer, addressed by its 1-based index from studio_read_context, instead of adding another one; delete it with studio_remove_layer.
 - Ask with studio_ask_user when the picture depends on a choice only the user can make: composition, how a character looks, the exact wording, a size. One question, two to five concrete options. After asking, stop and say in one line what you are waiting for; the answer arrives as the next message.
 - Before starting a generation the user did not just ask for, or any step that spends GPU time on several pictures, ask with studio_ask_approval: approve, reject, or change it. Never start a batch on your own.
+- A go-ahead is a card, not a sentence: when the only thing missing is permission, call studio_ask_approval instead of writing the question. Once the user approves, or answers 需要 / 好 / 可以, do the step — never ask for the same permission twice.
 - A set of pictures (a series, a storyboard, "一套图") goes through studio_create_scenes: plan every scene, then build them in one call. Use studio_select_canvas to move between the new canvases and refine the ones that need it.
 - Every write result ends with problems: what still blocks generation. Clear them before calling studio_generate.
 - studio_generate returns immediately with a job id; call it once per request and do not wait for the picture.

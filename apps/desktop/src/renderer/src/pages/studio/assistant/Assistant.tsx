@@ -1,5 +1,5 @@
 import { ArrowUp, ChevronDown, Copy, History, PenLine, Plus, RotateCw, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Events, Ipc } from '@shared/channels'
 import type { AgentMode, AiConversationInfo, AiMessage, AiProviderInfo, AiStreamEvent, AiToolCall } from '@shared/ai'
 import { Notice } from '../../../components/common/Notice'
@@ -83,9 +83,14 @@ const SUGGESTIONS = [
 
 function followUpFor(card: AgentCard, answer: AgentCardAnswer, problems: string[]): string {
   if (answer.applied) {
-    const count = card.steps?.length ?? 0
-    const done = `已按方案改了 ${count} 处`
-    return problems.length ? `${done}。还差：${problems[0]}` : `${done}，你看一下。`
+    const steps = card.steps ?? []
+    const shown = steps
+      .slice(0, 3)
+      .map((step) => step.label)
+      .join('、')
+    const done = shown ? `已执行方案：${shown}${steps.length > 3 ? ` 等 ${steps.length} 处` : ''}` : `已执行方案（${steps.length} 处）`
+    // Say the plan is done, so the model does not ask the user to confirm it again.
+    return problems.length ? `${done}。还差：${problems[0]}` : `${done}，已经生效，不用再确认。`
   }
   if (card.kind === 'plan' && answer.freeText?.trim()) return `方案先不应用，改一下：${answer.freeText.trim()}`
   if (card.kind === 'confirm') {
@@ -129,6 +134,8 @@ export function Assistant(): React.JSX.Element {
   const [renameDraft, setRenameDraft] = useState('')
   const [proposal, setProposal] = useState<{ current: string; next: string } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollFrame = useRef(0)
+  const [activeTurn, setActiveTurn] = useState(0)
   const composer = useRef<HTMLTextAreaElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -380,6 +387,40 @@ export function Assistant(): React.JSX.Element {
     void sendText(input, true)
   }
 
+  /** One anchor per user turn, for the rail on the right. */
+  const turns = useMemo(
+    () =>
+      messages.filter((message) => message.role === 'user').map((message, index) => ({ id: message.id, index, label: message.content })),
+    [messages],
+  )
+
+  function jumpToTurn(id: string): void {
+    const target = scrollRef.current?.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+    target?.scrollIntoView({ block: 'start', behavior: animate ? 'smooth' : 'auto' })
+  }
+
+  const onScroll = useCallback((): void => {
+    if (scrollFrame.current) return
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = 0
+      const container = scrollRef.current
+      if (!container) return
+      const edge = container.getBoundingClientRect().top + 32
+      let active = 0
+      turns.forEach((turn, index) => {
+        const element = container.querySelector<HTMLElement>(`[data-message-id="${turn.id}"]`)
+        if (element && element.getBoundingClientRect().top <= edge) active = index
+      })
+      setActiveTurn(active)
+    })
+  }, [turns])
+
+  // Keep the rail in step when the conversation grows or shrinks under it.
+  useEffect(() => {
+    const frame = requestAnimationFrame(onScroll)
+    return () => cancelAnimationFrame(frame)
+  }, [onScroll, messages.length])
+
   const composerHint =
     pendingCard?.card?.kind === 'choice'
       ? '或者直接写你的答案…'
@@ -487,71 +528,92 @@ export function Assistant(): React.JSX.Element {
         />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-4">
-            <div className="flex flex-col gap-4">
-              {messages
-                .filter((message) => message.role !== 'tool')
-                .map((message) =>
-                  message.role === 'user' ? (
-                    <div
-                      key={message.id}
-                      data-message-id={message.id}
-                      className="ml-6 self-end rounded-lg bg-well px-3 py-2 text-ui text-ink"
-                    >
-                      <div className="selectable whitespace-pre-wrap break-words">{message.content}</div>
-                    </div>
-                  ) : (
-                    <div key={message.id} data-message-id={message.id} className="group/msg relative flex flex-col gap-2">
-                      {message.toolCalls?.length ? <ToolTrace entries={traceOf(message.toolCalls)} /> : null}
-                      {message.content ? <MarkdownBody>{message.content}</MarkdownBody> : null}
-                      {/* Answered: the question in one quiet line; the answer is the user's next bubble. */}
-                      {message.card?.answer ? (
-                        <p data-answered-card className="text-caption text-ink-2">
-                          {answeredLine(message.card)}
-                        </p>
-                      ) : null}
-                      {message.content ? (
-                        // A reply's actions float over its corner on hover; they take no room in the conversation.
-                        <div
-                          data-reply-actions
-                          className="pointer-events-none absolute -top-3 right-0 flex items-center gap-0.5 rounded-lg bg-raised p-0.5 opacity-0 shadow-float transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100"
-                        >
-                          <IconButton label="用作描述" className="size-7" onClick={() => proposeDescription(message.content)}>
-                            <PenLine className="size-3.5" strokeWidth={1.6} />
-                          </IconButton>
-                          <IconButton label="复制" className="size-7" onClick={() => void copyText(message.content)}>
-                            <Copy className="size-3.5" strokeWidth={1.6} />
-                          </IconButton>
-                          {message.id === lastAssistantId ? (
-                            <IconButton label="重新回答" className="size-7" disabled={busy} onClick={() => void regenerate()}>
-                              <RotateCw className="size-3.5" strokeWidth={1.6} />
+          <div className="relative min-h-0 flex-1">
+            <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto py-4 pr-5">
+              <div className="flex flex-col gap-4">
+                {messages
+                  .filter((message) => message.role !== 'tool')
+                  .map((message) =>
+                    message.role === 'user' ? (
+                      <div
+                        key={message.id}
+                        data-message-id={message.id}
+                        className="ml-6 self-end rounded-lg bg-well px-3 py-2 text-ui text-ink"
+                      >
+                        <div className="selectable whitespace-pre-wrap break-words">{message.content}</div>
+                      </div>
+                    ) : (
+                      <div key={message.id} data-message-id={message.id} className="group/msg relative flex flex-col gap-2">
+                        {message.toolCalls?.length ? <ToolTrace entries={traceOf(message.toolCalls)} /> : null}
+                        {message.content ? <MarkdownBody>{message.content}</MarkdownBody> : null}
+                        {/* Answered: the question in one quiet line; the answer is the user's next bubble. */}
+                        {message.card?.answer ? (
+                          <p data-answered-card className="text-caption text-ink-2">
+                            {answeredLine(message.card)}
+                          </p>
+                        ) : null}
+                        {message.content ? (
+                          // A reply's actions float over its corner on hover; they take no room in the conversation.
+                          <div
+                            data-reply-actions
+                            className="pointer-events-none absolute -top-3 right-0 flex items-center gap-0.5 rounded-lg bg-raised p-0.5 opacity-0 shadow-float transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100"
+                          >
+                            <IconButton label="用作描述" className="size-7" onClick={() => proposeDescription(message.content)}>
+                              <PenLine className="size-3.5" strokeWidth={1.6} />
                             </IconButton>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  ),
-                )}
+                            <IconButton label="复制" className="size-7" onClick={() => void copyText(message.content)}>
+                              <Copy className="size-3.5" strokeWidth={1.6} />
+                            </IconButton>
+                            {message.id === lastAssistantId ? (
+                              <IconButton label="重新回答" className="size-7" disabled={busy} onClick={() => void regenerate()}>
+                                <RotateCw className="size-3.5" strokeWidth={1.6} />
+                              </IconButton>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ),
+                  )}
 
-              {streaming ? (
-                <div className="flex flex-col gap-2">
-                  {streamTools.length ? <ToolTrace entries={streamTools} /> : null}
-                  {streamText ? <MarkdownBody>{streamText}</MarkdownBody> : null}
-                  {!streamText && !streamTools.length ? (
-                    <span className="inline-flex items-center gap-2 text-caption text-ink-2">
-                      <Spinner className="size-3.5" />
-                      思考中…
-                    </span>
-                  ) : null}
-                </div>
-              ) : busy ? (
-                <span className="inline-flex items-center gap-2 text-caption text-ink-2">
-                  <Spinner className="size-3.5" />
-                  思考中…
-                </span>
-              ) : null}
+                {streaming ? (
+                  <div className="flex flex-col gap-2">
+                    {streamTools.length ? <ToolTrace entries={streamTools} /> : null}
+                    {streamText ? <MarkdownBody>{streamText}</MarkdownBody> : null}
+                    {!streamText && !streamTools.length ? (
+                      <span className="inline-flex items-center gap-2 text-caption text-ink-2">
+                        <Spinner className="size-3.5" />
+                        思考中…
+                      </span>
+                    ) : null}
+                  </div>
+                ) : busy ? (
+                  <span className="inline-flex items-center gap-2 text-caption text-ink-2">
+                    <Spinner className="size-3.5" />
+                    思考中…
+                  </span>
+                ) : null}
+              </div>
+              <div ref={endRef} />
             </div>
-            <div ref={endRef} />
+
+            {turns.length > 1 ? (
+              <nav aria-label="对话轮次" className="absolute inset-y-4 right-0 flex flex-col items-center justify-center gap-1.5">
+                {turns.map((turn) => (
+                  <button
+                    key={turn.id}
+                    type="button"
+                    title={turn.label.slice(0, 60)}
+                    aria-label={`第 ${turn.index + 1} 轮`}
+                    aria-current={activeTurn === turn.index ? 'true' : undefined}
+                    onClick={() => jumpToTurn(turn.id)}
+                    className={cn(
+                      'w-1.5 rounded-full transition-all',
+                      activeTurn === turn.index ? 'h-3 bg-accent' : 'h-1.5 bg-ink-3/40 enabled:hover:bg-ink-3/70',
+                    )}
+                  />
+                ))}
+              </nav>
+            ) : null}
           </div>
 
           {pendingCard ? (
