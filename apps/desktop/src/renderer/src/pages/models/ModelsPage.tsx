@@ -236,7 +236,7 @@ function ModelsTab({
       )}
 
       {location.ready && (sections.others.length || combine) ? (
-        <Section title="其他模型" description="社区版本和自己组合的模型，引擎没有验证过，不保证能正常出图" actions={combine}>
+        <Section title="其他模型" description="自己组合的模型，引擎没有验证过，不保证能正常出图" actions={combine}>
           {sections.others.length ? (
             <ModelList
               views={sections.others}

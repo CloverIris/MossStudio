@@ -32,15 +32,14 @@ const own = (id: string, role: ModelEntry['role'], overrides: Partial<ModelEntry
 })
 
 const models = (installed: string[] = [], extra: ModelEntry[] = []): ModelEntry[] => [...catalogFixture({ installed }).models, ...extra]
+const SFT = ['moss-sft-dit', 'qwen35-encoder', 'flux2-vae-small', 'moss-pipeline']
 const labels = (list: { label: string }[]): string[] => list.map((choice) => choice.label)
 
 describe('slotChoices', () => {
-  it('lists each 主模型 once by its label, without the unusable FP16-fixed single files', () => {
+  it('lists each 主模型 once by its label, without the FP16-fixed DiTs the engine refuses', () => {
     expect(labels(slotChoices(models(), 'dit'))).toEqual([
       'MOSS-Image SFT BF16',
       'MOSS-Image Base BF16',
-      'MOSS-Image Base FP16 社区修复',
-      'MOSS-Image SFT FP16 社区修复',
       'MOSS-Image Base INT8',
       'MOSS-Image SFT INT8',
       // The engine-certified single files (INT4, NVFP4, Turbo) are parts too.
@@ -157,5 +156,13 @@ describe('unusedDownloads', () => {
       all,
     )
     expect(unusedDownloads(all, [...catalog.bundles, combo])).toEqual([])
+  })
+
+  it('lists an FP16-fixed DiT already downloaded, which no model uses any more, so it can be deleted', () => {
+    const catalog = catalogFixture({ installed: ['moss-sft-fp16-fixed', 'moss-base-fp16-fixed-comfy', ...SFT] })
+    expect(unusedDownloads(catalog.models, catalog.bundles).map((model) => model.id)).toEqual([
+      'moss-sft-fp16-fixed',
+      'moss-base-fp16-fixed-comfy',
+    ])
   })
 })

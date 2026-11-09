@@ -41,8 +41,8 @@ describe('the certified catalog', () => {
       ['moss-sft-turbo-int8', 'high'],
       ['moss-base-int8', 'high'],
     ])
-    // The FP16-fixed community bundles are not on the engine's list.
-    expect(catalog.bundles.filter((item) => !item.certified).map((item) => item.id)).toEqual(['moss-sft-fp16', 'moss-base-fp16'])
+    // Every model the catalog offers is one the engine runs.
+    expect(catalog.bundles.filter((item) => !item.certified).map((item) => item.id)).toEqual([])
   })
 
   it('builds each single-file model from an INT8 text encoder, the small FLUX.2 VAE and the runtime configs', () => {

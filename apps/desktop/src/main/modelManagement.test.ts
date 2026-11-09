@@ -82,7 +82,7 @@ export async function runModelManagementTests(): Promise<void> {
   try {
     let catalog = await getCatalog(settings, true)
     // 4 folder bundles and the 5 single-file ones the engine certifies.
-    assert.equal(catalog.bundles.length, 9)
+    assert.equal(catalog.bundles.length, 7)
     assert(catalog.models.filter((m) => m.format === 'comfyui').every((m) => m.files?.length === 1))
     assert(catalog.models.filter((m) => m.role !== 'full').every((m) => m.files?.length))
     assert.equal((await installBundle('moss-sft', settings)).length, 4)
@@ -98,13 +98,13 @@ export async function runModelManagementTests(): Promise<void> {
     assert.equal((await installBundle('moss-base', settings)).length, 1)
     await wait()
     assert(requested.slice(previous).every((p) => p.startsWith('transformer/')))
-    await installBundle('moss-sft-fp16', settings)
+    // The FP16-fixed DiT is in no model (the engine refuses FP16 weights) but still downloads and
+    // is recognised, so a copy already here can be found and deleted.
+    await startDownload('model', 'moss-sft-fp16-fixed', settings)
     await wait()
-    const fixed = catalog.bundles.find((b) => b.id === 'moss-sft-fp16')!
-    const fixedPath = await prepareModelBundle(bundleBinding(fixed), settings)
-    assert.equal((await readFile(join(fixedPath, 'transformer/model.safetensors'))).toString(), 'fp16-fixed-fixture')
-    const fixedManifest = JSON.parse(await readFile(join(fixedPath, 'clover_model.json'), 'utf8'))
-    assert.equal(fixedManifest.components.find((c: { role: string }) => c.role === 'dit').precision, 'fp16')
+    const fixed = await componentSnapshot('moss-sft-fp16-fixed', settings)
+    assert.equal((await readFile(join(fixed.root, 'sft/transformer/model.safetensors'))).toString(), 'fp16-fixed-fixture')
+    assert.equal((await getCatalog(settings, true)).models.find((m) => m.id === 'moss-sft-fp16-fixed')?.installed, true)
     // A complete directory name alone is never readiness evidence.
     await writeFile(join(path, 'vae/model.safetensors'), 'broken')
     catalog = await getCatalog(settings, true)
@@ -162,7 +162,7 @@ export async function runModelManagementTests(): Promise<void> {
     assert.equal(requested.filter((p) => p === 'text_encoder/model.safetensors').length, modelRequests)
     await deleteModel('model', localModel!.id, external)
     assert.equal((await readFile(join(externalDir, 'qwen.safetensors'))).toString(), te.toString())
-    // Deleting one bundle's main model keeps the components other bundles share.
+    // Deleting a main model keeps the components the models share.
     await deleteModel('model', 'moss-sft-fp16-fixed', settings)
     catalog = await getCatalog(settings, true)
     assert.equal(catalog.models.find((m) => m.id === 'moss-sft-fp16-fixed')?.installed, false)
@@ -176,7 +176,7 @@ export async function runModelManagementTests(): Promise<void> {
           'bundle-install',
           'shared-components',
           'base-switch',
-          'fp16-assembly',
+          'fp16-download',
           'corruption-repair',
           'legacy-blob-reuse',
           'external-model-import',

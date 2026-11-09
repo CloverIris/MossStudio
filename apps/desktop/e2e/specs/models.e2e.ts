@@ -69,8 +69,9 @@ describe('models', () => {
     expect(await recommended.getByText('显存占用约减四成，速度约快 2.5 倍，日常首选。', { exact: false }).count()).toBe(1)
     const others = section('其他模型')
     expect(await others.getByText('引擎没有验证过', { exact: false }).count()).toBeGreaterThan(0)
-    expect(await others.locator('[data-model-name="MOSS-Image SFT FP16-fixed"]').count()).toBe(1)
-    expect(await recommended.locator('[data-model-name="MOSS-Image SFT FP16-fixed"]').count()).toBe(0)
+    // The engine refuses the FP16-fixed DiTs, so no list offers them.
+    expect(await page.locator('[data-model-name^="MOSS-Image SFT FP16-fixed"]').count()).toBe(0)
+    expect(await page.locator('[data-model-name^="MOSS-Image Base FP16-fixed"]').count()).toBe(0)
     await app.screenshot('models-certified-light')
 
     // NVFP4 runs only on RTX 50: this RTX 4090 says why and offers no download.
