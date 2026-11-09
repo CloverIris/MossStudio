@@ -30,7 +30,8 @@ export function isFileBundle(
 }
 
 /**
- * A main model in fp16: the community FP16-fixed DiTs, or any DiT whose weights read fp16.
+ * A main model in fp16: the community FP16-fixed DiTs, or any entry the catalog marks fp16.
+ * A person's own single file is not covered: its dtype is not read when it is added.
  * MossInfer loads a DiT only in bf16 or a quantized format and refuses fp16 at load
  * (https://github.com/mossimage-cpp/mossimage.cpp#supported-models).
  */

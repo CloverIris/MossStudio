@@ -12,7 +12,7 @@ import { scanRemoteModels } from './remoteModels'
 import { localEngineKinds, resolveDeviceEngine } from './engineInstalls'
 import { cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
 import { isCliEngine } from '@shared/enginePackages'
-import { bestBundleFor, generationGpus, isFileBundle, isFp16Dit } from '@shared/bundleFit'
+import { bestBundleFor, bundleWeightProblem, generationGpus, isFileBundle, isFp16Dit } from '@shared/bundleFit'
 
 export async function getOnboardingStatus(settings: Settings, hostId = 'local'): Promise<OnboardingStatus> {
   const catalog = await getCatalog(settings, true)
@@ -72,12 +72,14 @@ export async function getOnboardingStatus(settings: Settings, hostId = 'local'):
         (installed.has(id) ? 2 : hostId === 'local' && catalog.models.find((model) => model.id === id)?.installState === 'partial' ? 1 : 0),
       0,
     )
+  // A combination saved with an FP16 main model has every part downloaded but runs nowhere.
+  const loadable = catalog.bundles.filter((item) => bundleWeightProblem(item, catalog.models) === null)
   const usable = cliKind
-    ? catalog.bundles.filter((item) => cliBundleProblem(cliKind!, item, catalog.models) === null)
+    ? loadable.filter((item) => cliBundleProblem(cliKind!, item, catalog.models) === null)
     : hostId === 'local'
-      ? catalog.bundles
+      ? loadable
       : // Another computer runs a model folder; single files load only on this one.
-        catalog.bundles.filter((item) => !isFileBundle(item, catalog.models))
+        loadable.filter((item) => !isFileBundle(item, catalog.models))
   // With nothing downloaded yet, the model that suits this computer's GPU comes first (as on the 模型 page).
   const gpus = hostId === 'local' ? generationGpus(cachedGpuInventory()?.devices, settings) : []
   const cliGpus = new Set(

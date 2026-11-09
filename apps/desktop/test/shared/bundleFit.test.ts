@@ -243,9 +243,9 @@ describe('bundleWeightProblem', () => {
     }
   })
 
-  it('refuses a person’s own fp16 DiT file too, by the dtype read from it', () => {
-    const own = { id: 'own-dit', precision: 'fp16', tags: ['local-import'] }
-    expect(bundleWeightProblem(combination('own-dit'), [...catalog.models, own])).not.toBeNull()
+  it('reads an entry without tags (a catalog fetched from elsewhere) by its precision alone', () => {
+    expect(bundleWeightProblem(combination('bare'), [{ id: 'bare', precision: 'fp16' }])).not.toBeNull()
+    expect(bundleWeightProblem(combination('bare'), [{ id: 'bare', precision: 'bf16' }])).toBeNull()
   })
 
   it('lets bf16 and quantized main models through, so every catalog model passes', () => {

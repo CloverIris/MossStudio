@@ -4,7 +4,7 @@
  * the catalog is the real resources/models.json via catalogFixture.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Catalog, GpuInventoryDevice, LaunchDevice, ModelEntry, TrainingHost } from '@shared/types'
+import type { Catalog, GpuInventoryDevice, LaunchDevice, ModelBundle, ModelEntry, TrainingHost } from '@shared/types'
 import { useTempDataRoot } from '@test/helpers/tempDir'
 import { SFT_BUNDLE_IDS, catalogFixture, engineMissingFixture, engineReadyFixture, settingsFixture } from '@test/mocks/backend/fixtures'
 
@@ -12,6 +12,8 @@ interface Options {
   installed?: string[]
   /** Entries added to the catalog, e.g. a whole model folder the person registered. */
   extraModels?: ModelEntry[]
+  /** Models added to the catalog, e.g. a saved 自己组合 combination. */
+  extraBundles?: ModelBundle[]
   partial?: string
   remoteInstalled?: string[]
   engine?: boolean
@@ -49,7 +51,11 @@ vi.mock('@main/services/engineInstalls', () => ({
 vi.mock('@main/services/models', () => ({
   getCatalog: async (): Promise<Catalog> => {
     const catalog = catalogFixture({ installed: state.options.installed, partial: state.options.partial ? [state.options.partial] : [] })
-    return { ...catalog, models: [...catalog.models, ...(state.options.extraModels ?? [])] }
+    return {
+      ...catalog,
+      bundles: [...catalog.bundles, ...(state.options.extraBundles ?? [])],
+      models: [...catalog.models, ...(state.options.extraModels ?? [])],
+    }
   },
   modelMissingBytes: async (_settings: unknown, model: { id: string; sizeBytes: number }) =>
     state.options.missing?.[model.id] ?? model.sizeBytes,
@@ -113,6 +119,22 @@ describe('getOnboardingStatus (local)', () => {
     expect(result.ready).toBe(true)
     expect(step(result, 'engine').detail).toBe('MossInfer 已就绪')
     expect(step(result, 'model')).toMatchObject({ status: 'ok', sizeBytes: 0, detail: 'MOSS-Image SFT 已就绪' })
+  })
+
+  it('never picks a saved combination with an FP16-fixed main model, however much of it is downloaded', async () => {
+    const combo: ModelBundle = {
+      id: 'combo-fp16',
+      name: '旧的 FP16 组合',
+      description: '',
+      components: { dit: 'moss-sft-fp16-fixed', textEncoder: 'qwen35-encoder', vae: 'flux2-vae-small' },
+      support: 'moss-pipeline',
+      custom: true,
+    }
+    const fp16 = ['moss-sft-fp16-fixed', 'qwen35-encoder', 'flux2-vae-small', 'moss-pipeline']
+    const result = await status({ engine: true, installed: fp16, extraBundles: [combo] })
+    expect(result.bundleId).toBe('moss-sft')
+    expect(result.ready).toBe(false)
+    expect(step(result, 'model').modelIds).toEqual(sft)
   })
 
   it('counts a registered bf16 model folder as ready, but not an FP16-fixed one the engine refuses', async () => {
