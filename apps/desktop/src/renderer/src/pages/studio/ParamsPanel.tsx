@@ -55,7 +55,6 @@ import { InputsSection, type InputsWiring } from './InputsSection'
 import { SamplingSection } from './SamplingSection'
 import { patchInit } from './links'
 import { styleUsers, UPSCALE_DETAIL, UPSCALE_DETAIL_DEFAULT, UPSCALE_SCALES, withUpscaleScale } from './nodes'
-import { samplingSummary } from './sampling'
 
 const SHORTCUT = typeof window !== 'undefined' && window.clover?.platform === 'darwin' ? '⌘ ↵' : 'Ctrl ↵'
 
@@ -195,11 +194,10 @@ function CanvasParams({
   const boundMissing = Boolean(
     canvas.deviceUuid && gpuInventory && !gpuInventory.devices.some((device) => device.uuid === canvas.deviceUuid),
   )
-  const gpuName = canvas.deviceUuid ? gpuInventory?.devices.find((device) => device.uuid === canvas.deviceUuid)?.name : undefined
   const locationName = remoteHost ? remoteHost.name : '本机'
-  const advancedSummary = [seedLocked ? `种子 ${canvas.seed}` : '种子随机', locationName, gpuName, samplingSummary(canvas)]
-    .filter(Boolean)
-    .join(' · ')
+  // The collapsed row names what is inside, so a first-time user knows it opens
+  // settings instead of reading the values as a status line.
+  const advancedSummary = ['种子 / CFG / 设备', seedLocked ? `种子 ${canvas.seed}` : '随机', locationName].join(' · ')
 
   const sizeLabel = canvas.upscale
     ? `放大 ×${canvas.upscale.scale}`
@@ -368,7 +366,7 @@ function CanvasParams({
             />
           </section>
 
-          <Advanced dense summary={advancedSummary} className="-mx-3.5">
+          <Advanced dense title="高级设置" summary={advancedSummary} className="-mx-3.5">
             <div className="flex flex-col gap-5 px-3.5 pb-2 pt-2">
               <section className="flex flex-col gap-2">
                 <FieldLabel htmlFor="studio-seed">种子</FieldLabel>
