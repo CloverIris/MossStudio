@@ -140,7 +140,7 @@ export async function runStudioCanvasUiTests(): Promise<void> {
       win.webContents.once('did-finish-load', () => resolve())
       void win.webContents.reload()
     })
-    await waitFor('document.querySelector(\'article[aria-label^="画面 1"]\')')
+    await waitFor('Boolean(document.querySelector(\'article[aria-label^="画面 1"]\'))')
     const generateDisabled = (): Promise<unknown> => evaluate("document.querySelector('[data-studio-generate]')?.disabled")
     assert.equal(await generateDisabled(), true, 'generation action should be disabled while the Canvas job is active')
 
