@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Events } from '@shared/channels'
 import { decodeEngineHello } from '@shared/engineProtocol'
 import type { GpuInventoryDevice, JobRecord, ModelEntry } from '@shared/types'
@@ -8,6 +8,7 @@ import type { MossInferSink } from '@main/services/mossInfer'
 import type { CliJobOptions } from '@main/services/cliEngine'
 import type { DeviceEngine } from '@main/services/engineInstalls'
 import { useTempDataRoot } from '@test/helpers/tempDir'
+import { inventoryDevicesFor, machineFixture } from '@test/mocks/backend/machines'
 
 /** Routing of local jobs by the package a GPU runs: moss-server for CUDA, the one-shot CLI for Vulkan / HIP. */
 const emit = vi.hoisted(() => vi.fn())
@@ -21,6 +22,8 @@ const hipDeviceIndex = vi.hoisted(() => vi.fn())
 const cliBundleDtypeProblem = vi.hoisted(() => vi.fn())
 const currentEngineMachine = vi.hoisted(() => vi.fn())
 const resolveDeviceEngine = vi.hoisted(() => vi.fn())
+/** Whether the installed plan left a GPU without an engine for its memory (engineInstalls.test.ts covers the real one). */
+const skippedForMemory = vi.hoisted(() => vi.fn((_uuid: string) => false))
 const prepareModelSource = vi.hoisted(() => vi.fn())
 const getCatalog = vi.hoisted(() => vi.fn())
 const refreshGpuInventory = vi.hoisted(() => vi.fn())
@@ -31,6 +34,7 @@ vi.mock('@main/services/cliEngine', () => ({ runCliJob, cancelCliJob, hipDeviceI
 // localServerPath follows the same per-device record, like the real one: a CUDA GPU's own moss-server, nothing for a CLI GPU.
 vi.mock('@main/services/engineInstalls', () => ({
   resolveDeviceEngine,
+  skippedForMemory,
   currentEngineMachine,
   localServerPath: (uuid?: string) => {
     const engine = uuid ? (resolveDeviceEngine(uuid) as DeviceEngine | null) : null
@@ -50,6 +54,11 @@ vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async ()
 
 const dataRoot = useTempDataRoot()
 let supervisor: typeof import('@main/services/supervisor')
+// Runs before useTempDataRoot removes the folder (after-hooks run last-registered first): the job list and
+// log writes the supervisor does not wait for must be done, or the removal races them (ENOTEMPTY).
+afterEach(async () => {
+  await supervisor?.settleJobWrites()
+})
 
 const nvidia: GpuInventoryDevice = { uuid: 'GPU-a', index: 0, name: 'RTX 4090', computeCapability: { major: 8, minor: 9 } }
 const arc: GpuInventoryDevice = { uuid: 'vk-8086-56a0-0', index: 1, name: 'Intel Arc A770', vendor: 'intel', vulkanIndex: 2 }
@@ -112,6 +121,7 @@ beforeEach(async () => {
     [amdB.uuid, deviceEngine('hip', amdB)],
   ])
   resolveDeviceEngine.mockReset().mockImplementation((uuid: string) => engines.get(uuid) ?? null)
+  skippedForMemory.mockReset().mockReturnValue(false)
   runCliJob.mockReset().mockImplementation(async (job: JobRecord, _params: unknown, opts: CliJobOptions, sink: MossInferSink) => {
     cliStarts.push({ job, opts })
     sinks.set(job.id, sink)
@@ -408,6 +418,163 @@ describe('automatic GPU assignment on a mixed machine', () => {
     expect(job.deviceUuid).toBe(arc.uuid)
   })
 
+  it('a laptop with a 2 GB card sends automatic work to its integrated GPU, never to the card that cannot hold the model', async () => {
+    const machine = machineFixture('laptopSmallGpu')
+    const [mx250, uhd] = inventoryDevicesFor(machine)
+    // Worst case: an older plan left a Vulkan engine on the 2 GB card too.
+    engines.set(mx250!.uuid, deviceEngine('vulkan', mx250!))
+    engines.set(uhd!.uuid, deviceEngine('vulkan', uhd!))
+    currentEngineMachine.mockReturnValue({ machine })
+    refreshGpuInventory.mockResolvedValue({ devices: [mx250, uhd] })
+    expect((await supervisor.startEngineJob(request())).deviceUuid).toBe(uhd!.uuid)
+  })
+
+  it('a 2 GB card that runs moss-server still gives way to the integrated GPU', async () => {
+    const machine = machineFixture('laptopSmallGpu')
+    const [card, uhd] = inventoryDevicesFor(machine)
+    const mx450 = { ...card!, name: 'NVIDIA GeForce MX450', computeCapability: { major: 7, minor: 5 } }
+    const small = decodeEngineHello({
+      protocol_version: 2,
+      probe: { devices: [{ index: 0, name: mx450.name, supported: true, compute_capability: '7.5' }] },
+    })
+    engines.set(mx450.uuid, { ...deviceEngine('cuda', mx450), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+    engines.set(uhd!.uuid, deviceEngine('vulkan', uhd!))
+    probeLocalEngineGpuCompatibility.mockResolvedValue({ hello: small, helloFor: (uuid: string) => (uuid === mx450.uuid ? small : null) })
+    currentEngineMachine.mockReturnValue({ machine })
+    refreshGpuInventory.mockResolvedValue({ devices: [mx450, uhd] })
+    expect((await supervisor.startEngineJob(request())).deviceUuid).toBe(uhd!.uuid)
+    // With nothing else there, the small card is still used.
+    refreshGpuInventory.mockResolvedValue({ devices: [mx450] })
+    expect((await supervisor.startEngineJob(request({ prompt: 'alone' }))).deviceUuid).toBe(mx450.uuid)
+  })
+
+  it('a 3 GB card is still used when the only other GPU cannot run at all', async () => {
+    const gtx1060: GpuInventoryDevice = {
+      uuid: 'GPU-10601060',
+      index: 0,
+      name: 'NVIDIA GeForce GTX 1060 3GB',
+      memoryTotalBytes: 3 * 1024 ** 3,
+      computeCapability: { major: 6, minor: 1 },
+    }
+    // The integrated GPU needs Vulkan 1.2: no engine for it. The 3 GB card got the 兼容模式 engine from 设置.
+    const uhd: GpuInventoryDevice = { uuid: 'vk-8086-5917-0', index: 1, name: 'Intel(R) UHD Graphics 620', vendor: 'intel' }
+    engines.set(gtx1060.uuid, deviceEngine('vulkan', gtx1060))
+    refreshGpuInventory.mockResolvedValue({ devices: [gtx1060, uhd] })
+    expect((await supervisor.startEngineJob(request())).deviceUuid).toBe(gtx1060.uuid)
+  })
+
+  describe('a card too small for the model, picked by hand', () => {
+    const name = 'NVIDIA GeForce MX250 显存太小（2 GB），没有安装引擎。'
+    const laptop = (): { mx250: GpuInventoryDevice; uhd: GpuInventoryDevice } => {
+      const machine = machineFixture('laptopSmallGpu')
+      const [mx250, uhd] = inventoryDevicesFor(machine)
+      // The plan gives the 2 GB card no engine for its memory; the integrated GPU runs 兼容模式.
+      engines.set(uhd!.uuid, deviceEngine('vulkan', uhd!))
+      skippedForMemory.mockImplementation((uuid: string) => uuid === mx250!.uuid && !engines.has(uuid))
+      currentEngineMachine.mockReturnValue({ machine })
+      refreshGpuInventory.mockResolvedValue({ devices: [mx250, uhd] })
+      return { mx250: mx250!, uhd: uhd! }
+    }
+
+    it('as the default GPU in settings: refused, pointing at 设置', async () => {
+      const { mx250 } = laptop()
+      const { updateSettings } = await import('@main/services/settings')
+      updateSettings({ gpuSelection: { uuid: mx250.uuid } })
+      await expect(supervisor.startEngineJob(request())).rejects.toMatchObject({
+        code: 'E_GPU_TOO_SMALL',
+        message: `${name}在「设置 › 设备与引擎」里改用另一块显卡。`,
+      })
+      expect(runCliJob).not.toHaveBeenCalled()
+      expect(runMossInferJob).not.toHaveBeenCalled()
+    })
+
+    it("as the GPU a canvas is bound to: refused, pointing at the canvas's own 显卡 picker", async () => {
+      const { mx250 } = laptop()
+      await expect(supervisor.startEngineJob(request({ deviceUuid: mx250.uuid }))).rejects.toMatchObject({
+        code: 'E_GPU_TOO_SMALL',
+        message: `${name}在画面的「显卡」里换一块，或改回跟随默认。`,
+      })
+    })
+
+    it('runs when an engine was chosen for it in 高级', async () => {
+      const { mx250 } = laptop()
+      engines.set(mx250.uuid, deviceEngine('vulkan', mx250))
+      expect((await supervisor.startEngineJob(request({ deviceUuid: mx250.uuid }))).deviceUuid).toBe(mx250.uuid)
+    })
+
+    it('a small CUDA card with an engine goes on to the compatibility probe, and runs', async () => {
+      const { mx250 } = laptop()
+      const mx450 = { ...mx250, name: 'NVIDIA GeForce MX450', computeCapability: { major: 7, minor: 5 } }
+      refreshGpuInventory.mockResolvedValue({ devices: [mx450] })
+      engines.set(mx450.uuid, { ...deviceEngine('cuda', mx450), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+      const small = decodeEngineHello({
+        protocol_version: 2,
+        probe: { devices: [{ index: 0, name: mx450.name, supported: true, compute_capability: '7.5' }] },
+      })
+      probeLocalEngineGpuCompatibility.mockResolvedValue({ hello: small, helloFor: (uuid: string) => (uuid === mx450.uuid ? small : null) })
+      probeLocalEngineGpuCompatibility.mockClear()
+      expect((await supervisor.startEngineJob(request({ deviceUuid: mx450.uuid }))).deviceUuid).toBe(mx450.uuid)
+      expect(probeLocalEngineGpuCompatibility).toHaveBeenCalled()
+    })
+
+    it('a lone small card, or one nothing was installed for yet, keeps the usual "install an engine" error', async () => {
+      const { mx250 } = laptop()
+      // Not skipped by the plan (it would be the only GPU, or no package is installed yet).
+      skippedForMemory.mockReturnValue(false)
+      await expect(supervisor.startEngineJob(request({ deviceUuid: mx250.uuid }))).rejects.toThrow(
+        '没有为 NVIDIA GeForce MX250 安装可用的引擎；请在引擎页安装引擎后重试。',
+      )
+    })
+  })
+
+  it('a job the integrated GPU cannot run goes to a 2 GB card that has the full engine, not to a false refusal', async () => {
+    const machine = machineFixture('laptopSmallGpu')
+    const [card, uhd] = inventoryDevicesFor(machine)
+    // The MX450 got a CUDA engine through 高级; the integrated GPU runs 兼容模式, which has no 起始图.
+    const mx450 = { ...card!, name: 'NVIDIA GeForce MX450', computeCapability: { major: 7, minor: 5 } }
+    const small = decodeEngineHello({
+      protocol_version: 2,
+      probe: { devices: [{ index: 0, name: mx450.name, supported: true, compute_capability: '7.5' }] },
+    })
+    engines.set(mx450.uuid, { ...deviceEngine('cuda', mx450), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+    engines.set(uhd!.uuid, deviceEngine('vulkan', uhd!))
+    probeLocalEngineGpuCompatibility.mockResolvedValue({ hello: small, helloFor: (uuid: string) => (uuid === mx450.uuid ? small : null) })
+    currentEngineMachine.mockReturnValue({ machine })
+    refreshGpuInventory.mockResolvedValue({ devices: [mx450, uhd] })
+    const job = await supervisor.startEngineJob(request({ initImage: { path: '/a/init.png', strength: 0.5 } }))
+    expect(job.deviceUuid).toBe(mx450.uuid)
+    // A plain job still prefers the integrated GPU, which can hold the model.
+    expect((await supervisor.startEngineJob(request({ prompt: 'plain' }))).deviceUuid).toBe(uhd!.uuid)
+  })
+
+  it('asks the compatibility probe once per assignment, also when the small cards are tried too', async () => {
+    const big = { ...nvidia, uuid: 'GPU-big', name: 'Big unsupported', memoryTotalBytes: 24 * 1024 ** 3 }
+    const mx450: GpuInventoryDevice = {
+      uuid: 'GPU-mx450',
+      index: 1,
+      name: 'NVIDIA GeForce MX450',
+      memoryTotalBytes: 2 * 1024 ** 3,
+      computeCapability: { major: 7, minor: 5 },
+    }
+    const hello = decodeEngineHello({
+      protocol_version: 2,
+      probe: {
+        devices: [
+          { index: 0, name: big.name, supported: false, compute_capability: '8.9' },
+          { index: 1, name: mx450.name, supported: true, compute_capability: '7.5' },
+        ],
+      },
+    })
+    engines.set(big.uuid, { ...deviceEngine('cuda', big), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+    engines.set(mx450.uuid, { ...deviceEngine('cuda', mx450), binaryPath: engines.get(nvidia.uuid)!.binaryPath })
+    probeLocalEngineGpuCompatibility.mockResolvedValue({ hello, helloFor: () => hello })
+    probeLocalEngineGpuCompatibility.mockClear()
+    refreshGpuInventory.mockResolvedValue({ devices: [big, mx450] })
+    expect((await supervisor.startEngineJob(request())).deviceUuid).toBe(mx450.uuid)
+    // Once for the automatic assignment (big cards, then small ones), once when the job starts and checks the GPU it got.
+    expect(probeLocalEngineGpuCompatibility).toHaveBeenCalledTimes(2)
+  })
+
   it('a CLI GPU picked by hand runs plain jobs and refuses what its engine cannot do', async () => {
     refreshGpuInventory.mockResolvedValue({ devices: [arc, nvidia] })
     await expect(supervisor.startEngineJob(request({ deviceUuid: arc.uuid, references: { paths: ['/a/ref.png'] } }))).rejects.toMatchObject(
@@ -459,5 +626,73 @@ describe('a GPU that switches engines between jobs', () => {
     await vi.waitFor(() => expect(runMossInferJob).toHaveBeenCalledTimes(1))
     expect(runMossInferJob.mock.calls[0]![0]).toMatchObject({ id: second.id })
     expect(cliStarts.map((start) => start.job.id)).toEqual([first.id])
+  })
+})
+
+describe('automatic GPU assignment by what the model needs', () => {
+  const rtx5090: GpuInventoryDevice = { uuid: 'GPU-5090', index: 1, name: 'RTX 5090', computeCapability: { major: 12, minor: 0 } }
+  const hello = decodeEngineHello({
+    protocol_version: 2,
+    probe: {
+      devices: [
+        { index: 0, name: 'RTX 4090', supported: true, compute_capability: '8.9' },
+        { index: 1, name: 'RTX 5090', supported: true, compute_capability: '12.0' },
+      ],
+    },
+  })
+  const nvfp4 = {
+    id: 'moss-sft-nvfp4',
+    name: 'SFT · NVFP4',
+    components: { dit: 'nvfp4-dit', textEncoder: 'te-file', vae: 'vae-file' },
+    support: 'cfg',
+    tier: 'turbo',
+    requires: { computeCapability: { major: 12, minor: 0 }, label: 'RTX 50 系列显卡' },
+  }
+  beforeEach(() => {
+    const server = join(dataRoot(), 'stable-v2.2.0-cu13', 'bin', 'moss-server')
+    mkdirSync(join(server, '..'), { recursive: true })
+    writeFileSync(server, '#!')
+    engines.set(nvidia.uuid, { ...deviceEngine('cuda', nvidia), binaryPath: server })
+    engines.set(rtx5090.uuid, { ...deviceEngine('cuda', rtx5090), binaryPath: server })
+    probeLocalEngineGpuCompatibility.mockResolvedValue({ hello, helloFor: () => hello })
+    getCatalog.mockResolvedValue({
+      bundles: [
+        { id: 'moss-sft', name: 'MOSS-Image SFT', components: { dit: 'sft-dit', textEncoder: 'te', vae: 'vae' }, support: 'cfg' },
+        nvfp4,
+      ],
+      models: [
+        part('sft-dit', 'dit'),
+        part('te', 'text_encoder'),
+        part('vae', 'vae', 'fp32'),
+        { ...part('nvfp4-dit', 'dit', 'nvfp4'), format: 'comfyui' },
+        { ...part('te-file', 'text_encoder', 'int8'), format: 'comfyui' },
+        { ...part('vae-file', 'vae', 'fp32'), format: 'comfyui' },
+      ],
+      adapters: [],
+    })
+  })
+  const nvfp4Request = (prompt: string) =>
+    request({ prompt, modelBinding: { bundleId: 'moss-sft-nvfp4', dit: 'nvfp4-dit', textEncoder: 'te-file', vae: 'vae-file' } })
+
+  it('queues an NVFP4 job on the busy RTX 50 instead of the idle GPU that cannot run it', async () => {
+    refreshGpuInventory.mockResolvedValue({ devices: [nvidia, rtx5090] })
+    prepareModelSource.mockImplementation(async (binding: { bundleId: string }) =>
+      binding.bundleId === nvfp4.id ? { model: bundle, ditFile: '/m/nvfp4.safetensors', bundle: nvfp4 } : { model: bundle },
+    )
+    const first = await supervisor.startEngineJob(request({ prompt: 'first' }))
+    expect(first.deviceUuid).toBe(rtx5090.uuid)
+    const second = await supervisor.startEngineJob(nvfp4Request('second'))
+    expect(second).toMatchObject({ deviceUuid: rtx5090.uuid, state: 'queued', gpuProfile: { tier: 'turbo', source: 'model-weights' } })
+    // A model every GPU runs still goes to the idle one.
+    const third = await supervisor.startEngineJob(request({ prompt: 'third' }))
+    expect(third.deviceUuid).toBe(nvidia.uuid)
+  })
+
+  it('refuses an NVFP4 job when no GPU can run it, and says why', async () => {
+    refreshGpuInventory.mockResolvedValue({ devices: [nvidia] })
+    await expect(supervisor.startEngineJob(nvfp4Request('nvfp4'))).rejects.toThrow(
+      '「SFT · NVFP4」只能在 RTX 50 系列显卡上运行，请换一个模型',
+    )
+    expect(runMossInferJob).not.toHaveBeenCalled()
   })
 })

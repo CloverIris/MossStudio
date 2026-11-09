@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { isSingleFile, RUNTIME_CONFIG_ID } from '@shared/modelCombos'
 import type { ModelBinding, ModelBundle, Settings } from '@shared/types'
 import { paths } from '../lib/paths'
 import { componentSnapshot, getCatalog } from './models'
@@ -10,68 +11,114 @@ export function bundleBinding(bundle: ModelBundle): ModelBinding {
   return { bundleId: bundle.id, ...bundle.components }
 }
 
+const ROLES = [
+  ['dit', 'dit'],
+  ['textEncoder', 'text_encoder'],
+  ['vae', 'vae'],
+] as const
+
+/**
+ * A binding the engine can load: three MOSS-Image parts of the right roles,
+ * either all diffusers folders or all single files (which load next to the
+ * bundle's runtime-config folder).
+ */
 export async function validateBinding(binding: ModelBinding, settings: Settings): Promise<ModelBundle> {
   const catalog = await getCatalog(settings)
   const bundle = catalog.bundles.find((b) => b.id === binding.bundleId)
   if (!bundle) throw new Error('模型组合不存在，请重新选择')
-  for (const [key, role] of [
-    ['dit', 'dit'],
-    ['textEncoder', 'text_encoder'],
-    ['vae', 'vae'],
-  ] as const) {
+  const parts = ROLES.map(([key, role]) => {
     const model = catalog.models.find((m) => m.id === binding[key])
-    if (!model || model.role !== role || model.format !== 'diffusers' || model.family !== 'moss-image') {
-      throw new Error('请选择与 MOSS 兼容的 Diffusers 组件；ComfyUI 单文件仅支持下载')
-    }
-  }
+    return model && model.role === role && model.family === 'moss-image' ? model : null
+  })
+  const formats = new Set(parts.map((model) => model?.format))
+  const support = catalog.models.find((m) => m.id === bundle.support)
+  const valid =
+    parts.every(Boolean) && formats.size === 1 && (formats.has('diffusers') || (formats.has('comfyui') && support?.role === 'support'))
+  if (!valid) throw new Error('请选择与 MOSS 兼容的组件：主模型、文本编码器和 VAE 需要都是 Diffusers 文件夹，或都是单文件')
   return bundle
 }
 
-/** A model source is either one materialized diffusers folder or three files. */
+/**
+ * What the engine loads: a folder with the configs and tokenizer (`model`),
+ * and, for a part chosen as a single file, that file, which replaces the
+ * part's weights in the folder.
+ */
 export interface PreparedModelSource {
-  model: string | null
+  model: string
   ditFile?: string
   textEncoderFile?: string
   vaeFile?: string
+  /** The resolved bundle: its tier and hardware needs decide how the job runs. */
+  bundle: ModelBundle
 }
 
+/** The one weight file of a downloaded single-file part. */
+async function componentFile(id: string, settings: Settings): Promise<string> {
+  const { model, record, root } = await componentSnapshot(id, settings)
+  const weights = record.entries.filter((file) => file.path.endsWith('.safetensors'))
+  if (weights.length !== 1) throw new Error(`组件文件不完整：${model.name}。请在模型库修复组件。`)
+  return safePath(root, weights[0]!.path)
+}
+
+const SLOT_ROLES = [
+  ['dit', 'dit'],
+  ['textEncoder', 'text_encoder'],
+  ['vae', 'vae'],
+] as const
+
 /**
- * Resolve a binding to what the engine can load. A bundle whose components are
- * files registered by a directory scan (a user's ComfyUI folder) is passed as
- * `dit_file` / `text_encoder_file` / `vae_file`; nothing is copied or linked, so
- * the 27 GB set keeps living where the user installed it.
+ * Resolve a binding to what the engine can load. Parts that are folders are
+ * linked into a prepared bundle folder; a single file (a download from a
+ * single-file repository, or the person's own file) goes to the engine where it
+ * is, beside the config folder (`moss-runtime-config`). Nothing is copied.
  */
 export async function prepareModelSource(binding: ModelBinding, settings: Settings): Promise<PreparedModelSource> {
   const catalog = await getCatalog(settings)
   const bundle = catalog.bundles.find((b) => b.id === binding.bundleId)
   if (!bundle) throw new Error('模型组合不存在，请重新选择')
-  const entries = [binding.dit, binding.textEncoder, binding.vae].map((id) => catalog.models.find((model) => model.id === id))
-  const localCount = entries.filter((entry) => entry?.provider === 'local').length
-  if (localCount > 0) {
-    if (localCount !== 3) {
-      throw new Error('本地文件组合需要同时准备 DiT、文本编码器和 VAE 三个文件')
-    }
-    const paths = entries.map((entry) => entry?.localPath)
-    if (paths.some((path) => !path)) {
-      throw new Error('本地模型缺少文件路径，请重新扫描登记')
-    }
-    return {
-      model: null,
-      ditFile: paths[0]!,
-      textEncoderFile: paths[1]!,
-      vaeFile: paths[2]!,
-    }
+  const parts = SLOT_ROLES.map(([key, role]) => {
+    const model = catalog.models.find((entry) => entry.id === binding[key])
+    if (!model || model.role !== role) throw new Error('模型组合里的部件不对，请重新选择')
+    return model
+  })
+  const singles = parts.filter(isSingleFile)
+  if (!singles.length) return { model: await prepareModelBundle(binding, settings), bundle }
+  const folderIds = [...parts.filter((part) => !isSingleFile(part)).map((part) => part.id), RUNTIME_CONFIG_ID]
+  const model = await materializeBundle(binding.bundleId, folderIds, settings)
+  // One after another, so a missing part is named in the order 主模型, 文本编码器, VAE.
+  const files: Array<string | undefined> = []
+  for (const part of parts) {
+    if (!isSingleFile(part)) files.push(undefined)
+    else if (part.provider === 'local') {
+      if (!part.localPath) throw new Error(`找不到「${part.name}」的文件，请重新添加`)
+      files.push(part.localPath)
+    } else files.push(await componentFile(part.id, settings))
   }
-  return { model: await prepareModelBundle(binding, settings) }
+  const [ditFile, textEncoderFile, vaeFile] = files
+  return {
+    model,
+    ...(ditFile ? { ditFile } : {}),
+    ...(textEncoderFile ? { textEncoderFile } : {}),
+    ...(vaeFile ? { vaeFile } : {}),
+    bundle,
+  }
 }
 
 export async function prepareModelBundle(binding: ModelBinding, settings: Settings): Promise<string> {
   const bundle = await validateBinding(binding, settings)
-  const requests = [binding.dit, binding.textEncoder, binding.vae, bundle.support]
-  const components = await Promise.all(requests.map((id) => componentSnapshot(id, settings)))
+  return materializeBundle(binding.bundleId, [binding.dit, binding.textEncoder, binding.vae, bundle.support], settings)
+}
+
+/**
+ * A diffusers folder of these parts, hard-linked from their downloads (or the
+ * person's folder) into `<models root>/bundles/<key>/`, reused while its
+ * manifest and file sizes match. A path two parts share is taken from the first.
+ */
+async function materializeBundle(bundleId: string, ids: string[], settings: Settings): Promise<string> {
+  const components = await Promise.all(ids.map((id) => componentSnapshot(id, settings)))
   const manifest = {
     version: 1,
-    bundleId: binding.bundleId,
+    bundleId,
     components: components.map(({ model, record }) => ({
       id: model.id,
       role: model.role,
@@ -85,6 +132,7 @@ export async function prepareModelBundle(binding: ModelBinding, settings: Settin
   const root = join(paths.models(settings.modelsRoot), 'bundles')
   let target = join(root, key)
   const expected: Array<{ source: string; path: string; local?: boolean }> = []
+  const taken = new Set<string>()
   for (const { model, record, root: snapshot, local } of components) {
     for (const file of record.entries) {
       let path: string
@@ -96,6 +144,8 @@ export async function prepareModelBundle(binding: ModelBinding, settings: Settin
         const folder = model.role === 'dit' ? 'transformer' : model.role === 'vae' ? 'vae' : 'text_encoder'
         path = `${folder}/${file.path.slice(prefix.length)}`
       }
+      if (taken.has(path)) continue
+      taken.add(path)
       expected.push({ source: safePath(snapshot, file.path), path, ...(local ? { local } : {}) })
     }
   }

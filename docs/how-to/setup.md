@@ -2,7 +2,7 @@
 status: current
 last-verified: 2026-11-08 (fec4fe3)
 audience: users
-code: apps/desktop/src/renderer/src/pages/install/, apps/desktop/src/renderer/src/pages/setup/, apps/desktop/src/renderer/src/components/shell/PreparationChip.tsx, apps/desktop/src/shared/engineChoice.ts, apps/desktop/src/shared/enginePackages.ts, apps/desktop/src/shared/cliEngine.ts, apps/desktop/src/renderer/src/pages/settings/sections.ts, apps/desktop/src/renderer/src/components/update/updateModel.ts
+code: apps/desktop/src/renderer/src/pages/install/, apps/desktop/src/renderer/src/pages/setup/, apps/desktop/src/renderer/src/components/shell/PreparationChip.tsx, apps/desktop/src/shared/engineChoice.ts, apps/desktop/src/shared/machineFit.ts, apps/desktop/src/shared/enginePackages.ts, apps/desktop/src/shared/cliEngine.ts, apps/desktop/src/renderer/src/pages/settings/sections.ts, apps/desktop/src/renderer/src/components/update/updateModel.ts
 ---
 
 # 安装 MossStudio 并生成第一张图
@@ -10,18 +10,25 @@ code: apps/desktop/src/renderer/src/pages/install/, apps/desktop/src/renderer/sr
 从下载安装包到第一张图，一共三步：安装、首次运行时点一次「开始下载」、在「创作」里写一句描述并点「生成」。
 引擎和模型都由 MossStudio 按你的显卡自动选择和下载，下载时就可以先去看看界面；之后想改，都在「设置」里。
 
-## 需要什么
+## 开始之前：你的电脑能用吗
+
+有一块 NVIDIA RTX 30 系列或更新的显卡，装着 Windows 10（64 位）或 Linux，就能正常用。其他情况对照下表。
 
 | 项目 | 要求 |
 | --- | --- |
-| 系统 | Windows x64 或 Linux x64。macOS 只能运行界面，生成要交给另一台电脑（见最后一节）。 |
-| 显卡 | NVIDIA 显卡走 CUDA 引擎，功能最全。其他显卡走「兼容模式」，只能文生图。Linux 上的 AMD 显卡可以走「AMD 原生」。 |
-| 磁盘 | 以首次运行页面显示的「下载约 N GB」为准，模型占大头。 |
+| 系统 | Windows 10 或更新（64 位），或 Linux x64（glibc 2.35 或更新，如 Ubuntu 22.04 及以后）。Mac 本机不能生成，要交给另一台有 NVIDIA 显卡的电脑（见第 7 节）。 |
+| 显卡 | NVIDIA RTX 30 系列及更新：推荐，功能最全，速度最快。Linux 上装有 ROCm 7 的 AMD RX 7900 系列（XTX / XT / GRE）、RX 9060 系列、RX 9070 系列：只能文生图；其他 RX 7000 显卡（7800 XT、7700 XT、7600）不支持原生运行。其他支持 Vulkan 1.2 的显卡，包括核显：只能文生图，而且很慢，一张图要几分钟到半小时以上。更老的 NVIDIA 显卡没有正式支持，可能退到「兼容模式」，也可能跑不了。每种显卡用哪个引擎见第 4 节。 |
+| NVIDIA 驱动 | 推荐 580 或更新。Windows 527.41 / Linux 525.60.13 或更新也能用，走 CUDA 12 引擎。引擎自动选，需要时首次运行页面会提示更新驱动。 |
+| 显存 | 至少 4 GB，推荐 8 GB 或更多。不到 8 GB 能跑，但更慢。 |
+| 内存 | 推荐 16 GB 或更多。更少时模型要反复从磁盘读取，生成更慢；少于 8 GB 可能跑不起来。 |
+| 磁盘 | 约 30 GB 空闲：模型约 27 GB，其余是引擎。空间不够时下载不会开始。准确数字以首次运行页面的「下载约 N GB」为准。 |
 | 网络 | 首次运行要下载引擎和模型。下载线路可以在「设置 › 网络」里改。 |
+
+电脑跑不了时，第一次打开就会直接告诉你，并给出用另一台电脑等选择，见[第 3 节](#3-首次运行准备开始创作)末尾。
 
 ## 1. 下载安装包
 
-到 GitHub 的 Releases 页面（<https://github.com/CloverIris/MossStudio/releases>）下载最新版本：
+到 GitHub 的 Releases 页面（<https://github.com/ShallowElec/MossStudio/releases>）下载最新版本：
 
 | 系统 | 文件 |
 | --- | --- |
@@ -49,8 +56,8 @@ code: apps/desktop/src/renderer/src/pages/install/, apps/desktop/src/renderer/sr
 
 | 页面上的内容 | 是什么 | 为什么 |
 | --- | --- | --- |
-| 显卡那一行 | 检测到的显卡和显存。点「详情」能看到每块显卡会用哪个引擎、要下载多大，以及更新驱动或安装 ROCm 的建议。 | 引擎版本按显卡和驱动选，选错了跑不起来。 |
-| 「下载约 N GB」 | 引擎和推荐模型加起来的大小。下面是「保存到 …」，点「更改」可以换一个模型保存位置。 | 模型是会画画的那部分，有二十多 GB，提前知道放哪里、占多大。 |
+| 显卡那一行 | 检测到的显卡和显存。点「详情」能看到每块显卡会用哪个引擎、要下载多大，以及更新驱动或安装 ROCm 的建议。能用但会慢时，绿色的勾变成黄色的「!」，下面一行写最主要的原因：用兼容模式、显存不到 8 GB，或内存不到 16 GB。 | 引擎版本按显卡和驱动选，选错了跑不起来。 |
+| 「下载约 N GB」 | 引擎和推荐模型加起来的大小。下面是「保存到 …」，点「更改」可以换一个模型保存位置。这个位置空间不够时，会用红字写「这个位置只剩 N GB，换一个有 M GB 空闲的位置。」，换好位置之前「开始下载」点不了；在文件管理器里腾出空间后回到窗口，这一行会自己更新。某个部件放在「设置 › 存储」里单独指定的文件夹时，红字写的是那个文件夹，要到「设置 › 存储」里换。 | 模型是会画画的那部分，有二十多 GB，提前知道放哪里、占多大。 |
 | 「开始下载」 | 同时下载引擎和模型。 | 只下载这一次，之后都在本机运行。 |
 
 1. 先看显卡那一行。如果「详情」里有一行灰字建议你更新驱动或安装 ROCm，照做后回到这里重新打开，能换到更快的引擎。
@@ -61,7 +68,7 @@ code: apps/desktop/src/renderer/src/pages/install/, apps/desktop/src/renderer/sr
 
 哪一步没下完，页面会写「没有下载完：…」，按钮变成「重试」；标题栏的小标签则显示「准备没有完成」。点「稍后」会跳过这一页，以后可以在「设置 › 设备与引擎」安装引擎、在「模型」页下载模型。
 
-没有能用的显卡时，标题是「这台电脑跑不了模型」（Mac 上是「这台 Mac 不能在本机生成」），下面是两个选择：「用另一台电脑」（连上一台有 NVIDIA 显卡的电脑，在它上面生成，见第 7 节）和「重新检测」（刚装好显卡或更新了驱动时用）。也可以「先随便看看」。
+没有能用的显卡时，标题是「这台电脑跑不了模型」（Mac 上是「这台 Mac 不能在本机生成」）。下面一行写明原因：哪块显卡、为什么用不了，比如「Intel UHD Graphics 620 不支持 Vulkan 1.2，引擎没法在它上面运行。」；或者显存不到 4 GB，比如「NVIDIA GeForce GT 1030 只有 2 GB 显存，至少需要 4 GB。」（只在知道显存大小时这样判断，集成显卡用的是内存，不算）。电脑里还有别的显卡能用时（比如笔记本的核显），不会拦下来：显存不到 4 GB 的那块默认不用，也不为它下载引擎，「详情」里写着「不使用（显存太小，用另一块显卡）」。再下面一行灰字写需要什么样的显卡，点「哪些电脑能用」会在浏览器里打开说明。然后是两个选择：「用另一台电脑」（连上一台有 NVIDIA 显卡的电脑，在它上面生成，见第 7 节）和「重新检测」（刚装好显卡或更新了驱动时用）。也可以「先随便看看」。
 
 ## 4. 引擎是怎么选的
 
@@ -106,7 +113,7 @@ CUDA 引擎对 NVIDIA 驱动的最低要求：CUDA 13 需要 Windows 580.88 或 
 
 MossStudio 自己的更新很安静：「自动更新」开着时，新版本在后台下载，「设置 › 通知与更新」里写着「X 已下载，下次打开时更新」，下次打开就是新版本，并提示一次「已更新到 X」，点「看看新内容」能看更新说明。一直不关机的话，三天后标题栏才会出现「重启以更新」；想马上换就点「现在重启」。关掉「自动更新」后，有新版本时标题栏会显示「新版本 X」，由你决定何时「下载更新」。
 
-模型本身在「主导航 › 模型」里管理：下载单独的部件、导入 LoRA（「从电脑导入」）、换「模型文件夹」，以及在「高级」里「添加整个模型文件夹」。
+模型本身在「主导航 › 模型」里管理：下载模型、在「其他模型 › 自己组合」里挑选部件或「用电脑上的模型文件…」、导入 LoRA（「从电脑导入」）、换「模型文件夹」。
 
 ## 7. 用另一台电脑和训练（可选）
 

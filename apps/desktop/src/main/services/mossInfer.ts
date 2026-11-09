@@ -33,9 +33,9 @@ interface PendingRequest {
 }
 
 interface EngineConfig {
-  /** Materialized diffusers folder; empty when loading component files. */
+  /** Bundle folder: a materialized diffusers model, or the runtime configs and tokenizer when files are given. */
   model: string
-  /** Local single-file components (a user's ComfyUI tree, registered in place). */
+  /** Single-file components that replace the folder's weights (downloaded, or a ComfyUI tree registered in place). */
   ditFile?: string
   textEncoderFile?: string
   vaeFile?: string
@@ -147,6 +147,18 @@ function mapErr(code: string): string {
   if (code === 'invalid_argument' || code === 'invalid_params') return 'E_INPUT'
   if (code === 'not_supported') return 'E_NOT_SUPPORTED'
   return `E_${code.toUpperCase()}`
+}
+
+/**
+ * A failed generate in plain words. A tier the loaded model cannot run (an INT8
+ * file under reference, an INT4 one under high, a scanned file whose kind the
+ * app could not tell) says which tier to pick.
+ */
+export function generateErrorMessage(code: string, message: string): string {
+  if (code === 'invalid_argument' && /\btier\b/i.test(message)) {
+    return `这个主模型文件要换一个运行档位：INT8 用 High，INT4 和 NVFP4 用 Turbo。请到 设置 › 设备与引擎 › 高级 里改好后重试。（${message}）`
+  }
+  return message
 }
 
 function engineFailureMessage(error: unknown): string {
@@ -335,7 +347,7 @@ function handleServerEvent(runtime: MossInferRuntime, message: Record<string, un
         sink.event({
           type: 'error',
           code: mapErr(String(error.code ?? 'internal')),
-          message: String(error.message ?? '生成失败'),
+          message: generateErrorMessage(String(error.code ?? 'internal'), String(error.message ?? '生成失败')),
           fatal: true,
         })
         sink.done(1)
@@ -520,8 +532,8 @@ async function ensureEngine(runtime: MossInferRuntime, config: EngineConfig, set
       tier: config.tier,
       cache_dir: join(paths.cache(), 'mossinfer'),
     }
-    // A diffusers folder goes as `model`; scanned single files go as component
-    // files. The engine refuses a request that mixes both.
+    // `model` is the folder with the configs and tokenizer; a component file
+    // replaces that part's weights in it.
     if (config.model) payload.model = config.model
     if (config.ditFile) payload.dit_file = config.ditFile
     if (config.textEncoderFile) payload.text_encoder_file = config.textEncoderFile

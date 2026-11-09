@@ -18,7 +18,10 @@ The visual system is fixed: flat and quiet, areas told apart by lighter and dark
 | A read-only folder, file or URL | `PathValue` (`copy` when people need to paste it; `copyLabel` when several sit together) | `components/common/PathValue.tsx` |
 | A field or block label with an optional value on the right | `FieldLabel` (`as="h3"`/`"h2"` when it heads a block) | `components/ui.tsx` |
 | A slider with its label and value (strength, opacity, CFG) | `SliderField` | `pages/studio/InputControls.tsx` |
-| Progress | `ProgressBar`; `value={null}` when the amount is unknown | `components/ui.tsx` |
+| Progress | `ProgressBar`; `value={null}` when the amount is unknown; `size="md"` for a download row, the default thin bar elsewhere | `components/ui.tsx` |
+| Download progress (state, percentage, bar, amount, speed, time left) | `DownloadProgress` | `pages/models/DownloadProgress.tsx` |
+| A word that tells a model from its family (INT8, 8 步) or a kind (单文件, 深度) | `Tag` | `components/ui.tsx` |
+| A model or part name with its variant | `ModelName` | `components/common/ModelName.tsx` |
 | Loading | `LoadingRow` (spinner + "正在读取…" or a label) | `components/ui.tsx` |
 | Nothing here yet | `EmptyState` (`size="page"` or `"section"`) | `components/ui.tsx` |
 | Status label | `Pill` | `components/ui.tsx` |
@@ -63,17 +66,18 @@ Recurring actions:
 - **Refresh / redetect / test** = an `IconButton` with `RefreshCw` in the `Section` actions, or a labelled `secondary` when it is the way out of an error.
 - **Retry** = `secondary` 重试 next to the error; `primary` only when it is the only thing left to do on the screen.
 - **Copy** = `IconButton` with `Copy` next to the value (as in `PromptBlock` and `PathValue`); toast "已复制…".
-- **External link** = `ghost` with `ExternalLink` after the label.
+- **External link** = `ghost` with `ExternalLink` after the label. Exception: a link that finishes a sentence (first run's 「哪些电脑能用」) is an underlined `ink-2` text button inside that sentence, still with `ExternalLink` after the label.
 
 ## 4. Loading, empty, error
 
 - Loading: `LoadingRow`; the label ends with "…" ("正在读取…"). A spinner without words only inside a button.
 - Empty: `EmptyState` with a title that says what is missing and, when there is one, the action that fills it. `size="section"` inside a page, `size="page"` for a whole page or panel.
-- Error: `Notice tone="danger"` with what went wrong in plain words and an xs/sm action (重试 or the place to fix it). Do not show only red text.
+- Error: `Notice tone="danger"` with what went wrong in plain words and an xs/sm action (重试 or the place to fix it). Do not show only red text. Exception: a problem with one line of a card, whose way out sits in that same card (first run's 「这个位置只剩 N GB…」 above 更改), is one `text-danger` line with `role="status"` in the card's own rhythm.
 - Unknown progress: `ProgressBar value={null}` (a moving segment). A full bar means done.
 
 ## 5. Status
 
+- `Tag` is not a state: it names what something is (INT8, 单文件). State is a `Pill`.
 - `Pill` tones: `neutral` (default, no state), `accent` (selected / in use), `ok` (ready), `warn` (needs attention, partly done), `danger` (failed, blocked). Use these names, not the aliases `blue` / `amber` / `red`.
 - Same state, same form: a list shows a state either as a `Pill` or as a `StatusDot` with text, the same way on every row.
 - In progress is `accent` (a `ProgressBar` or an accent Pill), for downloads, installs, generation and training alike.

@@ -4,12 +4,14 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import type { AdapterEntry, Catalog, DownloadTask, ModelEntry, ModelBundle, Settings } from '@shared/types'
-import { localFilesBundle } from '@shared/localBundle'
+import type { AdapterEntry, Catalog, DownloadTask, ModelEntry, ModelBundle, ModelSpaceDisk, Settings } from '@shared/types'
+import { MODEL_DOWNLOAD_HEADROOM_BYTES, missingDownloadBytes } from '@shared/machineFit'
+import { combinationBundle } from '@shared/modelCombos'
+import { catalogCombinations } from './modelCombinations'
 import { Events } from '@shared/channels'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
-import { assertFreeSpace } from '../lib/disk'
+import { assertFreeSpace, freeSpace, nearestExisting } from '../lib/disk'
 import { getLastNetwork } from './network'
 import { contentDir } from '../lib/content'
 import { listJobs } from './supervisor'
@@ -42,6 +44,8 @@ import {
 interface RawModel {
   id: string
   name: string
+  choice?: string
+  variant?: string[]
   provider: 'hf'
   repo: string
   revision?: string
@@ -98,6 +102,12 @@ interface RawCatalog {
   updated_at?: string
   models: RawModel[]
   bundles?: ModelBundle[]
+  /**
+   * Bundles of single weight files (schema 3). Kept apart from `bundles` so an
+   * older app, which reads only `bundles` and cannot load single files, never
+   * offers them.
+   */
+  single_file_bundles?: ModelBundle[]
   adapters?: RawAdapter[]
 }
 
@@ -289,6 +299,22 @@ interface InstallLocation {
   dir: string
 }
 
+const COMMIT = /^[a-f0-9]{40}$/
+
+/**
+ * Whether an install record serves the catalog's revision. The same revision
+ * always does. When the catalog pins a commit, a download of exactly that
+ * commit does too, and so does one made from a branch (`main`) before the pin
+ * existed: the user has those files and the engine checks every model by its
+ * architecture when it loads it, so they are not downloaded again. A download
+ * pinned to another commit does not count.
+ */
+export function installMatchesRevision(record: Pick<InstallRecord, 'revision' | 'sha'>, revision: string): boolean {
+  if (record.revision === revision) return true
+  if (!COMMIT.test(revision)) return false
+  return record.sha === revision || !COMMIT.test(record.revision)
+}
+
 async function findInstall(
   settings: Settings,
   model: Pick<ModelEntry, 'id' | 'repo' | 'revision' | 'role' | 'format' | 'subfolder'>,
@@ -300,7 +326,7 @@ async function findInstall(
         record.version !== 2 ||
         record.id !== model.id ||
         record.repo !== model.repo ||
-        record.revision !== model.revision ||
+        !installMatchesRevision(record, model.revision) ||
         !/^[a-f0-9]{40,64}$/.test(record.sha)
       )
         continue
@@ -340,7 +366,7 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       raw = JSON.parse(await readFile(join(local, 'models.json'), 'utf8')) as RawCatalog
       source = 'local'
     } else {
-      const base = getLastNetwork()?.selected.manifest ?? 'https://raw.githubusercontent.com/CloverIris/MossStudio/main'
+      const base = getLastNetwork()?.selected.manifest ?? 'https://raw.githubusercontent.com/ShallowElec/MossStudio/main'
       raw = JSON.parse(await fetchText(`${base.replace(/\/$/, '')}/apps/desktop/resources/models.json`)) as RawCatalog
       source = 'remote'
     }
@@ -365,6 +391,21 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       adapters: raw.adapters ?? BUILTIN.adapters,
     }
   }
+  // A catalog from before single-file bundles (schema 2) gets this version's
+  // single-file bundles and the parts they need, and this version's wording and
+  // certification of the bundles both know, so every certified model is offered.
+  if (raw.schema_version < 3) {
+    const fileBundles = BUILTIN.single_file_bundles ?? []
+    const builtinBundles = new Map((BUILTIN.bundles ?? []).map((bundle) => [bundle.id, bundle]))
+    const needed = new Set(fileBundles.flatMap((bundle) => [...Object.values(bundle.components), bundle.support]))
+    const present = new Set(raw.models.map((model) => model.id))
+    raw = {
+      ...raw,
+      models: [...raw.models, ...BUILTIN.models.filter((model) => needed.has(model.id) && !present.has(model.id))],
+      bundles: (raw.bundles ?? BUILTIN.bundles ?? []).map((bundle) => builtinBundles.get(bundle.id) ?? bundle),
+      single_file_bundles: fileBundles,
+    }
+  }
   // Keep the config-only repair available with an older remote catalog too.
   const runtimeConfig = BUILTIN.models.find((model) => model.id === 'moss-runtime-config')
   if (runtimeConfig && !raw.models.some((model) => model.id === runtimeConfig.id)) {
@@ -376,6 +417,9 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
       const entry: ModelEntry = {
         id: model.id,
         name: model.name,
+        // An older remote catalog has no labels: the packaged one names the same ids.
+        choice: model.choice ?? BUILTIN.models.find((item) => item.id === model.id)?.choice,
+        variant: model.variant,
         provider: model.provider,
         repo: model.repo,
         revision: model.revision ?? 'main',
@@ -518,11 +562,13 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
     })
   }
   catalogRoot = key
-  // A scanned ComfyUI set (DiT + text encoder + VAE registered in place) becomes a
-  // selectable bundle without copying anything; the engine gets the three files.
-  const bundles: ModelBundle[] = [...(raw.bundles ?? BUILTIN.bundles ?? [])]
-  const localBundle = localFilesBundle(models)
-  if (localBundle) bundles.unshift(localBundle)
+  // The catalog's models (folders, then the engine-certified single-file sets), then
+  // the combinations saved in 自己组合.
+  const bundles: ModelBundle[] = [
+    ...(raw.bundles ?? BUILTIN.bundles ?? []),
+    ...(raw.single_file_bundles ?? []),
+    ...catalogCombinations(models).map((combination) => combinationBundle(combination, models)),
+  ]
   catalogCache = {
     updatedAt: raw.updated_at ?? new Date().toISOString(),
     models,
@@ -561,6 +607,93 @@ async function resolveRepo(repo: string, revision: string, settings: Settings): 
     void request.finally(() => repoRequests.delete(key)).catch(() => undefined)
   }
   return request
+}
+
+/** Each file's size and what of it is on disk, for missingDownloadBytes. */
+async function fileStates(dir: string, files: ModelFile[]): Promise<Array<{ size: number; blobBytes: number; partBytes: number }>> {
+  return Promise.all(
+    files.map(async (file) => {
+      const blob = join(dir, 'blobs', blobKey(file))
+      return { size: file.size, blobBytes: await fileSize(blob), partBytes: await fileSize(`${blob}.part`) }
+    }),
+  )
+}
+
+/**
+ * Bytes a model part still has to download, counted like the check before its
+ * download starts: the files its last attempt resolved (the `.pending` record),
+ * less what is on disk, reused blobs included. A part that never started has
+ * no file list yet, so its catalog size stands.
+ */
+export async function modelMissingBytes(settings: Settings, entry: ModelEntry): Promise<number> {
+  if (entry.installed) return 0
+  const dir = cacheDir(settings, entry.repo, entry.role)
+  try {
+    const pending = JSON.parse(await readFile(`${markerAt(dir, entry.id)}.pending`, 'utf8')) as Partial<InstallRecord>
+    if (Array.isArray(pending.entries) && pending.entries.length > 0) return missingDownloadBytes(await fileStates(dir, pending.entries))
+  } catch {
+    // No earlier attempt, or an unreadable record: nothing on disk to count.
+  }
+  // Never started: the full catalog size, even when its first attempt will reuse files from another
+  // installation (only resolving the repository says which). The check on start counts those.
+  return entry.sizeBytes
+}
+
+/**
+ * The whole free-space reading (the .pending records, the blobs, the disks) gives up after this long and
+ * answers "unknown": a sleeping network drive must not hold Setup. The check on start still runs.
+ */
+const SPACE_TIMEOUT_MS = 2000
+
+/**
+ * Where the missing parts of these models land, one entry per disk, with that
+ * disk's free space read the way each part's download checks it (models:space).
+ * Empty when nothing is missing, or when the disks do not answer in time.
+ */
+export async function modelSpace(settings: Settings, ids: string[], timeoutMs = SPACE_TIMEOUT_MS): Promise<ModelSpaceDisk[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<ModelSpaceDisk[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), timeoutMs)
+  })
+  try {
+    return await Promise.race([measureModelSpace(settings, ids), timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function measureModelSpace(settings: Settings, ids: string[]): Promise<ModelSpaceDisk[]> {
+  const catalog = await getCatalog(settings)
+  const disks = new Map<string, ModelSpaceDisk>()
+  for (const id of ids) {
+    const entry = catalog.models.find((model) => model.id === id)
+    if (!entry || entry.installed || entry.localPath) continue
+    const missing = await modelMissingBytes(settings, entry)
+    if (missing <= 0) continue
+    const root = paths.roleRoot(entry.role, settings.modelsRoot, settings.modelDirectories)
+    const followsModels = root === paths.roleRoot(entry.role, settings.modelsRoot)
+    // Parts on the same disk share its free space: group by the device of the folder freeSpace() reads.
+    const device = await nearestExisting(root).then((folder) =>
+      stat(folder).then(
+        (info) => `dev:${info.dev}`,
+        () => `path:${folder}`,
+      ),
+    )
+    const disk = disks.get(device)
+    if (disk) {
+      disk.missingBytes.push(missing)
+      if (followsModels && !disk.modelsFolder) Object.assign(disk, { modelsFolder: true, path: paths.models(settings.modelsRoot) })
+      continue
+    }
+    const free = await freeSpace(root)
+    disks.set(device, {
+      path: followsModels ? paths.models(settings.modelsRoot) : root,
+      modelsFolder: followsModels,
+      freeBytes: Number.isFinite(free) ? free : null,
+      missingBytes: [missing],
+    })
+  }
+  return [...disks.values()]
 }
 
 async function runModelDownload(task: DownloadTask, entry: ModelEntry, settings: Settings, signal: AbortSignal): Promise<void> {
@@ -627,14 +760,10 @@ async function runModelDownload(task: DownloadTask, entry: ModelEntry, settings:
       break
     }
   }
-  let missing = 0
-  for (const file of selected) {
-    const blob = join(dir, 'blobs', blobKey(file))
-    if ((await fileSize(blob)) !== file.size) missing += Math.max(0, file.size - Math.max(0, await fileSize(`${blob}.part`)))
-  }
+  const missing = missingDownloadBytes(await fileStates(dir, selected))
   await assertFreeSpace(
     paths.roleRoot(entry.role, settings.modelsRoot, settings.modelDirectories),
-    missing + (missing > 0 ? 1024 ** 3 : 0),
+    missing + (missing > 0 ? MODEL_DOWNLOAD_HEADROOM_BYTES : 0),
     `模型组件 ${entry.name}`,
   )
   touch(task, { filesTotal: selected.length, totalBytes: total, state: 'running' })

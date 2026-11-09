@@ -237,6 +237,16 @@ const cases = {
     rejects: { 'overlong directory': { directory: long(4097) }, 'numeric directory': { directory: 1 } },
   },
 
+  modelsSpace: {
+    valid: { modelIds: ['moss-sft-dit', 'flux2-vae-small'] },
+    accepts: { 'no models': { modelIds: [] } },
+    rejects: {
+      'no list': {},
+      'an empty id': { modelIds: [''] },
+      'too many ids': { modelIds: Array.from({ length: 65 }, (_, index) => `m${index}`) },
+    },
+  },
+
   modelsRegisterScan: {
     valid: { items: [{ path: ' /m/dit.safetensors ', role: 'dit' }] },
     output: { items: [{ path: '/m/dit.safetensors', role: 'dit' }] },
@@ -252,6 +262,23 @@ const cases = {
       'unknown layout': { items: [{ path: '/m/x', role: 'vae', layout: 'ckpt' }] },
       'overlong name': { items: [{ path: '/m/x', role: 'vae', name: long(261) }] },
     },
+  },
+
+  modelsSaveCombination: {
+    valid: { name: ' SFT · INT8 + W4A8 ', components: { dit: 'd', textEncoder: 't', vae: 'v' } },
+    output: { name: 'SFT · INT8 + W4A8', components: { dit: 'd', textEncoder: 't', vae: 'v' } },
+    accepts: { 'an id to update': { id: 'combo-1', name: 'x', components: { dit: 'd', textEncoder: 't', vae: 'v' } } },
+    rejects: {
+      'blank name': { name: '  ', components: { dit: 'd', textEncoder: 't', vae: 'v' } },
+      'overlong name': { name: long(81), components: { dit: 'd', textEncoder: 't', vae: 'v' } },
+      'a missing part': { name: 'x', components: { dit: 'd', textEncoder: 't' } },
+      'an empty part': { name: 'x', components: { dit: '', textEncoder: 't', vae: 'v' } },
+    },
+  },
+
+  modelsDeleteCombination: {
+    valid: { id: 'combo-1' },
+    rejects: { 'no id': {}, 'empty id': { id: '' } },
   },
 
   instanceModelBinding: {
@@ -914,7 +941,7 @@ const cases = {
   pickDialog: {
     valid: {},
     output: { kind: 'folder' },
-    accepts: { file: { kind: 'file', title: 'Pick' } },
+    accepts: { file: { kind: 'file', title: 'Pick' }, 'a model file': { kind: 'model' } },
     rejects: { 'unknown kind': { kind: 'drive' } },
   },
 

@@ -166,6 +166,19 @@ function run(id: string, patch: Record<string, unknown> = {}): Sink {
   return { events, stderr, done }
 }
 
+describe('generateErrorMessage', () => {
+  it('says which tier to pick when the loaded model refuses the one sent', () => {
+    const message = mossInfer.generateErrorMessage('invalid_argument', 'tier reference cannot run an INT8 DiT')
+    expect(message).toMatch(/^这个主模型文件要换一个运行档位：INT8 用 High，INT4 和 NVFP4 用 Turbo/)
+    expect(message).toContain('tier reference cannot run an INT8 DiT')
+  })
+
+  it('passes other errors through', () => {
+    expect(mossInfer.generateErrorMessage('invalid_argument', 'width must be a multiple of 16')).toBe('width must be a multiple of 16')
+    expect(mossInfer.generateErrorMessage('out_of_memory', 'tier high: out of memory')).toBe('tier high: out of memory')
+  })
+})
+
 describe('resolveServerPath', () => {
   it('prefers the configured path, then MOSS_SERVER, then the bundled engine, then PATH', () => {
     expect(mossInfer.resolveServerPath(settings)).toBe(serverPath)

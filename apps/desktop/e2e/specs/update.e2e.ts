@@ -74,7 +74,7 @@ describe('update chip', () => {
     await toast.getByRole('button', { name: '看看新内容' }).click()
     await expect
       .poll(() => app.calls<{ url: string }>('app:open-external'))
-      .toEqual([{ url: 'https://github.com/CloverIris/MossStudio/releases/tag/v1.0.3' }])
+      .toEqual([{ url: 'https://github.com/ShallowElec/MossStudio/releases/tag/v1.0.3' }])
     await expect.poll(() => toast.count()).toBe(0)
   })
 
@@ -455,7 +455,7 @@ describe('设置 › 通知与更新', () => {
     expect(await page.getByRole('group', { name: '更新渠道' }).count()).toBe(0)
     expect(await chip(page).count()).toBe(0)
     await page.getByRole('button', { name: '查看', exact: true }).click()
-    await expect.poll(() => app.calls('app:open-external')).toEqual([{ url: 'https://github.com/CloverIris/MossStudio/releases' }])
+    await expect.poll(() => app.calls('app:open-external')).toEqual([{ url: 'https://github.com/ShallowElec/MossStudio/releases' }])
   })
 
   for (const theme of ['light', 'dark'] as const) {

@@ -33,7 +33,9 @@ import type {
   TrainerVersion,
 } from '@shared/types'
 import {
+  FIXTURE_MODELS_PATH,
   FIXTURE_NOW,
+  GiB,
   SFT_BUNDLE_IDS,
   catalogFixture,
   diagnosticFixture,
@@ -45,6 +47,7 @@ import {
   engineVersionFixture,
   envReportFixture,
   galleryItemFixture,
+  GPU_RTX_5090,
   gpuDeviceFixture,
   gpuInventoryFixture,
   jobFixture,
@@ -82,6 +85,8 @@ export interface MockBackendState {
   conversations: AiConversationInfo[]
   /** The folder 「使用本地文件夹」 picks (models:import-folder); null = the dialog is canceled. */
   localModelFolder: { path: string; name: string; bundleId: string } | null
+  /** 用电脑上的模型文件…: loose files in the picked folder, when it holds no complete model folder. */
+  localModelFiles: Array<{ path: string; role: 'dit' | 'text_encoder' | 'vae' }> | null
   /** What the engine's machine probe found (engine:plan runs the real chooser over it). */
   engineMachine: EngineMachine
   /** The release engine:plan plans against. */
@@ -91,6 +96,10 @@ export interface MockBackendState {
   controlAdapters: ControlAdapterEntry[]
   /** Setup and uninstall windows (see ./install.ts). */
   install: MockInstallState
+  /** System memory app:info reports (os.totalmem). */
+  systemMemoryBytes: number
+  /** Free space models:space reports for a models folder; a folder not listed has plenty. */
+  diskFree: Record<string, number>
 }
 
 export type ScenarioName =
@@ -103,10 +112,16 @@ export type ScenarioName =
   | 'jobFailure'
   | 'updateAvailable'
   | 'remoteHost'
+  | 'modelMissingRtx50'
   | MachineScenario
   | 'vulkanOnly'
+  | 'lowMemory'
+  | 'lowDisk'
 
-/** First runs on the machines of ./machines.ts (old NVIDIA driver, Turing, Volta, AMD with/without ROCm, Intel, several GPUs, macOS). */
+/**
+ * First runs on the machines of ./machines.ts (old NVIDIA driver, Turing, Volta, AMD with/without ROCm, Intel, several GPUs, macOS,
+ * a GPU the engine cannot use, a 2 GB card, a 6 GB card, a laptop with a 2 GB card and a usable integrated GPU).
+ */
 export type MachineScenario =
   | 'machineOldDriver'
   | 'machineTuring'
@@ -116,6 +131,10 @@ export type MachineScenario =
   | 'machineIntel'
   | 'machineMultiGpu'
   | 'machineMac'
+  | 'machineUnusableGpu'
+  | 'machineTinyGpu'
+  | 'machineSmallGpu'
+  | 'machineLaptopSmallGpu'
 
 /** Fresh state for a scenario; `patch` replaces top-level keys. */
 export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBackendState> = {}): MockBackendState {
@@ -152,6 +171,9 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     engineMachine: machineFixture('nvidia'),
     engineAssets: RELEASE_220,
     localModelFolder: null,
+    localModelFiles: null,
+    systemMemoryBytes: 32 * GiB,
+    diskFree: {},
   }
 
   const firstRun = (): Partial<MockBackendState> => ({
@@ -182,6 +204,12 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     engineInstalledModelMissing: () => ({
       settings: settingsFixture({ onboardingState: 'active' }),
       catalog: catalogFixture(),
+    }),
+    /** Engine ready on an RTX 5090 (the only kind that runs NVFP4), no model downloaded yet. */
+    modelMissingRtx50: () => ({
+      settings: settingsFixture({ onboardingState: 'completed' }),
+      catalog: catalogFixture(),
+      gpuInventory: gpuInventoryFixture([GPU_RTX_5090()]),
     }),
     /** Two components installed, the DiT interrupted mid-download. */
     modelPartiallyDownloaded: () => ({
@@ -225,6 +253,10 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
       ]),
       engineFeatures: cliEngineFeatures('vulkan'),
     }),
+    /** First run on a computer with 8 GB of memory: it runs, slowly. */
+    lowMemory: () => ({ ...firstRun(), systemMemoryBytes: 8 * GiB }),
+    /** First run where the models folder has 12 GB free, less than the download needs. */
+    lowDisk: () => ({ ...firstRun(), diskFree: { [FIXTURE_MODELS_PATH]: 12 * GiB } }),
   }
 
   /** First run on each kind of machine the engine chooser knows. */
@@ -241,6 +273,14 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     machineIntel: onMachine('intel'),
     machineMultiGpu: onMachine('multiGpu'),
     machineMac: onMachine('macos'),
+    machineUnusableGpu: onMachine('unusableGpu'),
+    machineTinyGpu: onMachine('tinyGpu'),
+    machineSmallGpu: onMachine('smallGpu'),
+    // Main recommends the GPU that can run the model, not the 2 GB card (recommendedGpu).
+    machineLaptopSmallGpu: () => {
+      const machine = onMachine('laptopSmallGpu')()
+      return { ...machine, gpuInventory: { ...machine.gpuInventory!, recommendedGpuUuid: machineFixture('laptopSmallGpu').gpus[1]!.id } }
+    },
   }
 
   const variant = name in machines ? machines[name as MachineScenario] : variants[name as Exclude<ScenarioName, MachineScenario>]

@@ -6,7 +6,7 @@ import { armAppHealth, armHealthConfirm, type HealthWindow } from '@main/update/
 import { UpdateScheduler, CHECK_INTERVAL_MS, FOCUS_THROTTLE_MS } from '@main/update/schedule'
 import { transportUrls } from '@main/update/transport'
 
-const GH = 'https://github.com/CloverIris/MossStudio/releases/download/updates/update-stable.json'
+const GH = 'https://github.com/ShallowElec/MossStudio/releases/download/updates/update-stable.json'
 
 describe('transportUrls', () => {
   it('tries GitHub first, then the mirrors', () => {
@@ -14,7 +14,7 @@ describe('transportUrls', () => {
     expect(urls[0]).toBe(GH)
     expect(urls.length).toBeGreaterThan(1)
     expect(
-      urls.slice(1).every((url) => url.endsWith('github.com/CloverIris/MossStudio/releases/download/updates/update-stable.json')),
+      urls.slice(1).every((url) => url.endsWith('github.com/ShallowElec/MossStudio/releases/download/updates/update-stable.json')),
     ).toBe(true)
   })
 

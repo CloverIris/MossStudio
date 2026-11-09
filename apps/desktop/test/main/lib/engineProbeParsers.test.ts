@@ -131,6 +131,20 @@ describe('NVIDIA PCI ids and the merged inventory', () => {
     expect(merged.recommendedGpuUuid).toBe('GPU-a')
   })
 
+  it("replaces nvidia-smi's pick when it is too small and the probe found a GPU that can run", () => {
+    const snapshot = {
+      scannedAt: '',
+      status: 'ok' as const,
+      devices: [{ uuid: 'GPU-mx', index: 0, name: 'MX250', memoryTotalBytes: 2 * 1024 ** 3, computeCapability: { major: 6, minor: 1 } }],
+      recommendedGpuUuid: 'GPU-mx',
+    }
+    const merged = mergeEngineGpus(snapshot, [
+      { id: 'GPU-mx', name: 'MX250', vendor: 'nvidia', vulkan: { index: 0, usable: true, discrete: true } },
+      { id: 'vk-8086-5917-0', name: 'UHD 620', vendor: 'intel', pciId: '8086:5917', vulkan: { index: 1, usable: true, discrete: false } },
+    ])
+    expect(merged.recommendedGpuUuid).toBe('vk-8086-5917-0')
+  })
+
   it('an AMD-only machine gets an ok inventory with the AMD GPU recommended', () => {
     const merged = mergeEngineGpus({ scannedAt: '', status: 'unavailable', devices: [], error: '未找到 nvidia-smi' }, [
       { id: 'vk-1002-744c-0', name: 'RX 7900 XTX', vendor: 'amd', pciId: '1002:744c' },

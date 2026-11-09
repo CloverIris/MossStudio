@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/winres"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/winres"
 )
 
 func main() {

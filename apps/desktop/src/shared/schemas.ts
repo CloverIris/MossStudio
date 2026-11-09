@@ -442,6 +442,20 @@ export const schemas = {
     directory: z.string().trim().max(4096).optional(),
   }),
 
+  modelsSpace: z.object({ modelIds: z.array(z.string().min(1).max(160)).max(64) }),
+
+  modelsSaveCombination: z.object({
+    id: z.string().min(1).max(160).optional(),
+    name: z.string().trim().min(1).max(80),
+    components: z.object({
+      dit: z.string().min(1).max(160),
+      textEncoder: z.string().min(1).max(160),
+      vae: z.string().min(1).max(160),
+    }),
+  }),
+
+  modelsDeleteCombination: z.object({ id: z.string().min(1).max(160) }),
+
   modelsRegisterScan: z.object({
     items: z
       .array(
@@ -825,7 +839,7 @@ export const schemas = {
   pickImages: z.object({ title: z.string().max(120).optional() }),
 
   pickDialog: z.object({
-    kind: z.enum(['folder', 'image', 'file']).default('folder'),
+    kind: z.enum(['folder', 'image', 'file', 'model']).default('folder'),
     title: z.string().max(120).optional(),
   }),
 

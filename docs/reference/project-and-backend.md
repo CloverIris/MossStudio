@@ -23,7 +23,7 @@ The backend holds no state. Every API request becomes one `rpc(method, params)` 
 
 Requests must carry the token as `Authorization: Bearer <token>` or `?token=<token>`. `/health` and the static files are the only exceptions; everything else answers `401 { "error": "unauthorized" }` without it. Responses carry `Access-Control-Allow-Origin: *`. A JSON body is limited to 2,000,000 characters; a picture or mask upload to 80 MB (`MAX_UPLOAD_BYTES`).
 
-Errors are `{ "error": string, "code"?: string }`. `code` is the `E_*` code main raised (`main/lib/codedError.ts`). `E_INPUT*`, `E_IMAGE*` and `E_NOT_SUPPORTED` answer 400; any other failure 500; an unknown route 404.
+Errors are `{ "error": string, "code"?: string }`. `code` is the `E_*` code main raised (`main/lib/codedError.ts`). `E_INPUT*`, `E_IMAGE*`, `E_NOT_SUPPORTED` and `E_GPU_TOO_SMALL` (the chosen GPU is too small for the model and has no engine) answer 400; any other failure 500; an unknown route 404.
 
 Three clients use it:
 

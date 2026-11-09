@@ -3,6 +3,7 @@ import {
   chooseEnginePackages,
   engineOsOf,
   installedAsRelease,
+  vulkanReasonText,
   type EngineAssetList,
   type EngineMachine,
   type EngineMachineGpu,
@@ -197,7 +198,8 @@ describe('chooseEnginePackages — NVIDIA without a CUDA kernel image', () => {
       it(`${os} SM${cc.join('')}: unsupported when Vulkan cannot use it`, () => {
         const plan = chooseEnginePackages(machine(os, [nvidia(cc, '581.42', { vulkan: vk(0, false) })]), release())
         expect(plan.choices[0]).toMatchObject({ packageId: null, package: null })
-        expect(plan.choices[0]!.reason).toContain('needs Vulkan 1.2')
+        // The engine's `needs Vulkan 1.2`, in plain words.
+        expect(plan.choices[0]!.reason).toBe(`NVIDIA SM${cc.join('')} 不支持 Vulkan 1.2，引擎没法在它上面运行`)
         expect(plan.blocked).toBeTruthy()
       })
     }
@@ -450,5 +452,117 @@ describe('chooseEnginePackages — HIP needs the GPU device nodes', () => {
 
   it('an older probe without the access check needs the HIP listing', () => {
     expect(pick('linux', amd('gfx1100'), { rocm7: true, hipAccess: undefined })).toBe('vulkan')
+  })
+})
+
+describe('vulkanReasonText', () => {
+  it.each([
+    ['needs Vulkan 1.2', '不支持 Vulkan 1.2，引擎没法在它上面运行'],
+    ['no bufferDeviceAddress', '缺少引擎需要的 Vulkan 功能（bufferDeviceAddress），没法在它上面运行'],
+    ['no shaderInt64', '缺少引擎需要的 Vulkan 功能（shaderInt64），没法在它上面运行'],
+  ])('says %s in plain words', (reason, text) => {
+    expect(vulkanReasonText(reason)).toBe(text)
+  })
+
+  it('knows only the reasons the engine prints, exactly: anything else is left to the caller', () => {
+    for (const reason of ['device lost', 'needs Vulkan 1.3', 'no storageBuffer16BitAccess', 'needs Vulkan 1.2 or newer']) {
+      expect(vulkanReasonText(reason)).toBeNull()
+    }
+  })
+})
+
+describe('chooseEnginePackages — why nothing runs', () => {
+  const uhd = (patch: Partial<EngineMachineGpu> = {}): EngineMachineGpu =>
+    intel({ id: 'vk-8086-5917-0', name: 'Intel UHD Graphics 620', vulkan: vk(0, false, false), ...patch })
+
+  it('one GPU: names the card and the engine reason, as one sentence', () => {
+    const plan = chooseEnginePackages(machine('windows', [uhd()]), release())
+    expect(plan.blocked).toBe('Intel UHD Graphics 620 不支持 Vulkan 1.2，引擎没法在它上面运行。')
+  })
+
+  it('a reason the app does not know is shown as the engine gave it', () => {
+    const lost = uhd({ vulkan: { index: 0, usable: false, discrete: false, reason: 'device lost' } })
+    expect(chooseEnginePackages(machine('windows', [lost]), release()).blocked).toBe('Intel UHD Graphics 620 不能运行引擎（device lost）。')
+  })
+
+  it('a GPU the Vulkan probe did not list: no reason is made up', () => {
+    const plan = chooseEnginePackages(machine('windows', [uhd({ vulkan: undefined })]), release())
+    expect(plan.blocked).toBe('Intel UHD Graphics 620 不能运行引擎。')
+  })
+
+  it('several GPUs, none usable: says so, then the reason of the discrete card', () => {
+    const gt710 = nvidia([6, 1], '581.42', {
+      name: 'NVIDIA GeForce GT 710',
+      vulkan: { index: 1, usable: false, discrete: true, reason: 'no shaderInt64' },
+    })
+    expect(chooseEnginePackages(machine('linux', [uhd(), gt710]), release()).blocked).toBe(
+      '这台电脑的 2 块显卡都用不了。NVIDIA GeForce GT 710 缺少引擎需要的 Vulkan 功能（shaderInt64），没法在它上面运行。',
+    )
+  })
+
+  it('several discrete GPUs, none usable: the reason of the one with the most memory', () => {
+    const gpus = [
+      nvidia([6, 1], '581.42', { id: 'a', name: 'Small', memoryBytes: 2 * 1024 ** 3, vulkan: vk(0, false) }),
+      nvidia([6, 1], '581.42', { id: 'b', name: 'Big', memoryBytes: 6 * 1024 ** 3, vulkan: vk(1, false) }),
+    ]
+    expect(chooseEnginePackages(machine('linux', gpus), release()).blocked).toBe(
+      '这台电脑的 2 块显卡都用不了。Big 不支持 Vulkan 1.2，引擎没法在它上面运行。',
+    )
+  })
+})
+
+describe('chooseEnginePackages — a discrete card too small to run the model', () => {
+  const GiB = 1024 ** 3
+  const uhd = intel({ id: 'vk-8086-5917-0', name: 'Intel UHD Graphics 620', vulkan: vk(1, true, false) })
+  const mx250 = (memoryBytes: number | undefined): EngineMachineGpu =>
+    nvidia([6, 1], '581.42', { id: 'GPU-mx250', name: 'NVIDIA GeForce MX250', ...(memoryBytes ? { memoryBytes } : {}) })
+
+  it('gets no engine when another GPU runs one: the integrated GPU keeps its 兼容模式 package, and nothing is downloaded for the card', () => {
+    const plan = chooseEnginePackages(machine('windows', [mx250(2 * GiB), uhd]), release())
+    expect(plan.blocked).toBeUndefined()
+    expect(
+      plan.choices.map((choice) => [choice.gpuId, choice.packageId, choice.memorySkipped ?? false, choice.integratedSkipped ?? false]),
+    ).toEqual([
+      ['GPU-mx250', null, true, false],
+      ['vk-8086-5917-0', 'vulkan', false, false],
+    ])
+    expect(plan.choices[0]!.reason).toBe('NVIDIA GeForce MX250 只有 2 GB 显存，默认用另一块显卡（可在 高级 › 每块 GPU 的引擎 里选用它）')
+    expect(plan.packages.map((item) => [item.packageId, item.gpuIds])).toEqual([['vulkan', ['vk-8086-5917-0']]])
+  })
+
+  it('a 2 GB card that runs CUDA gives way too, and no CUDA package is downloaded for it', () => {
+    const mx450 = nvidia([7, 5], '581.42', { id: 'GPU-mx450', name: 'NVIDIA GeForce MX450', memoryBytes: 2 * GiB })
+    const plan = chooseEnginePackages(machine('windows', [mx450, uhd]), release())
+    expect(plan.choices.map((choice) => choice.packageId)).toEqual([null, 'vulkan'])
+    expect(plan.packages.map((item) => item.packageId)).toEqual(['vulkan'])
+  })
+
+  it('next to a big discrete card it gives way as well', () => {
+    const big = nvidia([8, 9], '581.42', { id: 'GPU-big', name: 'RTX 4090', memoryBytes: 24 * GiB })
+    const plan = chooseEnginePackages(machine('windows', [mx250(2 * GiB), big, uhd]), release())
+    expect(plan.choices.map((choice) => [choice.packageId, choice.memorySkipped ?? false, choice.integratedSkipped ?? false])).toEqual([
+      [null, true, false],
+      ['cu13', false, false],
+      [null, false, true],
+    ])
+  })
+
+  it('keeps its engine when it is the only GPU that runs one (Setup then says it is too small)', () => {
+    const unusable = intel({ id: 'vk-8086-5917-0', name: 'Intel UHD Graphics 620', vulkan: vk(1, false, false) })
+    expect(chooseEnginePackages(machine('windows', [mx250(2 * GiB), unusable]), release()).choices[0]!.packageId).toBe('vulkan')
+    expect(chooseEnginePackages(machine('windows', [mx250(2 * GiB)]), release()).choices[0]!.packageId).toBe('vulkan')
+  })
+
+  it('an engine chosen for it in 高级 stands', () => {
+    const plan = chooseEnginePackages(machine('windows', [mx250(2 * GiB), uhd]), release(), { overrides: { 'GPU-mx250': 'vulkan' } })
+    expect(plan.choices[0]).toMatchObject({ packageId: 'vulkan' })
+    expect(plan.choices[0]!.memorySkipped).toBeUndefined()
+  })
+
+  it('a discrete card of 4 GB, or of unknown memory, still serves and the integrated GPU steps aside', () => {
+    for (const memory of [4 * GiB, undefined]) {
+      const plan = chooseEnginePackages(machine('windows', [mx250(memory), uhd]), release())
+      expect(plan.choices[1]).toMatchObject({ packageId: null, integratedSkipped: true })
+    }
   })
 })

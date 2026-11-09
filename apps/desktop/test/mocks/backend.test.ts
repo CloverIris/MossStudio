@@ -222,6 +222,13 @@ describe('mock backend', () => {
       expect(result.data.steps[2]!.modelIds).toEqual([...SFT_BUNDLE_IDS])
     })
 
+    it('suggests the official SFT on an RTX 50 card with VRAM to spare, as main does', async () => {
+      const result = await status('modelMissingRtx50')
+      if (!result.ok) throw new Error(result.error.message)
+      expect(result.data).toMatchObject({ bundleId: 'moss-sft', ready: false })
+      expect(result.data.steps[2]!.modelIds).toEqual([...SFT_BUNDLE_IDS])
+    })
+
     it('rejects an unknown host', async () => {
       expect(await status('ready', 'ghost')).toMatchObject({ ok: false, error: { code: 'E_HOST' } })
     })

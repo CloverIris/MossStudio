@@ -1,12 +1,12 @@
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { appendFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Events } from '@shared/channels'
-import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, GpuInventoryDevice } from '@shared/types'
+import type { JobLogLine, JobParams, JobRecord, JobStage, ModelBinding, ModelBundle, GpuInventoryDevice } from '@shared/types'
 import { cliUnsupported } from '../lib/cliProtocol'
-import { codedError } from '../lib/codedError'
+import { codedError, errorCode } from '../lib/codedError'
 import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
 import { prepareModelSource } from './modelBundles'
@@ -14,17 +14,26 @@ import { resolveLegacyModelPath } from './modelReadiness'
 import { cancelMossInferJob, releaseStaleMossInferRuntimes, restartMossInfer, runMossInferJob } from './mossInfer'
 import { jobWeightPrecisions } from './weightPrecision'
 import { cancelCliJob, cliBundleDtypeProblem, hipDeviceIndex, runCliJob, type HipIndexResult } from './cliEngine'
-import { currentEngineMachine, localServerPath, resolveDeviceEngine, type DeviceEngine } from './engineInstalls'
+import { currentEngineMachine, localServerPath, resolveDeviceEngine, skippedForMemory, type DeviceEngine } from './engineInstalls'
 import { getCatalog } from './models'
 import { getSettings } from './settings'
+import { writeFileAtomic } from '../lib/atomicWrite'
 import { refreshGpuInventory } from './devices'
 import { resolveGpuSelection } from '../lib/gpuInventory'
 import { selectAutomaticGpu } from '@shared/gpuScheduling'
+import { gpuMemoryTooSmall, memoryGb } from '@shared/machineFit'
 import { judgeEngineSupport } from '@shared/engineProtocol'
 import { CLI_ENGINE_LABEL, cliBundleProblem, type CliEngineKind } from '@shared/cliEngine'
 import { isCliEngine } from '@shared/enginePackages'
 import { canvasBranchesConflict } from '@shared/canvasJobBranch'
-import { resolveGpuProfile, settingsForGpuProfile, withWeightTier } from '@shared/gpuProfile'
+import {
+  resolveGpuProfile,
+  settingsForGpuProfile,
+  withWeightTier,
+  type ResolvedGpuProfile,
+  type WeightPrecisions,
+} from '@shared/gpuProfile'
+import { bundleGpuProblem, isFileBundle, profileForBundle } from '@shared/bundleFit'
 import { probeLocalEngineGpuCompatibility } from './engines'
 import { getTrainingHost } from './trainingHosts'
 import { cancelRemoteEngineJob, runRemoteEngineJob } from './remoteEngine'
@@ -101,14 +110,94 @@ async function loadJobs(): Promise<void> {
   }
 }
 
-async function saveJobs(): Promise<void> {
-  try {
-    await mkdir(jobsDir(), { recursive: true })
-    const list = [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 60)
-    await writeFile(join(jobsDir(), 'jobs.json'), JSON.stringify(list, null, 2), 'utf8')
-  } catch {
-    // best effort
+/**
+ * Work the caller does not wait for (a job's state never waits for the disk): job list, log and
+ * preview-removal writes, and engine queue pumps from the moment they are scheduled.
+ */
+const pendingWork = new Set<Promise<unknown>>()
+
+function inBackground(work: Promise<unknown>): void {
+  pendingWork.add(work)
+  const done = (): void => {
+    pendingWork.delete(work)
   }
+  work.then(done, done)
+}
+
+/**
+ * Resolves once all background work started or scheduled so far has finished: job list, log and
+ * preview-removal writes, and engine queue pumps, with the writes and pumps those start in turn.
+ * Not called by the app; tests use it before removing the data root.
+ */
+export async function settleJobWrites(): Promise<void> {
+  while (pendingWork.size > 0) await Promise.allSettled([...pendingWork])
+}
+
+/** The job list save in progress, and whether jobs changed since it took its snapshot. */
+let saving: Promise<void> | null = null
+let saveAgain = false
+/**
+ * A failed save is tried once more after this long (a file briefly locked on Windows), so a job's final
+ * state is not left behind. Once: after that, the next change writes again.
+ */
+const SAVE_RETRY_MS = 1500
+let retry: 'ready' | 'scheduled' | 'used' = 'ready'
+
+/** One save: the snapshot is taken right before the write, so a change during the write sets saveAgain. */
+async function writeJobList(): Promise<void> {
+  await mkdir(jobsDir(), { recursive: true })
+  const list = [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 60)
+  await writeFileAtomic(join(jobsDir(), 'jobs.json'), JSON.stringify(list, null, 2))
+}
+
+async function runSaves(): Promise<void> {
+  for (;;) {
+    saveAgain = false
+    try {
+      await writeJobList()
+    } catch {
+      // Best effort: the jobs stay in memory; one delayed retry, then the next change writes them again.
+      saving = null
+      scheduleSaveRetry()
+      return
+    }
+    // Checked and cleared in the same turn as the write's end: a change can't slip in between.
+    if (!saveAgain) {
+      saving = null
+      retry = 'ready'
+      return
+    }
+  }
+}
+
+function scheduleSaveRetry(): void {
+  if (retry !== 'ready') return
+  retry = 'scheduled'
+  inBackground(
+    new Promise<void>((resolve) => {
+      // The retry alone never keeps the process alive (quitting with a pending retry loses only that retry).
+      setTimeout(() => {
+        retry = 'used'
+        resolve(saveJobs())
+      }, SAVE_RETRY_MS).unref()
+    }),
+  )
+}
+
+/**
+ * Writes the job list, one write at a time and atomically (temp file, then rename), so jobs.json is never
+ * half written or overwritten by an older snapshot. A call during a save makes that save write once more
+ * with the newest jobs. Every caller's promise resolves after a write that includes its change, or after
+ * the save fails (best effort). A caller may wait a little longer while job updates keep streaming in.
+ */
+function saveJobs(): Promise<void> {
+  if (saving) {
+    saveAgain = true
+    return saving
+  }
+  // Started in a microtask, so `saving` is stored before runSaves can clear it, whatever fails first.
+  saving = Promise.resolve().then(runSaves)
+  return saving
 }
 
 function snapshot(job: JobRecord): JobRecord {
@@ -130,7 +219,7 @@ function update(job: JobRecord, patch: Partial<JobRecord>): void {
       route: job.state === 'succeeded' ? undefined : '/diagnostics',
     })
   }
-  void saveJobs()
+  inBackground(saveJobs())
 }
 
 function appendLog(job: JobRecord, stream: JobLogLine['stream'], text: string, runningJob?: RunningJob): void {
@@ -154,7 +243,8 @@ function appendLog(job: JobRecord, stream: JobLogLine['stream'], text: string, r
     if (runningJob.lastLines.length > 40) runningJob.lastLines.shift()
   }
   emit(Events.jobLog, line)
-  void appendFile(logPath(job.id), `${JSON.stringify(line)}\n`, 'utf8').catch(() => undefined)
+  // Best effort: the line is already in memory and on its way to the renderer.
+  inBackground(appendFile(logPath(job.id), `${JSON.stringify(line)}\n`, 'utf8').catch(() => undefined))
 }
 
 function recordError(job: JobRecord, raw: string, rule = matchRule(raw)): void {
@@ -291,7 +381,7 @@ function clearPreview(job: JobRecord): void {
   previewThrottle.stop(job.id)
   job.preview = undefined
   if (job.engine === 'mossinfer' && !job.hostId) {
-    void rm(jobPreviewPath(job.id), { force: true }).catch(() => undefined)
+    inBackground(rm(jobPreviewPath(job.id), { force: true }).catch(() => undefined))
   }
 }
 
@@ -512,9 +602,8 @@ function engineSlotKey(job: { deviceUuid?: string; hostId?: string }): string | 
 }
 
 function scheduleEngineQueue(slot: string): void {
-  setTimeout(() => {
-    void pumpEngineQueue(slot)
-  }, 0)
+  // Tracked from now, not from when it runs: its first write comes after awaited reads.
+  inBackground(new Promise<void>((resolve) => setTimeout(() => resolve(pumpEngineQueue(slot)), 0)))
 }
 
 async function pumpEngineQueue(slot: string): Promise<void> {
@@ -535,7 +624,8 @@ async function pumpEngineQueue(slot: string): Promise<void> {
     update(next.job, {
       queuePosition: undefined,
       state: 'failed',
-      error: { code: 'E_ENGINE', message: error instanceof Error ? error.message : String(error) },
+      // Keep a refusal's own code (E_GPU_TOO_SMALL, E_NOT_SUPPORTED) for the job's Activity entry.
+      error: { code: errorCode(error) ?? 'E_ENGINE', message: error instanceof Error ? error.message : String(error) },
       endedAt: new Date().toISOString(),
       exitCode: 1,
     })
@@ -551,25 +641,27 @@ async function resolveLocalGpu(
   deviceUuid: string | undefined,
   /** What the job asks for: a job a CLI engine cannot run never goes to a CLI GPU. */
   params: JobParams,
+  /** The model it runs: automatic assignment only picks a GPU that can run it (NVFP4 on an RTX 50). */
+  model?: { bundle: ModelBundle; files: boolean },
 ): Promise<GpuInventoryDevice> {
   const settings = getSettings()
   const inventory = await refreshGpuInventory()
   if (!deviceUuid && settings.gpuSelection === 'auto') {
     // GPUs that run a CLI engine (兼容模式 / AMD 原生) are judged by their package, not by moss-server.
-    const cliGpus = inventory.devices.filter((device) => cliEngineOf(device.uuid))
-    const cliUuids = new Set(cliGpus.map((device) => device.uuid))
-    const cudaGpus = inventory.devices.filter((device) => !cliUuids.has(device.uuid) && (device.vendor ?? 'nvidia') === 'nvidia')
-    let cudaUuids = new Set<string>()
-    if (cudaGpus.length) {
-      let probe: Awaited<ReturnType<typeof probeLocalEngineGpuCompatibility>>
-      try {
-        probe = await probeLocalEngineGpuCompatibility()
-      } catch (error) {
+    const cliAll = inventory.devices.filter((device) => cliEngineOf(device.uuid))
+    const cliAllUuids = new Set(cliAll.map((device) => device.uuid))
+    const cudaAll = inventory.devices.filter((device) => !cliAllUuids.has(device.uuid) && (device.vendor ?? 'nvidia') === 'nvidia')
+    // One compatibility probe per assignment, asked only when a CUDA GPU is considered.
+    let probed: Promise<Awaited<ReturnType<typeof probeLocalEngineGpuCompatibility>>> | null = null
+    const cudaCompatible = async (cudaGpus: GpuInventoryDevice[]): Promise<Set<string>> => {
+      if (!cudaGpus.length) return new Set()
+      probed ??= probeLocalEngineGpuCompatibility().catch((error: unknown) => {
         throw new Error(
           `自动分配无法验证引擎与 GPU 的兼容性：${error instanceof Error ? error.message : String(error)}。请到引擎页测试设备，或手动指定 GPU。`,
         )
-      }
-      cudaUuids = new Set(
+      })
+      const probe = await probed
+      return new Set(
         cudaGpus
           .filter(
             (device) =>
@@ -583,17 +675,59 @@ async function resolveLocalGpu(
           .map((device) => device.uuid),
       )
     }
-    // Automatic assignment prefers the full engine: CLI GPUs only on a machine without a CUDA one,
-    // and only for plain text to image; integrated GPUs only when there is no discrete one.
-    const needsCuda = cliUnsupported(cliEngineOf(cliGpus[0]?.uuid)?.kind ?? 'vulkan', params)
-    let compatibleUuids = cudaUuids
-    if (!cudaGpus.length && !needsCuda && cliUuids.size) {
-      const discrete = [...cliUuids].filter((uuid) => !integratedGpu(uuid))
-      compatibleUuids = new Set(discrete.length ? discrete : cliUuids)
+    /** The GPUs among these that can take this job (engine, then what the job and the model need), or why none can. */
+    const fitting = async (
+      cliGpus: GpuInventoryDevice[],
+      cudaGpus: GpuInventoryDevice[],
+    ): Promise<{ uuids: Set<string>; cliUuids: Set<string> } | { refusal: Error }> => {
+      const cudaUuids = await cudaCompatible(cudaGpus)
+      const cliUuids = new Set(cliGpus.map((device) => device.uuid))
+      // Automatic assignment prefers the full engine: CLI GPUs only on a machine without a CUDA one,
+      // and only for plain text to image; integrated GPUs only when there is no discrete one.
+      const needsCuda = cliUnsupported(cliEngineOf(cliGpus[0]?.uuid)?.kind ?? 'vulkan', params)
+      let uuids = cudaUuids
+      if (!cudaGpus.length && !needsCuda && cliUuids.size) {
+        const discrete = [...cliUuids].filter((uuid) => !integratedGpu(uuid))
+        uuids = new Set(discrete.length ? discrete : cliUuids)
+      }
+      if (needsCuda && !cudaUuids.size && cliUuids.size) {
+        return { refusal: codedError('E_NOT_SUPPORTED', `${needsCuda}（这台电脑上没有能运行完整引擎的显卡）`) }
+      }
+      if (model && uuids.size) {
+        // A GPU that cannot run the model would only fail the job: it waits for one that can.
+        const problems = [...uuids].map((uuid) => {
+          const device = inventory.devices.find((item) => item.uuid === uuid)
+          return [uuid, device ? bundleGpuProblem(model.bundle, device, { cli: cliUuids.has(uuid), files: model.files }) : '']
+        })
+        const capable = problems.filter(([, problem]) => problem === null).map(([uuid]) => uuid!)
+        if (!capable.length) return { refusal: codedError('E_MODEL', `「${model.bundle.name}」${problems[0]![1]}，请换一个模型`) }
+        uuids = new Set(capable)
+      }
+      return { uuids, cliUuids }
     }
-    if (needsCuda && !cudaUuids.size && cliUuids.size) {
-      throw codedError('E_NOT_SUPPORTED', `${needsCuda}（这台电脑上没有能运行完整引擎的显卡）`)
+    // A card with too little memory for the model would only fail the job: the GPUs that are big enough come
+    // first, the integrated one included. Only when they leave nothing for this job are the small ones tried too.
+    const roomy = (device: GpuInventoryDevice): boolean => !gpuMemoryTooSmall(device.memoryTotalBytes)
+    const big = await fitting(cliAll.filter(roomy), cudaAll.filter(roomy))
+    let chosen = big
+    if (!('uuids' in big) || big.uuids.size === 0) {
+      const smallOnes = [...cliAll, ...cudaAll].some((device) => !roomy(device))
+      if (smallOnes) {
+        let all: typeof big
+        try {
+          all = await fitting(cliAll, cudaAll)
+        } catch (error) {
+          // The probe failed for a small card only: the big ones' answer stands.
+          if ('refusal' in big) throw big.refusal
+          throw error
+        }
+        if ('uuids' in all && all.uuids.size) chosen = all
+        else if ('refusal' in big) chosen = big
+        else chosen = all
+      }
     }
+    if ('refusal' in chosen) throw chosen.refusal
+    const compatibleUuids = chosen.uuids
     const loads: Record<string, { runningTasks: number; queuedTasks: number }> = {}
     for (const job of jobs.values()) {
       if (!job.deviceUuid || job.hostId || job.engine !== 'mossinfer') continue
@@ -634,6 +768,12 @@ async function resolveLocalGpu(
       throw new Error('设置中选择的默认 GPU 当前不可用；请在引擎页重新扫描或选择其他设备。')
     }
     throw new Error(inventory.error ?? '没有可用的 NVIDIA GPU；请在引擎页检查设备或选择远端推理引擎。')
+  }
+  // Picked by hand, a card the plan left without an engine because it is too small for the model (another GPU
+  // runs one): say so, and where the pick was made. A card with no engine for any other reason gets the usual error.
+  if (!resolveDeviceEngine(device.uuid) && skippedForMemory(device.uuid)) {
+    const where = deviceUuid ? '在画面的「显卡」里换一块，或改回跟随默认。' : '在「设置 › 设备与引擎」里改用另一块显卡。'
+    throw codedError('E_GPU_TOO_SMALL', `${device.name} 显存太小（${memoryGb(device.memoryTotalBytes ?? 0)} GB），没有安装引擎。${where}`)
   }
   const pickedCli = cliEngineOf(device.uuid)
   if (pickedCli) {
@@ -730,10 +870,16 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
   }
   const settings = getSettings()
   try {
+    let model: { bundle: ModelBundle; files: boolean } | undefined
+    if (!input.hostId && input.modelBinding) {
+      const catalog = await getCatalog(settings)
+      const bundle = catalog.bundles.find((item) => item.id === input.modelBinding!.bundleId)
+      if (bundle) model = { bundle, files: isFileBundle(bundle, catalog.models) }
+    }
     if (input.hostId) {
       assignedInput = { ...input, deviceUuid: undefined }
     } else {
-      assignedGpu = await resolveLocalGpu(input.deviceUuid, paramsOf(input))
+      assignedGpu = await resolveLocalGpu(input.deviceUuid, paramsOf(input), model)
       if (!input.deviceUuid && settings.gpuSelection === 'auto') pendingAutoUuid = assignedGpu.uuid
       assignedInput = { ...input, deviceUuid: assignedGpu.uuid, deviceId: `cuda:${assignedGpu.index}` }
     }
@@ -741,7 +887,7 @@ async function scheduleEngineJob(input: StartEngineJobInput): Promise<JobRecord>
     if (!assignedInput) throw new Error('推理任务设备解析失败。')
     const slot = engineSlotKey(assignedInput)
     if (!slot) throw new Error('无法确定推理设备资源槽；请重新选择 GPU 后重试。')
-    const gpuProfile = assignedGpu ? resolveGpuProfile(settings, assignedGpu) : undefined
+    const gpuProfile = assignedGpu ? profileForBundle(resolveGpuProfile(settings, assignedGpu), model?.bundle) : undefined
     const queue = engineQueues.get(slot) ?? []
     if (activeEngineSlots.has(slot) || queue.length > 0) {
       const params = paramsOf(input)
@@ -809,7 +955,16 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
   let modelPath: string | undefined
   let modelSnapshot: unknown
   let modelFiles: { ditFile?: string; textEncoderFile?: string; vaeFile?: string } = {}
+  let modelBundle: ModelBundle | undefined
   const cliEngine = input.hostId ? null : cliEngineOf(input.deviceUuid)
+  if (input.hostId && input.modelBinding) {
+    // Another computer runs the model folder at its remote path; single files load only here.
+    const catalog = await getCatalog(settings)
+    const bundle = catalog.bundles.find((item) => item.id === input.modelBinding!.bundleId)
+    if (bundle && isFileBundle(bundle, catalog.models)) {
+      throw codedError('E_MODEL', `「${bundle.name}」只能在这台电脑上运行，在其他电脑上请用官方模型`)
+    }
+  }
   if (!input.hostId) {
     if (input.modelBinding && cliEngine) {
       // A CLI engine reads a bf16 bundle folder: say so before anything is materialized or started.
@@ -824,12 +979,15 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     }
     if (input.modelBinding) {
       const source = await prepareModelSource(input.modelBinding, settings)
-      modelPath = source.model ?? undefined
-      if (modelPath) {
-        modelSnapshot = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8'))
-      } else {
-        modelSnapshot = { bundleId: input.modelBinding.bundleId, files: source }
-      }
+      modelPath = source.model
+      modelBundle = source.bundle
+      const manifest = JSON.parse(await readFile(join(modelPath, 'clover_model.json'), 'utf8')) as Record<string, unknown>
+      const files = Object.fromEntries(
+        Object.entries({ ditFile: source.ditFile, textEncoderFile: source.textEncoderFile, vaeFile: source.vaeFile }).filter(
+          ([, path]) => path,
+        ),
+      )
+      modelSnapshot = Object.keys(files).length ? { ...manifest, files } : manifest
       modelFiles = {
         ditFile: source.ditFile,
         textEncoderFile: source.textEncoderFile,
@@ -838,7 +996,8 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     } else {
       modelPath = (await resolveLegacyModelPath(join(paths.hub(settings.modelsRoot), 'models--OpenMOSS-Team--MOSS-Image-SFT'))) ?? undefined
     }
-    if (!modelPath && !modelFiles.ditFile) {
+    // Single files replace the folder's weights; the engine still reads its configs and tokenizer.
+    if (!modelPath) {
       throw new Error('模型权重尚未就绪，请先在模型库下载 MOSS-Image，或扫描本地模型文件')
     }
     if (cliEngine && modelPath) {
@@ -855,14 +1014,22 @@ async function startEngineJobNow(input: StartEngineJobInput, queuedJob?: JobReco
     if (!serverPath || !existsSync(serverPath)) throw new Error('未找到 moss-server；请先在引擎页下载或配置引擎')
   }
   const resolvedDeviceId = localGpu ? `cuda:${localGpu.index}` : input.deviceId
+  if (localGpu && modelBundle && !cliEngineOf(localGpu.uuid)) {
+    const problem = bundleGpuProblem(modelBundle, localGpu)
+    if (problem) throw codedError('E_MODEL', `「${modelBundle.name}」${problem}，请换一个模型`)
+  }
   // The tier asked for, settled by the weights this job loads (an INT8 DiT runs High, INT4 Turbo).
-  const gpuProfile = localGpu
-    ? withWeightTier(
-        queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu),
-        cliEngine ? { dit: 'bf16', textEncoder: 'bf16' } : await jobWeightPrecisions(modelFiles, localGpu.uuid),
-        localGpu,
-      )
-    : undefined
+  // When the engine has no name for them (NVFP4, or no inspect), the bundle's own tier decides.
+  const requestedProfile = localGpu ? (queuedJob?.gpuProfile ?? resolveGpuProfile(settings, localGpu)) : undefined
+  let gpuProfile: ResolvedGpuProfile | undefined
+  if (localGpu && requestedProfile) {
+    const weights: WeightPrecisions = cliEngine
+      ? { dit: 'bf16', textEncoder: 'bf16' }
+      : await jobWeightPrecisions(modelFiles, localGpu.uuid)
+    const known = weights.dit !== null && weights.textEncoder !== null
+    gpuProfile =
+      modelBundle?.tier && !known ? profileForBundle(requestedProfile, modelBundle) : withWeightTier(requestedProfile, weights, localGpu)
+  }
   const executionSettings = gpuProfile ? settingsForGpuProfile(settings, gpuProfile) : settings
 
   if (input.hostId) {
@@ -1377,6 +1544,7 @@ export async function purgeLegacySimulationJobs(): Promise<number> {
     await rm(join(jobsDir(), `${id}.json`), { force: true }).catch(() => undefined)
     removed += 1
   }
+  // Waits for the save in flight and the one more it makes for this change.
   if (removed) await saveJobs()
   return removed
 }

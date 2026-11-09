@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Ipc } from '@shared/channels'
-import type { EnginePlanView, MossInferDownloadState, OnboardingStatus } from '@shared/types'
+import type { AppInfo, EnginePlanView, ModelSpaceDisk, MossInferDownloadState, OnboardingStatus } from '@shared/types'
 import { call } from '../../lib/api'
 import { engineDownloadActive } from '../../lib/engineInstall'
 import { preparationProgress, type Preparation } from '../../lib/preparation'
 import { importFolderMessage, type ImportFolderResult } from '../../lib/modelFolder'
 import { useGpuInventory } from '../../lib/useGpuInventory'
 import { useApp } from '../../store'
+import { useAppInfo } from '../settings/useAppInfo'
 import { deriveSetup, modelDownloads, stepsToStart, type SetupView } from './setupState'
 
 function message(error: unknown): string {
@@ -33,6 +34,8 @@ export function useSetup(): {
   /** 已有模型文件？: use a model folder where it is; null when canceled, else what happened. */
   chooseModelFolder: () => Promise<{ message: string; ready: boolean } | null>
   usingFolder: boolean
+  /** Folders, system memory and free space from the main process; re-read when settings change (a new folder). */
+  info: AppInfo | null
 } {
   const settings = useApp((state) => state.settings)
   const engine = useApp((state) => state.engineReadiness)
@@ -43,6 +46,7 @@ export function useSetup(): {
   const setMossInferDownload = useApp((state) => state.setMossInferDownload)
   const refreshEngineReadiness = useApp((state) => state.refreshEngineReadiness)
   const gpu = useGpuInventory()
+  const info = useAppInfo()
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
   const [engineError, setEngineError] = useState<string | null>(null)
   const [modelError, setModelError] = useState<string | null>(null)
@@ -86,6 +90,47 @@ export function useSetup(): {
     void loadStatus()
   }, [loadStatus, catalog, finished, engine?.state, settings?.modelsRoot])
 
+  // Free space where the missing model parts go. Read again when the folders change, a download ends,
+  // the parts still missing change, or the window comes back (space freed in the file manager).
+  const [disks, setDisks] = useState<ModelSpaceDisk[] | undefined>(undefined)
+  const modelIds = (onboarding?.steps.find((step) => step.id === 'model')?.modelIds ?? []).join('\n')
+  // One reading at a time: a slow disk must not pile up requests (focus fires often). A request made
+  // meanwhile is answered by one more reading when this one ends, with the newest model list.
+  const latestIds = useRef(modelIds)
+  latestIds.current = modelIds
+  const spaceLoad = useRef({ busy: false, again: false })
+  const loadSpace = useCallback(async (): Promise<void> => {
+    const load = spaceLoad.current
+    if (load.busy) {
+      load.again = true
+      return
+    }
+    load.busy = true
+    try {
+      do {
+        load.again = false
+        const ids = latestIds.current
+        if (!ids) break
+        try {
+          setDisks(await call<ModelSpaceDisk[]>(Ipc.modelsSpace, { modelIds: ids.split('\n') }))
+        } catch {
+          // Unknown free space: the check on start still refuses a download that does not fit.
+          setDisks(undefined)
+        }
+      } while (load.again)
+    } finally {
+      load.busy = false
+    }
+  }, [])
+  useEffect(() => {
+    void loadSpace()
+  }, [loadSpace, modelIds, settings?.modelsRoot, settings?.modelDirectories, finished, onboarding])
+  useEffect(() => {
+    const onFocus = (): void => void loadSpace()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadSpace])
+
   const view = useMemo(
     () =>
       deriveSetup({
@@ -98,8 +143,22 @@ export function useSetup(): {
         onboarding,
         downloads,
         modelError,
+        systemMemoryBytes: info?.memoryTotalBytes,
+        disks,
       }),
-    [gpu.inventory, settings?.gpuSelection, engine, plan, engineDownload, engineError, onboarding, downloads, modelError],
+    [
+      gpu.inventory,
+      settings?.gpuSelection,
+      engine,
+      plan,
+      engineDownload,
+      engineError,
+      onboarding,
+      downloads,
+      modelError,
+      info?.memoryTotalBytes,
+      disks,
+    ],
   )
 
   const progress = useMemo(
@@ -181,5 +240,5 @@ export function useSetup(): {
   }, [gpu, loadPlan])
 
   const modelName = onboarding?.bundleName ?? '推荐模型'
-  return { view, progress, modelName, starting, start, gpu, redetect, redetecting, chooseModelFolder, usingFolder }
+  return { view, progress, modelName, starting, start, gpu, redetect, redetecting, chooseModelFolder, usingFolder, info }
 }

@@ -1,119 +1,80 @@
-import { FolderPlus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Ipc } from '@shared/channels'
-import { importFolderMessage, type ImportFolderResult } from '../../lib/modelFolder'
+import { unusedDownloads } from '@shared/modelCombos'
 import type { Catalog, DownloadTask, ModelEntry } from '@shared/types'
 import { call } from '../../lib/api'
 import { ModelDirectoriesCard } from '../../components/ModelDirectoriesCard'
-import { Button, ConfirmDialog, Field, Group, Pill, ProgressBar, Row, Section, Spinner, useToast } from '../../components/ui'
+import { ModelName } from '../../components/common/ModelName'
+import { Button, ConfirmDialog, Field, Group, Modal, Row, Section, Spinner, Tag, useToast } from '../../components/ui'
 import { TextSetting } from '../training/TextSetting'
-import { ROLE_LABEL, bundlesUsing, isOfferedComponent, itemState, sizeText, taskFor } from './logic'
-import { DownloadActionIcon, RemoveButton } from './ModelEntries'
+import { sizeText } from './logic'
+import { RemoveButton, SizeText } from './ModelEntries'
 import type { ModelLocation } from './useModelLocation'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
-const ROLE_ORDER: ModelEntry['role'][] = ['dit', 'full', 'text_encoder', 'vae', 'support']
 
-/** Individual parts (main model, text encoder, VAE, configuration) of every model. */
-function PartsList({ catalog, location }: { catalog: Catalog; location: ModelLocation }): React.JSX.Element {
+/** Downloads no model needs any more (for example single files from older versions), to clear them away. */
+function UnusedFiles({ catalog, location }: { catalog: Catalog; location: ModelLocation }): React.JSX.Element | null {
   const toast = useToast()
-  const [busy, setBusy] = useState<string | null>(null)
-  const [removing, setRemoving] = useState<ModelEntry | null>(null)
-  const parts = useMemo(
-    () =>
-      catalog.models
-        .filter(isOfferedComponent)
-        .filter((model) => location.kind === 'local' || model.provider !== 'local')
-        .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role)),
-    [catalog.models, location.kind],
+  const [listing, setListing] = useState(false)
+  const [removing, setRemoving] = useState<ModelEntry[] | null>(null)
+  const unused = useMemo(
+    () => unusedDownloads(catalog.models, catalog.bundles, location.isModelInstalled),
+    [catalog.models, catalog.bundles, location.isModelInstalled],
   )
+  if (!unused.length) return null
+  const bytes = (entries: ModelEntry[]): number => entries.reduce((sum, model) => sum + (model.installedBytes || model.sizeBytes || 0), 0)
 
-  async function act(model: ModelEntry, action: 'download' | 'resume' | 'pause', task: DownloadTask | undefined): Promise<void> {
-    setBusy(model.id)
-    try {
-      if (action === 'pause' && task) await location.pause(task)
-      else if (action === 'resume' && task) await location.resume(task)
-      else await location.download('model', model.id)
-    } catch (cause) {
-      toast.push(errorText(cause), 'error')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function remove(model: ModelEntry): Promise<void> {
+  async function remove(entries: ModelEntry[]): Promise<void> {
     setRemoving(null)
-    const verb = model.provider === 'local' ? '移除' : '删除'
     try {
-      await location.remove('model', model.id)
-      toast.push(`已${verb} ${model.name}`, 'success')
+      await location.removeMany(
+        'model',
+        entries.map((model) => model.id),
+      )
+      toast.push(entries.length === 1 ? `已删除 ${entries[0]!.name}` : `已删除 ${entries.length} 个文件`, 'success')
     } catch (cause) {
-      toast.push(`没能${verb}：${errorText(cause)}`, 'error')
+      toast.push(`没能删除：${errorText(cause)}`, 'error')
     }
   }
 
-  const users = removing ? bundlesUsing(removing.id, catalog.bundles).map((bundle) => bundle.name) : []
   return (
-    <>
+    <div data-unused-files>
       <Group>
-        {parts.map((model) => {
-          const task = taskFor(location.tasks, 'model', model.id)
-          // installState describes this computer's files; a remote host only has its inventory.
-          const state = itemState(
-            location.kind === 'remote' ? { ...model, installState: undefined } : model,
-            location.isModelInstalled(model),
-            task,
-          )
-          const format = model.provider === 'local' ? '本地文件' : model.format === 'comfyui' ? '单文件' : null
-          return (
+        <Row title="没有用到的文件" description={<span className="tabular">{`${unused.length} 个文件`}</span>}>
+          <SizeText bytes={bytes(unused)} />
+          <Button tone="ghost" onClick={() => setListing(true)}>
+            查看
+          </Button>
+          <Button tone="secondary" onClick={() => setRemoving(unused)}>
+            全部删除
+          </Button>
+        </Row>
+      </Group>
+      <Modal open={listing} title="没有用到的文件" onClose={() => setListing(false)} width="max-w-lg">
+        <div className="flex flex-col gap-0.5">
+          {unused.map((model) => (
             <Row
               key={model.id}
-              title={model.name}
-              description={
-                <span className="flex flex-col gap-1.5">
-                  <span>
-                    {[ROLE_LABEL[model.role], format, model.precision.toUpperCase(), sizeText(model.sizeBytes)].filter(Boolean).join(' · ')}
-                  </span>
-                  {state.percent !== null ? (
-                    <ProgressBar value={state.percent} label={`${model.name} 下载进度`} className="max-w-64" />
-                  ) : null}
-                </span>
-              }
+              title={<ModelName item={model} />}
+              // The precision is a tag of its own unless the name already carries it.
+              description={model.variant?.length ? undefined : <Tag>{model.precision.toUpperCase()}</Tag>}
             >
-              {state.text ? (
-                <Pill tone={state.tone} className="tabular">
-                  {state.text}
-                </Pill>
-              ) : null}
-              {state.action === 'delete' ? (
-                <RemoveButton remove={model.provider === 'local'} name={model.name} onClick={() => setRemoving(model)} />
-              ) : state.action ? (
-                <Button
-                  tone="secondary"
-                  disabled={busy !== null}
-                  onClick={() => void act(model, state.action as 'download' | 'resume' | 'pause', task)}
-                >
-                  {busy === model.id ? <Spinner /> : <DownloadActionIcon action={state.action} label={state.actionLabel} />}
-                  {state.actionLabel}
-                </Button>
-              ) : null}
+              <SizeText bytes={model.installedBytes || model.sizeBytes} />
+              <RemoveButton name={model.name} onClick={() => setRemoving([model])} />
             </Row>
-          )
-        })}
-      </Group>
+          ))}
+        </div>
+      </Modal>
       <ConfirmDialog
         open={Boolean(removing)}
-        title={removing ? `${removing.provider === 'local' ? '移除' : '删除'}「${removing.name}」？` : ''}
-        description={
-          removing?.provider === 'local'
-            ? '只从模型库里移除，电脑上的原文件不会被删除。'
-            : `${users.length ? `${users.join('、')} 需要这个文件，删除后这些模型要重新下载它才能使用。` : ''}可释放约 ${sizeText(removing?.installedBytes || removing?.sizeBytes)}。`
-        }
-        confirmLabel={removing?.provider === 'local' ? '移除' : '删除'}
+        title={removing?.length === 1 ? `删除「${removing[0]!.name}」？` : `删除 ${removing?.length ?? 0} 个没有用到的文件？`}
+        description={`可释放约 ${sizeText(bytes(removing ?? []))}。需要时可以重新下载。`}
+        confirmLabel="删除"
         onClose={() => setRemoving(null)}
         onConfirm={() => removing && void remove(removing)}
       />
-    </>
+    </div>
   )
 }
 
@@ -236,50 +197,16 @@ function RemoteFolders({ location }: { location: ModelLocation }): React.JSX.Ele
   )
 }
 
-function ImportFolderRow(): React.JSX.Element {
-  const toast = useToast()
-  const [busy, setBusy] = useState(false)
-  async function importFolder(): Promise<void> {
-    setBusy(true)
-    try {
-      const result = await call<ImportFolderResult>(Ipc.modelsImportFolder)
-      if (result.canceled) return
-      toast.push(importFolderMessage(result), 'success')
-    } catch (cause) {
-      toast.push(errorText(cause), 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <Group>
-      <Row
-        title="添加整个模型文件夹"
-        description="选一个完整的模型文件夹（例如从别的电脑拷来的 MOSS-Image），添加到模型库。文件留在原处，不复制、不移动。"
-      >
-        <Button tone="secondary" disabled={busy} onClick={() => void importFolder()}>
-          {busy ? <Spinner /> : <FolderPlus className="size-4" strokeWidth={1.6} />}
-          选择文件夹
-        </Button>
-      </Row>
-    </Group>
-  )
-}
-
 /** Everything under 模型 › 高级. */
 export function AdvancedPanel({ catalog, location }: { catalog: Catalog; location: ModelLocation }): React.JSX.Element {
   return (
     <div className="flex flex-col gap-6 pt-2">
-      <Section title="单独的部件" description="每个模型由主模型、文本编码器、VAE 和运行配置组成；共用的部件只下载一次。">
-        <PartsList catalog={catalog} location={location} />
-      </Section>
       {location.kind === 'local' ? (
         <>
-          {/* Both ways to use model files already on this computer sit together, as a pair. */}
           <Section title="文件夹">
             <ModelDirectoriesCard />
-            <ImportFolderRow />
           </Section>
+          <UnusedFiles catalog={catalog} location={location} />
         </>
       ) : (
         <Section title={`${location.host?.name ?? '远程主机'} 上的文件夹`}>

@@ -1,9 +1,11 @@
-import type { AdapterEntry, DownloadTask, ModelBundle, ModelEntry } from '@shared/types'
+import { bestBundleFor, bundleGpusProblem, isFileBundle } from '@shared/bundleFit'
+import type { AdapterEntry, DownloadTask, GpuInventoryDevice, ModelBundle, ModelEntry } from '@shared/types'
+import { eta } from '../../lib/format'
 
 /**
  * Pure helpers for the Models page. A "model" here is a whole catalog bundle
  * (main model + text encoder + VAE + configuration); its parts are only named
- * under 高级. State texts use plain words from the user's side.
+ * in 自己组合. State texts use plain words from the user's side.
  */
 
 /** Decimal sizes, like the download sites: "9.5 GB", "320 MB", "74 MB". */
@@ -66,26 +68,48 @@ export interface BundleView {
   /** Download tasks of the missing parts. */
   tasks: DownloadTask[]
   totalBytes: number
+  /** What the missing parts weigh, and how much of that is already here. */
+  downloadBytes: number
+  doneBytes: number
   remainingBytes: number
+  /** Download speed of the parts running now, bytes per second. */
+  speedBps: number
   /** Progress over the missing parts, 0–100, whole numbers. */
   percent: number
   status: BundleStatus
-  /** One line in plain words: "可以使用", "还差 1 个文件 · 320 MB", "下载中 42%". The total size is not part of it. */
+  /** The state in a few plain words: "可以使用", "还差 1 个文件（320 MB）", "下载中". The total size is not part of it. */
   stateText: string
   action: BundleAction
   actionLabel: string
+  /** Why this model cannot run where the page points (the GPU, another computer); it is then not offered for download. */
+  blocked: string | null
 }
 
 /**
  * Whole-model state. `isInstalled` decides per part (local catalog flag, or a
  * remote host's inventory); `tasks` are the downloads for the same machine.
+ * A `blocked` model keeps its state but offers no new download; one already
+ * started can still be paused, continued or retried.
  */
 export function bundleView(
   bundle: ModelBundle,
   models: readonly ModelEntry[],
   tasks: readonly DownloadTask[],
   isInstalled: (model: ModelEntry) => boolean = (model) => model.installed,
+  blocked: string | null = null,
 ): BundleView {
+  const view = bundleState(bundle, models, tasks, isInstalled)
+  if (!blocked) return { ...view, blocked: null }
+  // A download already started (pause, continue, retry) stays in the user's hands; only new ones are not offered.
+  return view.action === 'download' ? { ...view, blocked, action: null, actionLabel: '' } : { ...view, blocked }
+}
+
+function bundleState(
+  bundle: ModelBundle,
+  models: readonly ModelEntry[],
+  tasks: readonly DownloadTask[],
+  isInstalled: (model: ModelEntry) => boolean,
+): Omit<BundleView, 'blocked'> {
   const ids = bundleComponentIds(bundle)
   const components = ids.map((id) => models.find((model) => model.id === id)).filter((model): model is ModelEntry => Boolean(model))
   const totalBytes = components.reduce((sum, model) => sum + (model.sizeBytes || 0), 0)
@@ -101,24 +125,40 @@ export function bundleView(
   }
   const remainingBytes = Math.max(0, size - done)
   const percent = size > 0 ? Math.floor((done / size) * 100) : 0
-  const base = { bundle, components, missing, tasks: partTasks, totalBytes, remainingBytes, percent }
+  const speedBps = partTasks.filter((task) => task.state === 'running').reduce((sum, task) => sum + (task.speedBps || 0), 0)
+  const base = {
+    bundle,
+    components,
+    missing,
+    tasks: partTasks,
+    totalBytes,
+    downloadBytes: size,
+    doneBytes: done,
+    remainingBytes,
+    speedBps,
+    percent,
+  }
 
   if (components.length < ids.length) {
     return { ...base, status: 'unavailable', stateText: '模型信息不完整，刷新后再试', action: null, actionLabel: '' }
   }
   if (missing.length === 0) return { ...base, status: 'ready', stateText: '可以使用', action: null, actionLabel: '' }
   const active = partTasks.filter((task) => ACTIVE_STATES.has(task.state))
-  if (active.length) {
+  // Parts shared with another model (text encoder, VAE, configs) downloading for
+  // that one do not make this model "downloading" while its main model waits.
+  const started = partTasks.length === missing.length || partTasks.some((task) => task.targetId === bundle.components.dit)
+  if (active.length && started) {
     if (active.every((task) => task.state === 'verifying')) {
       return { ...base, status: 'verifying', stateText: '正在校验文件', action: null, actionLabel: '' }
     }
-    return { ...base, status: 'downloading', stateText: `下载中 ${percent}%`, action: 'pause', actionLabel: '暂停' }
+    const waiting = active.every((task) => task.state === 'queued')
+    return { ...base, status: 'downloading', stateText: waiting ? '等待下载' : '下载中', action: 'pause', actionLabel: '暂停' }
   }
   if (partTasks.some((task) => task.state === 'error')) {
     return {
       ...base,
       status: 'failed',
-      stateText: `下载没有完成 · 还差 ${sizeText(remainingBytes)}`,
+      stateText: '下载没有完成',
       action: 'resume',
       actionLabel: '重试',
     }
@@ -127,7 +167,7 @@ export function bundleView(
     return {
       ...base,
       status: 'paused',
-      stateText: `已暂停 ${percent}% · 还差 ${sizeText(remainingBytes)}`,
+      stateText: '已暂停',
       action: 'resume',
       actionLabel: '继续',
     }
@@ -136,7 +176,7 @@ export function bundleView(
     return {
       ...base,
       status: 'partial',
-      stateText: `还差 ${missing.length} 个文件 · ${sizeText(remainingBytes)}`,
+      stateText: `还差 ${missing.length} 个文件（${sizeText(remainingBytes)}）`,
       action: 'download',
       actionLabel: '下载',
     }
@@ -144,7 +184,56 @@ export function bundleView(
   return { ...base, status: 'missing', stateText: '未下载', action: 'download', actionLabel: '下载' }
 }
 
-/** The model the app suggests first: the catalog's recommended bundle, else the first one. */
+/** Where the page points: this computer (its GPUs, once read, and which of them run a CLI engine) or another computer. */
+export interface ModelPlace {
+  remote: boolean
+  gpus: readonly GpuInventoryDevice[]
+  /** GPUs running 兼容模式 / AMD 原生, which read only the official bf16 folders. */
+  cliGpus?: ReadonlySet<string>
+}
+
+/** Why a whole model cannot run at this place, or null. */
+export function bundleBlocker(bundle: ModelBundle, models: readonly ModelEntry[], place: ModelPlace): string | null {
+  const files = isFileBundle(bundle, models)
+  if (place.remote) return files ? '只能在这台电脑上使用，其他电脑请用官方模型' : null
+  return bundleGpusProblem(bundle, place.gpus, { cliGpus: place.cliGpus, files })
+}
+
+export interface ModelSections {
+  /** The one model shown large: the deep-linked one, else the best pick for this place. */
+  featured: BundleView | undefined
+  /** Set when the featured model is the best pick for this place; `reason` says why, when the GPU is known. */
+  pick: { reason: string | null } | null
+  /** Engine-certified models (推荐模型), the featured one excluded. */
+  certified: BundleView[]
+  /** Everything else (其他模型): models the engine has not verified, local files. */
+  others: BundleView[]
+}
+
+/**
+ * Splits the models of the page. 推荐模型 lists every model the engine
+ * certifies; the one that suits this computer best is featured. A model the
+ * catalog cannot describe completely is left out.
+ */
+export function modelSections(
+  views: readonly BundleView[],
+  models: readonly ModelEntry[],
+  place: ModelPlace,
+  preferredId?: string | null,
+): ModelSections {
+  const candidates = views.map((view) => view.bundle).filter((bundle) => !place.remote || !isFileBundle(bundle, models))
+  const best = bestBundleFor(candidates, place.remote ? [] : place.gpus, place.cliGpus)
+  const featured = views.find((view) => view.bundle.id === preferredId) ?? views.find((view) => view.bundle.id === best?.bundle.id)
+  const listed = views.filter((view) => view !== featured && view.status !== 'unavailable')
+  return {
+    featured,
+    pick: featured && best && featured.bundle.id === best.bundle.id ? { reason: best.reason } : null,
+    certified: listed.filter((view) => view.bundle.certified),
+    others: listed.filter((view) => !view.bundle.certified),
+  }
+}
+
+/** The recommended catalog model (or the deep-linked one): 自己组合 starts from its parts. */
 export function recommendedBundle(bundles: readonly ModelBundle[], preferredId?: string | null): ModelBundle | undefined {
   return (
     (preferredId ? bundles.find((bundle) => bundle.id === preferredId) : undefined) ??
@@ -184,7 +273,11 @@ export function bundleDeletePlan(
       })
       .flatMap((other) => bundleComponentIds(other)),
   )
-  const present = bundleComponentIds(bundle).filter(installed)
+  // Files found on this computer only leave the list; the small runtime config they load with stays.
+  const localOnly = localFilesOnly(bundle, models)
+  const present = bundleComponentIds(bundle)
+    .filter(installed)
+    .filter((id) => !localOnly || models.find((model) => model.id === id)?.provider === 'local')
   const ids = present.filter((id) => !othersInUse.has(id))
   const kept = present.filter((id) => othersInUse.has(id))
   const bytes = ids.reduce((sum, id) => {
@@ -194,33 +287,21 @@ export function bundleDeletePlan(
   return { ids, bytes, kept }
 }
 
+/** A model whose weights are all files registered where they are on this computer (not downloaded). */
+export function localFilesOnly(bundle: ModelBundle, models: readonly ModelEntry[]): boolean {
+  return [bundle.components.dit, bundle.components.textEncoder, bundle.components.vae].every(
+    (id) => models.find((model) => model.id === id)?.provider === 'local',
+  )
+}
+
 /** Names of complete models (other than `exceptBundleId`) that include a part. */
 export function bundlesUsing(id: string, bundles: readonly ModelBundle[], exceptBundleId?: string): ModelBundle[] {
   return bundles.filter((bundle) => bundle.id !== exceptBundleId && bundleComponentIds(bundle).includes(id))
 }
 
 /* ------------------------------------------------------------------ */
-/* Parts (高级)                                                         */
+/* Single entries (LoRA)                                               */
 /* ------------------------------------------------------------------ */
-
-export const ROLE_LABEL: Record<ModelEntry['role'], string> = {
-  dit: '主模型',
-  full: '完整模型',
-  text_encoder: '文本编码器',
-  vae: 'VAE',
-  support: '运行配置',
-}
-
-/**
- * Whether a part is worth offering at all. Single-file ComfyUI exports of the
- * old FP16-fixed weights cannot be used by the engine, so they are not listed.
- */
-export function isOfferedComponent(model: ModelEntry): boolean {
-  if ((model.format ?? 'diffusers') !== 'comfyui') return true
-  if (model.provider === 'local') return true
-  const legacy = model.precision === 'fp16' || model.tags.includes('fixed')
-  return !legacy
-}
 
 export interface ItemState {
   /** The state in a word or two; empty when the entry is simply not downloaded (its 下载 button says so). */
@@ -262,26 +343,250 @@ export function itemState(
   return { text: '', tone: 'neutral', action: 'download', actionLabel: '下载', percent: null }
 }
 
-/** One line for a download task in the queue. */
-export function taskText(task: DownloadTask): string {
-  if (task.connectionError) return '连接中断，显示的是上次的进度'
-  const percent = task.totalBytes > 0 ? `${Math.floor((Math.min(task.bytes, task.totalBytes) / task.totalBytes) * 100)}%` : ''
-  const amount = task.totalBytes > 0 ? `${sizeText(task.bytes)} / ${sizeText(task.totalBytes)}` : ''
-  switch (task.state) {
+/* ------------------------------------------------------------------ */
+/* Progress (featured card, model rows, 下载 tab)                        */
+/* ------------------------------------------------------------------ */
+
+/** "8.9 / 27.2 GB": the unit once when both sides share it. */
+export function amountText(done: number, total: number): string {
+  if (total <= 0) return done > 0 ? sizeText(done) : ''
+  const whole = sizeText(total)
+  if (done <= 0) return `0 / ${whole}`
+  const part = sizeText(done)
+  const unit = whole.split(' ')[1]
+  return part.endsWith(` ${unit}`) ? `${part.slice(0, -unit!.length - 1)} / ${whole}` : `${part} / ${whole}`
+}
+
+/**
+ * What a progress block shows: the state top left, the percentage top right,
+ * the bar, then the amount (or what went wrong) bottom left and the speed and
+ * time left (or what is left) bottom right. Each fact is its own item; nothing
+ * is joined with "·".
+ */
+export interface ProgressInfo {
+  tone: 'accent' | 'muted' | 'danger'
+  /** 0–100, or null while the amount is not known (checking files). */
+  percent: number | null
+  stateText: string
+  detail: string
+  detailTone: 'normal' | 'danger'
+  facts: string[]
+}
+
+export type ProgressState = 'queued' | 'running' | 'verifying' | 'paused' | 'error' | 'disconnected'
+
+export function progressInfo(input: {
+  state: ProgressState
+  doneBytes: number
+  totalBytes: number
+  speedBps?: number
+  error?: string
+}): ProgressInfo {
+  const { state, doneBytes, totalBytes } = input
+  const done = Math.min(Math.max(0, doneBytes), Math.max(0, totalBytes))
+  const percent = totalBytes > 0 ? Math.floor((done / totalBytes) * 100) : 0
+  const amount = amountText(done, totalBytes)
+  const left = totalBytes > done ? `还差 ${sizeText(totalBytes - done)}` : ''
+  const speed = input.speedBps && input.speedBps > 0 ? input.speedBps : 0
+  switch (state) {
+    case 'disconnected':
+      return { tone: 'muted', percent, stateText: '连接中断', detail: '显示的是上次的进度', detailTone: 'normal', facts: [] }
     case 'queued':
-      return '等待下载'
+      return { tone: 'accent', percent, stateText: '等待下载', detail: amount, detailTone: 'normal', facts: [] }
     case 'running':
-      return [`下载中 ${percent}`.trim(), amount, task.speedBps > 0 ? `${sizeText(task.speedBps)}/s` : ''].filter(Boolean).join(' · ')
+      return {
+        tone: 'accent',
+        percent,
+        stateText: '下载中',
+        detail: amount,
+        detailTone: 'normal',
+        facts: speed ? [`${sizeText(speed)}/s`, eta(((totalBytes - done) / speed) * 1000)].filter(Boolean) : [],
+      }
     case 'verifying':
-      return '正在校验文件'
+      return { tone: 'accent', percent: null, stateText: '正在校验文件', detail: sizeText(totalBytes), detailTone: 'normal', facts: [] }
     case 'paused':
-      return [`已暂停 ${percent}`.trim(), amount].filter(Boolean).join(' · ')
+      return { tone: 'muted', percent, stateText: '已暂停', detail: amount, detailTone: 'normal', facts: left ? [left] : [] }
     case 'error':
-      return task.error ? `下载失败：${task.error}` : '下载失败'
-    case 'done':
-      return '已完成'
-    case 'canceled':
-      return '已取消'
+      return {
+        tone: 'danger',
+        percent,
+        stateText: '下载没有完成',
+        detail: input.error || '点重试会接着下载',
+        detailTone: 'danger',
+        facts: left ? [left] : [],
+      }
+  }
+}
+
+/** The progress of a whole model that is downloading, paused, being checked or stopped by an error; else null. */
+export function bundleProgress(view: BundleView): ProgressInfo | null {
+  const state: ProgressState | null =
+    view.status === 'downloading'
+      ? view.tasks.some((task) => task.state === 'running')
+        ? 'running'
+        : 'queued'
+      : view.status === 'verifying'
+        ? 'verifying'
+        : view.status === 'paused'
+          ? 'paused'
+          : view.status === 'failed'
+            ? 'error'
+            : null
+  if (!state) return null
+  return progressInfo({ state, doneBytes: view.doneBytes, totalBytes: view.downloadBytes, speedBps: view.speedBps })
+}
+
+function taskState(task: DownloadTask): ProgressState {
+  if (task.connectionError) return 'disconnected'
+  if (task.state === 'running' || task.state === 'queued' || task.state === 'verifying' || task.state === 'paused') return task.state
+  return 'error'
+}
+
+/** The progress of a part or LoRA that is not here yet and has a download under way, paused or stopped; else null. */
+export function itemProgress(installed: boolean, task: DownloadTask | undefined): ProgressInfo | null {
+  if (installed || !task || task.state === 'done' || task.state === 'canceled') return null
+  return taskProgress(task)
+}
+
+/** The progress of one download task. */
+export function taskProgress(task: DownloadTask): ProgressInfo {
+  return progressInfo({
+    state: taskState(task),
+    doneBytes: task.bytes,
+    totalBytes: task.totalBytes,
+    speedBps: task.speedBps,
+    error: task.error,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* 下载 tab: one row per model                                          */
+/* ------------------------------------------------------------------ */
+
+/** What a part is, in the 下载 tab's list of a model's parts. */
+const ROLE_LABEL: Record<ModelEntry['role'], string> = {
+  dit: '主模型',
+  full: '完整模型',
+  text_encoder: '文本编码器',
+  vae: 'VAE',
+  support: '运行配置',
+}
+
+export interface DownloadPart {
+  task: DownloadTask
+  /** 主模型, 文本编码器, VAE, 运行配置; LoRA for an adapter. */
+  role: string
+  percent: number
+  done: boolean
+  tone: ProgressInfo['tone']
+  size: string
+}
+
+export interface DownloadGroup {
+  key: string
+  /** What the row is named after: the whole model, or the part or LoRA downloading on its own. */
+  item: { name: string; variant?: string[] }
+  bundle: ModelBundle | null
+  /** The tasks still to finish: what 暂停, 继续 and 取消 act on. */
+  open: DownloadTask[]
+  parts: DownloadPart[]
+  progress: ProgressInfo
+  action: 'pause' | 'resume'
+  actionLabel: '暂停' | '继续' | '重试'
+  /** The file being written now, for the bar's tooltip. */
+  currentFile?: string
+}
+
+/**
+ * Groups the downloads of one machine by model: a model's main file names the
+ * row and its other parts (text encoder, VAE, configs) join it; a part or LoRA
+ * downloading on its own is a row of its own. Only rows with something still
+ * to do are returned; finished parts of such a row show as 完成.
+ */
+export function downloadGroups(
+  tasks: readonly DownloadTask[],
+  catalog: { bundles: readonly ModelBundle[]; models: readonly ModelEntry[]; adapters: readonly AdapterEntry[] },
+): DownloadGroup[] {
+  // The latest task per entry, in the order they were started.
+  const latest = new Map<string, DownloadTask>()
+  for (const task of tasks) {
+    if (task.state === 'canceled') continue
+    const key = `${task.kind}:${task.targetId}`
+    latest.delete(key)
+    latest.set(key, task)
+  }
+  const all = [...latest.values()]
+  const groups: Array<{ key: string; item: DownloadGroup['item']; bundle: ModelBundle | null; tasks: DownloadTask[] }> = []
+  const placed = new Set<DownloadTask>()
+  for (const task of all) {
+    if (task.kind !== 'model' || task.state === 'done') continue
+    const bundle = catalog.bundles.find((candidate) => candidate.components.dit === task.targetId)
+    if (!bundle) continue
+    const ids = new Set(bundleComponentIds(bundle))
+    const members = all.filter((other) => other.kind === 'model' && ids.has(other.targetId) && !placed.has(other))
+    for (const member of members) placed.add(member)
+    groups.push({ key: `bundle:${bundle.id}`, item: bundle, bundle, tasks: members })
+  }
+  for (const task of all) {
+    if (placed.has(task) || task.state === 'done') continue
+    const entry =
+      task.kind === 'model'
+        ? catalog.models.find((model) => model.id === task.targetId)
+        : catalog.adapters.find((adapter) => adapter.id === task.targetId)
+    groups.push({ key: `${task.kind}:${task.targetId}`, item: entry ?? { name: task.label }, bundle: null, tasks: [task] })
+  }
+  return groups.map((group) => groupView(group, catalog.models)).filter((group): group is DownloadGroup => group !== null)
+}
+
+function groupView(
+  group: { key: string; item: DownloadGroup['item']; bundle: ModelBundle | null; tasks: DownloadTask[] },
+  models: readonly ModelEntry[],
+): DownloadGroup | null {
+  const open = group.tasks.filter((task) => task.state !== 'done')
+  if (!open.length) return null
+  const sizeOf = (task: DownloadTask): number =>
+    task.totalBytes || models.find((model) => task.kind === 'model' && model.id === task.targetId)?.sizeBytes || 0
+  const totalBytes = group.tasks.reduce((sum, task) => sum + sizeOf(task), 0)
+  const doneBytes = group.tasks.reduce((sum, task) => sum + (task.state === 'done' ? sizeOf(task) : Math.min(task.bytes, sizeOf(task))), 0)
+  const has = (state: DownloadTask['state']): boolean => open.some((task) => task.state === state)
+  const state: ProgressState = open.some((task) => task.connectionError)
+    ? 'disconnected'
+    : has('running')
+      ? 'running'
+      : has('queued')
+        ? 'queued'
+        : has('verifying')
+          ? 'verifying'
+          : has('error')
+            ? 'error'
+            : 'paused'
+  const speedBps = open.filter((task) => task.state === 'running').reduce((sum, task) => sum + (task.speedBps || 0), 0)
+  const error = open.find((task) => task.state === 'error')?.error
+  const progress = progressInfo({ state, doneBytes, totalBytes, speedBps, error })
+  const active = open.some((task) => ACTIVE_STATES.has(task.state))
+  const parts = group.tasks.map((task): DownloadPart => {
+    const size = sizeOf(task)
+    const done = task.state === 'done'
+    const model = task.kind === 'model' ? models.find((entry) => entry.id === task.targetId) : undefined
+    return {
+      task,
+      role: task.kind === 'adapter' ? 'LoRA' : model ? ROLE_LABEL[model.role] : task.label,
+      percent: done ? 100 : size > 0 ? Math.floor((Math.min(task.bytes, size) / size) * 100) : 0,
+      done,
+      tone: done ? 'accent' : taskProgress(task).tone,
+      size: sizeText(size),
+    }
+  })
+  return {
+    key: group.key,
+    item: group.item,
+    bundle: group.bundle,
+    open,
+    parts,
+    progress,
+    action: active ? 'pause' : 'resume',
+    actionLabel: active ? '暂停' : state === 'error' ? '重试' : '继续',
+    currentFile: open.find((task) => task.state === 'running')?.currentFile,
   }
 }
 

@@ -1,9 +1,13 @@
 import { ArrowDownToLine, Pause, Play, RotateCw, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Ipc } from '@shared/channels'
 import type { ModelBundle, ModelEntry } from '@shared/types'
-import { Button, Card, ConfirmDialog, Group, Pill, ProgressBar, Row, Spinner, useToast } from '../../components/ui'
-import { bundleDeletePlan, bundleTone, sizeText, type BundleView } from './logic'
+import { call } from '../../lib/api'
+import { ModelName } from '../../components/common/ModelName'
+import { Button, Card, ConfirmDialog, Group, Pill, Row, Spinner, useToast } from '../../components/ui'
+import { DownloadProgress } from './DownloadProgress'
+import { bundleDeletePlan, bundleProgress, bundleTone, localFilesOnly, sizeText, type BundleView } from './logic'
 import type { ModelLocation } from './useModelLocation'
 
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
@@ -71,11 +75,28 @@ export function RemoveButton({
 }
 
 /** A whole model whose files all stay where they are on this computer (registered, not downloaded). */
-const isLocalOnly = (view: BundleView): boolean =>
-  view.components.length > 0 && view.components.every((model) => model.provider === 'local')
+const isLocalOnly = (view: BundleView): boolean => localFilesOnly(view.bundle, view.components)
 
-/** The description of a model with its total size at the end, the same place as for parts and LoRA. */
-const describe = (view: BundleView): string => [view.bundle.description, sizeText(view.totalBytes)].filter(Boolean).join(' · ')
+/** A model's total size, in its own column next to the action, so sizes line up down a list. */
+export function SizeText({ bytes }: { bytes: number }): React.JSX.Element | null {
+  if (!bytes) return null
+  return <span className="tabular min-w-14 shrink-0 text-right text-caption text-ink-2">{sizeText(bytes)}</span>
+}
+
+/**
+ * The state of a model as a Pill: 用不了 when it cannot run here and nothing of
+ * it is under way, else its state. A download under way shows its progress
+ * block instead.
+ */
+function StatePill({ view }: { view: BundleView }): React.JSX.Element | null {
+  if (view.blocked && (view.status === 'missing' || view.status === 'partial')) return <Pill tone="warn">用不了</Pill>
+  if (view.status === 'missing' || bundleProgress(view)) return null
+  return (
+    <Pill tone={bundleTone(view.status)} className="tabular">
+      {view.stateText}
+    </Pill>
+  )
+}
 
 function useBundleActions(location: ModelLocation) {
   const toast = useToast()
@@ -96,30 +117,39 @@ function useBundleActions(location: ModelLocation) {
   return { busy, act }
 }
 
-/** The recommended model, with its state in plain words and one main action. */
+/** The featured model, with its state in plain words and one main action. */
 export function FeaturedModel({
   view,
   location,
+  pick,
   deletable,
   onDelete,
 }: {
   view: BundleView
   location: ModelLocation
+  /** Set when this is the best pick for this computer; `reason` says why, when the GPU is known. */
+  pick?: { reason: string | null }
   deletable: boolean
   onDelete: (bundle: ModelBundle) => void
 }): React.JSX.Element {
   const navigate = useNavigate()
   const { busy, act } = useBundleActions(location)
-  const progressing = view.status === 'downloading' || view.status === 'paused' || view.status === 'verifying' || view.status === 'failed'
+  const progress = bundleProgress(view)
+  const pill = <StatePill view={view} />
   return (
     <Card data-oobe="model" className="flex flex-col gap-5 p-6">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-caption text-ink-2">{view.bundle.recommended ? '推荐模型' : '模型'}</span>
-          <h2 className="text-section font-semibold text-ink">{view.bundle.name}</h2>
-          <p className="tabular text-ui text-ink-2">{describe(view)}</p>
+          <span className="text-caption text-ink-2">{pick ? '最适合这台电脑' : '模型'}</span>
+          <h2 className="text-section font-semibold text-ink">
+            <ModelName item={view.bundle} />
+          </h2>
+          <p className="text-ui text-ink-2">{view.bundle.description}</p>
+          {pick?.reason ? <p className="text-caption text-ink-2">{pick.reason}</p> : null}
+          {view.blocked ? <p className="text-caption text-ink-2">{view.blocked}</p> : null}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-3">
+          <SizeText bytes={view.totalBytes} />
           {view.status === 'ready' ? (
             <>
               {deletable ? <RemoveButton remove={isLocalOnly(view)} name={view.bundle.name} onClick={() => onDelete(view.bundle)} /> : null}
@@ -138,17 +168,10 @@ export function FeaturedModel({
         </div>
       </div>
       {/* Not downloaded yet needs no state: the 下载 button says it. */}
-      {view.status !== 'missing' || progressing ? (
-        <div className="flex flex-col gap-2.5">
-          {view.status !== 'missing' ? (
-            <div>
-              <Pill tone={bundleTone(view.status)} className="tabular">
-                {view.stateText}
-              </Pill>
-            </div>
-          ) : null}
-          {progressing ? <ProgressBar value={view.percent} label={`${view.bundle.name} 下载进度`} /> : null}
-        </div>
+      {progress ? (
+        <DownloadProgress info={progress} label={`${view.bundle.name} 下载进度`} />
+      ) : view.status !== 'missing' || view.blocked ? (
+        <div>{pill}</div>
       ) : null}
     </Card>
   )
@@ -172,24 +195,27 @@ export function ModelList({
   return (
     <Group>
       {views.map((view) => {
-        const progressing = view.status === 'downloading' || view.status === 'paused' || view.status === 'verifying'
+        const progress = bundleProgress(view)
         return (
           <Row
             key={view.bundle.id}
             selected={view.bundle.id === highlightId}
-            title={view.bundle.name}
+            title={
+              <>
+                <ModelName item={view.bundle} />
+                {view.bundle.custom ? <span className="ml-2 text-caption text-ink-3">我的组合</span> : null}
+              </>
+            }
             description={
               <span className="flex flex-col gap-1.5">
-                <span className="tabular">{describe(view)}</span>
-                {progressing ? <ProgressBar value={view.percent} label={`${view.bundle.name} 下载进度`} className="max-w-64" /> : null}
+                <span>{view.bundle.description}</span>
+                {view.blocked ? <span>{view.blocked}</span> : null}
+                {progress ? <DownloadProgress info={progress} label={`${view.bundle.name} 下载进度`} className="max-w-md pt-1" /> : null}
               </span>
             }
           >
-            {view.status !== 'missing' ? (
-              <Pill tone={bundleTone(view.status)} className="tabular">
-                {view.stateText}
-              </Pill>
-            ) : null}
+            <SizeText bytes={view.totalBytes} />
+            <StatePill view={view} />
             {view.status === 'ready' ? (
               deletable(view.bundle) ? (
                 <RemoveButton remove={isLocalOnly(view)} name={view.bundle.name} onClick={() => onDelete(view.bundle)} />
@@ -222,16 +248,33 @@ export function DeleteModelDialog({
   onClose: () => void
 }): React.JSX.Element {
   const toast = useToast()
-  const plan = bundle
+  const full = bundle
     ? bundleDeletePlan(bundle, bundles, models, location.isModelInstalled, location.tasks)
     : { ids: [], bytes: 0, kept: [] }
-  const local = bundle ? plan.ids.every((id) => models.find((model) => model.id === id)?.provider === 'local') : false
+  const providerOf = (id: string) => models.find((model) => model.id === id)?.provider
+  // A combination goes with the downloads only it needs; the person's own files stay in the library.
+  const custom = Boolean(bundle?.custom)
+  const plan = custom
+    ? {
+        ...full,
+        ids: full.ids.filter((id) => providerOf(id) !== 'local'),
+        bytes: full.ids
+          .filter((id) => providerOf(id) !== 'local')
+          .reduce((sum, id) => {
+            const model = models.find((entry) => entry.id === id)
+            return sum + (model?.installedBytes || model?.sizeBytes || 0)
+          }, 0),
+      }
+    : full
+  const local = bundle && !custom ? plan.ids.every((id) => providerOf(id) === 'local') : false
   const keptNames = plan.kept.map((id) => models.find((model) => model.id === id)?.name ?? id)
   const where = location.kind === 'remote' ? `${location.host?.name ?? '远程主机'} 上的` : ''
   const description = !bundle
     ? ''
     : plan.ids.length === 0
-      ? '这个模型的文件都被其他模型共用，删除它不会释放空间。'
+      ? custom
+        ? '只删除这个组合，它用到的文件都会保留。'
+        : '这个模型的文件都被其他模型共用，删除它不会释放空间。'
       : local
         ? '只从模型库里移除，电脑上的原文件不会被删除。'
         : `会删除${where}${plan.ids.length} 个文件，释放约 ${sizeText(plan.bytes)}。` +
@@ -242,7 +285,8 @@ export function DeleteModelDialog({
     if (!bundle) return
     onClose()
     try {
-      await location.removeMany('model', plan.ids)
+      if (plan.ids.length) await location.removeMany('model', plan.ids)
+      if (custom) await call(Ipc.modelsDeleteCombination, { id: bundle.id })
       toast.push(`${local ? '已移除' : '已删除'} ${bundle.name}`, 'success')
     } catch (cause) {
       toast.push(`${local ? '没能移除' : '没能删除'}：${errorText(cause)}`, 'error')
@@ -251,7 +295,7 @@ export function DeleteModelDialog({
 
   return (
     <ConfirmDialog
-      open={Boolean(bundle) && plan.ids.length > 0}
+      open={Boolean(bundle) && (custom || plan.ids.length > 0)}
       title={bundle ? `${local ? '移除' : '删除'}「${bundle.name}」？` : ''}
       description={description}
       confirmLabel={local ? '移除' : '删除'}

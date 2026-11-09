@@ -8,7 +8,7 @@ import { call } from '../../lib/api'
 import { electronStudioClient } from '../../lib/studioClient'
 import { useApp } from '../../store'
 import { taskCanvasFor } from './canvases'
-import { profileFor, randomSeed, seedForRun } from './defaults'
+import { profileFor, randomSeed, samplingForBundle, seedForRun } from './defaults'
 import { resolveJobInputs } from './jobInputs'
 import { compileCanvasPrompt } from './prompt'
 import { resolveBundle } from './readiness'
@@ -128,9 +128,12 @@ export function useGenerate(options: {
     const shown = source.kind === 'layout' ? (shownRun(source, canvases)?.run ?? source) : source
     const shownSeed = jobs.find((job) => job.id === shown.jobId)?.params.seed ?? shown.outputs?.[0]?.seed ?? source.seed
     const seed = seedMode === 'same' ? shownSeed : seedMode === 'new' ? randomSeed() : seedForRun(source)
+    // A canvas that never picked a model runs with the one it resolves to; a few-step
+    // model (Turbo) then brings its own steps and CFG, as picking it by hand does.
+    const sampling = source.modelBundleId ? { steps: source.steps, cfg: source.cfg } : samplingForBundle(source, null, choice.bundle)
     // The run keeps what it was really generated with, so running it again repeats it.
     const snapshot = generatedSnapshot(source, generating)
-    const runSource: ProjectCanvas = { ...source, seed, modelBundleId: choice.bundle.id }
+    const runSource: ProjectCanvas = { ...source, ...sampling, seed, modelBundleId: choice.bundle.id }
     if (snapshot) runSource.generated = snapshot
     else delete runSource.generated
     let taskId: string | null = null
@@ -146,7 +149,7 @@ export function useGenerate(options: {
               .filter((canvas) => !stale.has(canvas.id))
               .map((canvas) =>
                 canvas.id === source.id
-                  ? { ...canvas, width: source.width, height: source.height, seed, modelBundleId: choice.bundle!.id }
+                  ? { ...canvas, ...sampling, width: source.width, height: source.height, seed, modelBundleId: choice.bundle!.id }
                   : canvas,
               )
           : canvases
@@ -188,10 +191,10 @@ export function useGenerate(options: {
           ...resolved.params,
           width: resolved.size.width,
           height: resolved.size.height,
-          steps: source.steps,
-          cfg: source.cfg,
+          steps: sampling.steps,
+          cfg: sampling.cfg,
           seed,
-          profile: profileFor(source.steps),
+          profile: profileFor(sampling.steps),
           mode: 'runner',
         }),
       })

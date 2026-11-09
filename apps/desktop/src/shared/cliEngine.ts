@@ -71,8 +71,11 @@ export function cliBundleProblem(
   if (parts.some((model) => !model)) {
     return `「${bundle.name}」的模型文件不在模型库里，无法确认它是 bf16 模型包，${CLI_ENGINE_LABEL[kind]}引擎用不了，请在模型库下载 MOSS-Image（bf16）`
   }
-  if (parts.some((model) => model!.provider === 'local' || model!.format === 'comfyui')) {
+  if (parts.some((model) => model!.provider === 'local')) {
     return `「${bundle.name}」是扫描到的单个模型文件，${CLI_ENGINE_LABEL[kind]}引擎只能用完整的模型包，请在模型库下载 MOSS-Image（bf16）`
+  }
+  if (parts.some((model) => model!.format === 'comfyui')) {
+    return `「${bundle.name}」由单个模型文件组成，${CLI_ENGINE_LABEL[kind]}引擎只能用完整的模型包，请在模型库下载 MOSS-Image（bf16）`
   }
   const [dit, textEncoder] = parts
   if (dit!.precision !== 'bf16' || textEncoder!.precision !== 'bf16') {

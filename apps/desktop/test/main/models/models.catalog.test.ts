@@ -37,7 +37,7 @@ beforeEach(async () => {
   listJobs.mockReset().mockResolvedValue([])
   models = await import('@main/services/models')
   settings = testSettings(DEFAULT_SETTINGS, { modelsRoot: modelsRoot(), hfEndpoint: 'http://127.0.0.1:9' })
-  writeCatalog(releaseDir(), { schema_version: 2, updated_at: '2026-01-01T00:00:00Z', models: [vae], bundles: [bundle], adapters: [] })
+  writeCatalog(releaseDir(), { schema_version: 3, updated_at: '2026-01-01T00:00:00Z', models: [vae], bundles: [bundle], adapters: [] })
 })
 
 const byId = <T extends { id: string }>(items: T[], id: string): T | undefined => items.find((item) => item.id === id)
@@ -84,8 +84,8 @@ describe('getCatalog sources', () => {
   it('uses the remote catalog when reachable', async () => {
     contentDir.mockReturnValue(null)
     const fetch = vi.fn(async (url: string) => {
-      expect(url).toBe('https://raw.githubusercontent.com/CloverIris/MossStudio/main/apps/desktop/resources/models.json')
-      return new Response(JSON.stringify({ schema_version: 2, models: [vae] }))
+      expect(url).toBe('https://raw.githubusercontent.com/ShallowElec/MossStudio/main/apps/desktop/resources/models.json')
+      return new Response(JSON.stringify({ schema_version: 3, models: [vae] }))
     })
     vi.stubGlobal('fetch', fetch)
     const catalog = await models.getCatalog(settings)
@@ -104,6 +104,43 @@ describe('getCatalog sources', () => {
     expect(ids).toContain('brand-new')
     expect(ids).toContain('moss-sft-dit')
     expect(ids).not.toContain('moss-sft')
+  })
+
+  it('an older (schema 2) catalog still offers the certified single-file models', async () => {
+    writeCatalog(releaseDir(), {
+      schema_version: 2,
+      models: [vae],
+      bundles: [bundle, { ...bundle, id: 'moss-sft', name: 'old name', description: 'old wording' }],
+    })
+    const catalog = await models.getCatalog(settings)
+    expect(catalog.bundles.map((b) => b.id)).toEqual([
+      'b1',
+      'moss-sft',
+      'moss-sft-int8',
+      'moss-sft-nvfp4',
+      'moss-sft-int4',
+      'moss-sft-turbo-int8',
+      'moss-base-int8',
+    ])
+    // A bundle this version knows takes this version's wording and certification.
+    expect(byId(catalog.bundles, 'moss-sft')).toMatchObject({ name: 'MOSS-Image SFT', certified: true })
+    expect(byId(catalog.bundles, 'b1')).toEqual(bundle)
+    // The parts the single-file bundles need come along.
+    for (const id of ['moss-sft-comfy-nvfp4', 'qwen35-comfy-int8_convrot', 'flux2-vae-comfy-small', 'moss-runtime-config']) {
+      expect(byId(catalog.models, id)).toBeDefined()
+    }
+  })
+
+  it('a current (schema 3) catalog lists its single-file bundles after the folder ones', async () => {
+    writeCatalog(releaseDir(), {
+      schema_version: 3,
+      models: [vae],
+      bundles: [bundle],
+      single_file_bundles: [{ ...bundle, id: 'files', tier: 'turbo' }],
+    })
+    const catalog = await models.getCatalog(settings)
+    expect(catalog.bundles.map((b) => b.id)).toEqual(['b1', 'files'])
+    expect(byId(catalog.bundles, 'files')?.tier).toBe('turbo')
   })
 })
 
@@ -126,6 +163,45 @@ describe('getCatalog install state', () => {
     const entry = byId((await models.getCatalog(settings)).models, 'vae-a')!
     const bytes = Object.values(vaeFiles()).reduce((n, body) => n + Buffer.byteLength(body), 0)
     expect(entry).toMatchObject({ installed: true, installState: 'ready', installedBytes: bytes, resolvedRevision: SHA })
+  })
+
+  describe('a component whose catalog entry is pinned to a commit after it was downloaded from main', () => {
+    const PIN = 'b'.repeat(40)
+    const pinned = (): void =>
+      writeCatalog(releaseDir(), { schema_version: 3, models: [{ ...vae, revision: PIN }], bundles: [bundle], adapters: [] })
+
+    it('stays installed when main was the pinned commit', async () => {
+      pinned()
+      installOnDisk(modelsRoot(), { id: 'vae-a', repo: 'org/vae', role: 'vae', revision: 'main' }, PIN, vaeFiles())
+      expect(byId((await models.getCatalog(settings)).models, 'vae-a')).toMatchObject({
+        installed: true,
+        installState: 'ready',
+        resolvedRevision: PIN,
+      })
+    })
+
+    it('stays installed when main was another commit: the files are there and the engine checks them on load', async () => {
+      pinned()
+      installOnDisk(modelsRoot(), { id: 'vae-a', repo: 'org/vae', role: 'vae', revision: 'main' }, SHA, vaeFiles())
+      expect(byId((await models.getCatalog(settings)).models, 'vae-a')).toMatchObject({ installed: true, resolvedRevision: SHA })
+    })
+
+    it('does not count a download pinned to a different commit', async () => {
+      pinned()
+      installOnDisk(modelsRoot(), { id: 'vae-a', repo: 'org/vae', role: 'vae', revision: SHA }, SHA, vaeFiles())
+      expect(byId((await models.getCatalog(settings)).models, 'vae-a')?.installed).toBe(false)
+    })
+  })
+
+  it('matches install records to catalog revisions', () => {
+    const pin = 'c'.repeat(40)
+    expect(models.installMatchesRevision({ revision: 'main', sha: SHA }, 'main')).toBe(true)
+    expect(models.installMatchesRevision({ revision: 'main', sha: pin }, pin)).toBe(true)
+    expect(models.installMatchesRevision({ revision: 'main', sha: SHA }, pin)).toBe(true)
+    expect(models.installMatchesRevision({ revision: pin, sha: pin }, pin)).toBe(true)
+    expect(models.installMatchesRevision({ revision: SHA, sha: SHA }, pin)).toBe(false)
+    // A branch in the catalog never adopts another branch's download.
+    expect(models.installMatchesRevision({ revision: 'dev', sha: SHA }, 'main')).toBe(false)
   })
 
   it('finds an install in the legacy shared hub', async () => {
@@ -183,7 +259,7 @@ describe('local imports and bundles in the catalog', () => {
     return models.registerScannedModels(settings, [{ path, role, layout: 'comfyui-single-file' }])
   }
 
-  it('lists registered files as local entries and offers a local-files bundle once all three roles exist', async () => {
+  it('lists registered files as local entries and keeps the old local-files bundle as a saved combination', async () => {
     const comfy = join(dataRoot(), 'ComfyUI', 'models')
     await register(join(comfy, 'diffusion_models', 'd.safetensors'), 'dit')
     await register(join(comfy, 'text_encoders', 't.safetensors'), 'text_encoder')
@@ -200,10 +276,19 @@ describe('local imports and bundles in the catalog', () => {
       tags: ['local-import', 'comfyui', 'unhashed'],
     })
 
+    // Older versions made a model of the three by themselves; it is kept once, as a saved combination.
     await register(join(comfy, 'vae', 'v.safetensors'), 'vae')
     catalog = await models.getCatalog(settings)
-    expect(catalog.bundles[0]).toMatchObject({ id: 'local-files', components: { dit: dit.id } })
-    expect(catalog.bundles.map((b) => b.id)).toEqual(['local-files', 'b1'])
+    expect(catalog.bundles.map((b) => b.id)).toEqual(['b1', 'local-files'])
+    expect(catalog.bundles[1]).toMatchObject({
+      name: '电脑上的模型',
+      custom: true,
+      components: { dit: dit.id },
+      support: 'moss-runtime-config',
+    })
+    expect(JSON.parse(readFileSync(join(dataRoot(), 'model-combinations.json'), 'utf8'))).toEqual([
+      expect.objectContaining({ id: 'local-files', components: expect.objectContaining({ dit: dit.id }) }),
+    ])
   })
 
   it('marks an import whose file changed or vanished as error and drops it from the local bundle', async () => {
@@ -255,7 +340,7 @@ describe('adapters', () => {
   const adaptersRoot = (): string => join(modelsRoot(), 'adapters')
 
   beforeEach(() => {
-    writeCatalog(releaseDir(), { schema_version: 2, models: [vae], bundles: [], adapters: [adapterRaw] })
+    writeCatalog(releaseDir(), { schema_version: 3, models: [vae], bundles: [], adapters: [adapterRaw] })
   })
 
   it('marks a catalog adapter installed only with adapter.json and every non-empty file', async () => {
@@ -370,7 +455,7 @@ describe('deleteModel', () => {
 
   it('keeps blobs that are not owned or are shared with another component record', async () => {
     writeCatalog(releaseDir(), {
-      schema_version: 2,
+      schema_version: 3,
       models: [vae, rawModel({ id: 'vae-b', repo: 'org/vae', role: 'vae', subfolder: 'vae', files: ['vae/*'] })],
     })
     const dir = installOnDisk(modelsRoot(), { id: 'vae-a', repo: 'org/vae', role: 'vae' }, SHA, vaeFiles())

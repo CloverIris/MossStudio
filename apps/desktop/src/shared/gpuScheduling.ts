@@ -5,7 +5,8 @@ export interface GpuLoad {
   queuedTasks: number
 }
 
-function compareRecommendedGpu(a: GpuInventoryDevice, b: GpuInventoryDevice): number {
+/** The order automatic assignment prefers GPUs in: newest architecture, then most memory. */
+export function compareRecommendedGpu(a: GpuInventoryDevice, b: GpuInventoryDevice): number {
   return (
     (b.computeCapability?.major ?? -1) - (a.computeCapability?.major ?? -1) ||
     (b.computeCapability?.minor ?? -1) - (a.computeCapability?.minor ?? -1) ||

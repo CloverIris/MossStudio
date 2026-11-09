@@ -210,6 +210,19 @@ export function resolveDeviceEngineFrom(deviceUuid: string, input: ResolveInput)
   }
 }
 
+/**
+ * Pure: the installed packages' plan leaves this GPU without an engine because its memory is too small for
+ * the model while another GPU runs one (GpuEngineChoice.memorySkipped). An engine chosen for it in 高级 clears it.
+ */
+export function skippedForMemoryFrom(deviceUuid: string, input: Pick<ResolveInput, 'machine' | 'installed' | 'settings'>): boolean {
+  const os = input.machine.os
+  if (os === 'macos') return false
+  const packages = [...newestPerPackage(input.installed).values()].map((item) => item.package)
+  if (!packages.length) return false
+  const plan = chooseEnginePackages(input.machine, installedAsRelease(os, packages), { overrides: input.settings.engineDeviceOverrides })
+  return plan.choices.find((choice) => choice.gpuId === deviceUuid)?.memorySkipped === true
+}
+
 /** The machine as last probed, or built from the GPU inventory when the probe has not run yet. */
 export function currentEngineMachine(): { machine: EngineMachine; rocmLibDir?: string } {
   const stored = readStoredMachineProbe(paths.mossinfer())
@@ -263,9 +276,21 @@ export function localServerPath(deviceUuid?: string): string | null {
 }
 
 /** Every local GPU with the package it runs (null = nothing installed that runs on it). */
-export function deviceEngines(): Array<{ gpu: EngineMachineGpu; engine: DeviceEngine | null }> {
+export function deviceEngines(): Array<{ gpu: EngineMachineGpu; engine: DeviceEngine | null; memorySkipped: boolean }> {
   const { machine } = currentEngineMachine()
-  return machine.gpus.map((gpu) => ({ gpu, engine: resolveDeviceEngine(gpu.id) }))
+  return machine.gpus.map((gpu) => {
+    const engine = resolveDeviceEngine(gpu.id)
+    return { gpu, engine, memorySkipped: !engine && skippedForMemory(gpu.id) }
+  })
+}
+
+/** skippedForMemoryFrom for this computer: its machine, installed packages and overrides. */
+export function skippedForMemory(deviceUuid: string): boolean {
+  return skippedForMemoryFrom(deviceUuid, {
+    machine: currentEngineMachine().machine,
+    installed: listInstalledEnginePackages(),
+    settings: getSettings(),
+  })
 }
 
 /** True for a CLI package (Vulkan / HIP): one job per process, text-to-image only. */

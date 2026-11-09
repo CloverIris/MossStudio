@@ -32,13 +32,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/launch"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/payload"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/proc"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/record"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/stub"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/ui"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/uninstall"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/launch"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/payload"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/proc"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/record"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/stub"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/ui"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/uninstall"
 )
 
 // version is set at build time: -ldflags "-X main.version=<semver>".

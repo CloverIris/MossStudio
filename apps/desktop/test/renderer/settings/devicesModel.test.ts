@@ -12,6 +12,8 @@ import {
   engineOverrideOptions,
   fixedEngineSettingsNote,
   gpuEngineInfo,
+  gpuPickerLabel,
+  followDefaultLabel,
 } from '@renderer/pages/settings/devicesModel'
 import { RELEASE_220, enginePlanFor, inventoryDevicesFor, machineFixture } from '@test/mocks/backend/machines'
 import { planLines } from '@renderer/lib/engineInstall'
@@ -135,7 +137,11 @@ describe('engine per GPU', () => {
       'auto',
       gpuEngineInfo(engineMissingFixture(), unusable),
     )
-    expect(row).toMatchObject({ status: 'error', statusLabel: '不能使用', reason: expect.stringContaining('no shaderInt64') })
+    expect(row).toMatchObject({
+      status: 'error',
+      statusLabel: '不能使用',
+      reason: 'Intel(R) Arc(TM) A770 Graphics 缺少引擎需要的 Vulkan 功能（shaderInt64），没法在它上面运行',
+    })
   })
 
   it('replaces the memory mode / tier pickers of a Vulkan or HIP GPU with one quiet line', () => {
@@ -162,6 +168,49 @@ describe('engine per GPU', () => {
     const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(laptop)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), p))
     expect(rows[1]).toMatchObject({ status: 'unknown', statusLabel: '未使用', reason: expect.stringContaining('集成显卡') })
     expect(planLines(p)[1]).toMatchObject({ detail: '不使用（已有独立显卡）', skipped: true })
+  })
+
+  it('a GPU picker marks the card the plan left without an engine for its memory, and only that one', () => {
+    const readiness = engineReadyFixture({
+      devices: [
+        { deviceUuid: 'GPU-mx250', name: 'NVIDIA GeForce MX250', packageId: null, path: null, memorySkipped: true },
+        { deviceUuid: 'GPU-mx450', name: 'NVIDIA GeForce MX450', packageId: 'cu13-sm75', path: '/e/sm75' },
+        { deviceUuid: 'vk-uhd', name: 'Intel(R) UHD Graphics 620', packageId: 'vulkan', path: '/e/vk' },
+      ],
+    })
+    const mx250 = { uuid: 'GPU-mx250', name: 'NVIDIA GeForce MX250', index: 0 }
+    expect(gpuPickerLabel(mx250, readiness)).toBe('NVIDIA GeForce MX250 · 显卡 0（显存太小）')
+    // A small card with an engine chosen for it in 高级 is not skipped: jobs run there.
+    expect(gpuPickerLabel({ uuid: 'GPU-mx450', name: 'NVIDIA GeForce MX450', index: 1 }, readiness)).toBe('NVIDIA GeForce MX450 · 显卡 1')
+    expect(gpuPickerLabel({ uuid: 'vk-uhd', name: 'Intel(R) UHD Graphics 620', index: 2 }, readiness)).toBe(
+      'Intel(R) UHD Graphics 620 · 显卡 2',
+    )
+    // Readiness not known yet: nothing is marked.
+    expect(gpuPickerLabel(mx250, null)).toBe('NVIDIA GeForce MX250 · 显卡 0')
+  })
+
+  it('跟随默认 names the default GPU, marked the same way', () => {
+    const readiness = engineReadyFixture({
+      devices: [{ deviceUuid: 'GPU-mx250', name: 'NVIDIA GeForce MX250', packageId: null, path: null, memorySkipped: true }],
+    })
+    expect(followDefaultLabel({ uuid: 'GPU-mx250', name: 'NVIDIA GeForce MX250' }, readiness)).toBe(
+      '跟随默认（NVIDIA GeForce MX250，显存太小）',
+    )
+    expect(followDefaultLabel({ uuid: 'GPU-a', name: 'RTX 4090' }, readiness)).toBe('跟随默认（RTX 4090）')
+    expect(followDefaultLabel(undefined, readiness)).toBe('跟随默认')
+  })
+
+  it('a 2 GB card next to a GPU that runs is quietly unused, and says why', () => {
+    const laptop = machineFixture('laptopSmallGpu')
+    const p = enginePlanFor(laptop, RELEASE_220, { engineDeviceOverrides: {}, mossInferChannel: 'stable' }, [])
+    const rows = gpuRows(gpuInventoryFixture(inventoryDevicesFor(laptop)), null, null, 'auto', gpuEngineInfo(engineMissingFixture(), p))
+    expect(rows[0]).toMatchObject({
+      status: 'unknown',
+      statusLabel: '未使用',
+      reason: 'NVIDIA GeForce MX250 只有 2 GB 显存，默认用另一块显卡（可在 高级 › 每块 GPU 的引擎 里选用它）',
+    })
+    expect(planLines(p)[0]).toMatchObject({ detail: '不使用（显存太小，用另一块显卡）', skipped: true })
+    expect(planLines(p)[1]).toMatchObject({ detail: '兼容模式 · 599 KB', supported: true })
   })
 
   it('labels the engine in use', () => {

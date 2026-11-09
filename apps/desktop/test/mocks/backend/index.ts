@@ -18,7 +18,9 @@
  * and are listed in `backend.unhandled`, unless `fallback: 'empty'` is passed
  * (the legacy UI-harness behaviour: `[]`, or `null` for appInfo/envScan).
  */
+import { bestBundleFor, cliGpuUuids, generationGpus, isFileBundle } from '@shared/bundleFit'
 import { Events, Ipc } from '@shared/channels'
+import { combinationBundle } from '@shared/modelCombos'
 import type { AiChatInput, AiConversationInfo, AiMessage } from '@shared/ai'
 import type { WebAccessInfo } from '@shared/backend'
 import type { EngineHello } from '@shared/engineProtocol'
@@ -32,6 +34,8 @@ import type {
   JobRecord,
   LaunchRow,
   ManagedHost,
+  ModelCombination,
+  ModelEntry,
   OnboardingStatus,
   OnboardingStep,
   ProjectDocument,
@@ -42,7 +46,9 @@ import type {
 import {
   ENGINE_JOBS_CHANNEL,
   ENGINE_PATH,
+  FIXTURE_MODELS_PATH,
   FIXTURE_NOW,
+  GiB,
   controlAdapterFixture,
   localHostFixture,
   downloadFixture,
@@ -115,6 +121,17 @@ function deepClone<T>(value: T): T {
   return structuredClone(value)
 }
 
+/** The models folder app:info reports: settings' own, else the fixture's. */
+function modelsPathOf(state: MockBackendState): string {
+  return state.settings.modelsRoot || FIXTURE_MODELS_PATH
+}
+
+/** What a model part still has to download: an interrupted one keeps what it already has, as main counts its .part files. */
+function missingBytesOf(model: ModelEntry): number {
+  if (model.installed) return 0
+  return model.sizeBytes - (model.installState === 'partial' ? model.installedBytes : 0)
+}
+
 function onboardingStatus(state: MockBackendState, hostId: string): OnboardingStatus {
   const local = hostId === 'local'
   const host = state.hosts.find((item) => item.id === hostId)
@@ -123,7 +140,14 @@ function onboardingStatus(state: MockBackendState, hostId: string): OnboardingSt
   const deviceReady = local ? Boolean(gpu) : host?.status === 'ok'
   const engineReady = local ? state.engineReadiness.state === 'ready' : false
   const installed = new Set(local ? state.catalog.models.filter((model) => model.installed).map((model) => model.id) : [])
-  const bundle = [...state.catalog.bundles].sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))[0]
+  // As main: single files load only on this computer, and the model that suits its GPU comes first.
+  const usable = local ? state.catalog.bundles : state.catalog.bundles.filter((item) => !isFileBundle(item, state.catalog.models))
+  const best = local
+    ? bestBundleFor(usable, generationGpus(state.gpuInventory.devices, state.settings), cliGpuUuids(state.engineReadiness))?.bundle
+    : undefined
+  const bundle = [...usable].sort(
+    (a, b) => Number(b.id === best?.id) - Number(a.id === best?.id) || Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)),
+  )[0]
   const modelIds = bundle ? [...Object.values(bundle.components), bundle.support] : []
   const count = modelIds.filter((id) => installed.has(id)).length
   const partial = count > 0 || modelIds.some((id) => state.catalog.models.find((model) => model.id === id)?.installState === 'partial')
@@ -154,7 +178,7 @@ function onboardingStatus(state: MockBackendState, hostId: string): OnboardingSt
         : `${bundle?.name ?? 'MOSS-Image'} · ${count}/${modelIds.length || 4} 个组件已就绪，需准备主模型、文本编码器、VAE 与配置`,
       sizeBytes: state.catalog.models
         .filter((model) => modelIds.includes(model.id) && !installed.has(model.id))
-        .reduce((sum, model) => sum + model.sizeBytes, 0),
+        .reduce((sum, model) => sum + missingBytesOf(model), 0),
     },
   ]
   return {
@@ -186,28 +210,43 @@ function defaultHandlers(): Map<string, Handler> {
   const h = new Map<string, Handler>()
   const p = <T>(payload: unknown) => (payload ?? {}) as T
 
-  h.set(Ipc.appInfo, () => ({
-    name: 'MossStudio',
-    version: '1.0.3',
-    electron: '44.9.0',
-    chrome: '140',
-    node: '24',
-    platform: 'win32',
-    arch: 'x64',
-    dataPath: '/fixture/data',
-    modelsPath: '/fixture/data/models',
-    modelDirectories: {
-      dit: '/fixture/data/models/moss',
-      textEncoder: '/fixture/data/models/text-encoder',
-      vae: '/fixture/data/models/vae',
-      support: '/fixture/data/models/support',
-      adapters: '/fixture/data/models/adapters',
-    },
-    acrylic: false,
-  }))
+  h.set(Ipc.appInfo, (_, { state }) => {
+    // Like main: the models folder follows settings.
+    const modelsPath = modelsPathOf(state)
+    return {
+      name: 'MossStudio',
+      version: '1.0.3',
+      electron: '44.9.0',
+      chrome: '140',
+      node: '24',
+      platform: 'win32',
+      arch: 'x64',
+      dataPath: '/fixture/data',
+      modelsPath,
+      modelDirectories: {
+        dit: `${modelsPath}/moss`,
+        textEncoder: `${modelsPath}/text-encoder`,
+        vae: `${modelsPath}/vae`,
+        support: `${modelsPath}/support`,
+        adapters: `${modelsPath}/adapters`,
+      },
+      acrylic: false,
+      memoryTotalBytes: state.systemMemoryBytes,
+    }
+  })
   h.set(Ipc.backendInfo, () => ({ ready: true, url: 'http://studio-fixture', token: 'fixture' }))
 
   // Settings
+  // Every part lands in the models folder here: one disk, its free space from state.diskFree (plenty when not listed).
+  h.set(Ipc.modelsSpace, (payload, { state }) => {
+    const ids = p<{ modelIds: string[] }>(payload).modelIds
+    const missingBytes = state.catalog.models
+      .filter((model) => ids.includes(model.id))
+      .map(missingBytesOf)
+      .filter((bytes) => bytes > 0)
+    const path = modelsPathOf(state)
+    return missingBytes.length ? [{ path, modelsFolder: true, freeBytes: state.diskFree[path] ?? 900 * GiB, missingBytes }] : []
+  })
   h.set(Ipc.settingsGet, (_, { state }) => state.settings)
   h.set(Ipc.settingsUpdate, (payload, { state }) => {
     const patch = p<Partial<Settings> & { hfToken?: string | null }>(payload)
@@ -345,6 +384,67 @@ function defaultHandlers(): Map<string, Handler> {
       ),
     }
     return { canceled: false, added: 1, duplicates: 0, folders: [folder.name] }
+  })
+  // 用电脑上的模型文件…: a complete model folder (state.localModelFolder) is added as with
+  // import-folder; loose files (state.localModelFiles) become local entries for 自己组合.
+  h.set(Ipc.modelsUseFolder, (_, ctx) => {
+    const { state, emit } = ctx
+    if (state.localModelFolder) {
+      const imported = h.get(Ipc.modelsImportFolder)!(null, ctx) as Record<string, unknown>
+      emit(Events.modelsChanged, null)
+      return { ...imported, slots: null }
+    }
+    const files = state.localModelFiles
+    if (!files) return { canceled: true, added: 0, duplicates: 0, slots: null }
+    const entries: ModelEntry[] = files.map((file, index) => ({
+      id: `local-scan-${index}`,
+      name: file.path.split('/').at(-1)!,
+      provider: 'local',
+      repo: file.path,
+      revision: 'local',
+      role: file.role,
+      format: 'comfyui',
+      family: 'local',
+      precision: 'local',
+      license: 'local',
+      tags: ['local-import', 'comfyui', 'unhashed'],
+      localPath: file.path,
+      installState: 'ready',
+      installed: true,
+      installedBytes: 5_400_000_000,
+      sizeBytes: 5_400_000_000,
+    }))
+    state.catalog = {
+      ...state.catalog,
+      models: [...state.catalog.models.filter((model) => !entries.some((entry) => entry.id === model.id)), ...entries],
+    }
+    emit(Events.modelsChanged, null)
+    const idOf = (role: ModelEntry['role']) => entries.find((entry) => entry.role === role)?.id ?? null
+    return {
+      canceled: false,
+      added: entries.length,
+      duplicates: 0,
+      slots: entries.length ? { dit: idOf('dit'), textEncoder: idOf('text_encoder'), vae: idOf('vae') } : null,
+    }
+  })
+  h.set(Ipc.modelsSaveCombination, (payload, { state, emit }) => {
+    const input = p<{ id?: string; name: string; components: ModelCombination['components'] }>(payload)
+    const combination: ModelCombination = {
+      id: input.id ?? `combo-${state.catalog.bundles.filter((bundle) => bundle.custom).length + 1}`,
+      name: input.name.trim(),
+      components: input.components,
+      createdAt: new Date(0).toISOString(),
+    }
+    const bundle = combinationBundle(combination, state.catalog.models)
+    state.catalog = { ...state.catalog, bundles: [...state.catalog.bundles.filter((item) => item.id !== bundle.id), bundle] }
+    emit(Events.modelsChanged, null)
+    return combination
+  })
+  h.set(Ipc.modelsDeleteCombination, (payload, { state, emit }) => {
+    const { id } = p<{ id: string }>(payload)
+    state.catalog = { ...state.catalog, bundles: state.catalog.bundles.filter((bundle) => bundle.id !== id) }
+    emit(Events.modelsChanged, null)
+    return { ok: true }
   })
   h.set(Ipc.downloadsList, (_, { state }) => state.downloads)
   const beginDownload = (state: MockBackendState, kind: 'model' | 'adapter', id: string): DownloadTask => {

@@ -63,7 +63,8 @@ The terms MossStudio coins or uses in a fixed sense, with the Chinese the UI sho
 | 模型 | Models page, route `/models` | Download and manage models and the models folder. | `renderer/src/pages/models/ModelsPage.tsx` |
 | 模型库 (in messages) | model catalog | The list of models that can be downloaded or are installed. | `shared/types.ts` (`ModelEntry`), `main/services/` model services |
 | 模型包 | `ModelBundle` | A complete MOSS-Image set: a DiT, a text encoder and a VAE, bound by a `ModelBinding`. | `shared/types.ts` (`ModelBundle`, `ModelBinding`) |
-| 单独的部件 | component file, `ModelEntry.role: 'dit' \| 'text_encoder' \| 'vae' \| 'support'` | One file of a bundle, which can be downloaded or bound on its own. `'full'` is a whole bundle, `'lora'` a LoRA. | `shared/types.ts` (`ModelEntry`), `renderer/src/pages/models/ModelsPage.tsx` |
+| 部件 | component, `ModelEntry.role: 'dit' \| 'text_encoder' \| 'vae' \| 'support'` | One file set of a bundle: 主模型, 文本编码器, VAE, or config files. Picked one by one only in 自己组合. `'full'` is a whole registered folder. | `shared/types.ts` (`ModelEntry`), `shared/modelCombos.ts` |
+| 自己组合, 我的组合 | combination, `ModelCombination` | A 主模型, 文本编码器 and VAE the person picked, from downloads or their own files, saved as a model (`ModelBundle.custom`). | `shared/modelCombos.ts`, `renderer/src/pages/models/CombinationDialog.tsx` |
 | | DiT | The diffusion transformer, the main weights of MOSS-Image. Sent to the engine as `dit_file`. | `shared/types.ts` (`role: 'dit'`), `main/services/mossInfer.ts` |
 | | precision `bf16`, INT8 and others | The weight precision of a component file, read by the engine's `inspect`; CLI engines accept only bf16. | `main/services/weightPrecision.ts`, `shared/cliEngine.ts` |
 | 控制适配器 | control adapter | The model that makes a 控制图 usable; a control port asks for one before it accepts a wire. | `renderer/src/pages/models/ModelsPage.tsx`, `renderer/src/pages/studio/ports.ts` |

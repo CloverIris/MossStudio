@@ -399,8 +399,11 @@ export interface EngineReadiness {
   state: EngineReadinessState
   path: string | null
   reason?: string
-  /** Per local GPU: the package it runs (null = nothing installed runs on it). */
-  devices?: Array<{ deviceUuid: string; name: string; packageId: string | null; path: string | null }>
+  /**
+   * Per local GPU: the package it runs (null = nothing installed runs on it). `memorySkipped`: it has none
+   * because its memory is too small for the model and another GPU runs one (no engine chosen for it in 高级).
+   */
+  devices?: Array<{ deviceUuid: string; name: string; packageId: string | null; path: string | null; memorySkipped?: boolean }>
   installing?: EngineInstallProgress
   lastAttempt?: EngineInstallAttempt
 }
@@ -481,7 +484,12 @@ export interface RuntimeInfo {
 
 export interface ModelEntry {
   id: string
+  /** The whole name as plain text; it ends with the `variant` words. */
   name: string
+  /** What 自己组合 calls this part, e.g. "MOSS-Image SFT INT8"; a folder and a single file of the same weights share it. */
+  choice?: string
+  /** Precision and kind words shown as tags after the rest of `name` (see ModelBundle.variant). */
+  variant?: string[]
   provider: 'hf' | 'local'
   repo: string
   revision: string
@@ -531,11 +539,34 @@ export interface ModelBinding {
 
 export interface ModelBundle {
   id: string
+  /** The whole name as plain text (toasts, job names); it ends with the `variant` words. */
   name: string
+  /** The words that tell this model from its family (precision, steps), shown as tags after the rest of `name`. */
+  variant?: string[]
   description: string
   components: Pick<ModelBinding, 'dit' | 'textEncoder' | 'vae'>
   support: string
   recommended?: boolean
+  /** Listed in the engine's supported models (MossInfer docs/integration.md). */
+  certified?: boolean
+  /** The engine tier this bundle must run with (a quantized DiT); absent = the user's setting. */
+  tier?: Exclude<Settings['mossInferTier'], 'reference'>
+  /** Hardware the bundle needs, e.g. NVFP4 runs only on compute capability 12.0 (RTX 50). */
+  requires?: { computeCapability: { major: number; minor: number }; label: string }
+  /** The everyday pick for this kind of computer (模型 page, first-run setup). */
+  recommendedFor?: 'limited-vram'
+  /** Sampling the bundle is made for (a few-step model); applied when it is picked in Studio. */
+  defaults?: { steps?: number; cfg?: number }
+  /** Saved by the person in 自己组合 (`ModelCombination`), not from the catalog. */
+  custom?: boolean
+}
+
+/** A 主模型, 文本编码器 and VAE the person put together in 自己组合, saved as a model. */
+export interface ModelCombination {
+  id: string
+  name: string
+  components: Pick<ModelBinding, 'dit' | 'textEncoder' | 'vae'>
+  createdAt: string
 }
 
 export interface Catalog {
@@ -1055,6 +1086,20 @@ export interface AppInfo {
   modelDirectories: Record<ModelDirectoryId, string>
   acrylic: boolean
   backend?: BackendInfo
+  /** Installed system memory (os.totalmem). */
+  memoryTotalBytes?: number
+}
+
+/** One disk the missing parts of a model land on (models:space). */
+export interface ModelSpaceDisk {
+  /** The folder to name: the models folder, or a part's own folder from 设置 › 存储. */
+  path: string
+  /** A part here follows the models folder, so choosing another models folder moves it. */
+  modelsFolder: boolean
+  /** Free bytes; null when unreadable or slower to answer than the check allows. */
+  freeBytes: number | null
+  /** What each part landing here still has to download. */
+  missingBytes: number[]
 }
 
 export interface IpcError {

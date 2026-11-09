@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Events } from '@shared/channels'
 import { decodeEngineHello } from '@shared/engineProtocol'
 import { engineBinaryName } from '@shared/enginePackages'
@@ -19,6 +19,7 @@ const runRemoteEngineJob = vi.hoisted(() => vi.fn())
 const cancelRemoteEngineJob = vi.hoisted(() => vi.fn(() => true))
 const jobWeightPrecisions = vi.hoisted(() => vi.fn())
 const getTrainingHost = vi.hoisted(() => vi.fn())
+const getCatalog = vi.hoisted(() => vi.fn())
 vi.mock('@main/lib/events', () => ({ emit, onEmit: () => () => undefined }))
 vi.mock('@main/services/mossInfer', () => ({
   runMossInferJob,
@@ -31,6 +32,7 @@ vi.mock('@main/services/remoteEngine', () => ({ runRemoteEngineJob, cancelRemote
 vi.mock('@main/services/trainingHosts', () => ({ getTrainingHost }))
 vi.mock('@main/services/ssh', () => ({ remoteAbsolute: async (_host: unknown, path: string) => path, sshExec: vi.fn() }))
 vi.mock('@main/services/modelBundles', () => ({ prepareModelSource }))
+vi.mock('@main/services/models', async (importOriginal) => ({ ...(await importOriginal<object>()), getCatalog }))
 vi.mock('@main/services/weightPrecision', () => ({ jobWeightPrecisions }))
 vi.mock('@main/services/devices', () => ({ refreshGpuInventory, cachedGpuInventory: () => ({ devices: [gpu] }) }))
 vi.mock('@main/services/engines', () => ({ probeLocalEngineGpuCompatibility }))
@@ -39,8 +41,56 @@ vi.mock('@main/services/desktopNotifications', () => ({ pushLocalNotification: v
 vi.mock('@main/services/diagnostics', () => ({ pushDiagnostic: vi.fn() }))
 vi.mock('@main/lib/engineActivation', () => ({ waitForEngineActivation: async () => undefined }))
 
+/**
+ * Job list saves seen from the file system. While `hold` is set, a save waits for it at its first step
+ * (making the jobs folder). `fail` makes the next saves fail at that step: 'throw' synchronously, 'reject'
+ * as a rejected promise. `writing` / `maxWriting` count saves between their temp file write and rename.
+ * While `holdWrite` is set, a save waits for it at its temp file write, after it took its snapshot.
+ */
+const jobListGate = vi.hoisted(() => ({
+  hold: null as Promise<void> | null,
+  holdWrite: null as Promise<void> | null,
+  fail: [] as Array<'throw' | 'reject'>,
+  writing: 0,
+  maxWriting: 0,
+}))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const locked = (): Error => Object.assign(new Error('EPERM: operation not permitted (locked)'), { code: 'EPERM' })
+  const mkdir = ((path: Parameters<typeof actual.mkdir>[0], options?: Parameters<typeof actual.mkdir>[1]) => {
+    if (/[\\/]jobs$/.test(String(path))) {
+      const failure = jobListGate.fail.shift()
+      if (failure === 'throw') throw locked()
+      if (failure === 'reject') return Promise.reject(locked())
+      if (jobListGate.hold) return jobListGate.hold.then(() => actual.mkdir(path, options))
+    }
+    return actual.mkdir(path, options)
+  }) as typeof actual.mkdir
+  const writeFile = (async (file: Parameters<typeof actual.writeFile>[0], ...rest: [never, never?]) => {
+    if (String(file).endsWith('jobs.json.tmp')) {
+      jobListGate.writing += 1
+      jobListGate.maxWriting = Math.max(jobListGate.maxWriting, jobListGate.writing)
+      if (jobListGate.holdWrite) await jobListGate.holdWrite
+    }
+    return actual.writeFile(file, ...rest)
+  }) as typeof actual.writeFile
+  const rename = (async (from: Parameters<typeof actual.rename>[0], to: Parameters<typeof actual.rename>[1]) => {
+    try {
+      return await actual.rename(from, to)
+    } finally {
+      if (String(from).endsWith('jobs.json.tmp')) jobListGate.writing -= 1
+    }
+  }) as typeof actual.rename
+  return { ...actual, mkdir, writeFile, rename, default: { ...actual, mkdir, writeFile, rename } }
+})
+
 const dataRoot = useTempDataRoot()
 let supervisor: typeof import('@main/services/supervisor')
+// Runs before useTempDataRoot removes the folder (after-hooks run last-registered first): the job list and
+// log writes the supervisor does not wait for must be done, or the removal races them (ENOTEMPTY).
+afterEach(async () => {
+  await supervisor?.settleJobWrites()
+})
 
 const gpu: GpuInventoryDevice = {
   uuid: 'GPU-a',
@@ -48,6 +98,16 @@ const gpu: GpuInventoryDevice = {
   name: 'RTX Test',
   computeCapability: { major: 8, minor: 9 },
   driverVersion: '590.48.01',
+}
+
+const folderBundle = { id: 'b', name: 'Folder', description: '', support: 's', components: { dit: 'dit', textEncoder: 'te', vae: 'vae' } }
+const fileBundle = {
+  id: 'files',
+  name: 'SFT · INT4',
+  description: '',
+  support: 's',
+  components: { dit: 'dit-file', textEncoder: 'te', vae: 'vae' },
+  tier: 'turbo' as const,
 }
 
 /** The sink of every job handed to the engine, by job id. */
@@ -80,7 +140,15 @@ beforeEach(async () => {
   const bundle = join(dataRoot(), 'bundle')
   mkdirSync(bundle, { recursive: true })
   writeFileSync(join(bundle, 'clover_model.json'), JSON.stringify({ bundleId: 'b' }))
-  prepareModelSource.mockReset().mockResolvedValue({ model: bundle })
+  prepareModelSource.mockReset().mockResolvedValue({ model: bundle, bundle: folderBundle })
+  getCatalog.mockReset().mockResolvedValue({
+    bundles: [folderBundle, fileBundle],
+    models: [
+      { id: 'dit', role: 'dit', provider: 'hf', format: 'diffusers' },
+      { id: 'dit-file', role: 'dit', provider: 'hf', format: 'comfyui' },
+    ],
+    adapters: [],
+  })
   jobWeightPrecisions.mockReset().mockResolvedValue({ dit: 'bf16', textEncoder: 'bf16' })
   refreshGpuInventory.mockReset().mockResolvedValue({ devices: [gpu] })
   const hello = decodeEngineHello({
@@ -117,9 +185,134 @@ describe("engine jobs: the moss-server of the GPU's own install", () => {
 
     const { rmSync } = await import('node:fs')
     rmSync(join(dataRoot(), 'mossinfer'), { recursive: true, force: true })
+    // The first instance's writes are its own; the afterEach only sees the second one.
+    await supervisor.settleJobWrites()
     vi.resetModules()
     supervisor = await import('@main/services/supervisor')
     await expect(supervisor.startEngineJob(request('nothing installed'))).rejects.toThrow('未找到 moss-server')
+  })
+})
+
+describe('engine jobs: writes the caller does not wait for', () => {
+  /** 'settled' when settleJobWrites resolves within `ms`, else 'waiting'. */
+  const settledWithin = (ms: number): Promise<'settled' | 'waiting'> =>
+    Promise.race([
+      supervisor.settleJobWrites().then(() => 'settled' as const),
+      new Promise<'waiting'>((resolve) => setTimeout(() => resolve('waiting'), ms)),
+    ])
+
+  it('settleJobWrites resolves once the job list is on disk with every job, and at once when nothing is left', async () => {
+    const jobs = [
+      await supervisor.startEngineJob(request('first')),
+      await supervisor.startEngineJob(request('second')),
+      await supervisor.startEngineJob(request('third')),
+    ]
+    await supervisor.settleJobWrites()
+    const saved = JSON.parse(readFileSync(join(dataRoot(), 'jobs', 'jobs.json'), 'utf8')) as JobRecord[]
+    expect(saved.map((job) => job.id).sort()).toEqual(jobs.map((job) => job.id).sort())
+    expect(await settledWithin(50)).toBe('settled')
+  })
+
+  it('settleJobWrites waits for a job list write that is still running', async () => {
+    // Hold every job list save at its first step until the test lets it through.
+    let release!: () => void
+    jobListGate.hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    try {
+      // The second job waits in the GPU's queue: queuing it saves the job list.
+      await supervisor.startEngineJob(request('running'))
+      await supervisor.startEngineJob(request('queued'))
+      expect(await settledWithin(50)).toBe('waiting')
+      release()
+      expect(await settledWithin(1000)).toBe('settled')
+      expect(existsSync(join(dataRoot(), 'jobs', 'jobs.json'))).toBe(true)
+    } finally {
+      release()
+      jobListGate.hold = null
+    }
+  })
+})
+
+describe('engine jobs: the job list on disk', () => {
+  const jobList = (): JobRecord[] | null => {
+    const file = join(dataRoot(), 'jobs', 'jobs.json')
+    return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as JobRecord[]) : null
+  }
+  const ids = (list: Array<{ id: string }> | null): string[] => (list ?? []).map((job) => job.id).sort()
+
+  it('is written one save at a time: saves asked for meanwhile become later writes with the newest jobs', async () => {
+    let release!: () => void
+    jobListGate.hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    jobListGate.maxWriting = 0
+    try {
+      // Queuing q1 starts a save, held at its first step; q2 to q5 each ask for a save while it is held.
+      const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+      for (const prompt of ['q2', 'q3', 'q4', 'q5']) jobs.push(await supervisor.startEngineJob(request(prompt)))
+      release()
+      await supervisor.settleJobWrites()
+      expect(jobListGate.maxWriting).toBe(1)
+      expect(ids(jobList())).toEqual(ids(jobs))
+      // Written through a temp file and a rename: nothing is left beside it.
+      expect(existsSync(join(dataRoot(), 'jobs', 'jobs.json.tmp'))).toBe(false)
+    } finally {
+      release()
+      jobListGate.hold = null
+    }
+  })
+
+  it('a change made while a write is under way is written right after it', async () => {
+    let release!: () => void
+    jobListGate.holdWrite = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    jobListGate.maxWriting = 0
+    try {
+      const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+      // q1's save has taken its snapshot and is writing it; q2 arrives now.
+      await vi.waitFor(() => expect(jobListGate.writing).toBe(1))
+      jobListGate.holdWrite = null
+      jobs.push(await supervisor.startEngineJob(request('q2')))
+      release()
+      await supervisor.settleJobWrites()
+      expect(jobListGate.maxWriting).toBe(1)
+      expect(ids(jobList())).toEqual(ids(jobs))
+    } finally {
+      release()
+      jobListGate.holdWrite = null
+    }
+  })
+
+  it('a save that fails at once does not stop the next change from being written', async () => {
+    jobListGate.fail = ['throw']
+    const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+    // The save for q1 has failed (synchronously, at its first step).
+    await vi.waitFor(() => expect(jobListGate.fail).toEqual([]))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    jobs.push(await supervisor.startEngineJob(request('q2')))
+    // Written by q2's own save, well before the delayed retry.
+    await vi.waitFor(() => expect(ids(jobList())).toEqual(ids(jobs)), { timeout: 1000, interval: 10 })
+  })
+
+  it('a failed save is tried once more a moment later, so the newest jobs are not left behind', async () => {
+    jobListGate.fail = ['reject']
+    const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+    // Nothing else changes: only the retry can write q1.
+    await supervisor.settleJobWrites()
+    expect(ids(jobList())).toEqual(ids(jobs))
+  })
+
+  it('retries once, not forever; the next change writes again', async () => {
+    jobListGate.fail = ['reject', 'reject']
+    const jobs = [await supervisor.startEngineJob(request('running')), await supervisor.startEngineJob(request('q1'))]
+    await supervisor.settleJobWrites()
+    expect(jobListGate.fail).toEqual([])
+    expect(jobList()).toBeNull()
+    jobs.push(await supervisor.startEngineJob(request('q2')))
+    await supervisor.settleJobWrites()
+    expect(ids(jobList())).toEqual(ids(jobs))
   })
 })
 
@@ -151,6 +344,72 @@ describe('engine jobs: inputs', () => {
     expect(job.params).not.toHaveProperty('control')
     expect(starts[0]!.params).toEqual(job.params)
     expect(starts[0]!.opts['previewOutput']).toBe(join(dataRoot(), 'cache', 'previews', `${job.id}.png`))
+  })
+})
+
+describe('engine jobs: single-file models', () => {
+  it('loads the files next to the runtime-config folder with the tier the model needs', async () => {
+    const folder = join(dataRoot(), 'bundle')
+    prepareModelSource.mockResolvedValue({ model: folder, ditFile: '/models/dit-int4.safetensors', bundle: fileBundle })
+    jobWeightPrecisions.mockResolvedValue({ dit: 'w4a4', textEncoder: 'int8' })
+    const job = await supervisor.startEngineJob(request('int4', { modelBinding: { bundleId: 'files' } }))
+    expect(starts[0]!.opts).toMatchObject({ model: folder, ditFile: '/models/dit-int4.safetensors' })
+    // 设置 says high (the default); an INT4 DiT runs only under turbo.
+    expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('turbo')
+    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'model-weights' })
+    expect(job.modelSnapshot).toMatchObject({ bundleId: 'b', files: { ditFile: '/models/dit-int4.safetensors' } })
+  })
+
+  it('runs INT4 on Turing with its own tier, though Turing runs folder models at reference', async () => {
+    refreshGpuInventory.mockResolvedValue({ devices: [{ ...gpu, computeCapability: { major: 7, minor: 5 } }] })
+    prepareModelSource.mockResolvedValue({ model: join(dataRoot(), 'bundle'), ditFile: '/models/dit-int4.safetensors', bundle: fileBundle })
+    jobWeightPrecisions.mockResolvedValue({ dit: 'w4a4', textEncoder: 'int8' })
+    const job = await supervisor.startEngineJob(request('int4 on turing', { modelBinding: { bundleId: 'files' } }))
+    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'model-weights' })
+    expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('turbo')
+  })
+
+  it('uses the tier the model names when the engine has no name for its weights (NVFP4)', async () => {
+    prepareModelSource.mockResolvedValue({ model: join(dataRoot(), 'bundle'), ditFile: '/models/nvfp4.safetensors', bundle: fileBundle })
+    jobWeightPrecisions.mockResolvedValue({ dit: null, textEncoder: 'int8' })
+    const job = await supervisor.startEngineJob(request('nvfp4', { modelBinding: { bundleId: 'files' } }))
+    expect(job.gpuProfile).toMatchObject({ tier: 'turbo', source: 'model-weights' })
+    expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('turbo')
+  })
+
+  it('lets the weights the engine reads overrule the tier a model names', async () => {
+    // A scanned file named like INT4 that is really bf16 runs as bf16.
+    prepareModelSource.mockResolvedValue({ model: join(dataRoot(), 'bundle'), ditFile: '/models/dit-int4.safetensors', bundle: fileBundle })
+    const job = await supervisor.startEngineJob(request('bf16 named int4', { modelBinding: { bundleId: 'files' } }))
+    expect(job.gpuProfile?.tier).toBe('high')
+    expect(job.gpuProfile?.source).not.toBe('model-weights')
+  })
+
+  it('keeps the tier from 设置 for a folder model', async () => {
+    const job = await supervisor.startEngineJob(request('folder'))
+    expect((starts[0]!.opts['settings'] as { mossInferTier: string }).mossInferTier).toBe('high')
+    expect(job.gpuProfile?.source).not.toBe('model-weights')
+  })
+
+  it('refuses a model made for another GPU before starting the engine', async () => {
+    prepareModelSource.mockResolvedValue({
+      model: join(dataRoot(), 'bundle'),
+      ditFile: '/models/nvfp4.safetensors',
+      bundle: { ...fileBundle, name: 'SFT · NVFP4', requires: { computeCapability: { major: 12, minor: 0 }, label: 'RTX 50 系列显卡' } },
+    })
+    await expect(supervisor.startEngineJob(request('nvfp4', { modelBinding: { bundleId: 'files' } }))).rejects.toThrow(
+      '「SFT · NVFP4」只能在 RTX 50 系列显卡上运行，请换一个模型',
+    )
+    expect(runMossInferJob).not.toHaveBeenCalled()
+  })
+
+  it('refuses a single-file model on another computer', async () => {
+    await expect(
+      supervisor.startEngineJob(
+        request('remote', { deviceUuid: undefined, hostId: 'h1', remoteModelPath: '/models/moss', modelBinding: { bundleId: 'files' } }),
+      ),
+    ).rejects.toThrow('「SFT · INT4」只能在这台电脑上运行')
+    expect(runRemoteEngineJob).not.toHaveBeenCalled()
   })
 })
 

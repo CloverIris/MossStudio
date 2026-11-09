@@ -3,7 +3,7 @@ import { compareToHighWater, fetchVerifiedFeed, FeedRollbackError } from '@main/
 import { feedFixture, makeKey, signFeed } from './helpers'
 
 const key = makeKey('ci')
-const GH = 'https://github.com/CloverIris/MossStudio/releases/download/updates/update-stable.json'
+const GH = 'https://github.com/ShallowElec/MossStudio/releases/download/updates/update-stable.json'
 
 function signed(version: string): { feed: Buffer; sig: Buffer } {
   const feed = Buffer.from(JSON.stringify(feedFixture({ version })))

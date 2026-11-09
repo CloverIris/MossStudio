@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/fsutil"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/payload"
-	"github.com/CloverIris/MossStudio/apps/launcher/internal/record"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/fsutil"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/payload"
+	"github.com/ShallowElec/MossStudio/apps/launcher/internal/record"
 )
 
 // Locations are the per-user places outside R and the data root that an install creates.

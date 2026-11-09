@@ -42,6 +42,9 @@ export const FIXTURE_NOW = '2026-11-01T00:00:00.000Z'
 
 export const GiB = 1024 ** 3
 
+/** Where app:info says models go while settings name no folder of their own. */
+export const FIXTURE_MODELS_PATH = '/fixture/data/models'
+
 // ---------------------------------------------------------------------------
 // Settings
 
@@ -111,6 +114,8 @@ function toModel(raw: RawModel): ModelEntry {
   return {
     id: raw.id,
     name: raw.name,
+    choice: 'choice' in raw ? (raw.choice as string) : undefined,
+    variant: 'variant' in raw ? (raw.variant as string[]) : undefined,
     provider: raw.provider as ModelEntry['provider'],
     repo: raw.repo,
     revision: raw.revision,
@@ -165,7 +170,11 @@ export function catalogFixture(options: CatalogOptions = {}): Catalog {
   const installed = new Set(options.installed ?? [])
   const partial = new Set(options.partial ?? [])
   return {
-    bundles: releaseCatalog.bundles.map((bundle) => ({ ...bundle, components: { ...bundle.components } })) as ModelBundle[],
+    // main/services/models.ts lists the single-file bundles after the folder ones.
+    bundles: [...releaseCatalog.bundles, ...releaseCatalog.single_file_bundles].map((bundle) => ({
+      ...bundle,
+      components: { ...bundle.components },
+    })) as ModelBundle[],
     updatedAt: releaseCatalog.updated_at,
     source: options.source ?? 'builtin',
     models: releaseCatalog.models.map((raw) => {
@@ -206,6 +215,16 @@ export const GPU_RTX_3060 = (): GpuInventoryDevice =>
     computeCapability: { major: 8, minor: 6 },
     memoryTotalBytes: 12 * GiB,
     memoryFreeBytes: 11 * GiB,
+  })
+
+/** An RTX 50 card: the only kind that runs NVFP4 models (compute capability 12.0). */
+export const GPU_RTX_5090 = (): GpuInventoryDevice =>
+  gpuDeviceFixture({
+    uuid: 'GPU-50505050-5090-5090-5090-509050905090',
+    name: 'NVIDIA GeForce RTX 5090',
+    computeCapability: { major: 12, minor: 0 },
+    memoryTotalBytes: 32 * GiB,
+    memoryFreeBytes: 30 * GiB,
   })
 
 export const GPU_GTX_1660 = (): GpuInventoryDevice =>
@@ -513,7 +532,7 @@ export function updateAvailableFixture(version = '1.1.0', patch: Partial<Updater
       kind: 'delta',
       downloadSize: 48_000_000,
       notes: `## MossStudio ${version}\n\n- 生成更快，显存占用更少\n- 作品页可以按日期筛选\n- 修复了若干问题`,
-      notesUrl: `https://github.com/CloverIris/MossStudio/releases/tag/v${version}`,
+      notesUrl: `https://github.com/ShallowElec/MossStudio/releases/tag/v${version}`,
     },
     ...patch,
   })

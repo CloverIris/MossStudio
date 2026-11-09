@@ -1,10 +1,15 @@
-import { Download, FolderOpen, Package, RefreshCw } from 'lucide-react'
+import { Download, FolderOpen, Package, Plus, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { cliGpuUuids, generationGpus } from '@shared/bundleFit'
 import { Events, Ipc } from '@shared/channels'
+import type { SlotKey } from '@shared/modelCombos'
 import type { AppInfo, Catalog, ModelBundle } from '@shared/types'
+import { importFolderMessage, type UseFolderResult } from '../../lib/modelFolder'
 import { call, onEvent } from '../../lib/api'
+import { useGpuInventory } from '../../lib/useGpuInventory'
 import { DownloadQueue } from '../../components/DownloadQueue'
+import { MenuItem, Popover } from '../../components/common/Popover'
 import { Notice } from '../../components/common/Notice'
 import {
   Advanced,
@@ -24,11 +29,15 @@ import {
 } from '../../components/ui'
 import { useApp } from '../../store'
 import { AdvancedPanel } from './AdvancedPanel'
+import { CombinationDialog } from './CombinationDialog'
 import { ControlAdaptersSection } from './ControlAdaptersSection'
 import { LoraTab } from './LoraTab'
 import { DeleteModelDialog, FeaturedModel, ModelList } from './ModelEntries'
-import { bundleDeletePlan, bundleView, parseModelsQuery, recommendedBundle, visibleTasks } from './logic'
+import { bundleBlocker, bundleDeletePlan, bundleView, downloadGroups, modelSections, parseModelsQuery, type DownloadGroup } from './logic'
 import { useModelLocation, useSshHosts, type ModelLocation } from './useModelLocation'
+
+/** Until the catalog is read, downloads are named after their own labels. */
+const EMPTY_CATALOG: Pick<Catalog, 'bundles' | 'models' | 'adapters'> = { bundles: [], models: [], adapters: [] }
 
 type Tab = 'models' | 'lora' | 'downloads'
 
@@ -79,26 +88,104 @@ function ModelsTab({
   catalog,
   location,
   preferredBundleId,
-  componentFocus,
 }: {
   catalog: Catalog
   location: ModelLocation
   preferredBundleId: string | null
-  componentFocus: boolean
 }): React.JSX.Element {
+  const toast = useToast()
   const [deleting, setDeleting] = useState<ModelBundle | null>(null)
-  const featured = recommendedBundle(catalog.bundles, preferredBundleId)
+  const settings = useApp((state) => state.settings)
+  const { inventory } = useGpuInventory()
+  const remote = location.kind === 'remote'
+  const engineReadiness = useApp((state) => state.engineReadiness)
+  const gpus = useMemo(() => generationGpus(inventory?.devices, settings), [inventory, settings])
+  const cliGpus = useMemo(() => cliGpuUuids(engineReadiness), [engineReadiness])
+  const [combining, setCombining] = useState<{ initial?: Partial<Record<SlotKey, string | null>> } | null>(null)
   const views = useMemo(
-    () => catalog.bundles.map((bundle) => bundleView(bundle, catalog.models, location.tasks, location.isModelInstalled)),
-    [catalog, location.tasks, location.isModelInstalled],
+    () =>
+      catalog.bundles
+        // Scanned local files and 自己组合 are built and run on this computer.
+        .filter((bundle) => !remote || (bundle.id !== 'local-files' && !bundle.custom))
+        .map((bundle) =>
+          bundleView(
+            bundle,
+            catalog.models,
+            location.tasks,
+            location.isModelInstalled,
+            bundleBlocker(bundle, catalog.models, { remote, gpus, cliGpus }),
+          ),
+        ),
+    [catalog, location.tasks, location.isModelInstalled, remote, gpus, cliGpus],
   )
+  const sections = modelSections(views, catalog.models, { remote, gpus, cliGpus }, preferredBundleId)
+  const featuredView = sections.featured
   const deletePlan = (bundle: ModelBundle) =>
     bundleDeletePlan(bundle, catalog.bundles, catalog.models, location.isModelInstalled, location.tasks)
-  const featuredView = views.find((view) => view.bundle.id === featured?.id)
-  const others = views.filter((view) => view.bundle.id !== featured?.id && view.status !== 'unavailable')
-  // Scanned local files only make sense on this computer.
-  const shownOthers = location.kind === 'remote' ? others.filter((view) => view.bundle.id !== 'local-files') : others
-  const deletable = (bundle: ModelBundle): boolean => deletePlan(bundle).ids.length > 0
+  const deletable = (bundle: ModelBundle): boolean => Boolean(bundle.custom) || deletePlan(bundle).ids.length > 0
+  const featuredCard = featuredView ? (
+    <FeaturedModel
+      view={featuredView}
+      location={location}
+      pick={sections.pick ?? undefined}
+      deletable={deletable(featuredView.bundle)}
+      onDelete={setDeleting}
+    />
+  ) : null
+  const featuredCertified = Boolean(featuredView?.bundle.certified)
+
+  async function addFromFolder(): Promise<void> {
+    try {
+      const result = await call<UseFolderResult>(Ipc.modelsUseFolder)
+      if (result.canceled) return
+      if (result.folders?.length) {
+        toast.push(importFolderMessage(result), 'success')
+        return
+      }
+      if (!result.slots) {
+        toast.push('这个文件夹里没有找到主模型、文本编码器或 VAE', 'info')
+        return
+      }
+      setCombining({ initial: result.slots })
+    } catch (cause) {
+      toast.push(cause instanceof Error ? cause.message : String(cause), 'error')
+    }
+  }
+
+  const combine =
+    location.kind === 'local' ? (
+      <Popover
+        align="end"
+        label="自己组合"
+        trigger={(menu) => (
+          <Button tone="ghost" onClick={menu.toggle} aria-expanded={menu['aria-expanded']} aria-haspopup="menu">
+            <Plus className="size-4" strokeWidth={1.6} />
+            自己组合
+          </Button>
+        )}
+      >
+        {(close) => (
+          <>
+            <MenuItem
+              onSelect={() => {
+                close()
+                setCombining({})
+              }}
+            >
+              挑选要下载的部件
+            </MenuItem>
+            <MenuItem
+              onSelect={() => {
+                close()
+                void addFromFolder()
+              }}
+            >
+              用电脑上的模型文件…
+            </MenuItem>
+          </>
+        )}
+      </Popover>
+    ) : null
 
   return (
     <div className="flex flex-col gap-8">
@@ -120,7 +207,23 @@ function ModelsTab({
           <LoadingRow label={`正在查看 ${location.host?.name ?? '远程主机'} 上的模型…`} />
         ) : null
       ) : featuredView ? (
-        <FeaturedModel view={featuredView} location={location} deletable={deletable(featuredView.bundle)} onDelete={setDeleting} />
+        <>
+          {featuredCertified ? null : featuredCard}
+          {featuredCertified || sections.certified.length ? (
+            <Section title="推荐模型" description="引擎验证过的模型，下载后就能用">
+              {featuredCertified ? featuredCard : null}
+              {sections.certified.length ? (
+                <ModelList
+                  views={sections.certified}
+                  location={location}
+                  highlightId={preferredBundleId}
+                  deletable={deletable}
+                  onDelete={setDeleting}
+                />
+              ) : null}
+            </Section>
+          ) : null}
+        </>
       ) : (
         <Group>
           <EmptyState
@@ -132,9 +235,17 @@ function ModelsTab({
         </Group>
       )}
 
-      {shownOthers.length && location.ready ? (
-        <Section title="其他模型">
-          <ModelList views={shownOthers} location={location} highlightId={preferredBundleId} deletable={deletable} onDelete={setDeleting} />
+      {location.ready && (sections.others.length || combine) ? (
+        <Section title="其他模型" description="社区版本和自己组合的模型，引擎没有验证过，不保证能正常出图" actions={combine}>
+          {sections.others.length ? (
+            <ModelList
+              views={sections.others}
+              location={location}
+              highlightId={preferredBundleId}
+              deletable={deletable}
+              onDelete={setDeleting}
+            />
+          ) : null}
         </Section>
       ) : null}
 
@@ -144,17 +255,17 @@ function ModelsTab({
         <StorageRow location={location} />
       </Section>
 
-      <Advanced
-        key={componentFocus ? 'open' : 'closed'}
-        defaultOpen={componentFocus}
-        summary={location.kind === 'local' ? '单独下载部件、指定文件夹、使用电脑上已有的模型文件' : '单独下载部件、主机上的模型文件夹'}
-      >
+      <Advanced summary={location.kind === 'local' ? '各部件的文件夹、没有用到的文件' : '主机上的模型文件夹'}>
         {location.ready ? (
           <AdvancedPanel catalog={catalog} location={location} />
         ) : (
           <p className="px-3.5 py-2 text-caption text-ink-2">读到这台主机上的模型后才能管理部件。</p>
         )}
       </Advanced>
+
+      {combining ? (
+        <CombinationDialog open catalog={catalog} location={location} initial={combining.initial} onClose={() => setCombining(null)} />
+      ) : null}
 
       <DeleteModelDialog
         bundle={deleting}
@@ -167,8 +278,13 @@ function ModelsTab({
   )
 }
 
-function DownloadsTab({ location }: { location: ModelLocation }): React.JSX.Element {
-  const tasks = visibleTasks(location.tasks)
+function DownloadsTab({ catalog, location }: { catalog: Catalog | null; location: ModelLocation }): React.JSX.Element {
+  const groups = downloadGroups(location.tasks, catalog ?? EMPTY_CATALOG)
+  // A whole model resumes the way its 继续 on the 模型 tab does: every missing part again, from where it stopped.
+  const resume = (group: DownloadGroup): Promise<unknown> =>
+    group.bundle
+      ? location.downloadBundle(group.bundle)
+      : Promise.all(group.open.filter((task) => task.state === 'paused' || task.state === 'error').map(location.resume))
   return (
     <div className="flex flex-col gap-3">
       {location.kind === 'remote' ? (
@@ -184,8 +300,8 @@ function DownloadsTab({ location }: { location: ModelLocation }): React.JSX.Elem
           </IconButton>
         </div>
       ) : null}
-      {tasks.length ? (
-        <DownloadQueue tasks={tasks} onPause={location.pause} onResume={location.resume} onCancel={location.cancel} />
+      {groups.length ? (
+        <DownloadQueue groups={groups} onPause={location.pause} onResume={resume} onCancel={location.cancel} />
       ) : (
         <Group>
           <EmptyState
@@ -211,7 +327,6 @@ export function ModelsPage(): React.JSX.Element {
   const [locationId, setLocationId] = useState('local')
   const [tab, setTab] = useState<Tab>('models')
   const [preferredBundleId, setPreferredBundleId] = useState<string | null>(null)
-  const [componentFocus, setComponentFocus] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
   // Deep links from first run and elsewhere: ?bundle=…&component=…&hostId=…&tab=…
@@ -220,7 +335,6 @@ export function ModelsPage(): React.JSX.Element {
     if (query.bundleId) setPreferredBundleId(query.bundleId)
     if (query.tab) setTab(query.tab)
     else if (query.bundleId || query.component) setTab('models')
-    setComponentFocus(Boolean(query.component && query.component !== 'all' && query.component !== 'adapter'))
     if (query.hostId) setLocationId(query.hostId)
   }, [routeLocation.key, routeLocation.search])
 
@@ -231,7 +345,8 @@ export function ModelsPage(): React.JSX.Element {
 
   const host = remoteEnabled ? (hosts.find((item) => item.id === locationId) ?? null) : null
   const location = useModelLocation(host)
-  const downloadCount = visibleTasks(location.tasks).length
+  // One per model, as the 下载 tab lists them.
+  const downloadCount = downloadGroups(location.tasks, catalog ?? EMPTY_CATALOG).length
 
   const locationOptions = [{ value: 'local', label: '本机' }, ...hosts.map((item) => ({ value: item.id, label: item.name }))]
   const locationPicker =
@@ -288,11 +403,11 @@ export function ModelsPage(): React.JSX.Element {
       {!catalog ? (
         <LoadingRow label="正在读取模型列表…" />
       ) : tab === 'models' ? (
-        <ModelsTab catalog={catalog} location={location} preferredBundleId={preferredBundleId} componentFocus={componentFocus} />
+        <ModelsTab catalog={catalog} location={location} preferredBundleId={preferredBundleId} />
       ) : tab === 'lora' ? (
         <LoraTab catalog={catalog} location={location} />
       ) : (
-        <DownloadsTab location={location} />
+        <DownloadsTab catalog={catalog} location={location} />
       )}
     </PageScroll>
   )

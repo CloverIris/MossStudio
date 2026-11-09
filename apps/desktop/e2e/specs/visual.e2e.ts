@@ -104,6 +104,10 @@ const STOPS: Stop[] = [
   { page: 'setup', state: 'first-run', open: { scenario: 'firstRun', route: '/setup' } },
   { page: 'setup', state: 'no-gpu', open: { scenario: 'noGpu', route: '/setup' } },
   { page: 'setup', state: 'installing', open: { scenario: 'engineInstalling', route: '/setup' } },
+  { page: 'setup', state: 'cannot-run-gpu', open: { scenario: 'machineUnusableGpu', route: '/setup' } },
+  { page: 'setup', state: 'cannot-run-memory', open: { scenario: 'machineTinyGpu', route: '/setup' } },
+  { page: 'setup', state: 'slow', open: { scenario: 'machineIntel', route: '/setup' } },
+  { page: 'setup', state: 'low-disk', open: { scenario: 'lowDisk', route: '/setup' } },
   { page: 'studio', state: 'empty', open: { scenario: 'ready', route: '/studio' } },
   { page: 'studio', state: 'model-missing', open: { scenario: 'engineInstalledModelMissing', route: '/studio' } },
   {
@@ -169,7 +173,7 @@ const STOPS: Stop[] = [
     open: { scenario: 'ready', route: '/models' },
     prepare: async (page) => {
       await page.getByRole('button', { name: /高级/ }).click()
-      await page.getByText('单独的部件', { exact: true }).scrollIntoViewIfNeeded()
+      await page.getByText('主模型文件夹', { exact: true }).scrollIntoViewIfNeeded()
     },
   },
   { page: 'models', state: 'remote', open: { scenario: 'remoteHost', route: '/models', settings: { remoteHostsEnabled: true } } },

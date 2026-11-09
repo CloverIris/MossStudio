@@ -67,10 +67,10 @@ describe('studio', () => {
     await describeCanvas(page, '海边的灯塔，黄昏，暖色调')
     // Model, size and LoRA fold into one line under the description.
     const summary = page.locator('[data-settings-summary]')
-    expect(await summary.textContent()).toBe('MOSS-Image SFT · 1:1')
+    expect(await summary.textContent()).toBe('MOSS-Image SFT 1:1')
     await summary.click()
     await page.getByRole('group', { name: '尺寸' }).getByRole('button', { name: '16:9' }).click()
-    expect(await summary.textContent()).toBe('MOSS-Image SFT · 16:9')
+    expect(await summary.textContent()).toBe('MOSS-Image SFT 16:9')
     await page.getByRole('group', { name: '质量' }).getByRole('button', { name: '精细' }).click()
     await expect.poll(() => generate.isEnabled()).toBe(true)
     await generate.click()
@@ -385,5 +385,100 @@ describe('studio', () => {
     await expect.poll(() => page.evaluate(() => window.__mock.state.projects.some((item) => item.name === '海报'))).toBe(false)
     await expect.poll(() => switcher.textContent()).not.toContain('海报')
     await settle(page)
+  })
+
+  describe('a few-step model (MOSS-Image SFT Turbo INT8 8 步)', () => {
+    const TURBO = ['moss-sft-turbo-comfy-int8_convrot', 'qwen35-comfy-int8_convrot', 'flux2-vae-comfy-small', 'moss-runtime-config']
+    const install = async (page: Page, ids: string[], only: boolean): Promise<void> => {
+      await page.evaluate(
+        ([list, exclusive]) => {
+          const ids = new Set(list as string[])
+          window.__mock.state.catalog.models = window.__mock.state.catalog.models.map((model) =>
+            ids.has(model.id)
+              ? { ...model, installed: true, installState: 'ready', installedBytes: model.sizeBytes }
+              : exclusive
+                ? { ...model, installed: false, installState: 'missing', installedBytes: 0 }
+                : model,
+          )
+        },
+        [ids, only] as const,
+      )
+    }
+
+    it('generates in 8 steps at CFG 1 when picked, and back at 标准 when another model is picked', async () => {
+      const page = await app.open({ scenario: 'ready', route: '/studio', defer: true })
+      await install(page, TURBO, false)
+      await app.start()
+      await openStudio(page)
+      await describeCanvas(page, '雨夜的霓虹街道')
+      // The model is in the settings folded under the description.
+      await page.locator('[data-settings-summary]').click()
+      // The picker lists names with their tags; a menu item reads "<name> <size>".
+      const pick = async (name: RegExp): Promise<void> => {
+        await page.locator('[data-model-picker]').click()
+        await page.getByRole('menu', { name: '模型' }).getByRole('menuitem', { name }).click()
+      }
+      await pick(/^MOSS-Image SFT Turbo INT8 8 步 \d/)
+      const generate = page.locator('[data-studio-generate]')
+      await expect.poll(() => generate.isEnabled()).toBe(true)
+      await generate.click()
+      const [turbo] = await submitted(page, 1)
+      expect(turbo).toMatchObject({ steps: 8, cfg: 1 })
+      await page.evaluate(() => window.__mock.finishJob(window.__mock.state.jobs[0]!.id))
+
+      await pick(/^MOSS-Image SFT \d/)
+      await expect.poll(() => generate.isEnabled()).toBe(true)
+      await generate.click()
+      const [, sft] = await submitted(page, 2)
+      expect(sft).toMatchObject({ steps: 20, cfg: 3 })
+    })
+
+    it('uses its steps and CFG when a canvas that never picked a model runs on it', async () => {
+      const page = await app.open({ scenario: 'ready', route: '/studio', defer: true })
+      await install(page, TURBO, true)
+      await app.start()
+      await openStudio(page)
+      await describeCanvas(page, '雨夜的霓虹街道')
+      const generate = page.locator('[data-studio-generate]')
+      await expect.poll(() => generate.isEnabled()).toBe(true)
+      await generate.click()
+      const [job] = await submitted(page, 1)
+      expect(job).toMatchObject({ steps: 8, cfg: 1 })
+    })
+  })
+})
+
+describe('studio on a laptop whose 2 GB card is too small for the model', () => {
+  const app = useApp()
+
+  it('the GPU picker marks that card, also as the default it follows', async () => {
+    const page = await app.open({
+      scenario: 'machineLaptopSmallGpu',
+      route: '/studio',
+      defer: true,
+      settings: { onboardingState: 'completed' },
+    })
+    await page.evaluate(() => {
+      const { state, fixtures } = window.__mock
+      const [mx250, uhd] = state.engineMachine.gpus
+      // Main's readiness: the plan left the MX250 without an engine for its memory; the integrated GPU runs 兼容模式.
+      state.engineReadiness = fixtures.engineReadyFixture({
+        devices: [
+          { deviceUuid: mx250!.id, name: mx250!.name, packageId: null, path: null, memorySkipped: true },
+          { deviceUuid: uhd!.id, name: uhd!.name, packageId: 'vulkan', path: '/e/vk' },
+        ],
+      })
+      state.settings = { ...state.settings, gpuSelection: { uuid: mx250!.id } }
+    })
+    await app.start()
+    await openStudio(page)
+    await page.getByRole('button', { name: /高级/ }).first().click()
+    await expect
+      .poll(() => page.locator('#studio-gpu option').allInnerTexts())
+      .toEqual([
+        '跟随默认（NVIDIA GeForce MX250，显存太小）',
+        'NVIDIA GeForce MX250 · 显卡 0（显存太小）',
+        'Intel(R) UHD Graphics 620 · 显卡 1',
+      ])
   })
 })

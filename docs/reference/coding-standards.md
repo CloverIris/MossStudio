@@ -48,7 +48,7 @@ Paths are relative to the repository root. Each rule names the reason in a few w
 
 ## 4. Files and settings
 
-- A file that is read back later is written atomically: temp file next to the target, then `rename`. Use `atomicWriteJson` (`src/main/services/settings.ts`) for JSON, `writeJsonAtomic` (`src/main/install/record.ts`) where an fsync matters, or the UUID-suffixed temp in `src/main/services/studioAssets.ts` for large files. A plain `writeFileSync` on a file the app reads at startup is a review finding.
+- A file that is read back later is written atomically: temp file next to the target, then `rename`. Use `writeFileAtomic` (`src/main/lib/atomicWrite.ts`) for a write that must not block the main thread (it retries the rename while Windows briefly locks the file), `atomicWriteJson` (`src/main/services/settings.ts`) for small JSON at start-up, `writeJsonAtomic` (`src/main/install/record.ts`) where an fsync matters, or the UUID-suffixed temp in `src/main/services/studioAssets.ts` for large files. A plain `writeFileSync` on a file the app reads at startup is a review finding.
 - Every path under the data root comes from `paths` in `src/main/lib/paths.ts`. Add an entry there instead of joining `root()` yourself, so the layout stays in one file and `ensureDirs` can create it.
 - Build paths with `join`/`resolve`; compare with `isInside`. Temp files use `tmpdir()`, never a literal `/tmp`. The one literal `/tmp` in `src/main/install/location.ts` is a deny-list of places not to install into.
 - A settings field is added in four places: `Settings` in `src/shared/types.ts`, `DEFAULT_SETTINGS` and the read path in `settings.ts`, `settingsUpdate` in `schemas.ts`, and the mock fixture in `apps/desktop/test/mocks/backend/fixtures.ts` (its test asserts they agree).
@@ -122,7 +122,7 @@ Places where the code does not follow these rules yet. New code follows the rule
 
 | Rule | Where the code differs today |
 | --- | --- |
-| One atomic-write helper for state files (§4) | Three helpers (`atomicWriteJson` in `settings.ts`, `writeJsonAtomic` with fsync in `install/record.ts`, `lib/engineStore.ts` with retries) and about 100 direct `writeFileSync`/`writeFile` calls in `src/main`. One helper is to move to `src/main/lib` and become the rule. |
+| One atomic-write helper for state files (§4) | Three helpers: `writeFileAtomic` in `src/main/lib/atomicWrite.ts` (async, rename retried on Windows locks; used by `lib/engineStore.ts` and the job list), `atomicWriteJson` in `settings.ts` (sync, no retry) and `writeJsonAtomic` with fsync in `install/record.ts`; plus about 100 direct `writeFileSync`/`writeFile` calls in `src/main`. The other two are to move onto `lib/atomicWrite.ts`. |
 | `codedError`, not a code inside the message (§2) | Four `throw new Error('E_DEVICE: …')` in `src/main/services/mossInfer.ts`. |
 | New comments in English (§5) | 85 older Chinese comment lines in `src/main` and `src/shared` (about 1,180 are English). They stay until the code around them changes. |
 | One IPC registry (§1) | `src/main/install/app.ts` repeats the `handle`/`toResult` helpers of `src/main/ipc.ts` for the setup window. |

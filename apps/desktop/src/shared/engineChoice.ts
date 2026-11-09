@@ -12,6 +12,7 @@ import {
   type EngineOs,
   type EnginePackage,
 } from './enginePackages'
+import { dedicatedGpuMemory, gpuMemoryTooSmall, memoryGb } from './machineFit'
 
 /**
  * Which MossInfer package each GPU of a machine should run, from what was
@@ -89,6 +90,8 @@ export interface GpuEngineChoice {
   overrideIgnored?: boolean
   /** An integrated GPU left without an engine because a discrete GPU runs one (an override can still pick it). */
   integratedSkipped?: boolean
+  /** A GPU left without an engine because its memory is too small for the model and another GPU runs one (an override can still pick it). */
+  memorySkipped?: boolean
 }
 
 export interface EnginePlan {
@@ -201,12 +204,45 @@ function usableStep(machine: EngineMachine, gpu: EngineMachineGpu, step: Step): 
   return step.pkg[0]!.kind !== 'vulkan' || vulkanUsable(machine, gpu)
 }
 
+/**
+ * The Vulkan probe's `unusable:` reasons in plain words, each finishing the
+ * sentence that starts with the GPU's name. Exactly the reasons `describe()` in
+ * MossInfer vulkan/runtime.cpp prints; any other is shown as the engine gave it.
+ */
+const VULKAN_REASONS: Record<string, string> = {
+  'needs Vulkan 1.2': '不支持 Vulkan 1.2，引擎没法在它上面运行',
+  'no bufferDeviceAddress': '缺少引擎需要的 Vulkan 功能（bufferDeviceAddress），没法在它上面运行',
+  'no shaderInt64': '缺少引擎需要的 Vulkan 功能（shaderInt64），没法在它上面运行',
+}
+
+/** The engine's Vulkan reason in plain words, or null for one this app does not know. */
+export function vulkanReasonText(reason: string): string | null {
+  return VULKAN_REASONS[reason.trim()] ?? null
+}
+
 function unsupportedReason(machine: EngineMachine, gpu: EngineMachineGpu, cudaOnly: boolean): string {
   if (cudaOnly) {
     return gpu.vendor === 'nvidia' ? `${gpu.name} 没有可用的 CUDA 引擎` : `${gpu.name} 不是 NVIDIA 显卡，远程主机只能运行 CUDA 引擎`
   }
-  if (gpu.vulkan && !gpu.vulkan.usable) return `${gpu.name} 不能运行引擎（${gpu.vulkan.reason ?? 'Vulkan 不可用'}）`
+  if (gpu.vulkan && !gpu.vulkan.usable) {
+    const known = gpu.vulkan.reason ? vulkanReasonText(gpu.vulkan.reason) : null
+    if (known) return `${gpu.name} ${known}`
+    return `${gpu.name} 不能运行引擎（${gpu.vulkan.reason ?? 'Vulkan 不可用'}）`
+  }
   return `${gpu.name} 不能运行引擎`
+}
+
+/** Of GPUs that all cannot run, the one most worth naming: a discrete card before an integrated one, then the most memory. */
+function strongestChoice(machine: EngineMachine, choices: GpuEngineChoice[]): GpuEngineChoice {
+  const rank = (choice: GpuEngineChoice): [number, number] => {
+    const gpu = machine.gpus.find((item) => item.id === choice.gpuId)
+    const discrete = gpu?.vulkan?.discrete ?? gpu?.vendor === 'nvidia'
+    return [discrete ? 1 : 0, gpu?.memoryBytes ?? 0]
+  }
+  return choices.reduce((best, choice) => {
+    const [a, b] = [rank(choice), rank(best)]
+    return a[0] > b[0] || (a[0] === b[0] && a[1] > b[1]) ? choice : best
+  })
 }
 
 /** Plan for every GPU of a machine against one release. */
@@ -271,6 +307,24 @@ export function chooseEnginePackages(machine: EngineMachine, release: EngineAsse
     }
     plan.choices.push(choice)
   }
+  // A card with too little memory for the model only fails its jobs: when another GPU runs an engine, it gets none
+  // (unless chosen in 高级), so nothing is downloaded for it and jobs go to the GPU that works.
+  const memoryOf = (gpuId: string): number | null => {
+    const gpu = machine.gpus.find((item) => item.id === gpuId)
+    return gpu ? dedicatedGpuMemory(gpu) : null
+  }
+  const tooSmall = (choice: GpuEngineChoice): boolean => gpuMemoryTooSmall(memoryOf(choice.gpuId)) && !overridden.has(choice.gpuId)
+  if (plan.choices.some((choice) => choice.package && !tooSmall(choice))) {
+    for (const choice of plan.choices) {
+      if (!choice.package || !tooSmall(choice)) continue
+      choice.package = null
+      choice.packageId = null
+      delete choice.asset
+      delete choice.tip
+      choice.reason = `${choice.gpuName} 只有 ${memoryGb(memoryOf(choice.gpuId)!)} GB 显存，默认用另一块显卡（可在 高级 › 每块 GPU 的引擎 里选用它）`
+      choice.memorySkipped = true
+    }
+  }
   // An integrated GPU is only worth the slow compatibility mode when nothing better is there:
   // with a discrete GPU that runs an engine, it gets none (unless chosen in 高级).
   const integrated = (gpuId: string): boolean => machine.gpus.find((gpu) => gpu.id === gpuId)?.vulkan?.discrete === false
@@ -294,7 +348,10 @@ export function chooseEnginePackages(machine: EngineMachine, release: EngineAsse
   }
   plan.totalBytes = plan.packages.reduce((sum, item) => sum + item.asset.size, 0)
   if (plan.packages.length === 0) {
-    plan.blocked = plan.choices.length === 1 ? `${plan.choices[0]!.reason}。` : '这台电脑的显卡都不能运行引擎。'
+    plan.blocked =
+      plan.choices.length === 1
+        ? `${plan.choices[0]!.reason}。`
+        : `这台电脑的 ${plan.choices.length} 块显卡都用不了。${strongestChoice(machine, plan.choices).reason}。`
   }
   return plan
 }
