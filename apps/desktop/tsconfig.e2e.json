@@ -7,9 +7,9 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "@shared/*": ["src/shared/*"],
-      "@renderer/*": ["src/renderer/src/*"],
-      "@test/*": ["test/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@renderer/*": ["./src/renderer/src/*"],
+      "@test/*": ["./test/*"]
     }
   },
   "include": ["e2e/**/*.ts", "e2e/**/*.tsx", "e2e/**/*.mts", "src/renderer/src/env.d.ts"]
