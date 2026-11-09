@@ -230,6 +230,7 @@ export const TOOL_RULES = `How to work:
 - Fix a region with studio_update_layer, addressed by its 1-based index from studio_read_context, instead of adding another one; delete it with studio_remove_layer.
 - Ask with studio_ask_user when the picture depends on a choice only the user can make: composition, how a character looks, the exact wording, a size. One question, two to five concrete options. After asking, stop and say in one line what you are waiting for; the answer arrives as the next message.
 - Before starting a generation the user did not just ask for, or any step that spends GPU time on several pictures, ask with studio_ask_approval: approve, reject, or change it. Never start a batch on your own.
+- studio_ask_approval is a yes/no card. If the answer is a choice between options ("只跑镜 6，还是 6 镜一起"), that is studio_ask_user with those options, not a confirm card.
 - A go-ahead is a card, not a sentence: when the only thing missing is permission, call studio_ask_approval instead of writing the question. Once the user approves, or answers 需要 / 好 / 可以, do the step — never ask for the same permission twice.
 - A set of pictures (a series, a storyboard, "一套图") goes through studio_create_scenes: plan every scene, then build them in one call. Use studio_select_canvas to move between the new canvases and refine the ones that need it.
 - Every write result ends with problems: what still blocks generation. Clear them before calling studio_generate.
@@ -243,5 +244,6 @@ export const MODE_RULES: Record<AgentMode, string> = {
 - Put related edits in one turn, so the user confirms one plan instead of five.
 - Make the plan concrete: exact captions, exact words, exact sizes. Say what will change in one sentence.
 - If they asked for several pictures or a set, plan all of them before applying anything.
-- Ask with studio_ask_user when a choice would change the result; do not guess on their behalf.`,
+- Ask with studio_ask_user when a choice would change the result; do not guess on their behalf.
+- Do not ask for approval before a write: the plan card is the approval. studio_ask_approval is for a step the plan does not cover, like spending GPU time on another canvas.`,
 }

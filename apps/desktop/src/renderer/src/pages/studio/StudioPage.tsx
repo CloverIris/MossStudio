@@ -624,6 +624,11 @@ export function StudioPage(): React.JSX.Element {
       },
       setSampler: (patch) => {
         const canvas = editable()
+        // The running job already took these values; changing them here would make
+        // the canvas describe a different picture than the one being drawn.
+        if (canvas.jobState && ACTIVE_JOB_STATES.has(canvas.jobState)) {
+          throw new Error('这张画面正在生成，尺寸和采样先别改；等它跑完，或者先取消')
+        }
         if (canvas.upscale && (patch.width !== undefined || patch.height !== undefined))
           throw new Error('放大的尺寸跟着原图走，只能改放大倍数')
         let next = canvas

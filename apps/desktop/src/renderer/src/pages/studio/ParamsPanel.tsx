@@ -235,6 +235,7 @@ function CanvasParams({
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-5">
         {readOnly ? <Notice className="mb-5">参数已固定，复制成新画面后可改</Notice> : null}
+        {!readOnly && busy ? <Notice className="mb-5">生成中：尺寸、模型和采样先锁定。描述和区域还能改，下次生成生效。</Notice> : null}
         <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-6">
           <section className="flex flex-col gap-2.5">
             {/* What the model is finally sent sits next to the description it is built from. */}
@@ -265,218 +266,226 @@ function CanvasParams({
             <InputsSection canvas={canvas} onChange={onChange} wiring={inputs} blockers={blockers} />
           ) : null}
 
-          {/* Model, size and LoRA fold into one line; it opens to change them. */}
-          <button
-            type="button"
-            data-settings-summary
-            aria-expanded={settingsOpen}
-            onClick={() => setSettingsOpen((open) => !open)}
-            className="flex h-9 items-center justify-between gap-2 rounded-md bg-well px-3 text-ui text-ink transition-colors hover:bg-well-strong"
-          >
-            <span className="tabular flex min-w-0 items-center gap-3 overflow-hidden">{summary}</span>
-            <ChevronDown
-              className={cn('size-4 shrink-0 text-ink-2 transition-transform', settingsOpen && 'rotate-180')}
-              aria-hidden="true"
-              strokeWidth={1.6}
-            />
-          </button>
-          {settingsOpen ? (
-            <>
-              <section className="flex flex-col gap-2.5">
-                <FieldLabel htmlFor="studio-model">模型</FieldLabel>
-                <ModelPicker
-                  id="studio-model"
-                  current={bundle.bundle}
-                  installed={installed}
-                  others={notDownloaded}
-                  sizes={bundleSizes}
-                  disabled={readOnly || !catalog}
-                  placeholder={catalog ? '还没有可用的模型' : '正在读取模型…'}
-                  onPick={onPickBundle}
-                  onDownload={(id) => onNavigate(`/models?bundle=${encodeURIComponent(id)}`)}
-                />
-                <LoraSection
-                  adapters={adapters}
-                  catalog={catalog}
-                  readOnly={readOnly}
-                  unsupported={loraUnsupported}
-                  onOpenAdapters={onOpenAdapters}
-                  onChange={setAdapters}
-                />
-              </section>
-
-              {canvas.upscale ? (
-                <UpscaleSection canvas={canvas} canvases={inputs?.canvases ?? []} onChange={onChange} />
-              ) : (
+          {/* Model, size and LoRA fold into one line; it opens to change them. While the
+              canvas generates these are the values the running job already took, so they
+              wait for it to finish. */}
+          <fieldset disabled={busy} className="flex min-w-0 flex-col gap-6">
+            <button
+              type="button"
+              data-settings-summary
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen((open) => !open)}
+              className="flex h-9 items-center justify-between gap-2 rounded-md bg-well px-3 text-ui text-ink transition-colors hover:bg-well-strong"
+            >
+              <span className="tabular flex min-w-0 items-center gap-3 overflow-hidden">{summary}</span>
+              <ChevronDown
+                className={cn('size-4 shrink-0 text-ink-2 transition-transform', settingsOpen && 'rotate-180')}
+                aria-hidden="true"
+                strokeWidth={1.6}
+              />
+            </button>
+            {settingsOpen ? (
+              <>
                 <section className="flex flex-col gap-2.5">
-                  <FieldLabel value={`${canvas.width} × ${canvas.height}`}>尺寸</FieldLabel>
-                  <Segmented<SizePresetId>
-                    block
-                    label="尺寸"
-                    value={sizePreset}
-                    onChange={(value) => {
-                      if (value === 'custom') {
-                        setCustomSize(true)
-                        return
-                      }
-                      setCustomSize(false)
-                      const preset = SIZE_PRESETS.find((item) => item.id === value)
-                      if (preset) onChange((current) => resizeCanvas(current, preset.width, preset.height))
-                    }}
-                    options={[
-                      ...SIZE_PRESETS.map((preset) => ({ value: preset.id, label: preset.id, hint: `${preset.width} × ${preset.height}` })),
-                      { value: 'custom' as const, label: '自定义' },
-                    ]}
-                    className="[&>button]:px-1"
+                  <FieldLabel htmlFor="studio-model">模型</FieldLabel>
+                  <ModelPicker
+                    id="studio-model"
+                    current={bundle.bundle}
+                    installed={installed}
+                    others={notDownloaded}
+                    sizes={bundleSizes}
+                    disabled={readOnly || !catalog}
+                    placeholder={catalog ? '还没有可用的模型' : '正在读取模型…'}
+                    onPick={onPickBundle}
+                    onDownload={(id) => onNavigate(`/models?bundle=${encodeURIComponent(id)}`)}
                   />
-                  {sizePreset === 'custom' && !readOnly ? (
-                    <div className="flex items-center gap-2">
-                      <DimensionInput
-                        label="宽度"
-                        value={canvas.width}
-                        onCommit={(width) => onChange((current) => resizeCanvas(current, width, current.height))}
-                      />
-                      <span aria-hidden="true" className="text-ink-2">
-                        ×
-                      </span>
-                      <DimensionInput
-                        label="高度"
-                        value={canvas.height}
-                        onCommit={(height) => onChange((current) => resizeCanvas(current, current.width, height))}
-                      />
-                    </div>
-                  ) : null}
+                  <LoraSection
+                    adapters={adapters}
+                    catalog={catalog}
+                    readOnly={readOnly}
+                    unsupported={loraUnsupported}
+                    onOpenAdapters={onOpenAdapters}
+                    onChange={setAdapters}
+                  />
                 </section>
-              )}
-            </>
-          ) : null}
 
-          <section className="flex flex-col gap-2.5">
-            <FieldLabel value={qualityLabel(canvas.steps)}>质量</FieldLabel>
-            <Segmented<QualityId | 'custom'>
-              block
-              label="质量"
-              value={quality}
-              onChange={(value) => {
-                if (value === 'custom') return
-                const preset = qualityPreset(value)
-                onChange((current) => ({ ...current, steps: preset.steps, cfg: preset.cfg }))
-              }}
-              options={QUALITY_PRESETS.map((preset) => ({ value: preset.id, label: preset.label, hint: preset.hint }))}
-            />
-          </section>
+                {canvas.upscale ? (
+                  <UpscaleSection canvas={canvas} canvases={inputs?.canvases ?? []} onChange={onChange} />
+                ) : (
+                  <section className="flex flex-col gap-2.5">
+                    <FieldLabel value={`${canvas.width} × ${canvas.height}`}>尺寸</FieldLabel>
+                    <Segmented<SizePresetId>
+                      block
+                      label="尺寸"
+                      value={sizePreset}
+                      onChange={(value) => {
+                        if (value === 'custom') {
+                          setCustomSize(true)
+                          return
+                        }
+                        setCustomSize(false)
+                        const preset = SIZE_PRESETS.find((item) => item.id === value)
+                        if (preset) onChange((current) => resizeCanvas(current, preset.width, preset.height))
+                      }}
+                      options={[
+                        ...SIZE_PRESETS.map((preset) => ({
+                          value: preset.id,
+                          label: preset.id,
+                          hint: `${preset.width} × ${preset.height}`,
+                        })),
+                        { value: 'custom' as const, label: '自定义' },
+                      ]}
+                      className="[&>button]:px-1"
+                    />
+                    {sizePreset === 'custom' && !readOnly ? (
+                      <div className="flex items-center gap-2">
+                        <DimensionInput
+                          label="宽度"
+                          value={canvas.width}
+                          onCommit={(width) => onChange((current) => resizeCanvas(current, width, current.height))}
+                        />
+                        <span aria-hidden="true" className="text-ink-2">
+                          ×
+                        </span>
+                        <DimensionInput
+                          label="高度"
+                          value={canvas.height}
+                          onCommit={(height) => onChange((current) => resizeCanvas(current, current.width, height))}
+                        />
+                      </div>
+                    ) : null}
+                  </section>
+                )}
+              </>
+            ) : null}
 
-          <Advanced dense title="高级设置" summary={advancedSummary} className="-mx-3.5">
-            <div className="flex flex-col gap-5 px-3.5 pb-2 pt-2">
-              <section className="flex flex-col gap-2">
-                <FieldLabel htmlFor="studio-seed">种子</FieldLabel>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    id="studio-seed"
-                    inputMode="numeric"
-                    className="tabular"
-                    value={seedLocked ? String(canvas.seed) : ''}
-                    placeholder={canvas.seed ? `随机 · 上次 ${canvas.seed}` : '随机'}
-                    onChange={(event) => {
-                      const seed = parseSeed(event.target.value)
-                      if (event.target.value.trim() === '') onChange((current) => ({ ...current, seedLocked: false }))
-                      else if (seed !== null) onChange((current) => ({ ...current, seed, seedLocked: true }))
-                    }}
-                  />
-                  <IconButton
-                    label={seedLocked ? '解锁种子（每次随机）' : '锁定种子（保持不变）'}
-                    aria-pressed={seedLocked}
-                    className={cn(seedLocked && 'bg-well-strong text-ink')}
-                    onClick={() => onChange((current) => ({ ...current, seedLocked: !isSeedLocked(current) }))}
-                  >
-                    {seedLocked ? <Lock className="size-4" strokeWidth={1.6} /> : <LockOpen className="size-4" strokeWidth={1.6} />}
-                  </IconButton>
-                </div>
-              </section>
+            <section className="flex flex-col gap-2.5">
+              <FieldLabel value={qualityLabel(canvas.steps)}>质量</FieldLabel>
+              <Segmented<QualityId | 'custom'>
+                block
+                label="质量"
+                value={quality}
+                onChange={(value) => {
+                  if (value === 'custom') return
+                  const preset = qualityPreset(value)
+                  onChange((current) => ({ ...current, steps: preset.steps, cfg: preset.cfg }))
+                }}
+                options={QUALITY_PRESETS.map((preset) => ({ value: preset.id, label: preset.label, hint: preset.hint }))}
+              />
+            </section>
 
-              <section className="flex flex-col gap-2">
-                <SliderField
-                  id="studio-cfg"
-                  label="CFG"
-                  min={0}
-                  max={10}
-                  step={0.5}
-                  value={canvas.cfg}
-                  format={(value) => String(value)}
-                  onChange={(cfg) => onChange((current) => ({ ...current, cfg }))}
-                />
-              </section>
-
-              <section className="flex flex-col gap-2">
-                <FieldLabel htmlFor="studio-negative">不想出现的内容</FieldLabel>
-                <Textarea
-                  id="studio-negative"
-                  value={canvas.negative}
-                  onChange={(event) => onChange((current) => ({ ...current, negative: event.target.value }))}
-                  className="min-h-[64px] resize-none"
-                  rows={2}
-                />
-              </section>
-
-              {inputs ? <SamplingSection canvas={canvas} features={inputs.features} onChange={onChange} /> : null}
-
-              {remoteEnabled ? (
+            <Advanced dense title="高级设置" summary={advancedSummary} className="-mx-3.5">
+              <div className="flex flex-col gap-5 px-3.5 pb-2 pt-2">
                 <section className="flex flex-col gap-2">
-                  <FieldLabel htmlFor="studio-location">运行位置</FieldLabel>
-                  <Select id="studio-location" value={remoteHost?.id ?? ''} onChange={(event) => onRemoteHostChange(event.target.value)}>
-                    <option value="">这台电脑</option>
-                    {hosts.map((host) => (
-                      <option key={host.id} value={host.id}>
-                        {host.status === 'error' ? `${host.name}（连接不上）` : host.name}
-                      </option>
-                    ))}
-                  </Select>
-                </section>
-              ) : null}
-
-              {remoteHost ? (
-                remoteHost.devices.length ? (
-                  <section className="flex flex-col gap-2">
-                    <FieldLabel htmlFor="studio-remote-gpu">显卡</FieldLabel>
-                    <Select
-                      id="studio-remote-gpu"
-                      value={canvas.deviceId ?? ''}
-                      onChange={(event) => onChange((current) => ({ ...current, deviceId: event.target.value || undefined }))}
+                  <FieldLabel htmlFor="studio-seed">种子</FieldLabel>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      id="studio-seed"
+                      inputMode="numeric"
+                      className="tabular"
+                      value={seedLocked ? String(canvas.seed) : ''}
+                      placeholder={canvas.seed ? `随机 · 上次 ${canvas.seed}` : '随机'}
+                      onChange={(event) => {
+                        const seed = parseSeed(event.target.value)
+                        if (event.target.value.trim() === '') onChange((current) => ({ ...current, seedLocked: false }))
+                        else if (seed !== null) onChange((current) => ({ ...current, seed, seedLocked: true }))
+                      }}
+                    />
+                    <IconButton
+                      label={seedLocked ? '解锁种子（每次随机）' : '锁定种子（保持不变）'}
+                      aria-pressed={seedLocked}
+                      className={cn(seedLocked && 'bg-well-strong text-ink')}
+                      onClick={() => onChange((current) => ({ ...current, seedLocked: !isSeedLocked(current) }))}
                     >
-                      <option value="">自动选择</option>
-                      {remoteHost.devices.map((device) => (
-                        <option key={device.id} value={device.id}>
-                          {device.name}
+                      {seedLocked ? <Lock className="size-4" strokeWidth={1.6} /> : <LockOpen className="size-4" strokeWidth={1.6} />}
+                    </IconButton>
+                  </div>
+                </section>
+
+                <section className="flex flex-col gap-2">
+                  <SliderField
+                    id="studio-cfg"
+                    label="CFG"
+                    min={0}
+                    max={10}
+                    step={0.5}
+                    value={canvas.cfg}
+                    format={(value) => String(value)}
+                    onChange={(cfg) => onChange((current) => ({ ...current, cfg }))}
+                  />
+                </section>
+
+                <section className="flex flex-col gap-2">
+                  <FieldLabel htmlFor="studio-negative">不想出现的内容</FieldLabel>
+                  <Textarea
+                    id="studio-negative"
+                    value={canvas.negative}
+                    onChange={(event) => onChange((current) => ({ ...current, negative: event.target.value }))}
+                    className="min-h-[64px] resize-none"
+                    rows={2}
+                  />
+                </section>
+
+                {inputs ? <SamplingSection canvas={canvas} features={inputs.features} onChange={onChange} /> : null}
+
+                {remoteEnabled ? (
+                  <section className="flex flex-col gap-2">
+                    <FieldLabel htmlFor="studio-location">运行位置</FieldLabel>
+                    <Select id="studio-location" value={remoteHost?.id ?? ''} onChange={(event) => onRemoteHostChange(event.target.value)}>
+                      <option value="">这台电脑</option>
+                      {hosts.map((host) => (
+                        <option key={host.id} value={host.id}>
+                          {host.status === 'error' ? `${host.name}（连接不上）` : host.name}
                         </option>
                       ))}
                     </Select>
                   </section>
-                ) : null
-              ) : (
-                <section className="flex flex-col gap-2">
-                  <FieldLabel htmlFor="studio-gpu">显卡</FieldLabel>
-                  <Select
-                    id="studio-gpu"
-                    value={canvas.deviceUuid ?? ''}
-                    onChange={(event) => onChange((current) => ({ ...current, deviceUuid: event.target.value || undefined }))}
-                  >
-                    <option value="">{followDefaultLabel(defaultGpu, engineReadiness)}</option>
-                    {boundMissing ? (
-                      <option value={canvas.deviceUuid} disabled>
-                        之前选的显卡现在找不到
-                      </option>
-                    ) : null}
-                    {(gpuInventory?.devices ?? []).map((device) => (
-                      <option key={device.uuid} value={device.uuid}>
-                        {gpuPickerLabel(device, engineReadiness)}
-                      </option>
-                    ))}
-                  </Select>
-                  {boundMissing ? <Notice tone="warn">之前选的显卡现在找不到，生成前请换一个或改回默认。</Notice> : null}
-                </section>
-              )}
-            </div>
-          </Advanced>
+                ) : null}
+
+                {remoteHost ? (
+                  remoteHost.devices.length ? (
+                    <section className="flex flex-col gap-2">
+                      <FieldLabel htmlFor="studio-remote-gpu">显卡</FieldLabel>
+                      <Select
+                        id="studio-remote-gpu"
+                        value={canvas.deviceId ?? ''}
+                        onChange={(event) => onChange((current) => ({ ...current, deviceId: event.target.value || undefined }))}
+                      >
+                        <option value="">自动选择</option>
+                        {remoteHost.devices.map((device) => (
+                          <option key={device.id} value={device.id}>
+                            {device.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </section>
+                  ) : null
+                ) : (
+                  <section className="flex flex-col gap-2">
+                    <FieldLabel htmlFor="studio-gpu">显卡</FieldLabel>
+                    <Select
+                      id="studio-gpu"
+                      value={canvas.deviceUuid ?? ''}
+                      onChange={(event) => onChange((current) => ({ ...current, deviceUuid: event.target.value || undefined }))}
+                    >
+                      <option value="">{followDefaultLabel(defaultGpu, engineReadiness)}</option>
+                      {boundMissing ? (
+                        <option value={canvas.deviceUuid} disabled>
+                          之前选的显卡现在找不到
+                        </option>
+                      ) : null}
+                      {(gpuInventory?.devices ?? []).map((device) => (
+                        <option key={device.uuid} value={device.uuid}>
+                          {gpuPickerLabel(device, engineReadiness)}
+                        </option>
+                      ))}
+                    </Select>
+                    {boundMissing ? <Notice tone="warn">之前选的显卡现在找不到，生成前请换一个或改回默认。</Notice> : null}
+                  </section>
+                )}
+              </div>
+            </Advanced>
+          </fieldset>
         </fieldset>
       </div>
 

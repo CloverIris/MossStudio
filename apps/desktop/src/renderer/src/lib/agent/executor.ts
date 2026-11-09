@@ -48,18 +48,24 @@ const HANDLERS: { [N in ToolName]: Handler<N> } = {
     card: makeCard({ kind: 'choice', title: question, why, multiple, allowFreeText, options }),
   }),
 
-  studio_ask_approval: ({ question, why, approveLabel, rejectLabel }) => ({
-    shown: true,
-    card: makeCard({
-      kind: 'confirm',
-      title: question,
-      why,
-      options: [
-        { id: 'approve', label: approveLabel ?? '批准' },
-        { id: 'reject', label: rejectLabel ?? '拒绝' },
-      ],
-    }),
-  }),
+  studio_ask_approval: ({ question, why, approveLabel, rejectLabel }) => {
+    // A confirm card only holds 批准/拒绝; an either-or question needs the choice card.
+    if (/还是|\bor\b/i.test(question)) {
+      throw new ToolFailure('确认卡只能问是/否，两个方案二选一要用 studio_ask_user 出选择卡', { tool: 'studio_ask_user' })
+    }
+    return {
+      shown: true,
+      card: makeCard({
+        kind: 'confirm',
+        title: question,
+        why,
+        options: [
+          { id: 'approve', label: approveLabel ?? '批准' },
+          { id: 'reject', label: rejectLabel ?? '拒绝' },
+        ],
+      }),
+    }
+  },
 
   studio_set_prompt: ({ prompt }, api) => api.setPrompt(prompt),
 

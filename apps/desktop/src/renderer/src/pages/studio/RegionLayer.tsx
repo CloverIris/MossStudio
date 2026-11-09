@@ -147,6 +147,7 @@ export function RegionLayer({
   // Where the last click landed and which box of the stack it took: clicking the
   // same spot again walks one box down, so a covered region is reachable.
   const stackPick = useRef<{ key: string; at: [number, number]; index: number } | null>(null)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
   const visible = canvas.layers.filter((layer) => layer.visible !== false)
 
   const point = (event: React.PointerEvent): [number, number] => {
@@ -164,17 +165,25 @@ export function RegionLayer({
     event.stopPropagation()
 
     // Overlapping boxes: a click takes the topmost one, and another click on the
-    // same spot takes the next one down. Dragging a corner keeps its own box.
+    // same spot takes the next one down. Alt goes straight under the selected box.
     if (!handle) {
       const at = point(event)
       const stack = regionsAtPoint(canvas.layers, at)
       if (stack.length > 1) {
-        const previous = stackPick.current
-        const key = stack.map((item) => item.id).join(',')
-        const again = previous !== null && previous.key === key && Math.hypot(at[0] - previous.at[0], at[1] - previous.at[1]) < 8
-        const index = again ? (previous.index + 1) % stack.length : 0
-        stackPick.current = { key, at, index }
-        layer = stack[index] ?? layer
+        if (event.altKey) {
+          const selectedAt = stack.findIndex((item) => item.id === selectedRegionId)
+          const topAt = stack.findIndex((item) => item.id === layer?.id)
+          const index = (selectedAt >= 0 ? selectedAt : topAt) + 1
+          layer = stack[index % stack.length] ?? layer
+          stackPick.current = null
+        } else {
+          const previous = stackPick.current
+          const key = stack.map((item) => item.id).join(',')
+          const again = previous !== null && previous.key === key && Math.hypot(at[0] - previous.at[0], at[1] - previous.at[1]) < 8
+          const index = again ? (previous.index + 1) % stack.length : 0
+          stackPick.current = { key, at, index }
+          layer = stack[index] ?? layer
+        }
       } else {
         stackPick.current = null
       }
@@ -217,19 +226,40 @@ export function RegionLayer({
     if (gesture.owner.hasPointerCapture(event.pointerId)) gesture.owner.releasePointerCapture(event.pointerId)
   }
 
+  /**
+   * Tab walks the boxes of this canvas and Escape leaves the board. Only while the
+   * board has focus, so it never steals Tab from the panels around it.
+   */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (!interactive) return
+    if (event.key === 'Escape') {
+      surface.current?.blur()
+      return
+    }
+    if (event.key !== 'Tab' || !visible.length) return
+    event.preventDefault()
+    const at = visible.findIndex((layer) => layer.id === selectedRegionId)
+    const step = event.shiftKey ? -1 : 1
+    const next = visible[(at + step + visible.length) % visible.length]
+    if (next) onSelectRegion(next.id)
+  }
+
   return (
     <div
       ref={surface}
       data-region-surface
+      tabIndex={interactive ? 0 : -1}
+      onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={finish}
       onPointerCancel={finish}
       // The empty area lets presses through to the face: a drag there draws a box (see CanvasCard).
-      className="pointer-events-none absolute inset-0 touch-none select-none"
+      className="pointer-events-none absolute inset-0 touch-none outline-none select-none"
     >
       {visible.map((layer) => {
         const selected = interactive && layer.id === selectedRegionId
+        const hovered = interactive && hoveredId === layer.id
         const words = regionWords(layer)
         const Icon = KIND_ICON[layer.kind]
         return (
@@ -237,6 +267,8 @@ export function RegionLayer({
             key={layer.id}
             data-region-id={layer.id}
             title={`${KIND_LABEL[layer.kind]}${words ? ` · ${words}` : ''}`}
+            onPointerEnter={() => setHoveredId(layer.id)}
+            onPointerLeave={() => setHoveredId((current) => (current === layer.id ? null : current))}
             onDoubleClick={(event) => {
               if (!interactive) return
               event.stopPropagation()
@@ -250,13 +282,16 @@ export function RegionLayer({
             )}
             style={{ ...percentBox(layer.bbox, canvas), opacity: Math.max(0.35, layer.opacity ?? 1) }}
           >
-            <span
-              data-region-words
-              className="pointer-events-none absolute left-1 top-1 flex max-w-[calc(100%-8px)] items-center gap-1 rounded-[4px] bg-raised/85 px-1 py-px text-micro text-ink"
-            >
-              <Icon className="size-3 shrink-0 text-ink-2" aria-label={KIND_LABEL[layer.kind]} strokeWidth={1.8} />
-              {words ? <span className="truncate">{words}</span> : null}
-            </span>
+            {/* Words only on the box in hand: overlapping labels used to print over each other. */}
+            {selected || hovered ? (
+              <span
+                data-region-words
+                className="pointer-events-none absolute left-1 top-1 flex max-w-[calc(100%-8px)] items-center gap-1 rounded-[4px] bg-raised/85 px-1 py-px text-micro text-ink"
+              >
+                <Icon className="size-3 shrink-0 text-ink-2" aria-label={KIND_LABEL[layer.kind]} strokeWidth={1.8} />
+                {words ? <span className="truncate">{words}</span> : null}
+              </span>
+            ) : null}
             {selected && !layer.locked
               ? HANDLES.map(({ corner, className }) => (
                   <span
@@ -264,7 +299,11 @@ export function RegionLayer({
                     data-resize-id={layer.id}
                     data-corner={corner}
                     aria-hidden="true"
-                    className={cn('absolute size-2.5 rounded-[2px] bg-accent', className)}
+                    // 10px is what you see; the pseudo-element gives the pointer ~16px to grab.
+                    className={cn(
+                      "absolute size-2.5 rounded-[2px] bg-accent after:absolute after:-inset-1.5 after:content-['']",
+                      className,
+                    )}
                   />
                 ))
               : null}
