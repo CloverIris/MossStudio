@@ -5,10 +5,10 @@
     "types": ["node", "vite/client"],
     "noEmit": true,
     "paths": {
-      "@shared/*": ["src/shared/*"],
-      "@main/*": ["src/main/*"],
-      "@renderer/*": ["src/renderer/src/*"],
-      "@test/*": ["test/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@main/*": ["./src/main/*"],
+      "@renderer/*": ["./src/renderer/src/*"],
+      "@test/*": ["./test/*"]
     }
   },
   "include": [
