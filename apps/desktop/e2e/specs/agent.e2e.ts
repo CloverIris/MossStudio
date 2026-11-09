@@ -128,10 +128,13 @@ describe('assistant', () => {
       const modes = page.getByRole('group', { name: '助手模式' })
       expect(await modes.getByRole('button').allTextContents()).toEqual(['自主', '审批'])
       expect(await modes.getByRole('button', { name: '审批' }).getAttribute('aria-pressed')).toBe('true')
-      for (const gone of ['两种模式的区别', 'Enter 发送', '对话轮次', '润色描述']) {
+      for (const gone of ['两种模式的区别', 'Enter 发送', '润色描述']) {
         expect(await page.getByText(gone).count(), gone).toBe(0)
       }
-      expect(await page.getByRole('navigation', { name: '对话轮次' }).count()).toBe(0)
+      // Two user turns: one dot each, the current one marked. A single turn has no rail.
+      const rail = page.getByRole('navigation', { name: '对话轮次' })
+      expect(await rail.locator('button').count()).toBe(2)
+      expect(await rail.locator('button[aria-current="true"]').count()).toBe(1)
 
       // What the assistant did, in words; the answered question folded to one line, its answer the user's bubble.
       await expect.poll(() => page.locator('[data-tool-trace]').first().getByRole('button').innerText()).toBe('查看画面、改写描述')
