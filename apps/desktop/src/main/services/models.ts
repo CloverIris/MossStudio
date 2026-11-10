@@ -13,7 +13,9 @@ import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
 import { assertFreeSpace, freeSpace, nearestExisting } from '../lib/disk'
 import { getLastNetwork } from './network'
-import { contentDir } from '../lib/content'
+import { app } from 'electron'
+import { catalogProblems, entriesForApp } from '@shared/modelCatalog'
+import { catalogOverrideDir } from '../lib/content'
 import { listJobs } from './supervisor'
 import packagedCatalog from '../../../resources/models.json'
 import {
@@ -254,6 +256,39 @@ async function fetchText(url: string, timeoutMs = 8000): Promise<string> {
   return response.text()
 }
 
+const CATALOG_PATH = '/apps/desktop/resources/models.json'
+
+/**
+ * The catalog on `main`, else the last copy of it this app could use (so a model added after the
+ * release stays listed offline), else null for the packaged one. A copy older than the packaged
+ * catalog loses to it: an update brings a newer list than a copy saved before it.
+ */
+async function downloadedCatalog(): Promise<{ raw: RawCatalog; source: 'remote' | 'cache' } | null> {
+  const saved = join(paths.cache(), 'models.json')
+  try {
+    const base = getLastNetwork()?.selected.manifest ?? 'https://raw.githubusercontent.com/ShallowElec/MossStudio/main'
+    const text = await fetchText(`${base.replace(/\/$/, '')}${CATALOG_PATH}`)
+    const raw = JSON.parse(text) as RawCatalog
+    if (catalogProblems(raw).length === 0) {
+      // Saving is a convenience for the next offline start; failing to save loses nothing now.
+      await mkdir(paths.cache(), { recursive: true })
+        .then(() => writeFile(saved, text))
+        .catch(() => undefined)
+      return { raw, source: 'remote' }
+    }
+  } catch {
+    /* Offline, or the mirror is unreachable: the saved copy below. */
+  }
+  try {
+    const raw = JSON.parse(await readFile(saved, 'utf8')) as RawCatalog
+    const older = (raw.updated_at ?? '') < (BUILTIN.updated_at ?? '')
+    if (!older && catalogProblems(raw).length === 0) return { raw, source: 'cache' }
+  } catch {
+    /* No saved copy yet. */
+  }
+  return null
+}
+
 function importedModelsIndex(settings: Settings): string {
   return join(paths.modelImports(settings.modelsRoot), 'index.json')
 }
@@ -360,21 +395,21 @@ export async function getCatalog(settings: Settings, force = false): Promise<Cat
   if (catalogCache && catalogRoot === key && !force) return catalogCache
   let raw = BUILTIN
   let source: Catalog['source'] = 'builtin'
-  const local = contentDir()
+  const local = catalogOverrideDir()
   try {
     if (local && existsSync(join(local, 'models.json'))) {
       raw = JSON.parse(await readFile(join(local, 'models.json'), 'utf8')) as RawCatalog
       source = 'local'
     } else {
-      const base = getLastNetwork()?.selected.manifest ?? 'https://raw.githubusercontent.com/ShallowElec/MossStudio/main'
-      raw = JSON.parse(await fetchText(`${base.replace(/\/$/, '')}/apps/desktop/resources/models.json`)) as RawCatalog
-      source = 'remote'
+      const downloaded = await downloadedCatalog()
+      if (downloaded) ({ raw, source } = downloaded)
     }
     if (!Array.isArray(raw.models)) throw new Error('无效目录')
   } catch {
     raw = BUILTIN
     source = 'builtin'
   }
+  raw = entriesForApp(raw, app.getVersion())
   // Old remote catalogs cannot reintroduce whole-repo downloads for known models.
   if (raw.schema_version < 2) {
     const known = new Set([

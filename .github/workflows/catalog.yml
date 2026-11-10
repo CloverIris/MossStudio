@@ -1,0 +1,35 @@
+name: Model catalog
+
+# Released apps read apps/desktop/resources/models.json from main, through raw.githubusercontent.com
+# (cached about five minutes) or jsDelivr, which can serve an old copy for hours. After a merge that changes
+# the file, ask jsDelivr to drop its copy so a new model reaches every app within minutes.
+# The file was checked on the pull request (test/shared/modelCatalog.test.ts); this only refreshes caches.
+on:
+  push:
+    branches: [main]
+    paths: [apps/desktop/resources/models.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  purge:
+    name: Refresh the jsDelivr copy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Purge
+        run: |
+          url='https://purge.jsdelivr.net/gh/ShallowElec/MossStudio@main/apps/desktop/resources/models.json'
+          for attempt in 1 2 3 4 5; do
+            if body=$(curl --fail --silent --show-error --max-time 30 "$url"); then
+              echo "$body"
+              # A purge refused for rate limits still answers 200 and marks the path throttled.
+              if ! grep -q '"throttled":true' <<< "$body"; then exit 0; fi
+            fi
+            echo "attempt $attempt did not purge; retrying"
+            sleep $((attempt * 10))
+          done
+          echo "::error::jsDelivr did not purge models.json; apps that read it there see the change once its cache expires"
+          exit 1

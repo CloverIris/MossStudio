@@ -20,7 +20,7 @@ import {
 const contentDir = vi.hoisted(() => vi.fn<() => string | null>())
 const listJobs = vi.hoisted(() => vi.fn<() => Promise<Array<{ state: string }>>>())
 const fetchHf = vi.hoisted(() => vi.fn<(url: string) => Promise<Response>>())
-vi.mock('@main/lib/content', () => ({ contentDir }))
+vi.mock('@main/lib/content', () => ({ contentDir, catalogOverrideDir: () => contentDir() }))
 vi.mock('@main/services/supervisor', () => ({ listJobs }))
 vi.mock('@main/services/network', () => ({ getLastNetwork: () => null }))
 vi.mock('@main/services/hfNetwork', () => ({ fetchHf }))
