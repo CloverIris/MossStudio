@@ -161,7 +161,13 @@ export interface Settings {
   lanWebEnabled: boolean
   lanWebPort: number | null
   lanWebInstanceId: string | null
+  /** Mirrored into install.json, which older launchers read: only stable or beta. */
   updateChannel: 'stable' | 'beta'
+  /**
+   * 每日构建: follow the nightly feed (with updateChannel 'beta'). A separate flag so that a version
+   * from before nightlies, reached by rolling back, reads the choice as 测试版 and keeps updating.
+   */
+  nightlyUpdates: boolean
   /** 自动更新: download and prepare new versions in the background; the next start installs them. */
   autoDownloadUpdates: boolean
   /** Set by 回到上一个版本: this version (and older) is not offered again until the user asks. */

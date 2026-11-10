@@ -26,11 +26,29 @@ Test builds from `build.yml` trust an ephemeral key and read a local feed. They 
 
 ## Nightly builds
 
-`.github/workflows/nightly.yml` builds `main` every night at 18:00 UTC. It replaces the rolling `nightly` prerelease, moving its tag to the new commit, and uploads the setups and portable packages for all four platforms.
+`.github/workflows/nightly.yml` builds `main` every night at 18:00 UTC. It replaces the rolling `nightly` prerelease, moving its tag to the new commit, and uploads the setups and portable packages for all four platforms. With a nightly key it also updates everyone on 每日构建 ([ADR-0014](../decisions/0014-nightly-update-channel.md)).
 
-- The version is `<next release>-nightly.<UTC date>`, for example `1.0.3-nightly.20261108`. The next release is the `package.json` version, or one patch later when that version is already tagged. So a nightly always ranks below the release that follows it.
-- A nightly is download-only. It has no full or delta packages, it is on no update feed, and it never enters the `release` environment or touches the signing key.
+- The version is `<next release>-nightly.<UTC date>.<run>`, for example `1.0.3-nightly.20261108.42` (`nightlyVersion` in `tools/release/lib/version.mjs`). The next release is the `package.json` version, or one patch later when that version is already tagged, so a nightly always ranks below the release that follows it. The run number orders two builds of one day.
 - The scheduled run skips a night when `main` is still at the `nightly` tag. To build one now, run `gh workflow run nightly.yml`.
+- The job `publish` runs in the `nightly` environment. When it holds `MOSS_NIGHTLY_SIGNING_KEY`, the job:
+  1. fetches the last nightly's file lists and its verified `update-nightly.json` (`fetch-nightly.mjs`);
+  2. builds deltas from the last nightly;
+  3. writes `update-nightly.json` (`make-feed.mjs --nightly`), but only when it is newer than the published one;
+  4. signs it and checks it against `NIGHTLY_UPDATE_KEYS`;
+  5. uploads the full packages, file lists and deltas to the `updates` release, then the `.sig`, then the feed, and only then deletes the packages of nightlies older than the previous one (`staleNightlyPackages`), so a download that started from the old feed can finish.
+- Without the secret, a nightly is download-only, as before: no feed and no update packages.
+- The nightly workflow never enters the `release` environment and never sees the production key.
+
+### Setting up the nightly key (a maintainer, once)
+
+1. Run `pnpm release:keygen --nightly`. It prints a `NIGHTLY_UPDATE_KEYS` entry and the private key.
+2. Add the entry to `NIGHTLY_UPDATE_KEYS` in `apps/desktop/src/shared/updateKeys.ts` in a PR and merge it. Clients trust the key once they run a version that has it, so the first nightly after the merge is the first that 每日构建 can update from.
+3. In GitHub, **Settings › Environments › `nightly`**:
+   - add the secret `MOSS_NIGHTLY_SIGNING_KEY` (the private key);
+   - limit deployment to the `main` branch;
+   - no reviewer: clients accept this key for `update-nightly.json` only.
+
+To rotate it, follow [Rotating the signing key](#rotating-the-signing-key) with `NIGHTLY_UPDATE_KEYS` and nightlies instead of releases. Remove the old public key only after a nightly signed with the new key has been published: `fetch-nightly.mjs` checks the published feed against `NIGHTLY_UPDATE_KEYS` and stops the run when no key verifies it.
 
 ## One-time setup (a maintainer)
 
@@ -78,3 +96,4 @@ To run the whole install → update → rollback → uninstall path locally befo
 
 - The binaries are not code-signed (Windows Authenticode, macOS notarization). Users see the system's first-run warning.
 - `PRODUCTION_UPDATE_KEYS` is empty until the one-time setup above is done.
+- `NIGHTLY_UPDATE_KEYS` is empty until the nightly key is set up; nightlies are download-only until then.

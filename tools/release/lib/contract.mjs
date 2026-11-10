@@ -20,3 +20,9 @@ export async function loadProductionKeys() {
   const module = await load('updateKeys.ts')
   return [...module.PRODUCTION_UPDATE_KEYS]
 }
+
+/** The keys clients trust for update-nightly.json only. */
+export async function loadNightlyKeys() {
+  const module = await load('updateKeys.ts')
+  return [...module.NIGHTLY_UPDATE_KEYS]
+}

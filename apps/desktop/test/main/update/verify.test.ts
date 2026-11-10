@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { feedUrl } from '@shared/install'
-import { PRODUCTION_UPDATE_KEYS, parseUpdateKeys, updateBuildDefines } from '@shared/updateKeys'
-import { trustedUpdateKeys, updateFeedUrl } from '@main/update/keys'
+import { NIGHTLY_UPDATE_KEYS, PRODUCTION_UPDATE_KEYS, parseUpdateKeys, updateBuildDefines } from '@shared/updateKeys'
+import { hasAnyUpdateKey, trustedUpdateKeys, updateFeedUrl } from '@main/update/keys'
 import { FeedSignatureError, parseFileList, parseVerifiedFeed, verifyFeedSignature } from '@main/update/verify'
 import { feedFixture, makeKey, signFeed } from './helpers'
 
@@ -130,10 +130,27 @@ describe('keys and build defines', () => {
   it('trusts only the production keys when the test-key define is absent, whatever the runtime env says', () => {
     process.env['MOSS_UPDATE_TEST_KEYS'] = JSON.stringify([key.publicKey])
     try {
-      expect(trustedUpdateKeys()).toEqual([...PRODUCTION_UPDATE_KEYS])
+      expect(trustedUpdateKeys('stable')).toEqual([...PRODUCTION_UPDATE_KEYS])
     } finally {
       delete process.env['MOSS_UPDATE_TEST_KEYS']
     }
+  })
+
+  it('trusts the nightly keys for the nightly feed only', () => {
+    const production = [makeKey('production').publicKey]
+    const nightly = [makeKey('nightly').publicKey]
+    expect(trustedUpdateKeys('stable', { production, nightly })).toEqual(production)
+    expect(trustedUpdateKeys('beta', { production, nightly })).toEqual(production)
+    expect(trustedUpdateKeys('nightly', { production, nightly })).toEqual([...production, ...nightly])
+    // A build with only a nightly key can still update, on 每日构建.
+    expect(hasAnyUpdateKey((channel) => trustedUpdateKeys(channel, { production: [], nightly }))).toBe(true)
+    expect(hasAnyUpdateKey((channel) => trustedUpdateKeys(channel, { production: [], nightly: [] }))).toBe(false)
+  })
+
+  it('ships no key that signs both the production and the nightly feeds', () => {
+    const production = new Set(PRODUCTION_UPDATE_KEYS.map((item) => item.publicKey))
+    expect(NIGHTLY_UPDATE_KEYS.filter((item) => production.has(item.publicKey))).toEqual([])
+    expect(() => parseUpdateKeys(NIGHTLY_UPDATE_KEYS)).not.toThrow()
   })
 
   it('resolves the feed URL, with the CI override as a template or a folder', () => {

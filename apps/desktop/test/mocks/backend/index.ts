@@ -331,9 +331,17 @@ function defaultHandlers(): Map<string, Handler> {
     if (!update.canRollback || !update.previous) return { status: 'nothing-pending' } satisfies UpdateRestartResult
     return restartInto(context)
   })
-  h.set(Ipc.updateSetChannel, (payload, context) =>
-    pushUpdate(context, { channel: p<{ channel: UpdaterState['channel'] }>(payload).channel }),
-  )
+  h.set(Ipc.updateSetChannel, (payload, context) => {
+    const channel = p<{ channel: UpdaterState['channel'] }>(payload).channel
+    // Like main (channelSettings): 每日构建 is saved as beta plus nightlyUpdates.
+    context.state.settings = {
+      ...context.state.settings,
+      updateChannel: channel === 'nightly' ? 'beta' : channel,
+      nightlyUpdates: channel === 'nightly',
+    }
+    context.emit(Events.settingsChanged, context.state.settings)
+    return pushUpdate(context, { channel })
+  })
   h.set(Ipc.updateSetAutoDownload, (payload, context) => pushUpdate(context, { autoDownload: p<{ enabled: boolean }>(payload).enabled }))
   h.set(Ipc.updateUnskip, (_, context) => {
     context.state.settings = { ...context.state.settings, skippedUpdateVersion: null }

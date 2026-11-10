@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { agentCardAnswerSchema } from './agent/cards'
+import { UPDATE_CHANNELS } from './install'
 
 const pathLike = z.string().trim().min(1, '目录路径不能为空').max(4096)
 const urlLike = z
@@ -537,7 +538,7 @@ export const schemas = {
 
   copyText: z.object({ text: z.string().max(4096) }),
 
-  updateSetChannel: z.object({ channel: z.enum(['stable', 'beta']) }),
+  updateSetChannel: z.object({ channel: z.enum(UPDATE_CHANNELS) }),
 
   /** update:set-auto-download and update:restart-when-idle. */
   updateToggle: z.object({ enabled: z.boolean() }),

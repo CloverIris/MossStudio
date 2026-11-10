@@ -68,7 +68,7 @@ export const Ipc = {
   updateRestartWhenIdle: 'update:restart-when-idle',
   /** → UpdateRestartResult: 回到上一个版本 (switch current/previous, restart). */
   updateRollback: 'update:rollback',
-  /** `{ channel: 'stable' | 'beta' }`. */
+  /** `{ channel: 'stable' | 'beta' | 'nightly' }`. */
   updateSetChannel: 'update:set-channel',
   /** `{ enabled }`: 自动下载更新. */
   updateSetAutoDownload: 'update:set-auto-download',

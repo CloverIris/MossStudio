@@ -12,6 +12,7 @@ import { SectionBody, SwitchRow, errorText, useSaveSettings } from './fields'
 const CHANNELS: Array<{ value: UpdateChannel; label: string }> = [
   { value: 'stable', label: '正式版' },
   { value: 'beta', label: '测试版' },
+  { value: 'nightly', label: '每日构建' },
 ]
 
 export function UpdatesSection(): React.JSX.Element {
@@ -133,7 +134,7 @@ export function UpdatesSection(): React.JSX.Element {
                 checked={update.autoDownload}
                 onChange={(enabled) => void attempt(() => setAutoDownload(enabled))}
               />
-              <Row title="更新渠道" description="测试版能更早用到新功能，但可能不够稳定。">
+              <Row title="更新渠道" description="测试版和每日构建能更早用到新功能，但可能不够稳定。">
                 <Segmented
                   label="更新渠道"
                   value={update.channel}

@@ -33,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lanWebPort: null,
   lanWebInstanceId: null,
   updateChannel: 'stable',
+  nightlyUpdates: false,
   autoDownloadUpdates: true,
   skippedUpdateVersion: null,
   dismissedAnnouncements: [],

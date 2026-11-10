@@ -166,7 +166,7 @@ export function checkFeed(feedPath, { dir, trusted, updateFeedSchema, feedSignat
   const sig = feedSignatureSchema.parse(JSON.parse(readFileSync(`${feedPath}.sig`, 'utf8')))
   if (!verifyFeed(bytes, sig, trusted)) throw new Error(`${label}: signature (keyId ${sig.keyId}) does not verify against the trusted keys`)
   const feed = updateFeedSchema.parse(JSON.parse(bytes.toString('utf8')))
-  const channel = /^update-(stable|beta)\.json$/.exec(label)?.[1]
+  const channel = /^update-(stable|beta|nightly)\.json$/.exec(label)?.[1]
   if (feed.channel !== channel) throw new Error(`${label}: channel is ${feed.channel}`)
   if (expectVersion && feed.version !== expectVersion) throw new Error(`${label}: version ${feed.version}, expected ${expectVersion}`)
   const assets = []
@@ -195,7 +195,7 @@ export function checkFeed(feedPath, { dir, trusted, updateFeedSchema, feedSignat
 export function verifiedPublishedFeed(feedBytes, sigBytes, { channel, trusted, updateFeedSchema, feedSignatureSchema }) {
   if (!sigBytes) throw new Error(`published update-${channel}.json has no .sig`)
   const sig = feedSignatureSchema.parse(JSON.parse(Buffer.from(sigBytes).toString('utf8')))
-  if (!verifyFeed(feedBytes, sig, trusted)) throw new Error(`published update-${channel}.json does not verify against the production keys (keyId ${sig.keyId})`)
+  if (!verifyFeed(feedBytes, sig, trusted)) throw new Error(`published update-${channel}.json does not verify against the trusted keys (keyId ${sig.keyId})`)
   const feed = updateFeedSchema.parse(JSON.parse(Buffer.from(feedBytes).toString('utf8')))
   if (feed.channel !== channel) throw new Error(`published update-${channel}.json says channel ${feed.channel}`)
   return feed

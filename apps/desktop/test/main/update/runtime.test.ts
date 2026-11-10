@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { FeedAsset, FileList, InstallRecord, UpdateFeed } from '@shared/install'
+import type { FeedAsset, FileList, InstallRecord, UpdateChannel, UpdateFeed } from '@shared/install'
 import type { UpdaterState } from '@shared/update'
 import { errorCode } from '@main/lib/codedError'
 import { readInstallRecord, updateInstallRecord, writeInstallRecord } from '@main/install/record'
 import type { BusySnapshot } from '@main/update/busy'
 import { assertGenerationAllowed, setMinimumVersion } from '@main/update/gate'
+import { trustedUpdateKeys } from '@main/update/keys'
 import {
   cleanExitMarkerPath,
   failedMarkerPath,
@@ -33,6 +34,8 @@ import {
 
 const temp = useTempDir('moss-rt-')
 const key = makeKey('ci')
+/** Signs update-nightly.json only, like the `nightly` environment's key. */
+const nightlyKey = makeKey('nightly')
 const platform = thisPlatform()
 let server: FileServer
 
@@ -72,7 +75,9 @@ function zipItems(list: FileList, dir: string, prefix = ''): ZipItem[] {
 function publish(
   version: string,
   options: {
-    channel?: 'stable' | 'beta'
+    channel?: UpdateChannel
+    /** The key that signs the feed (the production test key by default). */
+    signedBy?: typeof key
     publishedAt?: string
     delta?: boolean
     minimumVersion?: string
@@ -118,7 +123,7 @@ function publish(
   })
   const bytes = Buffer.from(JSON.stringify(feed))
   server.routes.set(`/update-${channel}.json`, { body: bytes })
-  server.routes.set(`/update-${channel}.json.sig`, { body: signFeed(bytes, key) })
+  server.routes.set(`/update-${channel}.json.sig`, { body: signFeed(bytes, options.signedBy ?? key) })
   return { list, full, files, deltas }
 }
 
@@ -144,6 +149,8 @@ function harness(
     unsupported?: string
     version?: string
     spawnError?: Error
+    /** The production keys this build trusts (none: a build made before the production key existed). */
+    productionKeys?: Array<typeof key>
   } = {},
 ): Harness {
   const os = options.os ?? 'linux'
@@ -173,6 +180,7 @@ function harness(
     networkMode: 'auto',
     gitMirror: null,
     updateChannel: 'stable',
+    nightlyUpdates: false,
     autoDownloadUpdates: false,
     dismissedAnnouncements: [],
     skippedUpdateVersion: null,
@@ -199,7 +207,11 @@ function harness(
       launcher: mac ? null : join(root, 'mossstudio'),
       recordPath,
     },
-    keys: () => [key.publicKey],
+    keys: (channel) =>
+      trustedUpdateKeys(channel, {
+        production: (options.productionKeys ?? [key]).map((item) => item.publicKey),
+        nightly: [nightlyKey.publicKey],
+      }),
     feedUrl: (channel) => server.url(`/update-${channel}.json`),
     settings: () => settings,
     saveSettings: (patch) => Object.assign(settings, patch),
@@ -379,6 +391,67 @@ describe('check → download → materialize → pending', () => {
     expect(state.available?.version).toBe('1.2.0-beta.1')
     expect(h.settings.updateChannel).toBe('beta')
     expect(h.record().channel).toBe('beta')
+  })
+
+  it('每日构建 reads the nightly feed, signed by the nightly key, and picks the newest of all three', async () => {
+    publish('1.1.0')
+    publish('1.2.0-beta.1', { channel: 'beta' })
+    publish('1.2.0-nightly.20261110.7', { channel: 'nightly', signedBy: nightlyKey })
+    const h = harness()
+    const state = await h.runtime.setChannel('nightly')
+    expect(state).toMatchObject({ channel: 'nightly', error: null, available: { version: '1.2.0-nightly.20261110.7' } })
+    // Saved so that an older version reached by rolling back reads it as 测试版, and the launcher never sees `nightly`.
+    expect(h.settings).toMatchObject({ updateChannel: 'beta', nightlyUpdates: true })
+    expect(h.record().channel).toBe('beta')
+
+    // Leaving it keeps the running version until a steadier channel has a newer one.
+    const back = await h.runtime.setChannel('stable')
+    expect(h.settings).toMatchObject({ updateChannel: 'stable', nightlyUpdates: false })
+    expect(back).toMatchObject({ channel: 'stable', available: { version: '1.1.0' } })
+  })
+
+  it('never trusts the nightly key for the stable or beta feed', async () => {
+    publish('9.0.0', { signedBy: nightlyKey })
+    publish('9.0.0-beta.1', { channel: 'beta', signedBy: nightlyKey })
+    publish('1.0.4-nightly.20261110.7', { channel: 'nightly', signedBy: nightlyKey })
+    const h = harness({ settings: { updateChannel: 'beta', nightlyUpdates: true } })
+    const state = await h.runtime.check()
+    expect(state.available?.version).toBe('1.0.4-nightly.20261110.7')
+    expect(state.error).toContain('未知的密钥')
+  })
+
+  it('on 每日构建 before any production key exists, reads only the nightly feed and reports no error', async () => {
+    publish('1.2.0-nightly.20261110.7', { channel: 'nightly', signedBy: nightlyKey })
+    const h = harness({ productionKeys: [], settings: { updateChannel: 'beta', nightlyUpdates: true } })
+    const state = await h.runtime.check()
+    expect(state).toMatchObject({ error: null, available: { version: '1.2.0-nightly.20261110.7' } })
+    expect(server.hits.some((hit) => hit.path.startsWith('/update-stable.json'))).toBe(false)
+
+    const stable = harness({ productionKeys: [] })
+    expect((await stable.runtime.check()).error).toContain('未内置更新签名密钥')
+  })
+
+  it('leaving 每日构建 drops the nightly it offered and the one waiting to install, even when no other feed can be read', async () => {
+    publish('1.2.0-nightly.20261110.7', { channel: 'nightly', signedBy: nightlyKey, minimumVersion: '1.0.3' })
+    const h = harness({ productionKeys: [], settings: { updateChannel: 'beta', nightlyUpdates: true } })
+    await h.runtime.check()
+    expect((await h.runtime.download()).pending).toBe('1.2.0-nightly.20261110.7')
+    expect(h.record().pending).toBe('1.2.0-nightly.20261110.7')
+
+    const state = await h.runtime.setChannel('stable')
+    expect(state).toMatchObject({ channel: 'stable', available: null, pending: null, minimumVersion: null })
+    expect(h.record().pending).toBeUndefined()
+    // Nothing is left to download either.
+    expect((await h.runtime.download()).pending).toBeNull()
+    expect(h.record().pending).toBeUndefined()
+  })
+
+  it('refuses a nightly feed that offers anything but a nightly', async () => {
+    publish('9.9.9', { channel: 'nightly', signedBy: nightlyKey })
+    const h = harness({ settings: { updateChannel: 'beta', nightlyUpdates: true } })
+    const state = await h.runtime.check()
+    expect(state.available).toBeNull()
+    expect(state.error).toContain('版本不是每日构建')
   })
 
   it('can be canceled and resumed', async () => {

@@ -18,6 +18,14 @@ export interface UpdatePublicKey {
  */
 export const PRODUCTION_UPDATE_KEYS: readonly UpdatePublicKey[] = []
 
+/**
+ * Keys trusted for update-nightly.json ONLY (see the nightly section of docs/how-to/release.md).
+ * The private key is the `nightly` environment secret MOSS_NIGHTLY_SIGNING_KEY, which runs without a
+ * reviewer, so a feed it signs for stable or beta is rejected: at worst it reaches people who chose
+ * 每日构建. Empty until a maintainer generates it; until then nightlies are download-only.
+ */
+export const NIGHTLY_UPDATE_KEYS: readonly UpdatePublicKey[] = []
+
 /** True when this source tree ships no production key yet (release builds cannot update). */
 export const PRODUCTION_UPDATE_KEYS_MISSING = PRODUCTION_UPDATE_KEYS.length === 0
 

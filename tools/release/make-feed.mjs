@@ -4,6 +4,8 @@
 //   node tools/release/make-feed.mjs --version 1.2.3 [--artifacts dist/release/artifacts]
 //        [--out <dir, default = artifacts>] [--current-stable update-stable.json] [--current-beta update-beta.json]
 //        [--base-url http://127.0.0.1:8080/] [--channel stable ...] [--require-notes]
+//   node tools/release/make-feed.mjs --nightly --version 1.2.4-nightly.20261110.42 --notes-file notes.md
+//        [--current-nightly update-nightly.json] [--artifacts ...] [--out ...]
 //
 // Notes: release/notes/<version>.md (optional front matter `minimumVersion: x.y.z`).
 // Announcements: release/announcements.json (optional array; expired `until` entries dropped).
@@ -11,12 +13,14 @@
 // whose current feed (--current-stable / --current-beta) is the same or newer is left alone.
 // --channel overrides that (tests). --base-url replaces the GitHub
 // release download URL (tests serve the artifacts locally).
+// --nightly writes update-nightly.json only, pointing at the packages on the rolling `updates`
+// release, and only when the published nightly feed (--current-nightly) holds an older version.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { DIST_DIR, main, REPO_ROOT } from './lib/cli.mjs'
-import { assembleFeed, channelsFor, currentAnnouncements, describePlatforms, feedBytes, readNotes } from './lib/feed.mjs'
-import { feedName, isVersion, RELEASE_REPO, releaseAssetUrl } from './lib/version.mjs'
+import { assembleFeed, channelsFor, currentAnnouncements, describePlatforms, feedBytes, nightlySkipReason, readNotes } from './lib/feed.mjs'
+import { feedName, isVersion, NIGHTLY_TAG, nightlyAssetUrl, RELEASE_REPO, releaseAssetUrl } from './lib/version.mjs'
 
 main(async () => {
   const { values } = parseArgs({
@@ -32,6 +36,9 @@ main(async () => {
       announcements: { type: 'string', default: join(REPO_ROOT, 'release', 'announcements.json') },
       'require-notes': { type: 'boolean', default: false },
       'published-at': { type: 'string' },
+      nightly: { type: 'boolean', default: false },
+      'current-nightly': { type: 'string' },
+      'notes-file': { type: 'string' },
     },
   })
   const version = values.version
@@ -39,6 +46,11 @@ main(async () => {
   const artifacts = resolve(values.artifacts)
   const out = resolve(values.out ?? artifacts)
   mkdirSync(out, { recursive: true })
+
+  if (values.nightly) {
+    writeNightlyFeed(values, version, artifacts, out)
+    return
+  }
 
   const baseUrl = values['base-url']
   const urlFor = baseUrl ? (file) => new URL(encodeURIComponent(file), baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).href : (file) => releaseAssetUrl(version, file)
@@ -78,3 +90,24 @@ main(async () => {
   }
   if (channels.length === 0) console.log(`no feed written: ${version} is not newer than any channel`)
 })
+
+function writeNightlyFeed(values, version, artifacts, out) {
+  const current = values['current-nightly'] && existsSync(values['current-nightly']) ? JSON.parse(readFileSync(values['current-nightly'], 'utf8')).version : undefined
+  const skip = nightlySkipReason(version, current)
+  if (skip) {
+    console.log(`no feed written: ${skip}`)
+    return
+  }
+  if (!values['notes-file']) throw new Error('--nightly needs --notes-file')
+  const feed = assembleFeed({
+    channel: 'nightly',
+    version,
+    publishedAt: values['published-at'] ?? new Date().toISOString(),
+    notes: readFileSync(values['notes-file'], 'utf8').trim(),
+    notesUrl: `https://github.com/${RELEASE_REPO}/releases/tag/${NIGHTLY_TAG}`,
+    platforms: describePlatforms(artifacts, version, (file) => nightlyAssetUrl(file)),
+  })
+  const path = join(out, feedName('nightly'))
+  writeFileSync(path, feedBytes(feed))
+  console.log(`${path}: ${version} for ${Object.keys(feed.platforms).join(', ')}`)
+}

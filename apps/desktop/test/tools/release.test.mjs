@@ -28,6 +28,8 @@ import {
   currentAnnouncements,
   describePlatforms,
   feedBytes,
+  nightlyNotes,
+  nightlySkipReason,
   parseNotes,
 } from '../../../../tools/release/lib/feed.mjs'
 import { generateKeyPair, keyIdFor, parsePrivateKey, publicKeyBase64, signFeed, verifyFeed } from '../../../../tools/release/lib/sign.mjs'
@@ -36,10 +38,14 @@ import {
   bumpPatch,
   compareVersions,
   deltaName,
+  isNightly,
   isPrerelease,
+  nightlyAssetUrl,
+  nightlyVersion,
   parseDeltaName,
   portableMarker,
   releaseAssetUrl,
+  staleNightlyPackages,
 } from '../../../../tools/release/lib/version.mjs'
 import { asarPackageJson, readSetupTar, readTar, TRAILER_SIZE } from '../../../../tools/release/lib/inspect.mjs'
 import {
@@ -462,6 +468,109 @@ describe('feeds and signatures', () => {
     expect(() => checkFeed(path, { ...opts, urlPrefix: 'http://127.0.0.1/' })).toThrow(/not under/)
     writeFileSync(join(dir, artifactNames('1.0.1', 'linux-x64').full), 'changed')
     expect(() => checkFeed(path, opts)).toThrow(/does not match/)
+  })
+})
+
+describe('nightlies', () => {
+  const MAKE_FEED = join(__dirname, '..', '..', '..', '..', 'tools', 'release', 'make-feed.mjs')
+
+  it('versions a nightly below the release it leads up to, ordered by day and run', () => {
+    const night = new Date('2026-11-10T18:00:00Z')
+    expect(nightlyVersion('2.0.0', ['v1.0.2'], night, 42)).toBe('2.0.0-nightly.20261110.42')
+    // 2.0.0 already shipped: the next release is 2.0.1.
+    expect(nightlyVersion('2.0.0', ['v2.0.0'], night, 42)).toBe('2.0.1-nightly.20261110.42')
+    expect(compareVersions('2.0.1-nightly.20261110.42', '2.0.1')).toBeLessThan(0)
+    expect(compareVersions('2.0.1-nightly.20261110.42', '2.0.0')).toBeGreaterThan(0)
+    // A manual run later the same day comes after the scheduled one; the next day after both.
+    expect(compareVersions('2.0.1-nightly.20261110.43', '2.0.1-nightly.20261110.42')).toBeGreaterThan(0)
+    expect(compareVersions('2.0.1-nightly.20261111.1', '2.0.1-nightly.20261110.43')).toBeGreaterThan(0)
+    expect(isNightly('2.0.1-nightly.20261110.42')).toBe(true)
+    expect(isNightly('2.0.1-beta.1')).toBe(false)
+    expect(() => nightlyVersion('2.0.0', [], night, 0)).toThrow(/run number/)
+  })
+
+  it('prunes only the update packages of nightlies before the last two, never a feed or a release package', () => {
+    const now = '2.0.1-nightly.20261110.42'
+    const last = '2.0.1-nightly.20261109.41'
+    const old = '2.0.1-nightly.20261108.40'
+    const names = [
+      'update-nightly.json',
+      'update-nightly.json.sig',
+      'update-stable.json',
+      'update-beta.json.sig',
+      artifactNames(now, 'linux-x64').full,
+      artifactNames(last, 'win32-x64').full,
+      artifactNames(old, 'win32-x64').full,
+      artifactNames(old, 'darwin-arm64').files,
+      artifactNames('2.0.0', 'linux-x64').full,
+      deltaName(old, last, 'linux-x64'),
+      deltaName('2.0.0', old, 'linux-x64'),
+      deltaName(last, now, 'linux-x64'),
+    ]
+    expect(staleNightlyPackages(names, [now, last])).toEqual([
+      artifactNames(old, 'win32-x64').full,
+      artifactNames(old, 'darwin-arm64').files,
+      deltaName('2.0.0', old, 'linux-x64'),
+    ])
+    // The first nightly with a feed has no previous one to keep.
+    expect(staleNightlyPackages(names, [now, ''])).toContain(artifactNames(last, 'win32-x64').full)
+  })
+
+  it('replaces the nightly feed only with a newer nightly', () => {
+    expect(nightlySkipReason('2.0.1-nightly.20261110.42')).toBeNull()
+    expect(nightlySkipReason('2.0.1-nightly.20261110.42', '2.0.1-nightly.20261109.41')).toBeNull()
+    expect(nightlySkipReason('2.0.1-nightly.20261110.42', '2.0.1-nightly.20261110.42')).toMatch(/keeps/)
+    expect(nightlySkipReason('2.0.1-nightly.20261109.40', '2.0.1-nightly.20261110.42')).toMatch(/keeps/)
+    expect(nightlySkipReason('2.0.1', undefined)).toMatch(/not a nightly/)
+  })
+
+  it('writes notes from the commit subjects, with the rest counted', () => {
+    const sha = 'abcdef1234567890'
+    expect(nightlyNotes({ sha, repo: 'o/r', subjects: [] })).toBe(
+      '每日构建，来自 `main` 的 [`abcdef1`](https://github.com/o/r/commit/abcdef1234567890)。',
+    )
+    const notes = nightlyNotes({ sha, repo: 'o/r', subjects: ['feat: a', 'fix: b', 'docs: c'], limit: 2 })
+    expect(notes.split('\n').slice(1)).toEqual(['', '- feat: a', '- fix: b', '- 以及另外 1 项改动'])
+  })
+
+  it('make-feed --nightly writes update-nightly.json on the nightly release, which only a nightly key verifies', () => {
+    const version = '2.0.1-nightly.20261110.42'
+    const dir = join(temp(), 'artifacts')
+    mkdirSync(dir)
+    for (const [kind, name] of Object.entries(artifactNames(version, 'linux-x64'))) writeFileSync(join(dir, name), `${kind} bytes`)
+    writeFileSync(join(dir, deltaName('2.0.1-nightly.20261109.41', version, 'linux-x64')), 'delta')
+    const notes = join(temp(), 'notes.md')
+    writeFileSync(notes, nightlyNotes({ sha: 'a'.repeat(40), repo: 'o/r', subjects: ['feat: x'] }))
+    const make = (...args) =>
+      spawnSync(process.execPath, [MAKE_FEED, '--nightly', '--version', version, '--artifacts', dir, '--notes-file', notes, ...args], {
+        encoding: 'utf8',
+      })
+
+    const current = join(temp(), 'current-update-nightly.json')
+    writeFileSync(current, JSON.stringify({ version: '2.0.1-nightly.20261110.42' }))
+    const skipped = make('--current-nightly', current)
+    expect(skipped.status, skipped.stderr).toBe(0)
+    expect(existsSync(join(dir, 'update-nightly.json'))).toBe(false)
+
+    writeFileSync(current, JSON.stringify({ version: '2.0.1-nightly.20261109.41' }))
+    const written = make('--current-nightly', current)
+    expect(written.status, written.stderr).toBe(0)
+    expect(['update-stable.json', 'update-beta.json'].filter((name) => existsSync(join(dir, name)))).toEqual([])
+    const path = join(dir, 'update-nightly.json')
+    const feed = updateFeedSchema.parse(JSON.parse(readFileSync(path, 'utf8')))
+    expect(feed).toMatchObject({ channel: 'nightly', version, notesUrl: 'https://github.com/ShallowElec/MossStudio/releases/tag/nightly' })
+    expect(feed.notes).toContain('- feat: x')
+    expect(feed.platforms['linux-x64'].full.url).toBe(nightlyAssetUrl(artifactNames(version, 'linux-x64').full))
+    expect(feed.platforms['linux-x64'].deltas.map((delta) => delta.from)).toEqual(['2.0.1-nightly.20261109.41'])
+
+    const nightly = generateKeyPair()
+    writeFileSync(`${path}.sig`, JSON.stringify(signFeed(readFileSync(path), parsePrivateKey(nightly.privateKeyBase64))))
+    const trusted = [{ id: nightly.id, publicKey: nightly.publicKey }]
+    const opts = { dir, trusted, updateFeedSchema, feedSignatureSchema, expectVersion: version, urlPrefix: nightlyAssetUrl('') }
+    expect(checkFeed(path, opts).channel).toBe('nightly')
+    expect(parseVerifiedFeed(readFileSync(path), readFileSync(`${path}.sig`), trusted, 'nightly').version).toBe(version)
+    // Replayed as another channel's feed, the app refuses it.
+    expect(() => parseVerifiedFeed(readFileSync(path), readFileSync(`${path}.sig`), trusted, 'beta')).toThrow(/渠道不匹配/)
   })
 })
 

@@ -73,6 +73,7 @@ export function settingsFixture(patch: Partial<Settings> = {}): Settings {
     lanWebPort: null,
     lanWebInstanceId: null,
     updateChannel: 'stable',
+    nightlyUpdates: false,
     autoDownloadUpdates: true,
     dismissedAnnouncements: [],
     noticedFailedUpdates: [],

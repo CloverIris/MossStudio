@@ -92,6 +92,61 @@ export function releaseAssetUrl(version, file, repo = RELEASE_REPO) {
   return `https://github.com/${repo}/releases/download/v${version}/${encodeURIComponent(file)}`
 }
 
+/** The rolling prerelease people download the latest nightly from (setups and portable packages). */
+export const NIGHTLY_TAG = 'nightly'
+
+/** The rolling release that holds the feeds, and the latest nightly's update packages next to them. */
+export const UPDATES_TAG = 'updates'
+
+/**
+ * Where update-nightly.json points: the `updates` release, which is never deleted, so the feed never
+ * names a file that is gone while `nightly` is replaced. File names carry their version.
+ */
+export function nightlyAssetUrl(file, repo = RELEASE_REPO) {
+  return `https://github.com/${repo}/releases/download/${UPDATES_TAG}/${encodeURIComponent(file)}`
+}
+
+/**
+ * A nightly's version: `<next release>-nightly.<UTC date>.<run>`, e.g. 1.0.3-nightly.20261108.42.
+ * The next release is `packageVersion`'s x.y.z, or one patch later when that is already tagged, so
+ * the release that follows ranks above every nightly before it. The workflow run number orders two
+ * builds of one day (a manual run after the scheduled one).
+ */
+export function nightlyVersion(packageVersion, tags, date, run) {
+  const v = parseVersion(packageVersion)
+  let core = `${v.major}.${v.minor}.${v.patch}`
+  if (tags.includes(core) || tags.includes(`v${core}`)) core = `${v.major}.${v.minor}.${v.patch + 1}`
+  const day = date.toISOString().slice(0, 10).replaceAll('-', '')
+  if (!Number.isInteger(run) || run < 1) throw new Error(`not a workflow run number: ${run}`)
+  return `${core}-nightly.${day}.${run}`
+}
+
+export function isNightly(version) {
+  return parseVersion(version).pre[0] === 'nightly'
+}
+
+/** The nightly a file on the `updates` release is an update package of (full, file list, delta to it), or null. */
+function nightlyPackageVersion(name) {
+  const version =
+    parseDeltaName(name)?.to ??
+    /^MossStudio-(.+)-(?:win32-x64|linux-x64|darwin-arm64|darwin-x64)-full\.zip$/.exec(name)?.[1] ??
+    /^files-(.+)-(?:win32-x64|linux-x64|darwin-arm64|darwin-x64)\.json$/.exec(name)?.[1]
+  return version && isVersion(version) && isNightly(version) ? version : null
+}
+
+/**
+ * The nightly update packages on the `updates` release to delete: those of every nightly but `keep`
+ * (the new one, and the one before it so a download already under way can finish). Feeds, their
+ * signatures and release packages are never among them.
+ */
+export function staleNightlyPackages(names, keep) {
+  const kept = new Set(keep.filter(Boolean))
+  return names.filter((name) => {
+    const version = nightlyPackageVersion(name)
+    return version !== null && !kept.has(version)
+  })
+}
+
 /** Parse a delta file name back into its parts (null when it is not one). */
 export function parseDeltaName(file) {
   const match = /^MossStudio-(.+)-to-(.+)-(win32-x64|linux-x64|darwin-arm64|darwin-x64)\.delta\.zip$/.exec(file)

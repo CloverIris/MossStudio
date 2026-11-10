@@ -76,6 +76,11 @@ export function parseVerifiedFeed(
   if (!feed.success) throw new Error(`更新源格式无效：${feed.error.issues[0]?.message ?? 'unknown'}`)
   // A validly signed feed of the other channel must not be replayed as this one.
   if (feed.data.channel !== channel) throw new Error(`更新源渠道不匹配（期望 ${channel}，实际 ${feed.data.channel}）`)
+  // The nightly key signs without a reviewer: it may only offer nightlies, never a version that
+  // would outrank every future release (9.9.9) and keep 每日构建 off the stable line for good.
+  if (channel === 'nightly' && !/^\d+\.\d+\.\d+-nightly(?:\.|$)/.test(feed.data.version)) {
+    throw new Error(`每日构建更新源里的版本不是每日构建（${feed.data.version}）`)
+  }
   return feed.data
 }
 

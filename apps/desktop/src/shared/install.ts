@@ -20,8 +20,16 @@ import { z } from 'zod'
 export const PLATFORM_KEYS = ['win32-x64', 'linux-x64', 'darwin-arm64', 'darwin-x64'] as const
 export type PlatformKey = (typeof PLATFORM_KEYS)[number]
 
-export const UPDATE_CHANNELS = ['stable', 'beta'] as const
+/** The feeds a client can follow. `nightly` is signed by its own key (NIGHTLY_UPDATE_KEYS). */
+export const UPDATE_CHANNELS = ['stable', 'beta', 'nightly'] as const
 export type UpdateChannel = (typeof UPDATE_CHANNELS)[number]
+
+/**
+ * The channels install.json may hold. Launchers already installed accept only these and are not
+ * replaced by updates, so a client on `nightly` records `beta` there.
+ */
+export const RECORD_CHANNELS = ['stable', 'beta'] as const
+export type RecordChannel = (typeof RECORD_CHANNELS)[number]
 
 const semver = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, 'not a semver version')
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/)
@@ -37,7 +45,7 @@ export const installRecordSchema = z.object({
   appPath: absPath.optional(),
   dataRoot: absPath,
   portable: z.boolean(),
-  channel: z.enum(UPDATE_CHANNELS),
+  channel: z.enum(RECORD_CHANNELS),
   /** The version the launcher starts. */
   current: semver,
   /** Kept for rollback; the launcher falls back to it. */

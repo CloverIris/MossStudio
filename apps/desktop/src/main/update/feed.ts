@@ -1,7 +1,7 @@
 // original-fs: in the packaged main process node:fs treats every *.asar as a folder; app folders are plain files here.
 import { promises as fsp } from 'original-fs'
 import { join } from 'node:path'
-import type { UpdateChannel, UpdateFeed } from '@shared/install'
+import { UPDATE_CHANNELS, type UpdateChannel, type UpdateFeed } from '@shared/install'
 import type { UpdatePublicKey } from '@shared/updateKeys'
 import type { Settings } from '@shared/types'
 import { compareSemver } from '@shared/update'
@@ -132,7 +132,7 @@ async function readHighWaterFile(dir: string): Promise<HighWaterFile> {
   try {
     const raw = JSON.parse(await readFile(join(dir, HIGH_WATER_FILE), 'utf8')) as Record<string, unknown>
     const result: HighWaterFile = {}
-    for (const channel of ['stable', 'beta'] as const) {
+    for (const channel of UPDATE_CHANNELS) {
       const entry = raw[channel] as Partial<FeedHighWater> | undefined
       if (entry && typeof entry.version === 'string' && typeof entry.publishedAt === 'string')
         result[channel] = { version: entry.version, publishedAt: entry.publishedAt }
