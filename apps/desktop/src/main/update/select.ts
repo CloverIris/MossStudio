@@ -12,9 +12,29 @@ export interface UpdateSelection {
   files: FeedAsset
 }
 
-/** The feeds a channel reads: beta takes the newest of beta and stable. */
+/** The feeds a channel reads: each takes the newest of itself and every steadier channel. */
 export function channelsToRead(channel: UpdateChannel): UpdateChannel[] {
+  if (channel === 'nightly') return ['nightly', 'beta', 'stable']
   return channel === 'beta' ? ['beta', 'stable'] : ['stable']
+}
+
+/**
+ * The channel the settings choose: 每日构建 is its own flag (see Settings.nightlyUpdates), and counts
+ * only with `beta`. A version from before nightlies keeps the flag on disk while saving
+ * `updateChannel`, so 正式版 picked there must not turn back into nightly after the next update.
+ */
+export function chosenChannel(settings: { updateChannel: 'stable' | 'beta'; nightlyUpdates?: boolean }): UpdateChannel {
+  return settings.nightlyUpdates && settings.updateChannel === 'beta' ? 'nightly' : settings.updateChannel
+}
+
+/** `1.2.0-nightly.20261110.42`: only the nightly feed carries these. */
+export function isNightlyVersion(version: string): boolean {
+  return /^\d+\.\d+\.\d+-nightly(?:\.|$)/.test(version)
+}
+
+/** What choosing a channel saves: nightly keeps `beta` for install.json and older versions. */
+export function channelSettings(channel: UpdateChannel): { updateChannel: 'stable' | 'beta'; nightlyUpdates: boolean } {
+  return channel === 'nightly' ? { updateChannel: 'beta', nightlyUpdates: true } : { updateChannel: channel, nightlyUpdates: false }
 }
 
 /**

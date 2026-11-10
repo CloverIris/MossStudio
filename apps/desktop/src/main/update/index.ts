@@ -19,7 +19,7 @@ import { getSettings, updateSettings } from '../services/settings'
 import { readBusySnapshot } from './busySources'
 import { updateContext } from './context'
 import { armAppHealth, type HealthWindow } from './health'
-import { isUpdateTestBuild, trustedUpdateKeys, updateFeedUrl } from './keys'
+import { hasAnyUpdateKey, isUpdateTestBuild, trustedUpdateKeys, updateFeedUrl } from './keys'
 import { cleanExitMarkerPath, failedMarkerPath, UpdateRuntime } from './runtime'
 import { UpdateScheduler } from './schedule'
 import { loadTestHook, readyToRestart, shouldCrash, TEST_CRASH_EXIT_CODE, writeTestStatus, type UpdateTestHook } from './testHook'
@@ -48,13 +48,12 @@ function writable(path: string): boolean {
 function getRuntime(): UpdateRuntime {
   if (runtime) return runtime
   const run = getRunContext()
-  const keys = trustedUpdateKeys()
-  const context = updateContext({ run, hasKeys: keys.length > 0, exists: existsSync, writable })
+  const context = updateContext({ run, hasKeys: hasAnyUpdateKey(), exists: existsSync, writable })
   const recordPath = run.recordPath
   runtime = new UpdateRuntime({
     version: app.getVersion(),
     context,
-    keys: () => keys,
+    keys: (channel) => trustedUpdateKeys(channel),
     feedUrl: (channel) => updateFeedUrl(channel),
     // The CI hook always downloads automatically.
     settings: () => (hook()?.pollMs ? { ...getSettings(), autoDownloadUpdates: true } : getSettings()),

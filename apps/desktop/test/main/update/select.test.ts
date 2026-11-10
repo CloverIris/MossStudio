@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { FeedAsset, UpdateFeed } from '@shared/install'
 import { compareSemver } from '@shared/update'
-import { activeAnnouncements, channelsToRead, minimumVersionOf, selectUpdate } from '@main/update/select'
+import {
+  activeAnnouncements,
+  channelSettings,
+  channelsToRead,
+  chosenChannel,
+  isNightlyVersion,
+  minimumVersionOf,
+  selectUpdate,
+} from '@main/update/select'
 import { feedFixture } from './helpers'
 
 const asset = (name: string, size: number): FeedAsset => ({
@@ -114,5 +122,27 @@ describe('minimumVersionOf / activeAnnouncements', () => {
       feed('1.1.0', { announcements: [a('shared'), a('gone')] }),
     ]
     expect(activeAnnouncements(feeds, ['gone'], now).map((item) => item.id)).toEqual(['shared', 'future'])
+  })
+})
+
+describe('channels', () => {
+  it('each channel reads itself and every steadier one', () => {
+    expect(channelsToRead('stable')).toEqual(['stable'])
+    expect(channelsToRead('beta')).toEqual(['beta', 'stable'])
+    expect(channelsToRead('nightly')).toEqual(['nightly', 'beta', 'stable'])
+  })
+
+  it('saves 每日构建 as beta plus a flag, and reads the flag only with beta', () => {
+    for (const channel of ['stable', 'beta', 'nightly'] as const) expect(chosenChannel(channelSettings(channel))).toBe(channel)
+    // A version from before nightlies saved 正式版 and kept the flag it does not know.
+    expect(chosenChannel({ updateChannel: 'stable', nightlyUpdates: true })).toBe('stable')
+    expect(chosenChannel({ updateChannel: 'beta' })).toBe('beta')
+  })
+
+  it('tells nightly versions apart', () => {
+    expect(isNightlyVersion('2.0.1-nightly.20261110.42')).toBe(true)
+    expect(isNightlyVersion('2.0.1-beta.1')).toBe(false)
+    expect(isNightlyVersion('2.0.1')).toBe(false)
+    expect(isNightlyVersion('2.0.1-nightlyish.1')).toBe(false)
   })
 })

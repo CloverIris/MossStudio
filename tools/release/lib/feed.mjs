@@ -1,7 +1,7 @@
 // Feed assembly (shared/install.ts updateFeedSchema) from built artifacts.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { artifactNames, compareVersions, isPrerelease, isVersion, parseDeltaName, PLATFORMS } from './version.mjs'
+import { artifactNames, compareVersions, isPrerelease, isVersion, parseDeltaName, parseVersion, PLATFORMS } from './version.mjs'
 import { sha256File } from './tree.mjs'
 
 /**
@@ -21,6 +21,26 @@ export function channelsFor(version, { currentStable, currentBeta } = {}) {
     else channels.push(channel)
   }
   return { channels, skipped }
+}
+
+/**
+ * Whether a nightly may replace the published update-nightly.json: only with a newer version, so
+ * re-running an old build never sends nightly clients backwards. Returns null when it may, else why not.
+ */
+export function nightlySkipReason(version, currentNightly) {
+  if (!isVersion(version) || parseVersion(version).pre[0] !== 'nightly') return `${version} is not a nightly version`
+  if (currentNightly && compareVersions(currentNightly, version) >= 0) return `update-nightly.json keeps ${currentNightly} (not older than ${version})`
+  return null
+}
+
+/** The in-app notes of a nightly: where it comes from and the commit subjects since the last one. */
+export function nightlyNotes({ sha, repo, subjects, limit = 40 }) {
+  const lines = [`每日构建，来自 \`main\` 的 [\`${sha.slice(0, 7)}\`](https://github.com/${repo}/commit/${sha})。`]
+  if (subjects.length) {
+    lines.push('', ...subjects.slice(0, limit).map((subject) => `- ${subject}`))
+    if (subjects.length > limit) lines.push(`- 以及另外 ${subjects.length - limit} 项改动`)
+  }
+  return lines.join('\n')
 }
 
 /**

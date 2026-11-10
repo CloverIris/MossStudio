@@ -18,7 +18,16 @@ import { fetchVerifiedFeed, loadFeedCache, loadHighWater, raiseHighWater, resetH
 import { setMinimumVersion, updateRequired } from './gate'
 import { spawnLauncherRestart, spawnMacSwap, type SpawnFn } from './handoff'
 import { materialize } from './materialize'
-import { activeAnnouncements, channelsToRead, minimumVersionOf, selectUpdate, type UpdateSelection } from './select'
+import {
+  activeAnnouncements,
+  channelSettings,
+  channelsToRead,
+  chosenChannel,
+  isNightlyVersion,
+  minimumVersionOf,
+  selectUpdate,
+  type UpdateSelection,
+} from './select'
 import { transportUrls } from './transport'
 import { parseFileList } from './verify'
 
@@ -43,6 +52,7 @@ export type UpdateSettings = Pick<
   | 'networkMode'
   | 'gitMirror'
   | 'updateChannel'
+  | 'nightlyUpdates'
   | 'autoDownloadUpdates'
   | 'dismissedAnnouncements'
   | 'skippedUpdateVersion'
@@ -53,7 +63,8 @@ export type UpdateSettings = Pick<
 export interface UpdateHost {
   version: string
   context: UpdateContext
-  keys: () => readonly UpdatePublicKey[]
+  /** The keys `channel`'s feed may be signed with (trustedUpdateKeys). */
+  keys: (channel: UpdateChannel) => readonly UpdatePublicKey[]
   feedUrl: (channel: UpdateChannel) => string
   settings: () => UpdateSettings
   saveSettings: (patch: Partial<UpdateSettings>) => void
@@ -140,7 +151,7 @@ export class UpdateRuntime {
       supported: host.context.unsupportedReason === null,
       unsupportedReason: host.context.unsupportedReason,
       current: host.version,
-      channel: settings.updateChannel,
+      channel: chosenChannel(settings),
       autoDownload: settings.autoDownloadUpdates,
       phase: host.context.unsupportedReason === null ? 'idle' : 'unsupported',
       checkedAt: null,
@@ -223,8 +234,13 @@ export class UpdateRuntime {
       this.noticeUpdated()
     }
     const feeds: UpdateFeed[] = []
-    for (const channel of channelsToRead(this.state.channel)) {
-      const cached = await loadFeedCache(this.host.cacheDir, channel, this.host.keys(), await loadHighWater(this.host.cacheDir, channel))
+    for (const channel of this.verifiableChannels(this.state.channel)) {
+      const cached = await loadFeedCache(
+        this.host.cacheDir,
+        channel,
+        this.host.keys(channel),
+        await loadHighWater(this.host.cacheDir, channel),
+      )
       if (cached) feeds.push(cached)
     }
     if (feeds.length) this.applyFeeds(feeds, { fromCache: true })
@@ -394,25 +410,28 @@ export class UpdateRuntime {
 
   /** Fetch and verify the feeds of the channel, select, and auto-download when enabled. */
   async check(): Promise<UpdaterState> {
-    const channel = this.host.settings().updateChannel
+    const settings = this.host.settings()
+    const channel = chosenChannel(settings)
     if (channel !== this.state.channel) this.state = { ...this.state, channel }
     // Settings is where the channel is chosen; install.json mirrors it for the launcher and Setup.
-    if (this.supported && this.host.readRecord()?.channel !== channel) {
-      this.host.updateRecord((record) => ({ ...record, channel, updatedAt: new Date(this.now()).toISOString() }))
+    const recorded = settings.updateChannel
+    if (this.supported && this.host.readRecord()?.channel !== recorded) {
+      this.host.updateRecord((record) => ({ ...record, channel: recorded, updatedAt: new Date(this.now()).toISOString() }))
     }
-    if (!this.host.keys().length) {
+    const readable = this.verifiableChannels(channel)
+    if (!readable.length) {
       this.set({ error: '此版本未内置更新签名密钥，无法验证更新', checkedAt: new Date(this.now()).toISOString() })
       return this.state
     }
     const before = this.state.phase
     if (!this.downloading && this.supported && before !== 'waiting-idle' && before !== 'restarting') this.set({ phase: 'checking' })
     const results = await Promise.allSettled(
-      channelsToRead(channel).map(async (name) => {
+      readable.map(async (name) => {
         const cacheDir = this.host.cacheDir
         const highWater = await loadHighWater(cacheDir, name)
         try {
           const fetched = await fetchVerifiedFeed(name, {
-            keys: this.host.keys(),
+            keys: this.host.keys(name),
             settings: this.host.settings(),
             url: this.host.feedUrl(name),
             fetchImpl: this.host.fetchImpl,
@@ -423,7 +442,7 @@ export class UpdateRuntime {
           return { feed: fetched.feed, error: null as unknown }
         } catch (error) {
           // A stale or replayed feed (or no network): keep the last verified one, if any.
-          const cached = await loadFeedCache(cacheDir, name, this.host.keys(), highWater)
+          const cached = await loadFeedCache(cacheDir, name, this.host.keys(name), highWater)
           if (cached) return { feed: cached, error }
           throw error
         }
@@ -772,14 +791,38 @@ export class UpdateRuntime {
   }
 
   async setChannel(channel: UpdateChannel): Promise<UpdaterState> {
-    const before = channelsToRead(this.host.settings().updateChannel)
-    this.host.saveSettings({ updateChannel: channel })
+    const before = channelsToRead(chosenChannel(this.host.settings()))
+    this.host.saveSettings(channelSettings(channel))
+    if (before.includes('nightly') && !channelsToRead(channel).includes('nightly')) this.leaveNightly()
     // Feeds this client starts reading now are compared afresh (anti-rollback is per channel).
     for (const name of channelsToRead(channel)) {
       if (!before.includes(name)) await resetHighWater(this.host.cacheDir, name).catch(() => undefined)
     }
     this.set({ channel })
     return this.check()
+  }
+
+  /**
+   * Leaving 每日构建: nothing from the nightly feed may stay selected, gate generation or install on
+   * the next start, even when the new channel's feeds cannot be read now. The running version stays.
+   */
+  private leaveNightly(): void {
+    if (this.selection && isNightlyVersion(this.selection.version)) this.controller?.abort()
+    this.applyFeeds(this.feeds.filter((feed) => feed.channel !== 'nightly'))
+    const pending = this.supported ? this.host.readRecord()?.pending : undefined
+    if (pending && isNightlyVersion(pending)) {
+      this.host.updateRecord((record) => ({ ...record, pending: undefined, updatedAt: new Date(this.now()).toISOString() }))
+      this.refreshRecord()
+      this.host.emit(this.state)
+    }
+  }
+
+  /**
+   * The feeds `channel` reads that this build can verify. A channel without a trusted key is left
+   * out rather than reported as failing: nightly builds can exist before the production key does.
+   */
+  private verifiableChannels(channel: UpdateChannel): UpdateChannel[] {
+    return channelsToRead(channel).filter((name) => this.host.keys(name).length > 0)
   }
 
   setAutoDownload(enabled: boolean): UpdaterState {

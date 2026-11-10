@@ -188,7 +188,7 @@ jobs:
       - name: Replace the feeds on the rolling `updates` release
         run: |
           if ! gh release view updates >/dev/null 2>&1; then
-            gh release create updates --title "Update feeds" --notes "Signed update feeds (update-<channel>.json + .sig) read by MossStudio. Replaced by every release; not a download." --prerelease --latest=false --target "$GITHUB_SHA"
+            gh release create updates --title "Update feeds" --notes "Signed update feeds (update-<channel>.json + .sig) read by MossStudio, and the latest nightly's update packages. Replaced by every release and nightly; not a download." --prerelease --latest=false --target "$GITHUB_SHA"
           fi
           shopt -s nullglob
           # The signature first: a client that reads the new .sig with the old feed fails the

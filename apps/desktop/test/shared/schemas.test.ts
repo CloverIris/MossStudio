@@ -370,8 +370,8 @@ const cases = {
   },
 
   updateSetChannel: {
-    valid: { channel: 'beta' },
-    rejects: { 'unknown channel': { channel: 'nightly' }, 'missing channel': {} },
+    valid: { channel: 'nightly' },
+    rejects: { 'unknown channel': { channel: 'canary' }, 'missing channel': {} },
   },
 
   updateToggle: {
@@ -1033,6 +1033,10 @@ for (const [name, spec] of Object.entries(cases) as Array<[keyof Schemas, Schema
 
 describe('settingsUpdate field rules', () => {
   const parse = (input: unknown) => schemas.settingsUpdate.safeParse(input)
+
+  it('leaves 每日构建 to update:set-channel, which also resets what the new feeds are compared to', () => {
+    expect(parse({ nightlyUpdates: true, updateChannel: 'beta' }).data).toEqual({ updateChannel: 'beta' })
+  })
 
   it('trims an HF endpoint and allows clearing it', () => {
     expect(parse({ hfEndpoint: '  https://hf-mirror.com  ' }).data).toEqual({ hfEndpoint: 'https://hf-mirror.com' })

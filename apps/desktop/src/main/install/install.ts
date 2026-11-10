@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process'
 // original-fs: app folders hold app.asar, which Electron's own fs treats as a folder.
 import { chmodSync, copyFileSync, existsSync, mkdirSync, promises as fsp, readdirSync, renameSync, rmSync } from 'original-fs'
 import { basename, join } from 'node:path'
-import type { InstallLocator, InstallRecord, PlatformKey, UpdateChannel } from '@shared/install'
+import type { InstallLocator, InstallRecord, PlatformKey, RecordChannel } from '@shared/install'
 import { codedError } from '../lib/codedError'
 import { copyTree, listTree, treeBytes } from './copy'
 import { writeLinuxIntegration, windowsShortcutPaths, writeWindowsShortcuts, type WriteShortcut } from './integration'
@@ -61,7 +61,7 @@ export interface InstallRequest {
   /** Explicit data root (macOS 高级); null = keep the existing one or the default. */
   dataRoot: string | null
   legacy: LegacyChoice | null
-  channel?: UpdateChannel
+  channel?: RecordChannel
 }
 
 /** Streams a program's output lines (ditto -V); resolves with the exit code. */

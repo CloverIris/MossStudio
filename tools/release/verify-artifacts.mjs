@@ -2,7 +2,7 @@
 // Re-verify built artifacts before they are uploaded.
 //
 //   node tools/release/verify-artifacts.mjs --version 1.2.3 [--artifacts dist/release/artifacts]
-//        (--public-key <base64> | --keys <json [{id, publicKey}]> | --production-keys)
+//        (--public-key <base64> | --keys <json [{id, publicKey}]> | --production-keys | --nightly-keys)
 //        [--previous <dir of earlier files-*.json>] [--url-prefix https://github.com/...]
 //        [--platform linux-x64 ...] [--feeds <dir, default = artifacts>] [--no-feeds | --feeds-optional]
 //
@@ -19,9 +19,9 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { DIST_DIR, main, run } from './lib/cli.mjs'
-import { loadInstallContract, loadProductionKeys } from './lib/contract.mjs'
+import { loadInstallContract, loadNightlyKeys, loadProductionKeys } from './lib/contract.mjs'
 import { keyIdFor } from './lib/sign.mjs'
-import { artifactNames, isVersion, parseDeltaName, PLATFORMS, releaseAssetUrl } from './lib/version.mjs'
+import { artifactNames, isVersion, nightlyAssetUrl, parseDeltaName, PLATFORMS, releaseAssetUrl } from './lib/version.mjs'
 import { checkDelta, checkFeed, checkFileList, checkFullZip, checkPortable, checkSetupFile } from './lib/verify.mjs'
 
 main(async () => {
@@ -32,6 +32,8 @@ main(async () => {
       'public-key': { type: 'string' },
       keys: { type: 'string' },
       'production-keys': { type: 'boolean', default: false },
+      // update-nightly.json only, signed by a NIGHTLY_UPDATE_KEYS key, packages on the `updates` release.
+      'nightly-keys': { type: 'boolean', default: false },
       previous: { type: 'string' },
       'url-prefix': { type: 'string' },
       platform: { type: 'string', multiple: true },
@@ -89,18 +91,22 @@ main(async () => {
 
   if (values['no-feeds']) return
   let trusted
-  if (values['production-keys']) trusted = await loadProductionKeys()
+  if (values['nightly-keys']) trusted = await loadNightlyKeys()
+  else if (values['production-keys']) trusted = await loadProductionKeys()
   else if (values.keys) trusted = JSON.parse(values.keys)
   else if (values['public-key']) trusted = [{ id: keyIdFor(values['public-key']), publicKey: values['public-key'] }]
   else throw new Error('pass --public-key, --keys or --production-keys (or --no-feeds)')
-  if (trusted.length === 0) throw new Error('no trusted keys: PRODUCTION_UPDATE_KEYS in apps/desktop/src/shared/updateKeys.ts is empty (run pnpm release:keygen)')
+  const list = values['nightly-keys'] ? 'NIGHTLY_UPDATE_KEYS' : 'PRODUCTION_UPDATE_KEYS'
+  if (trusted.length === 0) throw new Error(`no trusted keys: ${list} in apps/desktop/src/shared/updateKeys.ts is empty (run pnpm release:keygen)`)
   const feedDir = resolve(values.feeds ?? dir)
-  const feeds = readdirSync(feedDir).filter((file) => /^update-(stable|beta)\.json$/.test(file))
+  // The nightly key may sign the nightly feed only; the production keys never verify it here.
+  const feedPattern = values['nightly-keys'] ? /^update-nightly\.json$/ : /^update-(stable|beta)\.json$/
+  const feeds = readdirSync(feedDir).filter((file) => feedPattern.test(file))
   if (feeds.length === 0) {
     if (values['feeds-optional']) { console.log('no feeds to verify (no channel takes this version)'); return }
     throw new Error(`no update-*.json feeds to verify in ${feedDir}`)
   }
-  const urlPrefix = values['url-prefix'] ?? releaseAssetUrl(version, '')
+  const urlPrefix = values['url-prefix'] ?? (values['nightly-keys'] ? nightlyAssetUrl('') : releaseAssetUrl(version, ''))
   for (const file of feeds) {
     const feed = checkFeed(join(feedDir, file), { dir, trusted, updateFeedSchema: contract.updateFeedSchema, feedSignatureSchema: contract.feedSignatureSchema, expectVersion: version, urlPrefix })
     console.log(`ok  ${file} (${feed.version}, ${Object.keys(feed.platforms).join(', ')}, signature verified)`)

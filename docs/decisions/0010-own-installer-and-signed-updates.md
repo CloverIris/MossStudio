@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-06
 supersedes: ADR-0005
+amended-by: ADR-0014
 ---
 
 # ADR-0010: Own installer, launcher and signed update feed
