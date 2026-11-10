@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Spinner, cn } from '../../components/ui'
+import { Button, Spinner, cn } from '../../components/ui'
 import { cloverUrl } from '../../lib/clover'
+import { duration } from '../../lib/format'
 import type { CardJobView } from './jobStatus'
+import { OutputImage } from './OutputImage'
 
 /** The engine rewrites one preview file; `seq` makes every frame a new URL. */
 export function previewSrc(path: string, seq: number): string {
@@ -121,4 +123,55 @@ export function StatusOverlay({ view, hasPicture }: { view: CardJobView; hasPict
     )
   }
   return null
+}
+
+/** A 画面 that 拆成区域 is filling: the picture being read, how it is going, and 停止. */
+export interface ParseView {
+  runId: string
+  picture: string
+  phase: 'download' | 'reading'
+  percent?: number
+  /** ISO time the run started. */
+  startedAt: string
+}
+
+/**
+ * The face of a 画面 while its picture is read: the picture faintly, until
+ * its regions arrive all at once. The first run downloads the detector first.
+ */
+export function ParseOverlay({ parse, onStop }: { parse: ParseView; onStop: () => void }): React.JSX.Element {
+  const [now, setNow] = useState(() => new Date().toISOString())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date().toISOString()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const downloading = parse.phase === 'download'
+  const detail = downloading
+    ? parse.percent === undefined
+      ? '只有第一次'
+      : `${parse.percent}% · 只有第一次`
+    : `已用 ${duration(parse.startedAt, now) || '1 秒'}`
+  return (
+    <div data-card-status="parsing" className="absolute inset-0">
+      <OutputImage path={parse.picture} alt="" className="absolute inset-0 opacity-30" />
+      <div
+        data-board-ui
+        className="absolute inset-x-3 bottom-3 z-[3] flex items-center gap-2.5 rounded-lg bg-raised px-3 py-2 shadow-float"
+      >
+        <Spinner className="shrink-0 text-ink-3" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-caption font-semibold text-ink">{downloading ? '正在下载看图模型' : '正在看图…'}</span>
+          <span className="tabular truncate text-micro text-ink-2">{detail}</span>
+        </div>
+        <Button
+          onClick={(event) => {
+            event.stopPropagation()
+            onStop()
+          }}
+        >
+          停止
+        </Button>
+      </div>
+    </div>
+  )
 }

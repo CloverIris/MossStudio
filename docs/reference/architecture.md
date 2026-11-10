@@ -1,7 +1,7 @@
 ---
 status: current
 last-verified: 2026-11-08 (fec4fe3)
-code: apps/desktop/src/main/index.ts, apps/desktop/src/main/windows.ts, apps/desktop/src/main/ipc.ts, apps/desktop/src/main/lib/paths.ts, apps/desktop/src/main/install/, apps/desktop/src/main/update/, apps/desktop/src/preload/index.ts, apps/desktop/src/renderer/src/App.tsx, apps/desktop/src/renderer/src/components/shell/routes.ts, apps/desktop/src/renderer/src/pages/settings/sections.ts, apps/desktop/src/shared/channels.ts, apps/desktop/src/shared/agent/, apps/desktop/src/backend/index.ts, apps/desktop/src/main/services/backend.ts
+code: apps/desktop/src/main/index.ts, apps/desktop/src/main/windows.ts, apps/desktop/src/main/ipc.ts, apps/desktop/src/main/lib/paths.ts, apps/desktop/src/main/install/, apps/desktop/src/main/update/, apps/desktop/src/preload/index.ts, apps/desktop/src/renderer/src/App.tsx, apps/desktop/src/renderer/src/components/shell/routes.ts, apps/desktop/src/renderer/src/pages/settings/sections.ts, apps/desktop/src/shared/channels.ts, apps/desktop/src/shared/agent/, apps/desktop/src/backend/index.ts, apps/desktop/src/main/services/backend.ts, apps/desktop/src/main/services/gbc.ts, apps/desktop/src/shared/gbc.ts
 ---
 
 # Architecture
@@ -157,7 +157,13 @@ Generation runs in MossInfer, a native engine installed per GPU: a long-lived `m
 
 ## GBC
 
-KohakuGBC is an optional external tool reachable only through IPC (`gbc:*` in `shared/channels.ts`, `shared/gbc.ts`, `main/services/gbc.ts`); no renderer code calls it at fec4fe3.
+[KohakuGBC](https://github.com/KohakuBlueleaf/KohakuGBC) is an optional external tool behind the 看图拆区域 feature (`Settings.gbcEnabled`, off by default). It finds the objects in a picture and asks one of the 助手's models (an OpenAI-compatible or Anthropic API with a key) to describe each. The Studio uses it for 拆成区域 ([studio-node-board.md](/docs/reference/studio-node-board.md#6-runs-and-the-filmstrip)).
+
+- `main/services/gbcGit.ts` keeps a bare mirror of KohakuGBC and checks out each version as a worktree under `gbc/versions/` (or `Settings.gbcRoot`). KohakuGBC is not on PyPI, so a version is always installed from its code.
+- `main/services/gbc.ts` installs a version's `.venv` (PyTorch from the trainer's index, then `pip install -e .[torch]`), checks it (`gbcStatus`, cached until an install or `fresh`), and runs `gbc run` on a generated machine config. The API key reaches the process only through its environment.
+- Every GBC process is owned there: 停止 (`gbc:cancel`) and quitting (`stopGbcProcesses` on `before-quit`) end it, and a run stops after 30 minutes.
+- Channels: `gbc:setup` (安装 in 设置 › 功能) with `event:gbc-setup`, and `gbc:parse` with `event:gbc-parse` progress; the version channels serve 设置 › 功能 › 高级. `shared/gbc.ts` turns a GBC graph into regions (`regionsFromGraph`) and says why it cannot run (`gbcBlocker`).
+- `gbc:run`, `gbc:list-images` and `gbc:thumbnails` (folders and sidecar files) have no UI.
 
 ## Leftovers
 

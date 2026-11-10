@@ -18,7 +18,7 @@ interface Stop {
   prepare?: (page: Page) => Promise<void>
 }
 
-const ALL_FEATURES = { trainingEnabled: true, remoteHostsEnabled: true, lanWebEnabled: true }
+const ALL_FEATURES = { trainingEnabled: true, remoteHostsEnabled: true, gbcEnabled: true, lanWebEnabled: true }
 
 /** A project whose canvas has a description, two regions and a finished run with four outputs. */
 async function seedStudio(page: Page): Promise<void> {

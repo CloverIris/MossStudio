@@ -1,13 +1,28 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { GbcCheck, GbcGraph, GbcRunInput, GbcRunResult, GbcStatus } from '@shared/gbc'
+import { Events } from '@shared/channels'
+import {
+  gbcCanUse,
+  regionsFromGraph,
+  type GbcCheck,
+  type GbcGraph,
+  type GbcParseProgress,
+  type GbcParseResult,
+  type GbcRunInput,
+  type GbcRunResult,
+  type GbcSetupProgress,
+  type GbcStatus,
+} from '@shared/gbc'
+import type { Settings } from '@shared/types'
+import { emit } from '../lib/events'
 import { paths } from '../lib/paths'
-import { firstLine, run, tail } from '../lib/run'
-import { getProviderSecret } from './ai'
-import { listGbcVersions } from './gbcGit'
-import { getSettings } from './settings'
+import { firstLine, run, runStream, tail } from '../lib/run'
+import { getProviderSecret, listProviders } from './ai'
+import { createGbcVersion, listGbcBranches, listGbcVersions } from './gbcGit'
+import { pickPython, resolveTorchIndex } from './runtimes'
+import { getSettings, updateSettings } from './settings'
 
 function detectorModel(detector: GbcRunInput['detector']): string {
   return detector === 'sam3' ? 'facebook/sam3' : 'google/owlv2-base-patch16-ensemble'
@@ -44,7 +59,50 @@ function versionPython(version: { path: string }): string {
   return process.platform === 'win32' ? join(version.path, '.venv', 'Scripts', 'python.exe') : join(version.path, '.venv', 'bin', 'python')
 }
 
-export async function gbcStatus(versionId?: string): Promise<GbcStatus> {
+/** KohakuGBC's pyproject: `requires-python = ">=3.11"`. */
+const MIN_PYTHON_MINOR = 11
+
+/** Every GBC process this app started: 停止 and quitting end them. */
+const owned = new Set<AbortController>()
+/** 拆成区域 runs by the id the renderer gave them, for 停止. */
+const parses = new Map<string, AbortController>()
+let setup: Promise<GbcStatus> | null = null
+
+function ownedController(): AbortController {
+  const controller = new AbortController()
+  owned.add(controller)
+  return controller
+}
+
+/** Quitting ends every GBC run and install still going. */
+export function stopGbcProcesses(): void {
+  for (const controller of owned) controller.abort()
+  owned.clear()
+  parses.clear()
+}
+
+/** The checks spawn Python and import torch, which takes seconds; they are kept until something changes. */
+const statusCache = new Map<string, Promise<GbcStatus>>()
+
+export function forgetGbcStatus(): void {
+  statusCache.clear()
+}
+
+/**
+ * Whether GBC can run. `versionId` defaults to the version 设置 › 功能 uses;
+ * `fresh` checks again instead of answering from the last check.
+ */
+export function gbcStatus(versionId?: string, fresh = false): Promise<GbcStatus> {
+  const id = versionId ?? getSettings().gbcVersionId ?? ''
+  const cached = statusCache.get(id)
+  if (cached && !fresh) return cached
+  const next = checkGbc(id || undefined)
+  statusCache.set(id, next)
+  next.catch(() => statusCache.delete(id))
+  return next
+}
+
+async function checkGbc(versionId?: string): Promise<GbcStatus> {
   const settings = getSettings()
   const version = versionId ? (await listGbcVersions(settings)).find((item) => item.id === versionId) : null
   const bundled = version ? versionBinary(version) : ''
@@ -92,30 +150,94 @@ export async function gbcStatus(versionId?: string): Promise<GbcStatus> {
   }
 }
 
-export async function installGbcEnv(versionId: string): Promise<{ ok: boolean; output: string; status: GbcStatus }> {
+/**
+ * The Python environment of one version: a venv beside its code, PyTorch from
+ * the index the trainer uses (PyPI's Windows wheel is CPU only), then the
+ * version itself with its torch extra. KohakuGBC is not on PyPI, so it is
+ * always installed from its code.
+ */
+export async function installGbcEnv(versionId: string, signal?: AbortSignal): Promise<{ ok: boolean; output: string; status: GbcStatus }> {
   const settings = getSettings()
   const version = (await listGbcVersions(settings)).find((item) => item.id === versionId)
   if (!version) throw new Error('GBC 版本不存在')
-  const base = settings.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  if (!existsSync(join(version.path, 'pyproject.toml'))) throw new Error('这个 GBC 版本缺少 pyproject.toml，无法安装')
+  const controller = signal ? null : ownedController()
+  const abort = signal ?? controller!.signal
   const venv = join(version.path, '.venv')
   const py = versionPython(version)
+  const env = { PIP_CACHE_DIR: join(paths.cache(), 'pip') }
   const lines: string[] = []
   const runStep = async (command: string, args: string[], timeoutMs: number): Promise<void> => {
-    const result = await run(command, args, { cwd: version.path, timeoutMs })
     lines.push(`$ ${command} ${args.join(' ')}`)
-    if (result.stdout) lines.push(result.stdout.trim())
-    if (result.stderr) lines.push(result.stderr.trim())
+    const result = await runStream(command, args, { cwd: version.path, timeoutMs, env, signal: abort }, (line) => lines.push(line))
+    if (result.aborted) throw new Error('安装已停止')
     if (result.code !== 0) throw new Error(`安装步骤失败：${tail(result.stderr || result.stdout, 30)}`)
   }
-  if (!existsSync(py)) await runStep(base, ['-m', 'venv', venv], 180_000)
-  await runStep(py, ['-m', 'pip', 'install', '--upgrade', 'pip'], 300_000)
-  const local = await run(py, ['-c', 'import pathlib; print(pathlib.Path("pyproject.toml").exists())'], {
-    cwd: version.path,
-    timeoutMs: 5000,
-  })
-  if (local.stdout.trim() === 'True') await runStep(py, ['-m', 'pip', 'install', '-e', '.[torch]'], 30 * 60_000)
-  else await runStep(py, ['-m', 'pip', 'install', 'kohakugbc[torch]'], 30 * 60_000)
-  return { ok: true, output: lines.join('\n').slice(-12000), status: await gbcStatus(versionId) }
+  try {
+    if (!existsSync(py)) {
+      const base = await pickPython(settings)
+      const minor = Number.parseInt(base.version.split('.')[1] ?? '0', 10)
+      if (minor < MIN_PYTHON_MINOR) throw new Error(`看图需要 Python 3.${MIN_PYTHON_MINOR} 或更新版本，现在找到的是 ${base.version}`)
+      await runStep(base.path, ['-m', 'venv', venv], 180_000)
+    }
+    await runStep(py, ['-m', 'pip', 'install', '--upgrade', 'pip'], 300_000)
+    const torchIndex = await resolveTorchIndex(settings)
+    if (torchIndex) await runStep(py, ['-m', 'pip', 'install', '--index-url', torchIndex, 'torch', 'torchvision'], 60 * 60_000)
+    const pipIndex = settings.pipIndex ? ['--index-url', settings.pipIndex] : []
+    await runStep(py, ['-m', 'pip', 'install', ...pipIndex, '-e', '.[torch]'], 60 * 60_000)
+  } finally {
+    if (controller) owned.delete(controller)
+    forgetGbcStatus()
+  }
+  return { ok: true, output: lines.join('\n').slice(-12000), status: await gbcStatus(versionId, true) }
+}
+
+function setupProgress(progress: GbcSetupProgress): void {
+  emit(Events.gbcSetup, progress)
+}
+
+/**
+ * 安装 in 设置 › 功能: the version chosen there, or the newest commit of
+ * KohakuGBC's default branch when none is, made ready to run. A second click
+ * while it runs waits for the same install.
+ */
+export function installGbc(): Promise<GbcStatus> {
+  if (setup) return setup
+  const controller = ownedController()
+  setup = (async () => {
+    try {
+      setupProgress({ phase: 'code' })
+      const settings = getSettings()
+      const versions = await listGbcVersions(settings)
+      let version = versions.find((item) => item.id === settings.gbcVersionId)
+      if (!version) {
+        const branches = await listGbcBranches(settings)
+        const branch = branches.find((item) => item.isDefault) ?? branches[0]!
+        version = await createGbcVersion(settings, branch.name, branch.sha)
+        emit(Events.settingsChanged, updateSettings({ gbcVersionId: version.id }))
+      }
+      if (controller.signal.aborted) throw new Error('安装已停止')
+      setupProgress({ phase: 'packages' })
+      const { status } = await installGbcEnv(version.id, controller.signal)
+      setupProgress({ phase: 'done' })
+      return status
+    } catch (error) {
+      setupProgress({ phase: 'failed', error: error instanceof Error ? error.message : String(error) })
+      throw error
+    } finally {
+      owned.delete(controller)
+      setup = null
+    }
+  })()
+  return setup
+}
+
+/** The 助手 model 设置 › 功能 chose, or the first one GBC can use. */
+function readingProvider(settings: Settings): string {
+  const usable = listProviders().filter(gbcCanUse)
+  const chosen = usable.find((provider) => provider.id === settings.gbcProviderId) ?? usable[0]
+  if (!chosen) throw new Error('先给助手加一个能用的模型')
+  return chosen.id
 }
 
 function configFor(
@@ -148,17 +270,30 @@ sink = {"kind": "graphs", "path": ${JSON.stringify(join(out, 'graphs.jsonl'))}}
 `
 }
 
-export async function runGbc(input: GbcRunInput): Promise<GbcRunResult> {
+/** A run ended by 停止 or by quitting; not an error to show. */
+export class GbcStopped extends Error {
+  constructor() {
+    super('已停止')
+  }
+}
+
+export interface GbcRunControl {
+  signal?: AbortSignal
+  /** Every output line, progress bars included (they redraw with a carriage return). */
+  onLine?: (line: string) => void
+}
+
+export async function runGbc(input: GbcRunInput, control: GbcRunControl = {}): Promise<GbcRunResult> {
   const selectedFiles = (input.files ?? []).filter((path) => path.trim())
   const folder = input.folder?.trim() ?? ''
   if (!selectedFiles.length && (!folder || !existsSync(folder))) throw new Error('GBC 图片目录/文件不存在')
   const provider = getProviderSecret(input.providerId)
-  if (!provider) throw new Error('请先在 Agent 设置中配置一个 AI Provider')
-  if (!provider.apiKey) throw new Error('GBC 的 API Provider 需要 API Key')
+  if (!provider) throw new Error('先给助手加一个能用的模型')
+  if (!provider.apiKey) throw new Error('看图的模型还没有填 API Key')
   const gpu = (await run('nvidia-smi', ['-L'], { timeoutMs: 5000 })).code === 0
   const device = gpu ? 'cuda:0' : 'cpu'
   const id = `gbc-${randomUUID().slice(0, 8)}`
-  const out = join(paths.root(), 'gbc', id)
+  const out = join(paths.root(), 'gbc', 'runs', id)
   await mkdir(out, { recursive: true })
   const keyEnv = 'MOSSTUDIO_GBC_API_KEY'
   const sourceMap = new Map<string, string>()
@@ -180,16 +315,34 @@ export async function runGbc(input: GbcRunInput): Promise<GbcRunResult> {
   const version = input.versionId ? (await listGbcVersions(getSettings())).find((item) => item.id === input.versionId) : null
   const bundled = version ? versionBinary(version) : ''
   const command = bundled && existsSync(bundled) ? bundled : process.env['CLOVER_GBC_BIN'] || 'gbc'
-  const result = await run(command, ['run', configPath], {
-    cwd: version?.path ?? out,
-    env: { [keyEnv]: provider.apiKey, PYTHONUNBUFFERED: '1' },
-    timeoutMs: 30 * 60_000,
-  })
+  const controller = ownedController()
+  const stop = (): void => controller.abort()
+  control.signal?.addEventListener('abort', stop, { once: true })
+  if (control.signal?.aborted) stop()
+  let result
+  try {
+    result = await runStream(
+      command,
+      ['run', configPath],
+      {
+        cwd: version?.path ?? out,
+        env: { [keyEnv]: provider.apiKey, PYTHONUNBUFFERED: '1' },
+        timeoutMs: 30 * 60_000,
+        signal: controller.signal,
+        splitCarriageReturn: true,
+      },
+      (line) => control.onLine?.(line),
+    )
+  } finally {
+    owned.delete(controller)
+    control.signal?.removeEventListener('abort', stop)
+  }
+  if (result.aborted) throw new GbcStopped()
   const graphsFile = join(out, 'graphs.jsonl')
   if (result.code !== 0) {
     const failures = join(out, 'graphs.failures.jsonl')
     const detail = tail(result.stderr || result.stdout, 20) || (existsSync(failures) ? tail(readFileSync(failures, 'utf8'), 10) : '')
-    throw new Error(`GBC 运行失败：${detail || `exit ${result.code}`}`)
+    throw new Error(result.timedOut ? 'GBC 运行超过 30 分钟，已停止' : `GBC 运行失败：${detail || `exit ${result.code}`}`)
   }
   if (!existsSync(graphsFile)) throw new Error('GBC 没有输出 graph')
   const lines = readFileSync(graphsFile, 'utf8').split('\n').filter(Boolean)
@@ -260,4 +413,74 @@ export async function runGbc(input: GbcRunInput): Promise<GbcRunResult> {
     images,
     sidecarFiles,
   }
+}
+
+/**
+ * What a run's output line says about its progress. The first run downloads
+ * the detector and embedder from Hugging Face; their progress bars carry a
+ * percentage. Anything else means the picture is being read.
+ */
+export function parseProgressLine(line: string): Omit<GbcParseProgress, 'runId'> | null {
+  const percent = /(\d{1,3})%\|/.exec(line)
+  if (percent && /\.(safetensors|bin|json|model|txt)|download/i.test(line)) {
+    return { phase: 'download', percent: Math.min(100, Number.parseInt(percent[1]!, 10)) }
+  }
+  if (/download/i.test(line)) return { phase: 'download' }
+  return null
+}
+
+/** How long after the last download line the card says 正在看图 again. */
+const READING_AFTER_MS = 3000
+
+/**
+ * 拆成区域: GBC reads one picture with the version, model and detector chosen
+ * in 设置 › 功能. Resolves to null when 停止 ended it. Progress goes out as
+ * `Events.gbcParse` under the renderer's `runId`.
+ */
+export async function parseRegions(runId: string, path: string): Promise<GbcParseResult | null> {
+  if (!existsSync(path)) throw new Error('找不到这张图片')
+  const settings = getSettings()
+  const providerId = readingProvider(settings)
+  const controller = new AbortController()
+  parses.set(runId, controller)
+  let last = ''
+  let lastDownload = 0
+  const report = (progress: Omit<GbcParseProgress, 'runId'>): void => {
+    if (progress.phase === 'download') lastDownload = Date.now()
+    // Log lines between two download bars must not flip the card back to 正在看图.
+    else if (Date.now() - lastDownload < READING_AFTER_MS) return
+    const key = `${progress.phase}:${progress.percent ?? ''}`
+    if (key === last) return
+    last = key
+    emit(Events.gbcParse, { runId, ...progress } satisfies GbcParseProgress)
+  }
+  report({ phase: 'reading' })
+  try {
+    const result = await runGbc(
+      { files: [path], providerId, detector: settings.gbcDetector, versionId: settings.gbcVersionId ?? undefined },
+      {
+        signal: controller.signal,
+        onLine: (line) => {
+          const progress = parseProgressLine(line)
+          report(progress ?? { phase: 'reading' })
+        },
+      },
+    )
+    // Only the graph is needed; the run folder holds the picture's key and a copy of the config.
+    void rm(result.outputDir, { recursive: true, force: true }).catch(() => undefined)
+    const graph = result.images[0]?.graph
+    const parsed = graph ? regionsFromGraph(graph) : { summary: '', regions: [] }
+    if (!parsed.regions.length && !parsed.summary) throw new Error('没在这张图里找到物体')
+    return parsed
+  } catch (error) {
+    if (error instanceof GbcStopped) return null
+    throw error
+  } finally {
+    parses.delete(runId)
+  }
+}
+
+/** 停止 on a 画面 that is still being read. */
+export function cancelParse(runId: string): void {
+  parses.get(runId)?.abort()
 }

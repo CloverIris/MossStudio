@@ -5,6 +5,7 @@
  * a test changes what the "main process" knows by editing `backend.state`.
  */
 import type { AiConversationInfo, AiProviderInfo } from '@shared/ai'
+import type { GbcParseResult, GbcStatus } from '@shared/gbc'
 import type { UpdaterState } from '@shared/update'
 import { cliEngineFeatures } from '@shared/cliEngine'
 import type { EngineAssetList, EngineMachine } from '@shared/engineChoice'
@@ -17,6 +18,7 @@ import type {
   EnvReport,
   GalleryDetail,
   GalleryItem,
+  GbcVersion,
   GpuInventorySnapshot,
   JobLogLine,
   JobRecord,
@@ -47,6 +49,8 @@ import {
   engineVersionFixture,
   envReportFixture,
   galleryItemFixture,
+  gbcParseFixture,
+  gbcStatusFixture,
   GPU_RTX_5090,
   gpuDeviceFixture,
   gpuInventoryFixture,
@@ -100,6 +104,8 @@ export interface MockBackendState {
   systemMemoryBytes: number
   /** Free space models:space reports for a models folder; a folder not listed has plenty. */
   diskFree: Record<string, number>
+  /** 看图拆区域: whether GBC runs, its versions, and what reading a picture finds. */
+  gbc: { status: GbcStatus; versions: GbcVersion[]; parse: GbcParseResult }
 }
 
 export type ScenarioName =
@@ -165,6 +171,7 @@ export function scenario(name: ScenarioName = 'ready', patch: Partial<MockBacken
     projects: [],
     aiProviders: [],
     conversations: [],
+    gbc: { status: gbcStatusFixture(false), versions: [], parse: gbcParseFixture() },
     engineFeatures: engineFeaturesFixture(),
     controlAdapters: [],
     install: installStateFixture(),

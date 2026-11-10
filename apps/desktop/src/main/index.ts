@@ -8,7 +8,7 @@ import { runStudioCanvasUiTests } from './studioCanvasUi.test'
 import { ensureDirs, paths } from './lib/paths'
 import { getBackendInfo, getWebAccessInfo, startBackend, stopBackend } from './services/backend'
 import { listProviders, removeProvider, saveProvider } from './services/ai'
-import { gbcStatus } from './services/gbc'
+import { gbcStatus, stopGbcProcesses } from './services/gbc'
 import type { JobRecord } from '@shared/types'
 import { localNotificationsSupported, pushTestNotification } from './services/desktopNotifications'
 import { checkBareMirror } from './services/gitHealth'
@@ -2167,6 +2167,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  stopGbcProcesses()
   closeAllSshTerminals()
   stopUpdater()
   stopBackend()

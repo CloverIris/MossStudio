@@ -10,6 +10,7 @@ import { useApp } from '../../store'
 import { PathValue } from '../../components/common/PathValue'
 import { Button, Group, LoadingRow, Row, Section, useToast } from '../../components/ui'
 import { SectionBody, SwitchRow, TextSetting, errorText, useSaveSettings } from './fields'
+import { GbcSettings } from './GbcSettings'
 
 export function FeaturesSection(): React.JSX.Element {
   const settings = useApp((state) => state.settings)!
@@ -30,6 +31,7 @@ export function FeaturesSection(): React.JSX.Element {
           ))}
         </Group>
       </Section>
+      {settings.gbcEnabled ? <GbcSettings /> : null}
       {settings.lanWebEnabled ? <LanAccess /> : null}
     </SectionBody>
   )

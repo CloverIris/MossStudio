@@ -2,7 +2,17 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MenuGap, MenuItem } from '../../components/common/Popover'
 
 export type BoardMenuEntry =
-  { label: string; onSelect: () => void; tone?: 'danger'; disabled?: boolean; title?: string; selected?: boolean } | { gap: true }
+  | {
+      label: string
+      onSelect: () => void
+      tone?: 'danger'
+      disabled?: boolean
+      title?: string
+      selected?: boolean
+      /** A few words after the label, such as why the entry cannot do its job yet. */
+      hint?: string
+    }
+  | { gap: true }
 
 const MENU_WIDTH = 200
 
@@ -85,6 +95,7 @@ export function BoardMenu({
             disabled={entry.disabled}
             selected={entry.selected}
             title={entry.title}
+            hint={entry.hint}
             onSelect={() => {
               onClose()
               entry.onSelect()

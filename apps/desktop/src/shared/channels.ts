@@ -101,6 +101,11 @@ export const Ipc = {
   gbcVersions: 'gbc:versions',
   gbcVersionCreate: 'gbc:version-create',
   gbcVersionRemove: 'gbc:version-remove',
+  /** 拆成区域: `{ runId, path }` → GbcParseResult, or null when 停止 ended it; progress as `Events.gbcParse`. */
+  gbcParse: 'gbc:parse',
+  gbcCancel: 'gbc:cancel',
+  /** 安装 in 设置 › 功能 → GbcStatus; steps as `Events.gbcSetup`. */
+  gbcSetup: 'gbc:setup',
   announcementsDismiss: 'announcements:dismiss',
   gitBranches: 'git:branches',
   gitCommits: 'git:commits',
@@ -237,6 +242,10 @@ export const Events = {
   terminalData: 'event:ssh-terminal-data',
   terminalExit: 'event:ssh-terminal-exit',
   aiStream: 'event:ai-stream',
+  /** GbcParseProgress */
+  gbcParse: 'event:gbc-parse',
+  /** GbcSetupProgress */
+  gbcSetup: 'event:gbc-setup',
   aiToolCall: 'event:ai-tool-call',
   /** SetupProgress while installing. */
   installProgress: 'event:install-progress',

@@ -6,6 +6,7 @@
  */
 import releaseCatalog from '../../../resources/models.json'
 import type { AiConversationInfo, AiProviderInfo } from '@shared/ai'
+import type { GbcParseResult, GbcStatus } from '@shared/gbc'
 import type { UpdateAnnouncement, UpdaterState } from '@shared/update'
 import type {
   AdapterEntry,
@@ -17,6 +18,7 @@ import type {
   EngineReadiness,
   EnvReport,
   GalleryItem,
+  GbcVersion,
   GpuInventoryDevice,
   GpuInventorySnapshot,
   GpuTelemetrySnapshot,
@@ -99,6 +101,10 @@ export function settingsFixture(patch: Partial<Settings> = {}): Settings {
     deviceLabels: {},
     remoteHostsEnabled: false,
     trainingEnabled: false,
+    gbcEnabled: false,
+    gbcProviderId: null,
+    gbcVersionId: null,
+    gbcDetector: 'owlv2',
     engineAutoUpdate: true,
     ...patch,
   }
@@ -654,6 +660,41 @@ export function aiProviderFixture(patch: Partial<AiProviderInfo> = {}): AiProvid
     temperature: 0.7,
     hasKey: true,
     ...patch,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 看图拆区域 (KohakuGBC)
+
+export function gbcVersionFixture(patch: Partial<GbcVersion> = {}): GbcVersion {
+  return {
+    id: 'gbc-main',
+    name: 'GBC 9f3c2a1',
+    branch: 'main',
+    commit: '9f3c2a1b4d5e',
+    shortCommit: '9f3c2a1',
+    subject: 'Fixture GBC',
+    commitDate: FIXTURE_NOW,
+    path: '/fixture/gbc/versions/gbc-main',
+    createdAt: FIXTURE_NOW,
+    ...patch,
+  }
+}
+
+export function gbcStatusFixture(available: boolean): GbcStatus {
+  return available
+    ? { available: true, version: 'GBC 9f3c2a1 · 9f3c2a1', checks: [], versionId: 'gbc-main' }
+    : { available: false, error: 'GBC 尚未安装完整环境；请查看下方检查项并安装环境。', checks: [] }
+}
+
+/** What 拆成区域 finds in a picture: a caption and two regions. */
+export function gbcParseFixture(): GbcParseResult {
+  return {
+    summary: '午后的窗台，阳光照在一只睡着的橘猫身上',
+    regions: [
+      { caption: '趴着睡觉的橘猫', bbox: { x: 0.25, y: 0.5, w: 0.45, h: 0.25 } },
+      { caption: '窗外的晴天', bbox: { x: 0.5, y: 0.08, w: 0.42, h: 0.4 } },
+    ],
   }
 }
 

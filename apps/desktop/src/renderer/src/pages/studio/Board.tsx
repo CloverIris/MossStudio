@@ -24,6 +24,8 @@ import {
   type View,
 } from './boardLayout'
 import { CanvasCard, type CardMenuAction, type CardStrip } from './CanvasCard'
+import type { ParseView } from './CardStatus'
+import { PARSE_CHECKING } from '@shared/gbc'
 import { useShell } from '../../lib/shell'
 import { newCanvasMenu } from './connect'
 import { isImageFile } from './imageNodes'
@@ -136,6 +138,15 @@ export interface BoardProps {
   /** 导入图片… / 从作品选择… from the right-click menu: pictures placed at a board point. */
   onImportPictures: (at: Point) => void
   onPicturesFromGallery: (at: Point) => void
+  /**
+   * 拆成区域 on a card's picture. `parseBlocker` is undefined while the feature
+   * is off (no entry), null when it can run, else why not.
+   */
+  parseBlocker: string | null | undefined
+  onParseRegions: (sourceId: string) => void
+  /** 画面 that 拆成区域 is filling, by id. */
+  parsing: Readonly<Record<string, ParseView>>
+  onStopParse: (canvasId: string) => void
 }
 
 /** Things to try on a new board's first 画面. */
@@ -402,12 +413,26 @@ export function Board(props: BoardProps): React.JSX.Element {
   // 放大 is offered when the engine takes a start picture and the picture can still grow.
   const canUpscale = (canvas: ProjectCanvas): boolean =>
     props.engineFeatures?.imageInput !== false && !upscaleProblem(props.canvases, pictureLink(props.canvases, { canvasId: canvas.id }))
+  // 拆成区域 stays in the menu while it cannot run, saying why; choosing it then leads to 设置.
+  const parseAction = (canvasId: string): CardMenuAction[] =>
+    props.parseBlocker === undefined
+      ? []
+      : [
+          {
+            label: '拆成区域',
+            hint: props.parseBlocker ?? undefined,
+            title: props.parseBlocker ?? undefined,
+            disabled: props.parseBlocker === PARSE_CHECKING,
+            onSelect: () => props.onParseRegions(canvasId),
+          },
+        ]
   // The ⋯ menu of a card: what can be done with the picture it shows.
   const cardActions = (canvas: ProjectCanvas, run: ProjectCanvas, item: StripItem | undefined): CardMenuAction[] => {
     const actions: CardMenuAction[] = []
     if (canvas.kind === 'layout') {
       if (!item) return actions
       if (item.path) actions.push({ label: '用作起始图', onSelect: () => props.onNewFromPicture(canvas.id, 'init') })
+      if (item.path) actions.push(...parseAction(canvas.id))
       if (item.path && canUpscale(canvas)) actions.push({ label: '放大', onSelect: () => props.onUpscale(canvas.id) })
       if (folded.has(run.id) && item.path) actions.push({ label: '固定到画板', onSelect: () => props.onPinRun(run.id) })
       if (run.kind === 'result') actions.push({ label: '用这次的设置', onSelect: () => props.onUseRunSettings(canvas.id, run.id) })
@@ -418,6 +443,7 @@ export function Board(props: BoardProps): React.JSX.Element {
     }
     if (givesPicture(canvas, props.canvases)) {
       actions.push({ label: '用作起始图', onSelect: () => props.onNewFromPicture(canvas.id, 'init') })
+      actions.push(...parseAction(canvas.id))
       if (canUpscale(canvas)) actions.push({ label: '放大', onSelect: () => props.onUpscale(canvas.id) })
     }
     // A pinned result goes back into its 画面's filmstrip, unless it feeds another canvas.
@@ -730,6 +756,8 @@ export function Board(props: BoardProps): React.JSX.Element {
                     }
                   : undefined
               }
+              parsing={props.parsing[canvas.id]}
+              onStopParse={() => props.onStopParse(canvas.id)}
               connecting={Boolean(draft && canvas.id !== draft.sourceId)}
               wireOut={draft?.sourceId === canvas.id}
               onPortDown={(event) => connect.start(canvas, event)}

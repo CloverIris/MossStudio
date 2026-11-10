@@ -4,26 +4,36 @@ import { settingsFixture } from '../../mocks/backend'
 
 describe('lib/features', () => {
   it('lists each optional feature once with copy', () => {
-    expect(FEATURES.map((feature) => feature.key)).toEqual(['remoteHostsEnabled', 'trainingEnabled', 'lanWebEnabled'])
+    expect(FEATURES.map((feature) => feature.key)).toEqual(['remoteHostsEnabled', 'trainingEnabled', 'gbcEnabled', 'lanWebEnabled'])
     expect(FEATURES.every((feature) => feature.label && feature.description)).toBe(true)
   })
 
   it('every optional feature is off in default settings', () => {
-    expect(featureVisibility(settingsFixture())).toEqual({ remoteHosts: false, training: false, lan: false })
+    expect(featureVisibility(settingsFixture())).toEqual({ remoteHosts: false, training: false, gbc: false, lan: false })
   })
 
   it('reads each toggle independently', () => {
-    expect(featureVisibility(settingsFixture({ trainingEnabled: true }))).toEqual({ remoteHosts: false, training: true, lan: false })
+    expect(featureVisibility(settingsFixture({ trainingEnabled: true }))).toEqual({
+      remoteHosts: false,
+      training: true,
+      gbc: false,
+      lan: false,
+    })
     expect(featureVisibility(settingsFixture({ remoteHostsEnabled: true, lanWebEnabled: true }))).toEqual({
       remoteHosts: true,
       training: false,
+      gbc: false,
       lan: true,
     })
+  })
+
+  it('reads 看图拆区域 on its own', () => {
+    expect(featureVisibility(settingsFixture({ gbcEnabled: true }))).toEqual({ remoteHosts: false, training: false, gbc: true, lan: false })
   })
 
   it('treats missing settings as everything off', () => {
     expect(featureEnabled(null, 'trainingEnabled')).toBe(false)
     expect(featureEnabled(undefined, 'lanWebEnabled')).toBe(false)
-    expect(featureVisibility(null)).toEqual({ remoteHosts: false, training: false, lan: false })
+    expect(featureVisibility(null)).toEqual({ remoteHosts: false, training: false, gbc: false, lan: false })
   })
 })

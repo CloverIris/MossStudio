@@ -43,7 +43,7 @@ export function diagnosticsReport(input: DiagnosticsInput, now = new Date()): st
               .join(', ')}`
           : ''
       }`,
-      `功能 远程主机 ${settings.remoteHostsEnabled ? '开' : '关'} · 训练 ${settings.trainingEnabled ? '开' : '关'} · 局域网 ${settings.lanWebEnabled ? '开' : '关'}`,
+      `功能 远程主机 ${settings.remoteHostsEnabled ? '开' : '关'} · 训练 ${settings.trainingEnabled ? '开' : '关'} · 看图 ${settings.gbcEnabled ? '开' : '关'} · 局域网 ${settings.lanWebEnabled ? '开' : '关'}`,
     )
   }
   const failing = env?.checks.filter((check) => check.status === 'error' || check.status === 'warn') ?? []

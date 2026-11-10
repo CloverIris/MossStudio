@@ -1,7 +1,7 @@
 import type { Settings } from '@shared/types'
 
 /** Optional features. Each is off by default and turned on in 设置 › 功能. */
-export type FeatureKey = 'remoteHostsEnabled' | 'trainingEnabled' | 'lanWebEnabled'
+export type FeatureKey = 'remoteHostsEnabled' | 'trainingEnabled' | 'gbcEnabled' | 'lanWebEnabled'
 
 export interface FeatureInfo {
   key: FeatureKey
@@ -21,6 +21,11 @@ export const FEATURES: FeatureInfo[] = [
     description: '用自己的图片训练 LoRA，训练好的 LoRA 可以直接在创作中使用。',
   },
   {
+    key: 'gbcEnabled',
+    label: '看图拆区域',
+    description: '把一张图拆成带描述的区域，照它的布局再画一张。',
+  },
+  {
     key: 'lanWebEnabled',
     label: '局域网访问',
     description: '同一网络下的手机或电脑可以用浏览器打开创作页。',
@@ -35,11 +40,13 @@ export function featureEnabled(settings: Pick<Settings, FeatureKey> | null | und
 export function featureVisibility(settings: Pick<Settings, FeatureKey> | null | undefined): {
   remoteHosts: boolean
   training: boolean
+  gbc: boolean
   lan: boolean
 } {
   return {
     remoteHosts: featureEnabled(settings, 'remoteHostsEnabled'),
     training: featureEnabled(settings, 'trainingEnabled'),
+    gbc: featureEnabled(settings, 'gbcEnabled'),
     lan: featureEnabled(settings, 'lanWebEnabled'),
   }
 }

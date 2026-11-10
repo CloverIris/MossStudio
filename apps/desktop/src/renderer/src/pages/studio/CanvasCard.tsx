@@ -8,7 +8,7 @@ import { tidyEntries, type BoardMenuEntry } from './BoardMenu'
 import type { LinkRole } from './links'
 import { OutputImage } from './OutputImage'
 import { CARD_FOOTER, CARD_HEADER, cardBodyHeight, cardWidth } from './boardLayout'
-import { LivePreview, ProgressStrip, StatusOverlay } from './CardStatus'
+import { LivePreview, ParseOverlay, ProgressStrip, StatusOverlay, type ParseView } from './CardStatus'
 import type { CardJobView } from './jobStatus'
 import { MaskLayer, usePictureSize, type MaskBrush, type MaskCommand } from './MaskLayer'
 import type { Size } from './mask'
@@ -113,6 +113,9 @@ export interface CanvasCardProps {
   onRerun: (seed: 'new' | 'same') => void
   onCancel: () => void
   onShowActivity: () => void
+  /** 拆成区域 is filling this 画面. */
+  parsing?: ParseView
+  onStopParse?: () => void
 }
 
 /**
@@ -245,7 +248,14 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
   // A 风格 always shows its description.
   const blankFace =
     isStyle ||
-    (canvas.kind === 'layout' && !preview && !current && !painting && !props.initPicture && !canvas.backgroundPath && !view.active)
+    (canvas.kind === 'layout' &&
+      !preview &&
+      !current &&
+      !painting &&
+      !props.initPicture &&
+      !canvas.backgroundPath &&
+      !view.active &&
+      !props.parsing)
   // The header speaks only while something is happening or went wrong.
   const loud = view.active || view.state === 'failed' || view.state === 'lost'
   const statusLabel = isImage || isStyle || !loud ? '' : view.label
@@ -319,6 +329,9 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
                     <MenuItem
                       key={action.label}
                       tone={action.tone}
+                      disabled={action.disabled}
+                      title={action.title}
+                      hint={action.hint}
                       onSelect={() => {
                         close()
                         action.onSelect()
@@ -442,6 +455,7 @@ export function CanvasCard(props: CanvasCardProps): React.JSX.Element {
           />
         ) : null}
 
+        {props.parsing ? <ParseOverlay parse={props.parsing} onStop={() => props.onStopParse?.()} /> : null}
         {isImage || isStyle ? null : <StatusOverlay view={view} hasPicture={Boolean(preview)} />}
         {view.active && (view.phase === 'denoise' || view.phase === 'decode' || view.phase === 'save' || view.phase === 'text') ? (
           <ProgressStrip percent={view.phase === 'denoise' ? view.percent : undefined} />
