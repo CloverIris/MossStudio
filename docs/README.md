@@ -17,6 +17,7 @@ Developer documentation for MossStudio: an Electron + React + TypeScript desktop
 | Know the rules a reviewer applies to code | [reference/coding-standards.md](reference/coding-standards.md) |
 | Build or change a screen | [reference/ui-rules.md](reference/ui-rules.md) |
 | Write or change a doc | [reference/documentation-guidelines.md](reference/documentation-guidelines.md), [reference/glossary.md](reference/glossary.md) |
+| Add a model to the catalog without a release | [how-to/add-a-model.md](how-to/add-a-model.md) |
 | Cut a release or rotate the update key | [how-to/release.md](how-to/release.md), then [how-to/release-qa-checklist.md](how-to/release-qa-checklist.md) |
 
 ## I want to understand...

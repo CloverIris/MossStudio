@@ -1,7 +1,7 @@
 ---
 status: current
 last-verified: 2026-11-08 (d0883df)
-code: apps/desktop/resources/models.json, apps/desktop/src/shared/types.ts, apps/desktop/src/shared/bundleFit.ts, apps/desktop/src/shared/localBundle.ts, apps/desktop/src/shared/adapters.ts, apps/desktop/src/main/lib/paths.ts, apps/desktop/src/main/services/models.ts, apps/desktop/src/main/services/modelBundles.ts, apps/desktop/src/main/services/modelScan.ts, apps/desktop/src/main/services/modelImports.ts, apps/desktop/src/main/services/modelFiles.ts, apps/desktop/src/main/services/controlAdapters.ts, apps/desktop/src/main/services/weightPrecision.ts, apps/desktop/src/renderer/src/pages/models/, apps/desktop/src/renderer/src/components/ModelDirectoriesCard.tsx
+code: apps/desktop/resources/models.json, apps/desktop/src/shared/modelCatalog.ts, apps/desktop/src/main/lib/content.ts, apps/desktop/src/shared/types.ts, apps/desktop/src/shared/bundleFit.ts, apps/desktop/src/shared/localBundle.ts, apps/desktop/src/shared/adapters.ts, apps/desktop/src/main/lib/paths.ts, apps/desktop/src/main/services/models.ts, apps/desktop/src/main/services/modelBundles.ts, apps/desktop/src/main/services/modelScan.ts, apps/desktop/src/main/services/modelImports.ts, apps/desktop/src/main/services/modelFiles.ts, apps/desktop/src/main/services/controlAdapters.ts, apps/desktop/src/main/services/weightPrecision.ts, apps/desktop/src/renderer/src/pages/models/, apps/desktop/src/renderer/src/components/ModelDirectoriesCard.tsx
 ---
 
 # Models
@@ -25,9 +25,17 @@ The catalog is the list of everything the app can download or has found. Its sch
 
 Where the catalog comes from (`getCatalog` in `main/services/models.ts`):
 
-1. `apps/desktop/resources/models.json` is packaged with the app (`source: 'builtin'`).
-2. On each full refresh the app fetches the same file from the manifest mirror the network probe picked (GitHub raw or jsDelivr, `main/services/network.ts`) and uses it if it parses (`source: 'remote'`). A remote catalog with `schema_version` below 2 is merged under the built-in one so it cannot reintroduce whole-repository downloads.
-3. In development a `models.json` in the content directory wins (`source: 'local'`).
+1. On each full refresh the app fetches `apps/desktop/resources/models.json` from `main`, through the manifest mirror the network probe picked (GitHub raw or jsDelivr, `main/services/network.ts`). It uses the file only when `catalogProblems` in [`shared/modelCatalog.ts`](/apps/desktop/src/shared/modelCatalog.ts) finds nothing wrong (`source: 'remote'`), and saves it as `<data root>/cache/models.json`.
+2. When `main` is unreachable or its file is rejected, the saved copy is used (`source: 'cache'`), unless its `updated_at` is older than the packaged catalog's.
+3. Otherwise the copy packaged with the app is used (`source: 'builtin'`). A packaged app's `models.json` next to `app.asar` is this fallback, never an override.
+4. In development the source tree's `models.json` wins over all of these (`source: 'local'`, `catalogOverrideDir` in `main/lib/content.ts`), so an edit shows at once.
+
+So a model added to `models.json` on `main` reaches released apps without a release; [how-to/add-a-model.md](/docs/how-to/add-a-model.md) has the steps. Two rules keep an older app safe:
+
+- **`min_app_version`** on a model, bundle (either list) or adapter hides it from older apps (`entriesForApp`), and a bundle with a hidden part is hidden too. A prerelease counts as its release (a nightly of 2.1.0 meets `2.1.0`) unless the minimum names a prerelease itself (`2.1.0-beta.2`).
+- **`schema_version`** above `CATALOG_SCHEMA_VERSION` (3) is rejected, and such an app keeps its saved or packaged catalog. Raise it only when an older app would misread the file. A new optional field does not raise it: unknown fields pass. A file with `schema_version` below 2 is merged under the packaged one so it cannot reintroduce whole-repository downloads.
+
+After a merge that changes the file, `.github/workflows/catalog.yml` purges jsDelivr's copy; GitHub raw caches it for about five minutes.
 
 The shipped catalog (`schema_version: 3`) has two kinds of bundles:
 

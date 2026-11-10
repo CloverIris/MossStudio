@@ -7,7 +7,7 @@ import { useTempDataRoot } from '@test/helpers/tempDir'
 import { cacheDirFor, installOnDisk, rawModel, testSettings, writeCatalog } from './modelFixtures'
 
 const contentDir = vi.hoisted(() => vi.fn<() => string | null>())
-vi.mock('@main/lib/content', () => ({ contentDir }))
+vi.mock('@main/lib/content', () => ({ contentDir, catalogOverrideDir: () => contentDir() }))
 vi.mock('@main/services/supervisor', () => ({ listJobs: async () => [] }))
 vi.mock('@main/services/network', () => ({ getLastNetwork: () => null }))
 vi.mock('@main/services/hfNetwork', () => ({ fetchHf: (url: string) => fetch(url) }))

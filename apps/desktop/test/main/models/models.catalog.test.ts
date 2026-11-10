@@ -8,7 +8,7 @@ import { cacheDirFor, installOnDisk, rawModel, sha256, testSettings, vaeFiles, w
 
 const contentDir = vi.hoisted(() => vi.fn<() => string | null>())
 const listJobs = vi.hoisted(() => vi.fn<() => Promise<Array<{ state: string }>>>())
-vi.mock('@main/lib/content', () => ({ contentDir }))
+vi.mock('@main/lib/content', () => ({ contentDir, catalogOverrideDir: () => contentDir() }))
 vi.mock('@main/services/supervisor', () => ({ listJobs }))
 vi.mock('@main/services/network', () => ({ getLastNetwork: () => null }))
 vi.mock('@main/services/hfNetwork', () => ({ fetchHf: (url: string) => fetch(url) }))
@@ -141,6 +141,101 @@ describe('getCatalog sources', () => {
     const catalog = await models.getCatalog(settings)
     expect(catalog.bundles.map((b) => b.id)).toEqual(['b1', 'files'])
     expect(byId(catalog.bundles, 'files')?.tier).toBe('turbo')
+  })
+})
+
+describe('the catalog on main', () => {
+  const support = rawModel({ id: 'support-a', repo: 'org/pipe', role: 'support', files: ['model_index.json'], size_bytes: 1 })
+  const dit = rawModel({ id: 'dit-a', repo: 'org/dit', role: 'dit', files: ['transformer/*'], size_bytes: 5 })
+  const encoder = rawModel({ id: 'te-a', repo: 'org/te', role: 'text_encoder', files: ['text_encoder/*'], size_bytes: 3 })
+  const complete = { schema_version: 3, updated_at: '2099-01-01T00:00:00Z', models: [vae, support, dit, encoder], bundles: [bundle] }
+  const saved = (): string => join(dataRoot(), 'cache', 'models.json')
+
+  /** A packaged app: its own models.json is a fallback, so main's catalog is fetched. */
+  function serve(body: unknown | Error): void {
+    contentDir.mockReturnValue(null)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        if (body instanceof Error) throw body
+        return new Response(JSON.stringify(body))
+      }),
+    )
+  }
+
+  it('is saved, and listed from the saved copy while offline', async () => {
+    serve(complete)
+    expect((await models.getCatalog(settings, true)).source).toBe('remote')
+    expect(JSON.parse(readFileSync(saved(), 'utf8'))).toEqual(complete)
+
+    serve(new TypeError('fetch failed'))
+    const offline = await models.getCatalog(settings, true)
+    expect(offline.source).toBe('cache')
+    expect(offline.bundles.map((b) => b.id)).toEqual(['b1'])
+  })
+
+  it('a saved copy older than the packaged catalog loses to it', async () => {
+    serve({ ...complete, updated_at: '2020-01-01T00:00:00Z' })
+    await models.getCatalog(settings, true)
+    serve(new TypeError('fetch failed'))
+    const offline = await models.getCatalog(settings, true)
+    expect(offline.source).toBe('builtin')
+    expect(offline.bundles.map((b) => b.id)).toContain('moss-sft')
+  })
+
+  it('is not used when it is newer than this app reads, or broken; the saved copy is', async () => {
+    serve(complete)
+    await models.getCatalog(settings, true)
+    for (const body of [
+      { ...complete, schema_version: 4, models: [] },
+      { ...complete, bundles: [{ ...bundle, components: { ...bundle.components, vae: 'gone' } }] },
+      { ...complete, models: [{ ...vae, revision: 'v1' }] },
+    ]) {
+      serve(body)
+      const catalog = await models.getCatalog(settings, true)
+      expect(catalog.source).toBe('cache')
+      expect(catalog.models.map((m) => m.id)).toContain('dit-a')
+    }
+    expect(JSON.parse(readFileSync(saved(), 'utf8'))).toEqual(complete)
+  })
+
+  it('leaves out what needs a newer app, and the models built on it', async () => {
+    vi.stubEnv('MOSSSTUDIO_TEST_APP_VERSION', '2.1.0-nightly.20261110')
+    const next = rawModel({
+      id: 'dit-next',
+      repo: 'org/next',
+      role: 'dit',
+      files: ['x.safetensors'],
+      size_bytes: 5,
+      min_app_version: '2.2.0',
+    })
+    serve({
+      ...complete,
+      models: [...complete.models, next, { ...dit, id: 'dit-now', min_app_version: '2.1.0' }],
+      bundles: [bundle, { ...bundle, id: 'b-next', components: { ...bundle.components, dit: 'dit-next' } }],
+      single_file_bundles: [{ ...bundle, id: 'b-beta', min_app_version: '2.1.0-beta.1' }],
+      adapters: [
+        {
+          id: 'lora-next',
+          name: 'L',
+          provider: 'hf',
+          repo: 'org/l',
+          revision: 'main',
+          kind: 'lora',
+          license: 'MIT',
+          files: ['l.safetensors'],
+          size_bytes: 2,
+          min_app_version: '3.0.0',
+        },
+      ],
+    })
+    const catalog = await models.getCatalog(settings, true)
+    expect(catalog.source).toBe('remote')
+    // A nightly of 2.1.0 has what 2.1.0 ships; 2.2.0 is still ahead of it.
+    expect(catalog.models.map((m) => m.id)).toContain('dit-now')
+    expect(catalog.models.map((m) => m.id)).not.toContain('dit-next')
+    expect(catalog.bundles.map((b) => b.id)).toEqual(['b1', 'b-beta'])
+    expect(catalog.adapters.map((a) => a.id)).not.toContain('lora-next')
   })
 })
 

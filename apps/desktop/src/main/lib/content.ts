@@ -12,3 +12,12 @@ export function contentDir(): string | null {
   const dir = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources')
   return existsSync(join(dir, 'models.json')) || existsSync(join(dir, 'rules.json')) ? dir : null
 }
+
+/**
+ * Where a models.json that wins over the catalog on `main` lives: the source tree, in development
+ * only, so an edit shows at once. A packaged app's copy is its fallback, never an override, or it
+ * would never see a model added after its release.
+ */
+export function catalogOverrideDir(): string | null {
+  return app.isPackaged ? null : contentDir()
+}
